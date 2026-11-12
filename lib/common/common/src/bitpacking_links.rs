@@ -143,6 +143,13 @@ pub struct PackedLinksIterator<'a> {
 }
 
 impl PackedLinksIterator<'_> {
+    /// An upper bound on the links left, without a division: every value
+    /// takes at least [`MIN_BITS_PER_VALUE`] bits.
+    #[inline]
+    pub fn max_len(&self) -> usize {
+        self.remaining_bits / MIN_BITS_PER_VALUE as usize
+    }
+
     #[inline]
     fn next_sorted(&mut self) -> u32 {
         self.current_delta = self.current_delta.wrapping_add(self.reader.read::<u32>());

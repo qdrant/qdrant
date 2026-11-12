@@ -122,6 +122,11 @@ fn check_links(
             right.links(point_id, level).collect()
         };
         assert_eq!(links.is_empty(), right.links_empty(point_id, level));
+        // `links_into` appends the same links after what `out` already holds.
+        let mut appended = vec![PointOffsetType::MAX];
+        right.links_into(point_id, level, &mut appended);
+        assert_eq!(appended[0], PointOffsetType::MAX);
+        assert_eq!(appended[1..], links);
         links
     });
     if let Some(vectors) = vectors {

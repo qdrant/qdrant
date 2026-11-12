@@ -105,6 +105,11 @@ pub trait GraphLayersBase {
     where
         F: FnMut(PointOffsetType) -> ControlFlow<(), ()>;
 
+    /// Append the links of `point_id` at `level` to `out`, in [`Self::for_each_link`]'s order.
+    fn links_into(&self, point_id: PointOffsetType, level: usize, out: &mut Vec<PointOffsetType>) {
+        self.for_each_link(point_id, level, |link| out.push(link));
+    }
+
     /// Get M based on current level
     fn get_m(&self, level: usize) -> usize;
 
@@ -133,11 +138,8 @@ pub trait GraphLayersBase {
             }
 
             points_ids.clear();
-            self.for_each_link(candidate.idx, level, |link| {
-                if !visited_list.check(link) {
-                    points_ids.push(link);
-                }
-            });
+            self.links_into(candidate.idx, level, &mut points_ids);
+            points_ids.retain(|&link| !visited_list.check(link));
 
             points_scorer
                 .score_points(&mut points_ids, limit)?
@@ -495,6 +497,10 @@ impl GraphLayersBase for GraphLayers {
         F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
     {
         self.links.links(point_id, level).try_for_each(f)
+    }
+
+    fn links_into(&self, point_id: PointOffsetType, level: usize, out: &mut Vec<PointOffsetType>) {
+        self.links.links_into(point_id, level, out);
     }
 
     fn get_m(&self, level: usize) -> usize {

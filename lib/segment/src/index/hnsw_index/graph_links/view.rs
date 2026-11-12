@@ -223,6 +223,57 @@ impl GraphLinksView<'_> {
         }
     }
 
+    /// Append the links of `point_id` at `level` to `out`.
+    ///
+    /// Same links, in the same order, as [`Self::links`]. The packed links
+    /// are decoded in one loop that calls nothing, so the reader's state
+    /// stays in registers.
+    #[inline]
+    pub(super) fn links_into(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        out: &mut Vec<PointOffsetType>,
+    ) {
+        let idx = self.offset_idx(point_id, level);
+        match self.compression {
+            CompressionInfo::Uncompressed { neighbors, offsets } => {
+                let neighbors_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
+                out.extend_from_slice(&neighbors[neighbors_range]);
+            }
+            CompressionInfo::Compressed {
+                neighbors,
+                ref offsets,
+                ref hnsw_m,
+                bits_per_unsorted,
+            } => {
+                let (start, end) = offsets.read_pair(idx).unwrap();
+                let iter = iterate_packed_links(
+                    &neighbors[start as usize..end as usize],
+                    bits_per_unsorted,
+                    hnsw_m.level_m(level),
+                );
+                let capacity = iter.max_len();
+                out.reserve(capacity);
+                let base = out.len();
+                let dst = out.as_mut_ptr();
+                let written = iter.fold(0usize, |i, link| {
+                    if i < capacity {
+                        // SAFETY: `base + i < base + capacity`, which `reserve` allocated.
+                        unsafe { dst.add(base + i).write(link) };
+                    }
+                    i + 1
+                });
+                debug_assert!(written <= capacity);
+                // SAFETY: the first `min(written, capacity)` slots past `base` were written.
+                unsafe { out.set_len(base + written.min(capacity)) };
+            }
+            CompressionInfo::CompressedWithVectors { .. } => {
+                out.extend(self.links(point_id, level));
+            }
+        }
+    }
+
     pub(super) fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
         let idx = self.offset_idx(point_id, level);
         match self.compression {

@@ -180,6 +180,17 @@ impl GraphLinks {
         self.links(point_id, level).for_each(f);
     }
 
+    /// Append the links of `point_id` at `level` to `out`, as [`Self::links`] yields them.
+    #[inline]
+    pub fn links_into(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+        out: &mut Vec<PointOffsetType>,
+    ) {
+        self.view().links_into(point_id, level, out);
+    }
+
     #[inline]
     pub fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator<'_> {
         self.view().links(point_id, level)
