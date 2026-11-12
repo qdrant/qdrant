@@ -1,3 +1,4 @@
+mod clean_fenced_delete;
 mod deferred_points_dedup;
 mod deferred_points_tests;
 mod delete_vector_name_replay;
