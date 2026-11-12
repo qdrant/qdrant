@@ -5,6 +5,8 @@ pub mod config;
 mod delete_only;
 mod edge_shard;
 #[cfg(feature = "serverless")]
+mod id_tracker;
+#[cfg(feature = "serverless")]
 mod read_only;
 mod read_view;
 mod reexports;
@@ -32,6 +34,8 @@ pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 #[cfg(feature = "serverless")]
 pub use delete_only::DeleteOnlyEdgeShard;
 pub use edge_shard::EdgeShard;
+#[cfg(feature = "serverless")]
+pub use id_tracker::{PointCounts, ReadOnlyIdTracker};
 #[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
