@@ -6,7 +6,6 @@ use std::sync::Arc;
 use slab::Slab;
 
 use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
-use crate::ambient::hw::HwMetric;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -324,7 +323,6 @@ where
         range: Range<u64>,
         _align: usize,
     ) -> UioResult<()> {
-        HwMetric::RemoteIoCachedRead.bump(range.clone().count());
         let state = file.state()?;
         match pick_source::<P>(state.local, range.clone())? {
             Source::Local {
