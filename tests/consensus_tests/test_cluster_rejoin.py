@@ -38,8 +38,11 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
     # Repeatedly drop, re-create collection and add data to it to accumulate Raft log entries
     for i in range(0, 2):
         print(f"creating collection {i}")
-        # Drop test_collection
-        drop_collection(peer_api_uris[0], "test_collection", timeout=5)
+        # Drop test_collection. The loop only exists to accumulate Raft log entries, so we
+        # tolerate a failed drop the same way we tolerate a failed create below: under CI load,
+        # creating a collection can block the consensus thread on every peer for several
+        # seconds, and the drop proposed meanwhile may not be applied within the timeout.
+        drop_collection(peer_api_uris[0], "test_collection", timeout=5, fail_on_error=False)
         # Re-create test_collection. The 3s timeout is intentionally tight to keep the loop
         # fast; under CI load the consensus apply can exceed it even though the operation
         # eventually commits, so we tolerate an HTTP timeout here.
@@ -70,8 +73,8 @@ def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
     # Repeatedly drop, re-create collection and add data to it to accumulate Raft log entries
     for i in range(0, 5):
         print(f"after recovery start {i}")
-        # Drop test_collection
-        drop_collection(peer_api_uris[0], "test_collection", timeout=5)
+        # Drop test_collection. Same rationale as above for tolerating HTTP timeouts.
+        drop_collection(peer_api_uris[0], "test_collection", timeout=5, fail_on_error=False)
         # Re-create test_collection. Same rationale as above for tolerating HTTP timeouts.
         create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3, fail_on_error=False)
         upsert_random_points(peer_api_uris[0], 500, fail_on_error=False)

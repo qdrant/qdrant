@@ -639,25 +639,17 @@ impl Consensus {
 
             // Calculate how many ticks we should *report* to Raft node.
             //
-            // If last iteration of the loop took too long to complete, and we report all elapsed
-            // ticks to Raft node, it might trigger unnecessary leader election.
+            // If the last iteration of the loop took too long (e.g., applying a slow operation),
+            // reporting all elapsed ticks at once would immediately trigger a leader election,
+            // even if the leader is alive. So we cap how many ticks we report per iteration.
+            // If the leader is really gone, the election is triggered a few iterations later.
             //
-            // To prevent this, we check if we received new Raft messages (i.e., we are still
-            // connected to Raft leader), and cap how many ticks we report to Raft node.
-            //
-            // By default, election is triggered if no Raft messages were received for 20 ticks,
-            // so we report at most 15 ticks.
+            // Election is triggered after `election_tick` ticks without Raft messages (20 by
+            // default), so we report at most `election_tick - 5` ticks (15 by default).
             //
             // See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.
-            let report_ticks = if raft_messages > 0 {
-                // Default `election_tick` is 20, so expected value here is 15
-                let max_elapsed_ticks =
-                    cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
-
-                cmp::min(elapsed_ticks, max_elapsed_ticks as u32)
-            } else {
-                elapsed_ticks
-            };
+            let max_elapsed_ticks = cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+            let report_ticks = cmp::min(elapsed_ticks, max_elapsed_ticks as u32);
 
             // Report elapsed ticks to Raft node
             for _ in 0..report_ticks {

@@ -184,12 +184,13 @@ def create_collection(
         assert_http_ok(r_batch)
 
 
-def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}):
+def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}, fail_on_error=True):
     # Delete collection in peer_url
     r_delete = requests.delete(
         f"{peer_url}/collections/{collection}?timeout={timeout}", headers=headers
     )
-    assert_http_ok(r_delete)
+    if fail_on_error:
+        assert_http_ok(r_delete)
 
 
 def create_field_index(
