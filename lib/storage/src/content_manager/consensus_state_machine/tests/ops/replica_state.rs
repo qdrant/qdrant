@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use collection::operations::cluster_ops::ReshardingDirection;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardState;
-use collection::shards::transfer::ShardTransferMethod;
+use collection::shards::shard::PeerId;
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 #[cfg(feature = "staging")]
 use uuid::Uuid;
 
@@ -162,6 +163,90 @@ fn set_shard_replica_state_dead_aborts_scale_up() {
     let collection = machine.state().collection(COLLECTION).expect("collection");
     assert!(!collection.shards.contains_key(&1));
     assert!(collection.resharding.is_none());
+}
+
+/// The scale-up target is `Active` while migrations into it are still registered,
+/// and it is sending an ordinary replication of the new shard
+#[test]
+fn set_shard_replica_state_dead_scale_up_target_aborts_every_transfer() {
+    const RECEIVER_PEER_ID: PeerId = 44;
+
+    let key = resharding_key(ReshardingDirection::Up, 2);
+    let mut state = auto_resharding_state(3);
+    for peer_id in [PEER_ID, OTHER_PEER_ID, RECEIVER_PEER_ID] {
+        add_peer(&mut state, peer_id, Some("1.20.0"));
+    }
+
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.resharding = Some(ReshardState::new(
+        key.uuid,
+        key.direction,
+        key.peer_id,
+        key.shard_id,
+        key.shard_key.clone(),
+    ));
+    collection.shards.get_mut(&2).expect("shard").replicas = HashMap::from([
+        (PEER_ID, ReplicaState::Active),
+        (OTHER_PEER_ID, ReplicaState::Active),
+        (RECEIVER_PEER_ID, ReplicaState::Partial),
+    ]);
+
+    // Aborting the first migration drops shard 2 and unregisters the second one.
+    // The replication is not related to resharding, so the Dead write must abort it.
+    for shard_id in [0, 1] {
+        collection.transfers.insert(ShardTransfer {
+            shard_id,
+            to_shard_id: Some(2),
+            from: PEER_ID,
+            to: PEER_ID,
+            sync: false,
+            method: Some(ShardTransferMethod::ReshardingStreamRecords),
+            filter: None,
+        });
+    }
+    collection.transfers.insert(ShardTransfer {
+        shard_id: 2,
+        to_shard_id: None,
+        from: PEER_ID,
+        to: RECEIVER_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::StreamRecords),
+        filter: None,
+    });
+
+    let operation =
+        set_replica_state_op(2, PEER_ID, ReplicaState::Dead, Some(ReplicaState::Active));
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&operation);
+
+    let Ok(Plan { actions, .. }) = outcome else {
+        panic!("marking a scale-up target dead should be accepted, got {outcome:?}");
+    };
+    assert!(
+        !actions.iter().any(|action| matches!(
+            action,
+            Action::SetReplicaState {
+                state: ReplicaState::Dead,
+                ..
+            }
+        )),
+        "the dropped shard must not get a final Dead write: {actions:?}",
+    );
+
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert!(!collection.shards.contains_key(&2));
+    assert!(collection.resharding.is_none());
+    assert!(
+        collection.transfers.is_empty(),
+        "every transfer must be aborted, got {:?}",
+        collection.transfers,
+    );
+
+    let replay = machine.plan(&operation);
+    assert!(
+        matches!(replay, Err(StorageError::NotFound { .. })),
+        "{replay:?}"
+    );
 }
 
 #[test]

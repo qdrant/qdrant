@@ -1660,16 +1660,20 @@ impl ClusterState {
                 let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
+            }
 
-                let shard_exists = planned
-                    .collection(&collection)
-                    .expect("collection exists")
-                    .shards
-                    .contains_key(&shard_id);
+            // Keep aborting after a resharding abort drops the shard: an ordinary transfer of
+            // the dropped shard is not related to resharding, so the resharding abort leaves it
+            // registered. The retained handler aborts it too, then fails its final write to the
+            // dropped shard. Skip that write instead, as the resharding branch above does.
+            let shard_exists = planned
+                .collection(&collection)
+                .expect("collection exists")
+                .shards
+                .contains_key(&shard_id);
 
-                if !shard_exists {
-                    return Ok(actions);
-                }
+            if !shard_exists {
+                return Ok(actions);
             }
         }
 
