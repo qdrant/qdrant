@@ -5,8 +5,10 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use collection::profiling::interface::init_requests_profile_collector;
+use common::ambient::AmbientFutureExt;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
+use common::reason::reason;
 #[cfg(jemalloc)]
 use tikv_jemallocator::Jemalloc;
 
@@ -186,7 +188,7 @@ fn main() {
     }
     let runtime = builder.build().expect("failed to build tokio runtime");
 
-    runtime.block_on(run_main(args));
+    runtime.block_on(run_main(args).unmeasured(reason("Soak test binary")));
 }
 
 async fn run_main(args: Args) {

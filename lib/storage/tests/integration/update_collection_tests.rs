@@ -23,7 +23,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard_trait::WaitUntil;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
@@ -104,6 +104,7 @@ fn update_collection_reject_mid_operation() {
 /// the optimizers.
 #[test]
 fn unchanged_update_triggers_optimizers_after_restart() {
+    let _scope = ambient::test_guard();
     check_update_after_restart(|handle, dispatcher| {
         let update = UpdateCollection {
             optimizers_config: Some(unchanged_optimizers()),
@@ -117,6 +118,7 @@ fn unchanged_update_triggers_optimizers_after_restart() {
 /// for the update in distributed mode.
 #[test]
 fn unchanged_update_action_triggers_optimizers_after_restart() {
+    let _scope = ambient::test_guard();
     check_update_after_restart(|_handle, dispatcher| {
         let pass = new_unchecked_verification_pass();
         dispatcher

@@ -16,7 +16,7 @@ use collection::operations::types::{
 };
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use fs_err::File;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -203,6 +203,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_loading() {
+    let _scope = ambient::async_test_guard();
     test_collection_loading_with_shards(1).await;
     test_collection_loading_with_shards(N_SHARDS).await;
 }
@@ -938,6 +939,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_local_load_initializing_not_stuck() {
+    let _scope = ambient::async_test_guard();
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     // Create and unload collection

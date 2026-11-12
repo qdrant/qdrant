@@ -44,7 +44,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _scope = self.handoff.enter_guard();
         if searches.is_empty() {
             return Ok(Vec::new());
         }

@@ -17,7 +17,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         texts: &[TextSearchRequestInternal],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let _scope = self.handoff.enter_guard();
         texts.iter().map(|text| self.text_search(text)).collect()
     }
 
