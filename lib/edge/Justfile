@@ -58,7 +58,7 @@ rs-examples-list:
 py-build:
   unset VIRTUAL_ENV
   uv venv --allow-existing
-  uv pip install requests
+  uv pip install requests numpy
   maturin develop --no-default-features --features abi3
 
 # 🐍 Run Python examples; Specify example with `-e examples/demo.py`
