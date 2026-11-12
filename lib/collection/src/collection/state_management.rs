@@ -213,13 +213,15 @@ impl Collection {
                 );
             }
 
+            // Save before updating config in memory. If saving fails, the in-memory config
+            // must stay unchanged, so retrying the same state applies and saves it again,
+            // instead of seeing no changes.
+            new_config.save(&self.path)?;
             *config = new_config;
 
             // We need to recreate optimizers, if "core" config was updated
             recreate_optimizers = is_core_config_updated;
         }
-
-        self.collection_config.read().await.save(&self.path)?;
 
         self.print_warnings().await;
 
