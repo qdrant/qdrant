@@ -87,7 +87,13 @@ pub struct Change {
 }
 
 impl ConsensusStateDiff {
-    pub fn apply(self, state: &mut SnapshotData, report: &mut PatchReport) -> StorageResult<()> {
+    /// `this_peer_id` is the peer the patched state belongs to
+    pub fn apply(
+        self,
+        state: &mut SnapshotData,
+        this_peer_id: PeerId,
+        report: &mut PatchReport,
+    ) -> StorageResult<()> {
         let Self {
             collections,
             aliases,
@@ -120,7 +126,7 @@ impl ConsensusStateDiff {
                         )));
                     };
 
-                    diff.apply(collection, state_addresses, &path, report)?;
+                    diff.apply(collection, state_addresses, this_peer_id, &path, report)?;
                 }
 
                 CollectionDiff::Delete => {
@@ -240,6 +246,7 @@ impl CollectionStateDiff {
         self,
         state: &mut State,
         peers: &PeerAddressById,
+        this_peer_id: PeerId,
         path: &str,
         report: &mut PatchReport,
     ) -> StorageResult<()> {
@@ -344,6 +351,22 @@ impl CollectionStateDiff {
         }
 
         if let Some(transfers) = transfers {
+            // Only the source peer drives a transfer, and it starts doing so when it applies the
+            // consensus operation that starts the transfer. Raft snapshot application aborts
+            // new transfers from this peer through consensus instead, see
+            // `Collection::apply_shard_transfers`.
+            let outgoing_transfer = transfers
+                .difference(state_transfers)
+                .find(|transfer| transfer.from == this_peer_id);
+
+            if let Some(transfer) = outgoing_transfer {
+                return Err(StorageError::bad_request(format!(
+                    "can't add transfer of shard {} from this peer {this_peer_id} to peer {} \
+                     to {path}: transfers from this peer can only be started through consensus",
+                    transfer.shard_id, transfer.to,
+                )));
+            }
+
             replace(
                 state_transfers,
                 transfers,

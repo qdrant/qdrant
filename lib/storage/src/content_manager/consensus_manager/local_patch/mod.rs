@@ -26,7 +26,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         let mut state = self.consensus_state_data();
         let mut report = PatchReport::default();
-        diff.apply(&mut state, &mut report)?;
+        diff.apply(&mut state, self.this_peer_id(), &mut report)?;
 
         if mode == PatchMode::DryRun {
             return Ok(report);

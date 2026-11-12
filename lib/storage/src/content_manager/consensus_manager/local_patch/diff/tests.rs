@@ -507,6 +507,46 @@ fn resharding_without_hash_ring_is_rejected() {
 }
 
 #[test]
+fn new_transfer_from_this_peer_is_rejected() {
+    let transfer = |from: PeerId, to: PeerId| json!({ "shard_id": 0, "from": from, "to": to, "sync": true, "method": "stream_records" });
+    let set_transfers = |transfers: Vec<Value>| json!({ "collections": { COLLECTION: { "update": { "transfers": transfers } } } });
+
+    // New transfer from this peer is rejected
+    let error = rejected(
+        &mut state(),
+        set_transfers(vec![transfer(PEER_ID, OTHER_PEER_ID)]),
+    );
+    assert!(error.contains("from this peer"), "{error}");
+
+    // New transfer to this peer is accepted, existing transfer from this peer is kept
+    let mut state = state();
+    apply(
+        &mut state,
+        set_transfers(vec![transfer(OTHER_PEER_ID, PEER_ID)]),
+    )
+    .unwrap();
+
+    state
+        .collections_data
+        .collections
+        .get_mut(COLLECTION)
+        .unwrap()
+        .transfers
+        .insert(serde_json::from_value(transfer(PEER_ID, OTHER_PEER_ID)).unwrap());
+
+    let report = apply(
+        &mut state,
+        set_transfers(vec![transfer(PEER_ID, OTHER_PEER_ID)]),
+    )
+    .unwrap();
+
+    let transfers = &state.collections_data.collections[COLLECTION].transfers;
+    assert_eq!(transfers.len(), 1);
+    assert!(transfers.iter().all(|transfer| transfer.from == PEER_ID));
+    assert_eq!(report.changes.len(), 1);
+}
+
+#[test]
 fn pre_existing_shard_layout_violations_dont_block_changes() {
     let mut state = custom_sharding_state();
 
@@ -610,7 +650,7 @@ fn apply(state: &mut SnapshotData, diff: Value) -> StorageResult<PatchReport> {
     let diff: ConsensusStateDiff = serde_json::from_value(diff).expect("valid diff");
 
     let mut report = PatchReport::default();
-    diff.apply(state, &mut report)?;
+    diff.apply(state, PEER_ID, &mut report)?;
 
     Ok(report)
 }
