@@ -247,14 +247,40 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(wrapped_results)
     }
 
+    /// Resolved by the wrapped segment, in the view `search_batch` gives it: a search on a stale
+    /// vector doesn't evaluate the filter, and the filter is redacted the same way. Proxy
+    /// deletions are left out of the resolved points: `search_batch` still applies them on top,
+    /// through the deleted mask or a `must_not` of their ids.
+    ///
+    /// The points are only guaranteed valid while the wrapped segment doesn't change. It doesn't
+    /// while this proxy is installed and read-locked: changes reach it only through
+    /// `propagate_to_wrapped`, which holds this proxy's write lock. A search still holding this
+    /// proxy after it was unwrapped can see the wrapped segment change between this call and its
+    /// search, and then search with points resolved just before the change.
     fn share_filter(
         &self,
-        _filter: &Filter,
-        _users: &[FilterUser<'_>],
-        _query_context: &SegmentQueryContext,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
     ) -> OperationResult<Option<Filter>> {
-        // Two segments, with offsets of their own: one set of offsets can't stand for both
-        Ok(None)
+        let vector_name_changes = self.pending_changes.vector_name_changes();
+
+        // `search_batch` returns nothing for these without evaluating the filter
+        let users: Vec<FilterUser<'_>> = users
+            .iter()
+            .filter(|user| !vector_name_changes.is_wrapped_data_stale(user.vector_name))
+            .copied()
+            .collect();
+        if users.len() < 2 {
+            return Ok(None);
+        }
+
+        let filter = vector_name_changes.redact_filter(filter);
+
+        self.wrapped_segment
+            .get()
+            .read()
+            .share_filter(&filter, &users, query_context)
     }
 
     fn score_bm25(
