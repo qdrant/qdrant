@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
+use common::ambient::AmbientFutureExt;
 use common::fs::read_json;
 use common::storage_version::StorageVersion as _;
 use common::tar_ext::BuilderExt;
@@ -393,18 +394,21 @@ impl Collection {
         // `ShardHolder::restore_shard_snapshot` is *not* cancel-safe,
         // it must be spawned onto runtime
         let collection_path = self.path.clone();
-        let restore = self.update_runtime.spawn(async move {
-            shard_holder
-                .restore_shard_snapshot(
-                    snapshot_temp_dir.path(),
-                    recovery_type,
-                    &collection_path,
-                    shard_id,
-                    recovery_progress,
-                    cancel,
-                )
-                .await
-        });
+        let restore = self.update_runtime.spawn(
+            async move {
+                shard_holder
+                    .restore_shard_snapshot(
+                        snapshot_temp_dir.path(),
+                        recovery_type,
+                        &collection_path,
+                        shard_id,
+                        recovery_progress,
+                        cancel,
+                    )
+                    .await
+            }
+            .in_current_ambient(),
+        );
 
         // Flatten nested `Result<Result<()>>` into `Result<()>`
         let restore = async move {

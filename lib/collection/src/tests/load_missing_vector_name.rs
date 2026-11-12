@@ -8,7 +8,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
@@ -36,6 +36,7 @@ const COLLECTION_NAME: &str = "test";
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn load_creates_vector_missing_from_segment() {
+    let _scope = ambient::async_test_guard();
     let collection_dir = Builder::new().prefix("lmv_coll").tempdir().unwrap();
     let snapshots_dir = Builder::new().prefix("lmv_snap").tempdir().unwrap();
 

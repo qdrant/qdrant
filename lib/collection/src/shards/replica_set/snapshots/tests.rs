@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -235,6 +235,7 @@ async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_di
 /// ```
 #[tokio::test(flavor = "multi_thread")]
 async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
+    let _scope = ambient::async_test_guard();
     let target_collection_dir = Builder::new()
         .prefix("concurrent-recovery-target")
         .tempdir()
@@ -264,30 +265,33 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
         let replica_set = Arc::clone(&target_replica_set);
         let collection_path = target_collection_dir.path().to_path_buf();
 
-        tokio::spawn(async move {
-            let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
+        tokio::spawn(
+            async move {
+                let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
-            replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
-                .await
-                .unwrap();
+                replica_set
+                    .clear_local_for_snapshot_recovery(&collection_path)
+                    .await
+                    .unwrap();
 
-            let _ = stalled_cleared_tx.send(());
+                let _ = stalled_cleared_tx.send(());
 
-            // Stall until the retry is done - or, once recoveries are serialized, until
-            // it is clear the retry cannot proceed because it is waiting on this lock.
-            let _ = tokio::time::timeout(STALLED_RECOVERY_TIMEOUT, retry_done_rx).await;
+                // Stall until the retry is done - or, once recoveries are serialized, until
+                // it is clear the retry cannot proceed because it is waiting on this lock.
+                let _ = tokio::time::timeout(STALLED_RECOVERY_TIMEOUT, retry_done_rx).await;
 
-            replica_set
-                .restore_local_replica_from(
-                    &stalled_snapshot,
-                    RecoveryType::Full,
-                    &collection_path,
-                    cancel::CancellationToken::new(),
-                )
-                .await
-                .unwrap()
-        })
+                replica_set
+                    .restore_local_replica_from(
+                        &stalled_snapshot,
+                        RecoveryType::Full,
+                        &collection_path,
+                        cancel::CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap()
+            }
+            .in_current_ambient(),
+        )
     };
 
     // The retry lands while the stalled recovery is in flight.
@@ -297,36 +301,39 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
         let replica_set = Arc::clone(&target_replica_set);
         let collection_path = target_collection_dir.path().to_path_buf();
 
-        tokio::spawn(async move {
-            let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
+        tokio::spawn(
+            async move {
+                let _recovery_lock = replica_set.take_snapshot_recovery_lock().await;
 
-            replica_set
-                .clear_local_for_snapshot_recovery(&collection_path)
-                .await
-                .unwrap();
+                replica_set
+                    .clear_local_for_snapshot_recovery(&collection_path)
+                    .await
+                    .unwrap();
 
-            let restored = replica_set
-                .restore_local_replica_from(
-                    &retry_snapshot,
-                    RecoveryType::Full,
-                    &collection_path,
-                    cancel::CancellationToken::new(),
-                )
-                .await
-                .unwrap();
+                let restored = replica_set
+                    .restore_local_replica_from(
+                        &retry_snapshot,
+                        RecoveryType::Full,
+                        &collection_path,
+                        cancel::CancellationToken::new(),
+                    )
+                    .await
+                    .unwrap();
 
-            // The retry reported success, so its caller acts on it: the sender switches
-            // the transfer to `Partial` and flushes its queue proxy into the shard.
-            replica_set
-                .set_replica_state(TEST_PEER_ID, ReplicaState::Partial)
-                .await
-                .unwrap();
-            upsert_point(&replica_set, 42).await;
+                // The retry reported success, so its caller acts on it: the sender switches
+                // the transfer to `Partial` and flushes its queue proxy into the shard.
+                replica_set
+                    .set_replica_state(TEST_PEER_ID, ReplicaState::Partial)
+                    .await
+                    .unwrap();
+                upsert_point(&replica_set, 42).await;
 
-            let _ = retry_done_tx.send(());
+                let _ = retry_done_tx.send(());
 
-            restored
-        })
+                restored
+            }
+            .in_current_ambient(),
+        )
     };
 
     assert!(
