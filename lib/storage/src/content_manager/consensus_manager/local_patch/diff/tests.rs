@@ -218,6 +218,42 @@ fn compatible_collection_config_is_replaced() {
 }
 
 #[test]
+fn collection_creation_time_is_ignored() {
+    let mut state = state();
+    let original_config = state.collections_data.collections[COLLECTION]
+        .config
+        .clone();
+
+    let mut config = original_config.clone();
+    config.created_at = Some(chrono::Utc::now());
+
+    let report = apply(
+        &mut state,
+        json!({ "collections": { COLLECTION: { "update": { "config": config } } } }),
+    )
+    .unwrap();
+
+    assert!(report.changes.is_empty(), "{report:?}");
+    assert_eq!(
+        state.collections_data.collections[COLLECTION].config,
+        original_config,
+    );
+
+    // Creation time is kept, if other config changes are applied
+    config.params.replication_factor = 3.try_into().unwrap();
+
+    apply(
+        &mut state,
+        json!({ "collections": { COLLECTION: { "update": { "config": config } } } }),
+    )
+    .unwrap();
+
+    let patched_config = &state.collections_data.collections[COLLECTION].config;
+    assert_eq!(patched_config.params, config.params);
+    assert_eq!(patched_config.created_at, original_config.created_at);
+}
+
+#[test]
 fn alias_to_missing_collection_is_rejected() {
     let error = rejected(
         &mut state(),

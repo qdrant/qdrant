@@ -55,7 +55,9 @@ pub enum CollectionDiff {
 #[serde(deny_unknown_fields)]
 pub struct CollectionStateDiff {
     /// UUID and incompatible params can't be changed: Raft snapshot application would
-    /// recreate the collection empty
+    /// recreate the collection empty.
+    ///
+    /// `created_at` is ignored, the collection keeps its own.
     pub config: Option<CollectionConfigInternal>,
     pub shards: Option<HashMap<ShardId, Option<ShardInfoDiff>>>,
     /// Outer `None` = unchanged, `Some(None)` = clear resharding
@@ -278,7 +280,12 @@ impl CollectionStateDiff {
             payload_index_schema: state_payload_index_schema,
         } = state;
 
-        if let Some(config) = config {
+        if let Some(mut config) = config {
+            // Raft snapshot application ignores creation time, so a patch changing only
+            // creation time would be reported, but never applied. Copying a config from
+            // another peer shouldn't be rejected for it either.
+            config.created_at = state_config.created_at;
+
             if config.uuid != state_config.uuid {
                 return Err(StorageError::bad_request(format!(
                     "can't update {path}: collection UUID can't be changed",
