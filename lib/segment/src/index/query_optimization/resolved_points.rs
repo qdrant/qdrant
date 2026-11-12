@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use super::point_set::PointSet;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::CardinalityEstimation;
 use crate::types::{Condition, Filter};
 
 /// Offsets of the points of one segment that match a filter.
@@ -31,15 +32,37 @@ pub struct ResolvedPoints {
     points: Arc<PointSet>,
     /// Cached [`PointSet::len`], which counts the bits of a bitset
     len: usize,
+    /// `(min, exp, max)` estimated for the original filter, widened to include `len`
+    planning_estimate: (usize, usize, usize),
 }
 
 impl ResolvedPoints {
-    pub fn new(segment_uuid: Uuid, points: PointSet) -> Self {
+    /// `estimation` is the cardinality estimated for the filter the points were resolved
+    /// from. Searches plan with it, so they make the same choices as with that filter.
+    pub fn new(segment_uuid: Uuid, points: PointSet, estimation: &CardinalityEstimation) -> Self {
         let len = points.len();
+        let CardinalityEstimation {
+            primary_clauses: _,
+            min,
+            exp,
+            max,
+        } = *estimation;
         Self {
             segment_uuid,
             points: Arc::new(points),
             len,
+            planning_estimate: (min.min(len), exp, max.max(len)),
+        }
+    }
+
+    /// The cardinality of the original filter, with the resolved points as primary clause.
+    pub fn estimation(&self) -> CardinalityEstimation {
+        let (min, exp, max) = self.planning_estimate;
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min,
+            exp,
+            max,
         }
     }
 
@@ -66,10 +89,12 @@ impl fmt::Debug for ResolvedPoints {
             segment_uuid,
             points: _,
             len,
+            planning_estimate,
         } = self;
         f.debug_struct("ResolvedPoints")
             .field("segment_uuid", segment_uuid)
             .field("len", len)
+            .field("planning_estimate", planning_estimate)
             .finish_non_exhaustive()
     }
 }

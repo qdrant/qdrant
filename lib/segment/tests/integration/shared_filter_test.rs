@@ -11,8 +11,8 @@ use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
-use rand::SeedableRng;
 use rand::prelude::StdRng;
+use rand::{RngExt, SeedableRng};
 use segment::data_types::filter_user::FilterUser;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -35,7 +35,7 @@ use segment::segment_constructor::simple_segment_constructor::{
 };
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    SeqNumberType, WithPayload,
+    Range, SeqNumberType, WithPayload,
 };
 use tempfile::Builder;
 
@@ -183,6 +183,150 @@ fn test_shared_filter_is_rejected_by_other_segment() {
 
 /// HNSW checks every candidate below the full scan threshold and only the points it visits
 /// above it. The resolved filter must give the same results as the filter on both paths.
+fn build_hnsw(
+    segment: &Segment,
+    hnsw_config: HnswConfig,
+    path: &std::path::Path,
+    rng: &mut StdRng,
+) -> HNSWIndex {
+    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
+    let stopped = AtomicBool::new(false);
+    let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
+    HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path,
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_data.vector_storage.clone(),
+            quantized_vectors: vector_data.quantized_vectors.clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit: Arc::new(ResourcePermit::dummy(permit_cpu_count as u32)),
+            old_indices: &[],
+            gpu_device: None,
+            rng,
+            stopped: &stopped,
+            hnsw_global_config: &HnswGlobalConfig::default(),
+            feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
+            progress: ProgressTracker::new_for_test(),
+        },
+    )
+    .unwrap()
+}
+
+/// A nested filter has a loose estimate, so the search samples to choose between plain and
+/// graph search, while the resolved points are counted exactly. Near the full scan threshold
+/// the two can disagree, and a graph search there finds other points than a plain one. The
+/// resolved filter reports the original filter's estimate, so the search plans the same way.
+#[test]
+fn test_hnsw_resolved_filter_plans_like_original() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(1);
+    let dim = 8;
+    let num_points = 4_000;
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
+    segment
+        .create_field_index(
+            0,
+            &JsonPath::new("items[].cat"),
+            Some(&PayloadSchemaType::Integer.into()),
+        )
+        .unwrap();
+    segment
+        .create_field_index(
+            0,
+            &JsonPath::new("items[].val"),
+            Some(&PayloadSchemaType::Integer.into()),
+        )
+        .unwrap();
+    for n in 0..num_points {
+        let vector = random_vector(&mut rng, dim);
+        segment
+            .upsert_point(n as SeqNumberType, n.into(), only_default_vector(&vector))
+            .unwrap();
+        let items: Vec<_> = (0..3)
+            .map(|_| serde_json::json!({"cat": rng.random_range(0..5), "val": rng.random_range(0..1000)}))
+            .collect();
+        segment
+            .set_full_payload(
+                n as SeqNumberType,
+                n.into(),
+                &payload_json! {"items": items},
+            )
+            .unwrap();
+    }
+
+    // 16 KB of 8-dim f32 vectors: a full scan threshold of 512 points
+    let hnsw_config = HnswConfig {
+        memory: None,
+        m: 16,
+        ef_construct: 100,
+        full_scan_threshold: 16,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let hnsw_index = build_hnsw(&segment, hnsw_config, hnsw_dir.path(), &mut rng);
+    let stopped = AtomicBool::new(false);
+
+    let queries: Vec<QueryVector> = (0..5)
+        .map(|_| QueryVector::from(random_vector(&mut rng, dim)))
+        .collect();
+    let query_refs: Vec<&QueryVector> = queries.iter().collect();
+
+    // From well below to well above the threshold
+    for max_val in (100..=400).step_by(10) {
+        let filter = Filter::new_must(Condition::new_nested(
+            JsonPath::new("items"),
+            Filter {
+                must: Some(vec![
+                    Condition::Field(FieldCondition::new_match(JsonPath::new("cat"), 0.into())),
+                    Condition::Field(FieldCondition::new_range(
+                        JsonPath::new("val"),
+                        Range {
+                            lt: Some(f64::from(max_val).into()),
+                            ..Default::default()
+                        },
+                    )),
+                ]),
+                should: None,
+                min_should: None,
+                must_not: None,
+            },
+        ));
+        let (cardinality, points) = segment.payload_index.borrow().with_view(|view| {
+            let cardinality = view.estimate_cardinality(&filter).unwrap();
+            let points = view.query_points(&filter, &stopped).unwrap();
+            (cardinality, points)
+        });
+        let set = PointSet::union(
+            vec![points],
+            PointSetContext::by_density(num_points as usize),
+        );
+        let resolved = Filter::new_must(Condition::ResolvedPoints(ResolvedPoints::new(
+            segment.segment_uuid(),
+            set,
+            &cardinality,
+        )));
+
+        let search = |filter: &Filter| {
+            hnsw_index
+                .search(&query_refs, Some(filter), 50, None, &Default::default())
+                .unwrap()
+        };
+        assert_eq!(
+            search(&resolved),
+            search(&filter),
+            "items[].val < {max_val}"
+        );
+    }
+}
+
 #[test]
 fn test_hnsw_with_resolved_filter() {
     let _scope = ambient::test_guard();
@@ -221,32 +365,9 @@ fn test_hnsw_with_resolved_filter() {
         payload_m: None,
         inline_storage: None,
     };
-    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let hnsw_index = build_hnsw(&segment, hnsw_config, hnsw_dir.path(), &mut rng);
     let stopped = AtomicBool::new(false);
-    let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: vector_data.vector_storage.clone(),
-            quantized_vectors: vector_data.quantized_vectors.clone(),
-            payload_index: segment.payload_index.clone(),
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(permit_cpu_count as u32)),
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            inline_vectors: false,
-            progress: ProgressTracker::new_for_test(),
-        },
-    )
-    .unwrap();
 
     let queries: Vec<QueryVector> = (0..3)
         .map(|_| QueryVector::from(random_vector(&mut rng, dim)))
@@ -286,6 +407,7 @@ fn test_hnsw_with_resolved_filter() {
             let resolved = Filter::new_must(Condition::ResolvedPoints(ResolvedPoints::new(
                 segment.segment_uuid(),
                 set,
+                &cardinality,
             )));
 
             let resolved_cardinality = segment
@@ -299,7 +421,12 @@ fn test_hnsw_with_resolved_filter() {
                 max,
             } = resolved_cardinality;
             assert_eq!(primary_clauses.len(), 1);
-            assert_eq!((min, exp, max), (points.len(), points.len(), points.len()));
+            // The original filter's estimate, so the search plans the same way
+            assert_eq!(
+                (min, exp, max),
+                (cardinality.min, cardinality.exp, cardinality.max)
+            );
+            assert!(min <= points.len() && points.len() <= max);
 
             let search = |filter: &Filter| {
                 hnsw_index

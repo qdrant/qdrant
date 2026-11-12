@@ -187,7 +187,9 @@ where
                 cond.0.estimate_cardinality(self.available_point_count())
             }
 
-            Condition::ResolvedPoints(resolved) => CardinalityEstimation::exact(resolved.len())
+            // The original filter's estimate, so searches plan as they would with it
+            Condition::ResolvedPoints(resolved) => resolved
+                .estimation()
                 .with_primary_clause(PrimaryCondition::Points(resolved.clone())),
         })
     }

@@ -78,7 +78,7 @@ where
         check_stopped(is_stopped)?;
 
         Ok(Some(Filter::new_must(Condition::ResolvedPoints(
-            ResolvedPoints::new(self.segment_uuid, points),
+            ResolvedPoints::new(self.segment_uuid, points, &cardinality),
         ))))
     }
 }
