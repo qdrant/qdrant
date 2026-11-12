@@ -1,6 +1,6 @@
 //! Shard layout invariants that shard routing relies on
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use collection::collection_state::State;
@@ -22,6 +22,8 @@ pub(super) enum Violation {
     ShardWithManyKeys { shard_id: ShardId },
     /// Shard of a collection with custom sharding has no shard key, so it's not routed to
     ShardWithoutKey { shard_id: ShardId },
+    /// Resharding shard key has no hash ring. Rebuilding hash rings panics, also on load.
+    ReshardingWithoutRing { shard_key: Option<ShardKey> },
 }
 
 /// Find all shard layout inconsistencies of a collection
@@ -29,7 +31,7 @@ pub(super) fn violations(state: &State) -> Vec<Violation> {
     let State {
         config,
         shards,
-        resharding: _,
+        resharding,
         transfers: _,
         shards_key_mapping,
         payload_index_schema: _,
@@ -77,6 +79,29 @@ pub(super) fn violations(state: &State) -> Vec<Violation> {
         }
     }
 
+    // Same hash rings as `ShardHolder::rebuild_rings` builds
+    if let Some(resharding) = resharding {
+        let shard_id_to_key = shards_key_mapping.shard_id_to_shard_key();
+
+        let mut rings: HashSet<Option<&ShardKey>> = shards
+            .keys()
+            .map(|shard_id| shard_id_to_key.get(shard_id))
+            .collect();
+
+        match sharding_method {
+            ShardingMethod::Auto => {
+                rings.insert(None);
+            }
+            ShardingMethod::Custom => (),
+        }
+
+        if !rings.contains(&resharding.shard_key.as_ref()) {
+            violations.push(Violation::ReshardingWithoutRing {
+                shard_key: resharding.shard_key.clone(),
+            });
+        }
+    }
+
     violations
 }
 
@@ -103,6 +128,17 @@ impl fmt::Display for Violation {
             Self::ShardWithoutKey { shard_id } => write!(
                 f,
                 "shard {shard_id} has no shard key, but collection uses custom sharding",
+            ),
+            Self::ReshardingWithoutRing {
+                shard_key: Some(shard_key),
+            } => write!(
+                f,
+                "resharding is in progress for shard key {shard_key}, which has no shards",
+            ),
+            Self::ReshardingWithoutRing { shard_key: None } => write!(
+                f,
+                "resharding is in progress without shard key, \
+                 but collection uses custom sharding",
             ),
         }
     }

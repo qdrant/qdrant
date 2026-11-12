@@ -4,8 +4,10 @@ use std::collections::{HashMap, HashSet};
 
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::PeerMetadata;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::ReshardState;
 use collection::shards::shard::PeerId;
 use segment::types::ShardKey;
 use serde_json::{Value, json};
@@ -443,6 +445,65 @@ fn shard_key_with_auto_sharding_is_rejected() {
     );
 
     assert!(error.contains("auto sharding"), "{error}");
+}
+
+#[test]
+fn resharding_without_hash_ring_is_rejected() {
+    let resharding = |shard_key: Option<&str>| {
+        ReshardState::new(
+            uuid::Uuid::new_v4(),
+            ReshardingDirection::Up,
+            PEER_ID,
+            1,
+            shard_key.map(|key| ShardKey::from(key.to_string())),
+        )
+    };
+
+    // Shard key with auto sharding, or unknown shard key with custom sharding
+    let cases = [
+        (state(), resharding(Some("a"))),
+        (custom_sharding_state(), resharding(Some("b"))),
+        (custom_sharding_state(), resharding(None)),
+    ];
+
+    for (mut state, resharding) in cases {
+        let error = rejected(
+            &mut state,
+            json!({ "collections": { COLLECTION: { "update": { "resharding": resharding } } } }),
+        );
+        assert!(error.contains("resharding"), "{error}");
+    }
+
+    // Removing the last shard of a shard key, while resharding it
+    let mut resharding_state = custom_sharding_state();
+    resharding_state
+        .collections_data
+        .collections
+        .get_mut(COLLECTION)
+        .unwrap()
+        .resharding = Some(resharding(Some("a")));
+
+    let error = rejected(
+        &mut resharding_state,
+        json!({
+            "collections": {
+                COLLECTION: { "update": { "shards": { "0": null }, "shards_key_mapping": [] } },
+            },
+        }),
+    );
+    assert!(error.contains("resharding"), "{error}");
+
+    // Resharding of an existing hash ring is accepted
+    for (mut state, resharding) in [
+        (state(), resharding(None)),
+        (custom_sharding_state(), resharding(Some("a"))),
+    ] {
+        apply(
+            &mut state,
+            json!({ "collections": { COLLECTION: { "update": { "resharding": resharding } } } }),
+        )
+        .unwrap();
+    }
 }
 
 #[test]
