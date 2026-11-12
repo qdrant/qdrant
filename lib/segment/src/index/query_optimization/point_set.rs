@@ -94,6 +94,25 @@ impl PointSet {
         }
     }
 
+    /// A set of `points`, in any order and possibly repeated, written straight into the
+    /// representation `context` prefers for about `expected_len` points.
+    pub fn from_points(
+        points: impl IntoIterator<Item = PointOffsetType>,
+        expected_len: usize,
+        context: PointSetContext,
+    ) -> Self {
+        if context.prefer_bits(expected_len, false) {
+            let mut bits = BitVec::repeat(false, context.total_points);
+            for point in points {
+                set_bit(&mut bits, point);
+            }
+            return PointSet::Bits(bits);
+        }
+        let mut points: Vec<PointOffsetType> = points.into_iter().collect();
+        sort_unique(&mut points);
+        PointSet::Sorted(points)
+    }
+
     /// Points that match any of `postings`.
     pub fn union(postings: Vec<Vec<PointOffsetType>>, context: PointSetContext) -> Self {
         let total_len: usize = postings.iter().map(Vec::len).sum();
@@ -263,5 +282,19 @@ mod tests {
         let inter = PointSet::intersection(vec![a, b.clone()], ctx);
         assert!(matches!(inter, PointSet::Bits(_)));
         assert_eq!(members(&inter, total as u32), b);
+    }
+
+    #[test]
+    fn from_points_drops_order_and_repeats_in_both_representations() {
+        let points: Vec<PointOffsetType> = vec![9, 1, 3, 3, 42, 7, 1];
+        // Few points in a large segment: list. Checked many times: bitset.
+        let list = PointSet::from_points(points.clone(), points.len(), context(10_000_000, 0));
+        assert!(matches!(list, PointSet::Sorted(_)));
+        let bits = PointSet::from_points(points, 7, context(50, 1_000_000));
+        assert!(matches!(bits, PointSet::Bits(_)));
+        for set in [list, bits] {
+            assert_eq!(set.iter().collect::<Vec<_>>(), vec![1, 3, 7, 9, 42]);
+            assert_eq!(set.len(), 5);
+        }
     }
 }

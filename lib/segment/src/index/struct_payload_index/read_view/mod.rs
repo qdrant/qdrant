@@ -2,6 +2,7 @@ mod condition_converter;
 pub use condition_converter::IdsConditionChecker;
 mod filtering;
 mod materialization;
+mod materialize_filter;
 mod nested;
 pub use materialization::MaterializationHint;
 mod optimizer;

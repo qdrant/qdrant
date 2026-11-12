@@ -10,6 +10,7 @@ use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOff
 
 use super::StructPayloadIndexReadView;
 use super::materialization::MaterializationHint;
+use super::materialize_filter::primary_clauses_cover;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::IdTrackerRead;
@@ -23,6 +24,7 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::query_optimization::point_set::PointSet;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::json_path::JsonPath;
@@ -229,16 +231,7 @@ where
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators? {
-                // Primary clauses only come from positive conditions, so they never cover a
-                // `must_not` condition, even one equal to a primary clause. E.g. a proxy segment
-                // reads `HasId` of its deleted points as `must: HasId(ids), must_not: HasId(ids)`.
-                let all_conditions_are_primary = filter
-                    .must_not
-                    .as_ref()
-                    .is_none_or(|conditions| conditions.is_empty())
-                    && filter
-                        .iter_conditions()
-                        .all(|condition| query_cardinality.is_primary(condition));
+                let all_conditions_are_primary = primary_clauses_cover(filter, query_cardinality);
 
                 // Primary clause iterators come from field indexes and don't go through
                 // the mapping, so deferred filtering must be applied to them explicitly.
@@ -303,6 +296,23 @@ where
 
             Ok(EitherVariant::D(iter.take(first_n)))
         }
+    }
+
+    fn materialize_filter(
+        &self,
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+        expected_checks: usize,
+    ) -> OperationResult<PointSet> {
+        self.materialize_filter_points(
+            filter,
+            query_cardinality,
+            is_stopped,
+            deferred_behavior,
+            expected_checks,
+        )
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize> {

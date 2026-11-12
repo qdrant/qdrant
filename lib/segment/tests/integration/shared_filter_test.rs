@@ -311,3 +311,94 @@ fn test_hnsw_with_resolved_filter() {
         }
     }
 }
+
+/// A materialized filter holds exactly the points the filter iterates, on every filtering path
+/// (primary clauses only, primary clauses plus checks, full scan) and in both representations.
+#[test]
+fn test_materialize_filter_matches_query_points() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(42);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = two_vector_segment(dir.path(), &mut rng);
+
+    // An unindexed field, and deleted points the posting lists still hold
+    let op_num = NUM_POINTS as SeqNumberType;
+    for n in 0..NUM_POINTS {
+        let payload = payload_json! {"half": n % 2, "tenth": n % 10, "free": n % 3};
+        segment
+            .set_full_payload(op_num, n.into(), &payload)
+            .unwrap();
+    }
+    for n in (0..NUM_POINTS).step_by(7) {
+        segment.delete_point(op_num + 1, n.into()).unwrap();
+    }
+
+    let indexed = || match_filter("tenth", 3).must.unwrap().remove(0);
+    let unindexed = || match_filter("free", 1).must.unwrap().remove(0);
+    let filters = [
+        // Primary clause only
+        Filter::new_must(indexed()),
+        // Several primary clauses, with points in both
+        Filter {
+            should: Some(vec![
+                indexed(),
+                match_filter("half", 1).must.unwrap().remove(0),
+            ]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        },
+        // Primary clause and a checked condition
+        Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![indexed(), unindexed()]),
+            must_not: None,
+        },
+        // Primary clause and a negated one
+        Filter {
+            should: None,
+            min_should: None,
+            must: Some(vec![indexed()]),
+            must_not: Some(vec![unindexed()]),
+        },
+        // Full scan
+        Filter::new_must(unindexed()),
+    ];
+
+    let stopped = AtomicBool::new(false);
+    let payload_index = segment.payload_index.borrow();
+    payload_index.with_view(|view| {
+        for filter in &filters {
+            let mut expected = view.query_points(filter, &stopped).unwrap();
+            expected.sort_unstable();
+            expected.dedup();
+            assert!(!expected.is_empty(), "{filter:?}");
+
+            let cardinality = view.estimate_cardinality(filter).unwrap();
+            for expected_checks in [0, 1_000_000] {
+                let set = view
+                    .materialize_filter(
+                        filter,
+                        &cardinality,
+                        &stopped,
+                        common::types::DeferredBehavior::VisibleOnly,
+                        expected_checks,
+                    )
+                    .unwrap();
+                assert_eq!(set.iter().collect::<Vec<_>>(), expected, "{filter:?}");
+            }
+        }
+
+        // A stopped materialization fails instead of returning a partial set
+        let cardinality = view.estimate_cardinality(&filters[0]).unwrap();
+        let result = view.materialize_filter(
+            &filters[0],
+            &cardinality,
+            &AtomicBool::new(true),
+            common::types::DeferredBehavior::VisibleOnly,
+            0,
+        );
+        assert!(result.is_err());
+    });
+}

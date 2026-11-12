@@ -1,12 +1,10 @@
-use common::types::{DeferredBehavior, PointOffsetType};
+use common::types::DeferredBehavior;
 
-use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::filter_checks::{FilterChecks, worth_sharing};
-use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
+use crate::index::query_optimization::filter_checks::worth_sharing;
 use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -63,31 +61,20 @@ where
             return Ok(None);
         }
 
-        let is_stopped = query_context.is_stopped_flag();
-        // The visibility vector searches use
-        let points: Vec<PointOffsetType> = self
-            .payload_index
-            .iter_filtered_points(
-                filter,
-                &cardinality,
-                is_stopped,
-                DeferredBehavior::VisibleOnly,
-            )?
-            .collect();
-        // A stopped iteration ends early: never hand out a partial set
-        check_stopped(is_stopped)?;
-
+        // Only the searches that check points one at a time test the set: the others iterate
+        // it, since it is their filter's only primary clause
         let expected_checks = uses
             .iter()
-            .map(|checks| FilterChecks::cost(*checks, candidates))
+            .map(|checks| checks.lazy)
             .fold(0usize, usize::saturating_add);
-        let points = PointSet::union(
-            vec![points],
-            PointSetContext {
-                total_points: self.id_tracker.total_point_count(),
-                expected_checks,
-            },
-        );
+        // The visibility vector searches use
+        let points = self.payload_index.materialize_filter(
+            filter,
+            &cardinality,
+            query_context.is_stopped_flag(),
+            DeferredBehavior::VisibleOnly,
+            expected_checks,
+        )?;
         Ok(Some(Filter::new_must(Condition::ResolvedPoints(
             ResolvedPoints::new(self.segment_uuid, points),
         ))))
