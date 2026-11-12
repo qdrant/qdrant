@@ -803,6 +803,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6a120d2e16b3e1b4a24bd70f23b12d3e16b81f113364a26935f8db7245452d"
+
+[[package]]
 name = "binout"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1419,7 +1425,7 @@ dependencies = [
  "aligned-vec",
  "arc-swap",
  "atomicwrites",
- "bincode",
+ "bincode 3.0.0",
  "bitvec",
  "bytemuck",
  "chrono",
@@ -6858,7 +6864,7 @@ checksum = "6dd5030da3aba0ec731502f74ec38e63798eea6bc8b8ba5972129afe3eababd2"
 dependencies = [
  "antidote",
  "backtrace",
- "bincode",
+ "bincode 1.3.3",
  "lazy_static",
  "libc",
  "rstack",
@@ -7213,7 +7219,7 @@ dependencies = [
  "anyhow",
  "atomic_refcell",
  "atomicwrites",
- "bincode",
+ "bincode 3.0.0",
  "bitpacking",
  "bitvec",
  "blink-alloc",
@@ -7770,7 +7776,7 @@ dependencies = [
 name = "sparse"
 version = "0.1.0"
 dependencies = [
- "bincode",
+ "bincode 3.0.0",
  "bitpacking",
  "blink-alloc",
  "blobstore",
