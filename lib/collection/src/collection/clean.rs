@@ -14,9 +14,11 @@ use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
 use super::Collection;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::PointOperations;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::{SharedShardHolder, WeakShardHolder};
 use crate::shards::shard_trait::WaitUntil;
@@ -257,35 +259,45 @@ impl ShardCleanTask {
     }
 }
 
+/// Get a local shard from the shard holder
+///
+/// Only holds the shard holder read lock for a short moment, to clone the replica set and its hash
+/// ring router.
+pub(crate) async fn get_local_shard(
+    shard_holder: &WeakShardHolder,
+    shard_id: ShardId,
+) -> CollectionResult<(Arc<ShardReplicaSet>, HashRingRouter)> {
+    let Some(shard_holder) = shard_holder.upgrade() else {
+        return Err(CollectionError::not_found("Shard holder dropped"));
+    };
+    let shard_holder = shard_holder.read().await;
+    let Some(shard) = shard_holder.get_shard(shard_id) else {
+        return Err(CollectionError::not_found(format!(
+            "Shard {shard_id} not found",
+        )));
+    };
+    if !shard.is_local().await {
+        return Err(CollectionError::not_found(format!(
+            "Shard {shard_id} is not a local shard",
+        )));
+    }
+    let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
+        CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
+        ))
+    })?;
+
+    Ok((Arc::clone(shard), hashring.clone()))
+}
+
 /// Submit a no-op operation to a local shard and wait for it to be visible.
 ///
 /// The update queue is FIFO and per-shard, so when the no-op acks at
 /// `WaitUntil::Visible` every operation queued before it has also been
 /// applied to segments. This is used as a barrier to flush pending
-/// operations before we read segment state directly (e.g. via scroll).
-async fn drain_update_queue(
-    shard_holder: &WeakShardHolder,
-    shard_id: ShardId,
-) -> CollectionResult<()> {
-    let shard = {
-        let Some(shard_holder) = shard_holder.upgrade() else {
-            return Err(CollectionError::not_found("Shard holder dropped"));
-        };
-        let shard_holder = shard_holder.read().await;
-        let Some(shard) = shard_holder.get_shard(shard_id) else {
-            return Err(CollectionError::not_found(format!(
-                "Shard {shard_id} not found",
-            )));
-        };
-        if !shard.is_local().await {
-            return Err(CollectionError::not_found(format!(
-                "Shard {shard_id} is not a local shard",
-            )));
-        }
-
-        shard.clone()
-    };
-
+/// operations before we read segment state directly (e.g. via scroll), and
+/// to wait for our own deletes to become visible.
+async fn drain_update_queue(shard: &ShardReplicaSet) -> CollectionResult<()> {
     // Use empty delete points as plunger
     let barrier = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
         PointOperations::DeletePoints { ids: vec![] },
@@ -295,12 +307,67 @@ async fn drain_update_queue(
         .unmeasured(reason("Internal operation"))
         .await
         .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to drain update queue before clean: {err}",
-            ))
+            CollectionError::service_error(format!("Failed to drain shard update queue: {err}"))
         })?;
 
     Ok(())
+}
+
+/// Outcome of submitting a batch of deletes
+#[must_use]
+pub(crate) enum SubmitDelete {
+    /// The delete operation is in the shard update queue
+    Submitted,
+    /// The shard or its routing changed since the batch was filtered, nothing was submitted
+    RoutingChanged,
+}
+
+/// Submit a delete for the given points, fenced against routing changes
+///
+/// The points to delete were selected with a hash ring cloned earlier, without holding the shard
+/// holder lock. Routing may have changed since. A stale ring could then make us delete a point
+/// that now belongs in this shard, and that a user has just written into it.
+///
+/// Routing only changes under the shard holder write lock. So we take the read lock, confirm the
+/// shard and its hash ring are still the ones we used, and put the delete in the update queue
+/// before releasing it. Routing cannot change between that check and our delete being queued, so
+/// any update routed with a newer ring is queued after our delete. If routing did change, we
+/// submit nothing and the caller retries the batch with the new ring.
+///
+/// This only waits for the delete to reach the WAL while holding the lock, not for it to become
+/// visible.
+pub(crate) async fn submit_fenced_delete(
+    shard_holder: &WeakShardHolder,
+    shard_id: ShardId,
+    shard: &Arc<ShardReplicaSet>,
+    hashring: &HashRingRouter,
+    ids: Vec<ExtendedPointId>,
+) -> CollectionResult<SubmitDelete> {
+    let Some(shard_holder) = shard_holder.upgrade() else {
+        return Err(CollectionError::not_found("Shard holder dropped"));
+    };
+    let shard_holder = shard_holder.read().await;
+
+    let same_shard = shard_holder
+        .get_shard(shard_id)
+        .is_some_and(|current| Arc::ptr_eq(current, shard));
+    let same_hashring = shard_holder.hash_ring_router(shard_id) == Some(hashring);
+    if !same_shard || !same_hashring {
+        return Ok(SubmitDelete::RoutingChanged);
+    }
+
+    let delete_operation = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
+        PointOperations::DeletePoints { ids },
+    ));
+    shard
+        .update_local(delete_operation, WaitUntil::Wal, None, false)
+        .unmeasured(reason("Internal operation"))
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!("Failed to delete points from shard: {err}"))
+        })?;
+
+    Ok(SubmitDelete::Submitted)
 }
 
 async fn clean_task(
@@ -321,36 +388,17 @@ async fn clean_task(
     // The write hash ring must be committed before cleanup is invoked, so
     // any operation queued *after* this barrier is routed via the new
     // hash ring and will not land on this shard.
-    drain_update_queue(&shard_holder, shard_id).await?;
+    {
+        let (shard, _) = get_local_shard(&shard_holder, shard_id).await?;
+        drain_update_queue(&shard).await?;
+    }
 
     let mut offset = None;
     let mut deleted_points = 0;
 
     loop {
-        // Get shard and hash ring, don't hold shard holder lock while cleaning
-        let (shard, hashring) = {
-            let Some(shard_holder) = shard_holder.upgrade() else {
-                return Err(CollectionError::not_found("Shard holder dropped"));
-            };
-            let shard_holder = shard_holder.read().await;
-            let Some(shard) = shard_holder.get_shard(shard_id) else {
-                return Err(CollectionError::not_found(format!(
-                    "Shard {shard_id} not found",
-                )));
-            };
-            if !shard.is_local().await {
-                return Err(CollectionError::not_found(format!(
-                    "Shard {shard_id} is not a local shard",
-                )));
-            }
-            let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
-                ))
-            })?;
-
-            (shard.clone(), hashring.clone())
-        };
+        // Get shard and hash ring, don't hold shard holder lock while scrolling and filtering
+        let (shard, hashring) = get_local_shard(&shard_holder, shard_id).await?;
 
         // Scroll next batch of points
         let mut ids = match shard
@@ -375,10 +423,10 @@ async fn clean_task(
             }
         };
 
-        // Update offset for next batch
-        offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
-        deleted_points += ids.len();
-        let last_batch = offset.is_none();
+        // Determine offset for next batch, only commit it once this batch is submitted
+        let next_offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
+        let batch_points = ids.len();
+        let last_batch = next_offset.is_none();
 
         // Filter list of point IDs after scrolling, delete points that don't belong in this shard
         // Checking the hash ring to determine if a point belongs in the shard is very expensive.
@@ -394,26 +442,26 @@ async fn clean_task(
             .filter(|id| !hashring.is_in_shard(id, shard_id))
             .collect();
 
-        // Delete points from local shard
-        let delete_operation = OperationWithClockTag::from(
-            CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }),
-        );
-        if let Err(err) = shard
-            .update_local(delete_operation, WaitUntil::from(last_batch), None, false)
-            .unmeasured(reason("Internal operation"))
-            .await
-        {
-            return Err(CollectionError::service_error(format!(
-                "Failed to delete points from shard: {err}",
-            )));
+        // Delete points from local shard, retry this batch if routing changed in the meantime
+        match submit_fenced_delete(&shard_holder, shard_id, &shard, &hashring, ids).await? {
+            SubmitDelete::Submitted => {}
+            SubmitDelete::RoutingChanged => {
+                log::debug!("Routing of shard {shard_id} changed during cleanup, retrying batch");
+                continue;
+            }
+        }
+
+        offset = next_offset;
+        deleted_points += batch_points;
+
+        // Finish if this was the last batch, wait for our deletes to become visible first
+        if last_batch {
+            drain_update_queue(&shard).await?;
+            let _ = sender.send(ShardCleanStatus::Progress { deleted_points });
+            return Ok(());
         }
 
         let _ = sender.send(ShardCleanStatus::Progress { deleted_points });
-
-        // Finish if this was the last batch
-        if last_batch {
-            return Ok(());
-        }
     }
 }
 

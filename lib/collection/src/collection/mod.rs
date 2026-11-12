@@ -1,4 +1,4 @@
-mod clean;
+pub(crate) mod clean;
 mod collection_ops;
 pub mod distance_matrix;
 mod facet;
