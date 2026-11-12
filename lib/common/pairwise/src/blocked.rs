@@ -30,6 +30,10 @@ pub(crate) enum Unpacking {
     /// All rows once per call, and all panels of a column block once per block. Costs memory
     /// for the unpacked values, but no repeated unpacking: for tiles that read their operands
     /// fast enough for unpacking to show.
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(dead_code, reason = "only produced by the x86_64 VNNI kernel")
+    )]
     Whole,
 }
 
