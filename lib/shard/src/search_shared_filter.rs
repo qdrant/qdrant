@@ -1,5 +1,6 @@
 //! Filters shared between the groups of a batch search, resolved once per segment.
 
+use indexmap::IndexMap;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::filter_user::FilterUser;
 use segment::data_types::query_context::SegmentQueryContext;
@@ -27,22 +28,18 @@ pub fn share_group_filters(
     query_context: &SegmentQueryContext,
 ) -> OperationResult<Vec<Option<Filter>>> {
     let mut shared: Vec<Option<Filter>> = vec![None; groups.len()];
-    let mut visited = vec![false; groups.len()];
 
-    for (first, group) in groups.iter().enumerate() {
-        if visited[first] {
-            continue;
+    // Groups by filter, in the order each filter first appears. Hashing every filter once keeps
+    // this linear in the number of groups, instead of comparing every pair of filters.
+    let mut members_by_filter: IndexMap<&Filter, Vec<usize>, ahash::RandomState> =
+        IndexMap::default();
+    for (index, group) in groups.iter().enumerate() {
+        if let Some(filter) = group.params.filter {
+            members_by_filter.entry(filter).or_default().push(index);
         }
-        let Some(filter) = group.params.filter else {
-            continue;
-        };
-        // Comparing filters is expensive on large filters, but far cheaper than evaluating one
-        let members: Vec<usize> = (first..groups.len())
-            .filter(|&other| groups[other].params.filter == Some(filter))
-            .collect();
-        for &member in &members {
-            visited[member] = true;
-        }
+    }
+
+    for (filter, members) in members_by_filter {
         if members.len() < 2 {
             continue;
         }
