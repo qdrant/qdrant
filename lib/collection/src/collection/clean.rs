@@ -327,21 +327,30 @@ async fn clean_task(
     let mut deleted_points = 0;
 
     loop {
-        // Get shard
-        let Some(shard_holder) = shard_holder.upgrade() else {
-            return Err(CollectionError::not_found("Shard holder dropped"));
+        // Get shard and hash ring, don't hold shard holder lock while cleaning
+        let (shard, hashring) = {
+            let Some(shard_holder) = shard_holder.upgrade() else {
+                return Err(CollectionError::not_found("Shard holder dropped"));
+            };
+            let shard_holder = shard_holder.read().await;
+            let Some(shard) = shard_holder.get_shard(shard_id) else {
+                return Err(CollectionError::not_found(format!(
+                    "Shard {shard_id} not found",
+                )));
+            };
+            if !shard.is_local().await {
+                return Err(CollectionError::not_found(format!(
+                    "Shard {shard_id} is not a local shard",
+                )));
+            }
+            let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
+                ))
+            })?;
+
+            (shard.clone(), hashring.clone())
         };
-        let shard_holder = shard_holder.read().await;
-        let Some(shard) = shard_holder.get_shard(shard_id) else {
-            return Err(CollectionError::not_found(format!(
-                "Shard {shard_id} not found",
-            )));
-        };
-        if !shard.is_local().await {
-            return Err(CollectionError::not_found(format!(
-                "Shard {shard_id} is not a local shard",
-            )));
-        }
 
         // Scroll next batch of points
         let mut ids = match shard
@@ -379,11 +388,6 @@ async fn clean_task(
         // significantly slower, because then we'll do the expensive hash ring check on every
         // point, in every segment.
         // See: <https://github.com/qdrant/qdrant/pull/6085>
-        let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
-            ))
-        })?;
         let ids: Vec<ExtendedPointId> = ids
             .into_iter()
             // TODO: run test with this inverted?
