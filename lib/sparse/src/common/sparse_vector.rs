@@ -124,28 +124,6 @@ impl RemappedSparseVector {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// Cut the vector to its top N dimensions, selected by absolute weight (largest to smallest).
-    /// The vector is then re-sorted by indices.
-    pub fn cut(&mut self, top_dims: usize) {
-        // top_dims should be already validated by the API
-        // spec to make sure is >= 1
-        debug_assert!(top_dims >= 1);
-        if top_dims >= self.len() {
-            return;
-        }
-        let mut idx = (0..self.len()).collect::<Vec<usize>>();
-        idx.select_nth_unstable_by(top_dims, |&a, &b| {
-            self.values[b]
-                .abs()
-                .total_cmp(&self.values[a].abs())
-                .then_with(|| self.indices[a].cmp(&self.indices[b]))
-        });
-        idx.truncate(top_dims);
-        self.indices = idx.iter().map(|&i| self.indices[i]).collect();
-        self.values = idx.iter().map(|&i| self.values[i]).collect();
-        self.sort_by_indices();
-    }
 }
 
 impl SparseVector {
@@ -170,6 +148,28 @@ impl SparseVector {
     /// Check if this vector is sorted by indices.
     pub fn is_sorted(&self) -> bool {
         self.indices.windows(2).all(|w| w[0] < w[1])
+    }
+
+    /// Cut the vector to its top N dimensions, selected by absolute weight (largest to smallest).
+    /// The vector is then re-sorted by indices.
+    pub fn cut(&mut self, top_dims: usize) {
+        // top_dims should be already validated by the API
+        // spec to make sure is >= 1
+        debug_assert!(top_dims >= 1);
+        if top_dims >= self.len() {
+            return;
+        }
+        let mut idx = (0..self.len()).collect::<Vec<usize>>();
+        idx.select_nth_unstable_by(top_dims, |&a, &b| {
+            self.values[b]
+                .abs()
+                .total_cmp(&self.values[a].abs())
+                .then_with(|| self.indices[a].cmp(&self.indices[b]))
+        });
+        idx.truncate(top_dims);
+        self.indices = idx.iter().map(|&i| self.indices[i]).collect();
+        self.values = idx.iter().map(|&i| self.values[i]).collect();
+        self.sort_by_indices();
     }
 
     /// Check if this vector is empty.
@@ -446,8 +446,7 @@ mod tests {
         let mut rnd_gen = StdRng::seed_from_u64(42);
 
         for _ in 0..500 {
-            let mut indices: Vec<DimOffset> =
-                (0..100).filter(|_| rnd_gen.random_bool(0.3)).collect();
+            let mut indices: Vec<DimId> = (0..100).filter(|_| rnd_gen.random_bool(0.3)).collect();
             if indices.is_empty() {
                 indices.push(rnd_gen.random_range(0..100));
             }
@@ -462,13 +461,13 @@ mod tests {
                     }
                 })
                 .collect();
-            let original = RemappedSparseVector::new(indices, values).unwrap();
+            let original = SparseVector::new(indices, values).unwrap();
 
             // include values at and beyond the length to cover the no-op path
             let top_dims = rnd_gen.random_range(1..=original.len() + 2);
 
             // reference: rank by (abs weight desc, index asc), keep the top, restore index order
-            let mut expected: Vec<(DimOffset, DimWeight)> = original
+            let mut expected: Vec<(DimId, DimWeight)> = original
                 .indices
                 .iter()
                 .copied()

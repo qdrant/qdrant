@@ -184,6 +184,14 @@ fn sparse_query_dims() {
             &[(1, -5.0), (2, -5.0)],
             "cut keeps large negative weight",
         );
+
+        // The cut is made on the query as sent, before the segment drops the dimensions it does
+        // not contain. Dim 10 is in no point of this segment but has the largest weight, so it
+        // takes the only slot. Cutting after the drop would pick dim 0 here instead, and the
+        // same point would score differently in a segment that also has dim 10.
+        let absent = SparseVector::new(vec![0, 10], vec![1.0, 10.0]).unwrap();
+        check(&absent, Some(1), &[], "cut keeps a dim the segment lacks");
+        check(&absent, Some(2), &[(0, 1.0), (2, 1.0)], "no cut effect");
     }
 }
 

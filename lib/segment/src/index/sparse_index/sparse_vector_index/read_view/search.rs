@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use common::condition_checker::ConditionChecker;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
@@ -174,10 +176,7 @@ where
         .filter(|&idx| not_deleted.check_infallible(idx))
         .collect_vec();
 
-        let mut sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
-        if let Some(max_sparse_dims) = vector_query_context.max_sparse_dims() {
-            sparse_vector.cut(max_sparse_dims);
-        }
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -209,10 +208,7 @@ where
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let mut sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
-        if let Some(max_sparse_dims) = vector_query_context.max_sparse_dims() {
-            sparse_vector.cut(max_sparse_dims);
-        }
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -246,6 +242,18 @@ where
         if vector.is_empty() {
             return Ok(vec![]);
         }
+
+        // Select the query dimensions here, before `remap_vector` drops the dimensions that a
+        // segment does not contain.
+        let vector = match vector_query_context.max_sparse_dims() {
+            Some(max_sparse_dims) => {
+                let mut cut_vector = vector.clone();
+                cut_vector.cut(max_sparse_dims);
+                Cow::Owned(cut_vector)
+            }
+            None => Cow::Borrowed(vector),
+        };
+        let vector = vector.as_ref();
 
         match filter {
             Some(filter) => {
