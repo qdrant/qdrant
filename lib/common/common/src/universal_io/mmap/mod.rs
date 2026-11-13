@@ -21,6 +21,10 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random};
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
+/// [`UniversalRead::will_need`] ranges at least this long are hinted regardless of
+/// [`thread_faulted`](crate::mmap::advice::thread_faulted).
+const ALWAYS_HINT_BYTES: u64 = 64 * 1024;
+
 /// Filesystem handle for local mmap-backed files. Stateless.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MmapFs;
@@ -264,14 +268,36 @@ impl UniversalRead for MmapFile {
             // Already in RAM
             return;
         }
-        if !crate::mmap::advice::thread_faulted().unwrap_or(false) {
-            return;
-        }
         let bytes = self.as_bytes::<Random>();
+        // Asked at most once per call, and only if a small range needs it.
+        let mut thread_faulted = None;
         for range in byte_ranges {
+            // A large range is always hinted: one `madvise` is cheap next to the reads it
+            // overlaps. The fault heuristic only saves a syscall per small range, and it
+            // can't tell whether a region that this thread hasn't touched yet is cached.
+            let large = range.end.saturating_sub(range.start) >= ALWAYS_HINT_BYTES;
+            if !large
+                && !*thread_faulted
+                    .get_or_insert_with(|| crate::mmap::advice::thread_faulted().unwrap_or(false))
+            {
+                continue;
+            }
             if let Ok(region) = read_bytes(bytes, range) {
                 crate::mmap::advice::will_need(region);
             }
+        }
+    }
+
+    fn resident_share(&self) -> Option<f64> {
+        if self.resident.load(Ordering::Relaxed) || self.len == 0 {
+            return Some(1.0);
+        }
+        cfg_select! {
+            unix => {
+                let resident = self.resident_bytes().ok()?;
+                Some(resident as f64 / self.len as f64)
+            }
+            _ => None,
         }
     }
 

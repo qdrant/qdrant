@@ -285,13 +285,11 @@ impl GeoIndexRead for InMemoryGeoIndex {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        Ok(Box::new(
-            values
-                .into_iter()
-                .flat_map(|top_geo_hash| self.stored_sub_regions(top_geo_hash))
-                .unique(),
-        ))
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
+        Ok(values
+            .into_iter()
+            .flat_map(|top_geo_hash| self.stored_sub_regions(top_geo_hash))
+            .unique())
     }
 
     fn points_per_hash_filtered(
@@ -357,6 +355,10 @@ impl GeoIndexRead for InMemoryGeoIndex {
 
     fn is_cold(&self) -> bool {
         false
+    }
+
+    fn values_resident_share(&self) -> Option<f64> {
+        Some(1.0)
     }
 
     fn populate(&self) -> OperationResult<()> {

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
+use itertools::Either;
 use mutable_geo_index::InMemoryGeoIndex;
 
 pub use self::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
@@ -184,11 +185,15 @@ impl GeoIndexRead for GeoIndex {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::iterator(index, values),
-            GeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
-            GeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
+            GeoIndex::Mutable(index) => Ok(Either::Left(GeoIndexRead::iterator(index, values)?)),
+            GeoIndex::Immutable(index) => Ok(Either::Right(Either::Left(GeoIndexRead::iterator(
+                index, values,
+            )?))),
+            GeoIndex::OnDisk(index) => Ok(Either::Right(Either::Right(GeoIndexRead::iterator(
+                index, values,
+            )?))),
         }
     }
 
@@ -224,6 +229,14 @@ impl GeoIndexRead for GeoIndex {
             GeoIndex::Mutable(_) => false,
             GeoIndex::Immutable(_) => false,
             GeoIndex::OnDisk(index) => index.is_cold(),
+        }
+    }
+
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            GeoIndex::Mutable(index) => GeoIndexRead::values_resident_share(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_resident_share(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::values_resident_share(index),
         }
     }
 

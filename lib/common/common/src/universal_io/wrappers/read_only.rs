@@ -205,6 +205,10 @@ where
         self.0.clear_ram_cache()
     }
 
+    fn resident_share(&self) -> Option<f64> {
+        self.0.resident_share()
+    }
+
     fn kind() -> UniversalKind {
         S::kind()
     }

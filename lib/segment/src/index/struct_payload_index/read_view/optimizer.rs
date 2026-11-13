@@ -6,7 +6,8 @@ use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
 use super::materialization::{
-    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, reads_posting_list,
+    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, prefilter_by_candidates,
+    reads_posting_list,
 };
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
@@ -212,6 +213,22 @@ where
                         payload_provider.clone(),
                         deferred_behavior,
                     )?;
+                    if let Some(hint) = materialization
+                        && let Condition::Field(field_condition) = condition
+                        && !hint.is_primary(condition)
+                        && let Some(candidates) = self.read_candidates(
+                            field_condition,
+                            &estimation,
+                            hint.expected_checks,
+                        )?
+                    {
+                        let candidates = PointSet::union(
+                            vec![candidates],
+                            hint.point_set_context(self.id_tracker.total_point_count()),
+                        );
+                        let checker = prefilter_by_candidates(candidates, condition_checker);
+                        return Ok((ConvertedCondition::Checker(checker), estimation));
+                    }
                     Ok((ConvertedCondition::Checker(condition_checker), estimation))
                 }
             })
@@ -379,4 +396,65 @@ where
         }
         Ok(None)
     }
+
+    /// Read the candidate points of `condition` (see [`FieldIndexRead::filter_candidates`]),
+    /// if that is cheaper than checking the expected points through the index one by one.
+    ///
+    /// The candidates are a superset of the matches, so each candidate still gets the exact
+    /// per-point check; only points outside the candidates skip it. That pays off under the
+    /// same rule as a posting list ([`ExpectedChecks::reads_posting`]): `estimation` of a
+    /// geo condition counts the points of its covering cells, which is what is read here.
+    fn read_candidates(
+        &self,
+        condition: &FieldCondition,
+        estimation: &CardinalityEstimation,
+        expected_checks: ExpectedChecks,
+    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
+        // Only for batched checks (plain path): a serial consumer (graph walk, sampling)
+        // already reads values in small batches per hop, and the cells may cover most of
+        // the segment there.
+        match expected_checks {
+            ExpectedChecks::Batched { count: _ } => {}
+            ExpectedChecks::Serial => return Ok(None),
+        }
+        let Some(indexes) = self.field_indexes.get(&condition.key) else {
+            return Ok(None);
+        };
+        for index in indexes {
+            // In RAM a value check is a memory lookup: the cells don't pay off. The same
+            // holds for a cold index whose values are mostly cached by now.
+            if !index.is_cold()
+                || values_mostly_cached(index)
+                || !expected_checks.reads_posting(estimation.exp, true)
+            {
+                continue;
+            }
+            if let Some(points) = index.filter_candidates(condition)? {
+                return Ok(Some(points.collect()));
+            }
+        }
+        Ok(None)
+    }
+}
+
+/// Share of an index's values in RAM from which its candidates aren't read: the
+/// per-point check is then mostly memory reads, cheaper than going through every
+/// candidate.
+const CACHED_VALUES_SHARE: f64 = 0.5;
+
+fn values_mostly_cached(index: &impl FieldIndexRead) -> bool {
+    #[cfg(test)]
+    if IGNORE_VALUE_RESIDENCY.get() {
+        return false;
+    }
+    index
+        .values_resident_share()
+        .is_some_and(|share| share >= CACHED_VALUES_SHARE)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests build indexes whose files are all in the page cache: this lets them read
+    /// candidates of a cold index anyway.
+    pub(crate) static IGNORE_VALUE_RESIDENCY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

@@ -14,7 +14,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
-use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::geo_index::{GeoIndexRead, read_ops as geo_read_ops};
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
 use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
@@ -176,6 +176,43 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
+    fn filter_candidates<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>> {
+        match self {
+            ReadOnlyFieldIndex::GeoIndex(index) => geo_read_ops::cell_points(index, condition),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_)
+            | ReadOnlyFieldIndex::Nested(_) => Ok(None),
+        }
+    }
+
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_)
+            | ReadOnlyFieldIndex::Nested(_) => None,
+        }
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),

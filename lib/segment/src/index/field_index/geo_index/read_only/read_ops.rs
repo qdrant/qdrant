@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
+use itertools::Either;
 
 use super::super::read_ops::{self, GeoConditionChecker, GeoIndexRead};
 use super::ReadOnlyGeoIndex;
@@ -114,11 +115,17 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::iterator(index, values),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::iterator(index, values),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::iterator(index, values),
+            ReadOnlyGeoIndex::Appendable(index) => {
+                Ok(Either::Left(GeoIndexRead::iterator(index, values)?))
+            }
+            ReadOnlyGeoIndex::Immutable(index) => Ok(Either::Right(Either::Left(
+                GeoIndexRead::iterator(index, values)?,
+            ))),
+            ReadOnlyGeoIndex::OnDisk(index) => Ok(Either::Right(Either::Right(
+                GeoIndexRead::iterator(index, values)?,
+            ))),
         }
     }
 
@@ -160,6 +167,14 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::is_cold(index),
             ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::is_cold(index),
             ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::is_cold(index),
+        }
+    }
+
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_resident_share(index),
         }
     }
 

@@ -356,6 +356,11 @@ where
             .map_some(|range| range.count as usize)
     }
 
+    /// Share of the stored values held in RAM right now, if the storage can tell.
+    pub fn resident_share(&self) -> Option<f64> {
+        self.store.resident_share()
+    }
+
     pub fn len(&self) -> usize {
         self.header.points_count as usize
     }
