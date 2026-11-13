@@ -141,6 +141,13 @@ impl ShardHolder {
 
     pub async fn stop_gracefully(&mut self) {
         let detached = std::mem::take(&mut self.shard_key_removals);
+        // A filesystem task must finish before collection shutdown can return and
+        // allow its paths to be reused. Cleanup never acquires the holder lock.
+        for removal in detached.values() {
+            if let Err(err) = removal.remove().await {
+                log::error!("Failed to finish detached shard cleanup during shutdown: {err}");
+            }
+        }
         let shards = std::mem::take(&mut self.shards).into_values().chain(
             detached
                 .values()

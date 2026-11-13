@@ -55,7 +55,7 @@ async fn custom_collection(path: &std::path::Path) -> Collection {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn drop_shard_key_releases_holder_during_shutdown() {
+async fn drop_shard_key_returns_before_shutdown_and_keeps_reads_available() {
     let dir = tempfile::tempdir().unwrap();
     let collection = custom_collection(dir.path()).await;
     let holder = collection.shards_holder();
@@ -82,8 +82,11 @@ async fn drop_shard_key_releases_holder_during_shutdown() {
 
     // Hold shutdown at its first await without relying on disk speed or a large dataset.
     let local_guard = removed.lock_local_for_test().await;
-    let mut removal = Box::pin(collection.drop_shard_key(ShardKey::from("removed")));
-    assert!(futures::poll!(&mut removal).is_pending());
+    let applied = timeout(
+        Duration::from_secs(2),
+        collection.drop_shard_key(ShardKey::from("removed")),
+    )
+    .await;
 
     let retained_ids = timeout(
         Duration::from_secs(2),
@@ -110,16 +113,18 @@ async fn drop_shard_key_releases_holder_during_shutdown() {
 
     // Release shutdown even on the broken implementation, so failure does not leave workers running.
     drop(local_guard);
-    timeout(Duration::from_secs(10), &mut removal)
+    timeout(Duration::from_secs(10), holder.finish_shard_key_removals())
         .await
         .unwrap()
         .unwrap();
-    drop(removal);
 
     let registered: Vec<_> = holder.read().await.get_shards().map(|(id, _)| id).collect();
     let persisted = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
     collection.stop_gracefully().await;
 
+    applied
+        .expect("shard-key apply waited for cleanup")
+        .unwrap();
     assert_eq!(
         retained_ids
             .expect("unrelated shard-key reads blocked during shutdown")
@@ -157,12 +162,11 @@ async fn drop_shard_key_retries_failed_cleanup() {
     fs_err::rename(&shard_path, &backup).unwrap();
     fs_err::write(&shard_path, []).unwrap();
 
-    assert!(
-        collection
-            .drop_shard_key(ShardKey::from("removed"))
-            .await
-            .is_err()
-    );
+    collection
+        .drop_shard_key(ShardKey::from("removed"))
+        .await
+        .unwrap();
+    assert!(holder.finish_shard_key_removals().await.is_err());
     let registered_after_failure: Vec<_> =
         holder.read().await.get_shards().map(|(id, _)| id).collect();
 
@@ -172,6 +176,7 @@ async fn drop_shard_key_retries_failed_cleanup() {
         .drop_shard_key(ShardKey::from("removed"))
         .await
         .unwrap();
+    holder.finish_shard_key_removals().await.unwrap();
     collection
         .drop_shard_key(ShardKey::from("removed"))
         .await
@@ -231,8 +236,17 @@ async fn drop_shard_key_can_resume_cancelled_cleanup() {
     let holder = collection.shards_holder();
     let removed = Arc::clone(holder.read().await.get_shard(0).unwrap());
     let local_guard = removed.lock_local_for_test().await;
-    let mut removal = Box::pin(collection.drop_shard_key(ShardKey::from("removed")));
+    collection
+        .drop_shard_key(ShardKey::from("removed"))
+        .await
+        .unwrap();
+    let mut removal = Box::pin(holder.finish_shard_key_removals());
     assert!(futures::poll!(&mut removal).is_pending());
+    let replayed = timeout(
+        Duration::from_secs(2),
+        collection.drop_shard_key(ShardKey::from("removed")),
+    )
+    .await;
     drop(removal);
     drop(local_guard);
 
@@ -240,9 +254,13 @@ async fn drop_shard_key_can_resume_cancelled_cleanup() {
         .drop_shard_key(ShardKey::from("removed"))
         .await
         .unwrap();
+    holder.finish_shard_key_removals().await.unwrap();
     let registered: Vec<_> = holder.read().await.get_shards().map(|(id, _)| id).collect();
     collection.stop_gracefully().await;
 
+    replayed
+        .expect("replayed apply waited for cleanup")
+        .unwrap();
     assert_eq!(registered, vec![2]);
     assert!(!dir.path().join("0").exists());
     assert!(!dir.path().join("1").exists());
@@ -255,18 +273,17 @@ async fn shard_creation_finishes_cancelled_removal_before_reusing_ids() {
     let holder = collection.shards_holder();
     let removed = Arc::clone(holder.read().await.get_shard(0).unwrap());
     let local_guard = removed.lock_local_for_test().await;
-    let mut removal = Box::pin(collection.drop_shard_key(ShardKey::from("removed")));
-    assert!(futures::poll!(&mut removal).is_pending());
-    drop(removal);
-    drop(local_guard);
-
     collection
-        .create_and_register_shards(
-            Some(ShardKey::from("replacement")),
-            &[(0, vec![1], ReplicaState::Active)],
-        )
+        .drop_shard_key(ShardKey::from("removed"))
         .await
         .unwrap();
+    let replacement = [(0, vec![1], ReplicaState::Active)];
+    let mut creation = Box::pin(
+        collection.create_and_register_shards(Some(ShardKey::from("replacement")), &replacement),
+    );
+    assert!(futures::poll!(&mut creation).is_pending());
+    drop(local_guard);
+    creation.await.unwrap();
     collection
         .drop_shard_key(ShardKey::from("removed"))
         .await
@@ -286,5 +303,27 @@ async fn shard_creation_finishes_cancelled_removal_before_reusing_ids() {
     assert_eq!(replacement_ids, vec![0]);
     assert_eq!(replacement_info.points_count, Some(0));
     assert!(dir.path().join("0").exists());
+    assert!(!dir.path().join("1").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collection_shutdown_waits_for_detached_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let collection = custom_collection(dir.path()).await;
+    let holder = collection.shards_holder();
+    let removed = Arc::clone(holder.read().await.get_shard(0).unwrap());
+    let local_guard = removed.lock_local_for_test().await;
+    collection
+        .drop_shard_key(ShardKey::from("removed"))
+        .await
+        .unwrap();
+
+    let mut shutdown = Box::pin(collection.stop_gracefully());
+    let shutdown_pending = futures::poll!(&mut shutdown).is_pending();
+    drop(local_guard);
+    timeout(Duration::from_secs(10), shutdown).await.unwrap();
+
+    assert!(shutdown_pending);
+    assert!(!dir.path().join("0").exists());
     assert!(!dir.path().join("1").exists());
 }
