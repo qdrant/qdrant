@@ -99,6 +99,12 @@ pub struct ServiceConfig {
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
 
+    /// URL path prefix under which the REST API and Web UI are also served, such as `/qdrant`.
+    /// For reverse proxies that forward requests without stripping the prefix.
+    #[serde(default)]
+    #[validate(custom(function = validate_path_prefix))]
+    pub path_prefix: Option<String>,
+
     /// Whether to allow snapshot recovery from remote URLs (http/https).
     /// If disabled, snapshot recovery will only work with local files and uploads.
     /// Disabling this can mitigate SSRF risks in environments where the Qdrant node
@@ -120,6 +126,14 @@ impl ServiceConfig {
 
     pub fn enforce_internal_auth(&self) -> bool {
         self.enforce_internal_auth.unwrap_or(true)
+    }
+
+    /// The configured path prefix without a trailing `/`, if it is set and valid.
+    pub fn path_prefix(&self) -> Option<&str> {
+        let prefix = self.path_prefix.as_deref()?;
+        validate_path_prefix(prefix).ok()?;
+        let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+        (!prefix.is_empty()).then_some(prefix)
     }
 }
 
@@ -637,6 +651,34 @@ fn validate_metrics_prefix(prefix: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Custom validation function for URL path prefixes.
+fn validate_path_prefix(prefix: &str) -> Result<(), ValidationError> {
+    // Prefix is not required, and a trailing `/` is ignored
+    let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+    if prefix.is_empty() {
+        return Ok(());
+    }
+
+    // Only allow `/`-separated segments of unreserved URL characters, without `.` and `..`
+    let is_valid = prefix.strip_prefix('/').is_some_and(|path| {
+        path.split('/').all(|segment| {
+            !matches!(segment, "" | "." | "..")
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~'))
+        })
+    });
+    if !is_valid {
+        return Err(
+            ValidationError::new("invalid_path_prefix").with_message(Cow::Borrowed(
+                "Path prefix must start with '/', and its segments must be of all alphanumeric characters, with an exception for '-', '.', '_' and '~'",
+            )),
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -702,6 +744,56 @@ mod tests {
             .validate()
             .expect("failed to validate development config at runtime");
         assert!(config.load_errors.is_empty(), "must not have load errors")
+    }
+
+    #[test]
+    fn path_prefix_from_env() {
+        let Some(_cwd) = sealed_cwd() else { return };
+        unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", "/qdrant/") };
+
+        let settings = Settings::new(None).expect("failed to load config");
+
+        assert_eq!(settings.service.path_prefix(), Some("/qdrant"));
+    }
+
+    #[test]
+    fn invalid_path_prefix_from_env_is_ignored() {
+        let Some(_cwd) = sealed_cwd() else { return };
+        for prefix in ["qdrant", "/qdrant//"] {
+            unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", prefix) };
+
+            let settings = Settings::new(None).expect("failed to load config");
+
+            assert!(settings.validate().is_err(), "{prefix:?}");
+            assert_eq!(settings.service.path_prefix(), None, "{prefix:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_path_prefix() {
+        for prefix in [
+            "",
+            "/",
+            "/qdrant",
+            "/qdrant/",
+            "/apps/qdrant",
+            "/q-d_r.a~nt",
+        ] {
+            assert!(validate_path_prefix(prefix).is_ok(), "{prefix:?}");
+        }
+        for prefix in [
+            "qdrant",
+            "//",
+            "/qdrant//",
+            "//qdrant",
+            "/./qdrant",
+            "/qdrant/..",
+            "/qdrant?a=b",
+            "/qdrant%2f",
+            "/qd rant",
+        ] {
+            assert!(validate_path_prefix(prefix).is_err(), "{prefix:?}");
+        }
     }
 
     #[test]
