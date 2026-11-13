@@ -8271,6 +8271,10 @@ pub struct HardwareUsage {
     pub remote_io_cached_read: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "9")]
     pub remote_io_non_cached_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "10")]
+    pub updated_bytes: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "11")]
+    pub updated_indexed_bytes: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

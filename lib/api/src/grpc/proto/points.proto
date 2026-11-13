@@ -1699,4 +1699,6 @@ message HardwareUsage {
   optional uint64 vector_io_write = 7;
   optional uint64 remote_io_cached_read = 8;
   optional uint64 remote_io_non_cached_read = 9;
+  optional uint64 updated_bytes = 10;
+  optional uint64 updated_indexed_bytes = 11;
 }

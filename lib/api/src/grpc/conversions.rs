@@ -3616,6 +3616,8 @@ impl From<HardwareData> for HardwareUsage {
             vector_io_write: m(HwMetric::VectorIoWrite),
             remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
             remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
+            updated_bytes: None,
+            updated_indexed_bytes: None,
         }
     }
 }
@@ -3632,6 +3634,8 @@ impl From<HardwareUsage> for HardwareData {
             vector_io_write,
             remote_io_cached_read,
             remote_io_non_cached_read,
+            updated_bytes: _,
+            updated_indexed_bytes: _,
         } = value;
 
         let m = |value: Option<u64>| value.unwrap_or_default() as usize;

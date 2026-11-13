@@ -27,6 +27,8 @@ impl HardwareUsage {
             vector_io_write,
             remote_io_cached_read,
             remote_io_non_cached_read,
+            updated_bytes,
+            updated_indexed_bytes,
         } = other;
 
         self.cpu = add_opt(self.cpu, cpu);
@@ -39,6 +41,8 @@ impl HardwareUsage {
         self.remote_io_cached_read = add_opt(self.remote_io_cached_read, remote_io_cached_read);
         self.remote_io_non_cached_read =
             add_opt(self.remote_io_non_cached_read, remote_io_non_cached_read);
+        self.updated_bytes = add_opt(self.updated_bytes, updated_bytes);
+        self.updated_indexed_bytes = add_opt(self.updated_indexed_bytes, updated_indexed_bytes);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -52,6 +56,8 @@ impl HardwareUsage {
             vector_io_write,
             remote_io_cached_read,
             remote_io_non_cached_read,
+            updated_bytes,
+            updated_indexed_bytes,
         } = *self;
 
         is_zero_opt(cpu)
@@ -63,6 +69,8 @@ impl HardwareUsage {
             && is_zero_opt(vector_io_write)
             && is_zero_opt(remote_io_cached_read)
             && is_zero_opt(remote_io_non_cached_read)
+            && is_zero_opt(updated_bytes)
+            && is_zero_opt(updated_indexed_bytes)
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
