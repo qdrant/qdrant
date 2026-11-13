@@ -61,14 +61,7 @@ where
             return FilterChecks::Full;
         }
 
-        // A graph search checks the neighbours of the points it expands: about `ef` expansions
-        // of up to `m0` neighbours each
-        let ef = params
-            .and_then(|params| params.hnsw_ef)
-            .unwrap_or(self.config.ef)
-            .max(top);
-        let per_query = ef.saturating_mul(self.config.m0.max(1));
-        let mut checks = per_query.saturating_mul(query_vectors.len());
+        let mut checks = self.graph_filter_checks(query_vectors.len(), top, params);
         if cardinality.min <= threshold {
             // Sampling picks the strategy first, one check per sample
             checks = checks.saturating_add(MAX_ESTIMATED_POINTS);
@@ -76,5 +69,23 @@ where
         FilterChecks::Lazy {
             expected_checks: checks,
         }
+    }
+
+    /// Expected filter checks of a graph search over `query_vectors` query vectors.
+    ///
+    /// A graph search checks the neighbours of the points it expands: about `ef` expansions of
+    /// up to `m0` neighbours each, for every query vector.
+    pub(crate) fn graph_filter_checks(
+        &self,
+        query_vectors: usize,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> usize {
+        let ef = params
+            .and_then(|params| params.hnsw_ef)
+            .unwrap_or(self.config.ef)
+            .max(top);
+        let per_query = ef.saturating_mul(self.config.m0.max(1));
+        per_query.saturating_mul(query_vectors)
     }
 }
