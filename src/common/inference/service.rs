@@ -597,4 +597,41 @@ mod test {
 
         res
     }
+
+    #[tokio::test]
+    async fn too_few_remote_embeddings_are_an_error_not_a_panic() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!(InferenceResponse {
+                    embeddings: vec![],
+                    usage: None,
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let service = InferenceService::new(Some(InferenceConfig {
+            address: Some(server.url()),
+            timeout: None,
+            token: Some(String::default()),
+        }));
+        let mut rng = StdRng::seed_from_u64(42);
+        let inputs = vec![
+            make_bm25_inference_input("local"),
+            make_normal_inference_input("remote", &mut rng),
+        ];
+
+        let result = service
+            .infer(
+                inputs,
+                InferenceType::Update,
+                InferenceParams::new(InferenceApiKeys::new(None), None),
+            )
+            .await;
+        assert!(result.is_err());
+    }
 }
