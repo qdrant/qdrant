@@ -5322,6 +5322,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "perf-event"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2529f39584dbaa980f4959510c963ae95f119c127c046012c2834365f694438"
+dependencies = [
+ "bitflags 2.11.0",
+ "libc",
+ "perf-event-open-sys",
+]
+
+[[package]]
 name = "perf-event-data"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5330,6 +5341,15 @@ dependencies = [
  "bitflags 2.11.0",
  "c-enum",
  "perf-event-open-sys2",
+]
+
+[[package]]
+name = "perf-event-open-sys"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5f8d1487a4ffa23c80a1c355dd27235f9b66fb71ba0f261eb417e4fe8451347"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -7267,6 +7287,7 @@ dependencies = [
  "ordered-float 5.5.1",
  "pairwise",
  "parking_lot 0.13.0",
+ "perf-event",
  "posting_list",
  "pprof",
  "procfs",
