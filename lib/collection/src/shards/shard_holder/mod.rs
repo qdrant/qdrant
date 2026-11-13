@@ -2,6 +2,8 @@ pub mod recovery_guard;
 mod resharding;
 mod routing;
 mod shard_management;
+mod shard_removal;
+use shard_removal::ShardKeyRemoval;
 mod snapshots;
 mod transfers;
 pub(crate) use resharding::ReshardingCheck;
@@ -15,6 +17,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::save_on_disk::SaveOnDisk;
 use futures::{StreamExt, stream};
+use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey};
 use shard_mapping::ShardKeyMapping;
@@ -46,6 +49,8 @@ pub struct ShardHolder {
     /// every `core_search` await would block writers (e.g. shard creation)
     /// for the duration of the search.
     shards: BTreeMap<ShardId, Arc<ShardReplicaSet>>,
+    /// Detached shards remain owned until cleanup succeeds, so failed or cancelled removals can retry.
+    shard_key_removals: HashMap<ShardKey, Arc<ShardKeyRemoval>>,
     pub(crate) shard_transfers: Arc<SaveOnDisk<HashSet<ShardTransfer>>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
@@ -98,6 +103,7 @@ impl ShardHolder {
 
         Ok(Self {
             shards: BTreeMap::new(),
+            shard_key_removals: HashMap::new(),
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
@@ -109,10 +115,45 @@ impl ShardHolder {
         })
     }
 
+    fn detach_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<Arc<ShardKeyRemoval>> {
+        if let Some(removal) = self.shard_key_removals.get(shard_key) {
+            return Ok(Arc::clone(removal));
+        }
+        let remove_shard_ids = self
+            .key_mapping
+            .read()
+            .get(shard_key)
+            .cloned()
+            .unwrap_or_default();
+
+        self.remove_shard_key_mapping(shard_key)?;
+
+        let shards = remove_shard_ids
+            .into_iter()
+            .sorted()
+            .filter_map(|id| self.shards.remove(&id))
+            .collect();
+        let removal = Arc::new(ShardKeyRemoval::new(shards));
+        self.shard_key_removals
+            .insert(shard_key.clone(), Arc::clone(&removal));
+        Ok(removal)
+    }
+
     pub async fn stop_gracefully(&mut self) {
-        let futures = std::mem::take(&mut self.shards)
-            .into_values()
-            .map(|shard| async move { shard.stop_gracefully().await });
+        let detached = std::mem::take(&mut self.shard_key_removals);
+        // A filesystem task must finish before collection shutdown can return and
+        // allow its paths to be reused. Cleanup never acquires the holder lock.
+        for removal in detached.values() {
+            if let Err(err) = removal.remove().await {
+                log::error!("Failed to finish detached shard cleanup during shutdown: {err}");
+            }
+        }
+        let shards = std::mem::take(&mut self.shards).into_values().chain(
+            detached
+                .values()
+                .flat_map(|removal| removal.shards.iter().cloned()),
+        );
+        let futures = shards.map(|shard| async move { shard.stop_gracefully().await });
         futures::future::join_all(futures).await;
     }
 
