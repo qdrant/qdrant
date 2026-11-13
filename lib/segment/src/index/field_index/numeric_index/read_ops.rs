@@ -29,16 +29,23 @@ impl<T: Encodable + Numericable> Range<T> {
     pub(in crate::index::field_index::numeric_index) fn as_index_key_bounds(
         &self,
     ) -> (Bound<Point<T>>, Bound<Point<T>>) {
-        let start_bound = match self {
-            Range { gt: Some(gt), .. } => Excluded(Point::new(*gt, PointOffsetType::MAX)),
-            Range { gte: Some(gte), .. } => Included(Point::new(*gte, PointOffsetType::MIN)),
-            _ => Unbounded,
+        // A `Range` may carry both `gt` and `gte` (or both `lt` and `lte`), and
+        // `Range::check_range` ANDs all four bounds. The index key bounds must
+        // honor that intersection, so for each side we keep the tighter bound
+        // instead of whichever happens to be listed first. `gt`/`lt` win ties so
+        // an exact boundary value stays excluded, matching `check_range`.
+        let start_bound = match (self.gt, self.gte) {
+            (Some(gt), Some(gte)) if gt >= gte => Excluded(Point::new(gt, PointOffsetType::MAX)),
+            (_, Some(gte)) => Included(Point::new(gte, PointOffsetType::MIN)),
+            (Some(gt), None) => Excluded(Point::new(gt, PointOffsetType::MAX)),
+            (None, None) => Unbounded,
         };
 
-        let end_bound = match self {
-            Range { lt: Some(lt), .. } => Excluded(Point::new(*lt, PointOffsetType::MIN)),
-            Range { lte: Some(lte), .. } => Included(Point::new(*lte, PointOffsetType::MAX)),
-            _ => Unbounded,
+        let end_bound = match (self.lt, self.lte) {
+            (Some(lt), Some(lte)) if lt <= lte => Excluded(Point::new(lt, PointOffsetType::MIN)),
+            (_, Some(lte)) => Included(Point::new(lte, PointOffsetType::MAX)),
+            (Some(lt), None) => Excluded(Point::new(lt, PointOffsetType::MIN)),
+            (None, None) => Unbounded,
         };
 
         (start_bound, end_bound)

@@ -857,6 +857,69 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     assert_eq!(offsets, result);
 }
 
+// Regression: a numeric range filter that carries both `gt` and `gte` (or both
+// `lt` and `lte`) must scan the intersection of all bounds, exactly like
+// `Range::check_range`. Previously the indexed path kept only the first-listed
+// bound, so e.g. `gt: 1.0, gte: 2.5` leaked values in `(1.0, 2.5)` that the
+// filter should have excluded.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_combined_range_bounds(#[case] index_type: IndexType) {
+    let (_temp_dir, mut index_builder) = get_index_builder(index_type);
+
+    let values = [1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.5, 2.6, 3.0];
+
+    let _scope = ambient::test_guard();
+
+    for (idx, value) in values.iter().enumerate() {
+        let value = Value::from(*value);
+        index_builder
+            .add_point(idx as PointOffsetType + 1, &[&value])
+            .unwrap();
+    }
+    let index = index_builder.finalize().unwrap();
+
+    // v > 1.0 AND v >= 2.5  ==  v >= 2.5. The looser `gt` bound must not
+    // re-admit 2.0 (point 6).
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: Some(2.5),
+            lt: None,
+            lte: None,
+        },
+        vec![7, 8, 9],
+    );
+
+    // v < 3.0 AND v <= 2.5  ==  v <= 2.5. The looser `lt` bound must not
+    // re-admit 2.6 (point 8).
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(3.0),
+            lte: Some(2.5),
+        },
+        vec![1, 2, 3, 4, 5, 6, 7],
+    );
+
+    // Contradictory bounds from opposite sides collapse to the empty set.
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(2.5),
+            gte: None,
+            lt: None,
+            lte: Some(2.5),
+        },
+        vec![],
+    );
+}
+
 // Check we don't panic on an empty index. See <https://github.com/qdrant/qdrant/pull/2933>.
 #[rstest]
 #[case(IndexType::MutableGridstore)]
