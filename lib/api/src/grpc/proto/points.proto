@@ -529,6 +529,12 @@ message SearchParams {
   // Which population IDF statistics are computed over.
   // If unset, statistics are collection-wide (global).
   optional IdfParams idf = 6;
+
+  // Only applicable to sparse vectors.
+  // Keep only the provided number of dimensions from the query. Dimensions are selected by
+  // largest absolute weight. This parameter enables approximate sparse search (Qdrant's
+  // default is exact): use with caution.
+  optional uint64 max_sparse_dims = 7;
 }
 
 message SearchPoints {

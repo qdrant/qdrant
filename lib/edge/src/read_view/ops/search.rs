@@ -48,6 +48,20 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             return Ok(Vec::new());
         }
 
+        // The server rejects this when it parses the request. Without the check, `0` would trip a
+        // debug assertion in debug builds and silently empty the query in release builds.
+        for search in searches {
+            let max_sparse_dims = search
+                .params
+                .as_ref()
+                .and_then(|params| params.max_sparse_dims);
+            if max_sparse_dims == Some(0) {
+                return Err(OperationError::validation_error(
+                    "`max_sparse_dims` must be at least 1",
+                ));
+            }
+        }
+
         let query_context = init_query_context_with_stopping_flag(
             searches,
             DEFAULT_FULL_SCAN_THRESHOLD,

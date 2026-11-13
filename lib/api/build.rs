@@ -278,6 +278,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchParams.quantization", ""),
             ("SearchParams.acorn", ""),
             ("SearchParams.idf", ""),
+            ("SearchParams.max_sparse_dims", "range(min = 1)"),
             ("IdfParams.corpus", ""),
             ("QuantizationSearchParams.oversampling", "range(min = 1.0)"),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),

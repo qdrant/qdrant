@@ -526,7 +526,7 @@ fn filter_by_point_ids(points: &[Vec<ScoredPoint>]) -> Filter {
 #[cfg(test)]
 mod tests {
     use segment::data_types::vectors::{NamedQuery, VectorInternal};
-    use segment::types::{Condition, WithPayloadInterface};
+    use segment::types::{Condition, SearchParams, WithPayloadInterface};
     use shard::query::query_enum::QueryEnum;
 
     use super::*;
@@ -608,6 +608,46 @@ mod tests {
             .collect();
 
         assert_eq!(ids, vec![2.into()]);
+    }
+
+    fn max_sparse_dims_params(max_sparse_dims: usize) -> SearchParams {
+        SearchParams {
+            max_sparse_dims: Some(max_sparse_dims),
+            ..Default::default()
+        }
+    }
+
+    /// `max_sparse_dims = 0` must be rejected at the top level and inside a prefetch, as the server does.
+    #[test]
+    fn query_rejects_zero_max_sparse_dims() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 4);
+
+        let top_level = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .params(max_sparse_dims_params(0))
+            .build();
+        let prefetch = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .prefetches(vec![
+                PrefetchBuilder::new(2)
+                    .query(nearest_query(1.0))
+                    .params(max_sparse_dims_params(0))
+                    .build(),
+            ])
+            .build();
+
+        for request in [top_level, prefetch] {
+            let error = shard.query(request).unwrap_err();
+            assert!(error.to_string().contains("max_sparse_dims"), "{error}");
+        }
+
+        // A valid cut passes validation: it is a no-op on a dense query.
+        let valid = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .params(max_sparse_dims_params(1))
+            .build();
+        shard.query(valid).unwrap();
     }
 
     #[test]
