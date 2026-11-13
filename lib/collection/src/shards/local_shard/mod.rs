@@ -14,7 +14,7 @@ mod telemetry;
 pub(super) mod updaters;
 
 #[cfg(test)]
-mod load_config_lock_tests;
+pub(crate) mod load_config_lock_tests;
 #[cfg(test)]
 mod optimizer_config_update_tests;
 #[cfg(test)]
@@ -398,9 +398,10 @@ impl LocalShard {
         // passed in separately. The fallback appendable segment also uses this copy, instead of
         // reading the lock again later, so it matches the config the segments were loaded with.
         //
-        // Config changes made while the shard loads are applied to it afterwards, through the
-        // replica set: optimizers are recreated with `on_optimizer_config_update`, and vector
-        // name changes are shard operations.
+        // This copy only releases the config lock; load does not reconcile later config changes.
+        // During replica-set recovery, the local-shard write lock serializes installation with
+        // optimizer refreshes and vector-name operations: successful updates waiting for that
+        // lock apply to the replacement shard. WAL config changes still require a restart.
         let collection_config_snapshot = collection_config.read().await.clone();
 
         let wal_path = Self::wal_path(shard_path);

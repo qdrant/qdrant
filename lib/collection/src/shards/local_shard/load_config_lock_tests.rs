@@ -1,16 +1,18 @@
 //! Tests and test hooks for collection config locking in [`LocalShard::load`].
 
 pub mod load_hooks {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+
     use tokio::sync::oneshot;
 
     struct PauseAfterSegmentsLoaded {
-        collection: String,
         paused: Option<oneshot::Sender<()>>,
         release: Option<oneshot::Receiver<()>>,
     }
 
-    static PAUSE_AFTER_SEGMENTS_LOADED: std::sync::Mutex<Option<PauseAfterSegmentsLoaded>> =
-        std::sync::Mutex::new(None);
+    static PAUSE_AFTER_SEGMENTS_LOADED: LazyLock<Mutex<HashMap<String, PauseAfterSegmentsLoaded>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     /// Pause the next [`LocalShard::load`] of `collection` once its segments are loaded.
     ///
@@ -22,28 +24,30 @@ pub mod load_hooks {
         release: oneshot::Receiver<()>,
     ) {
         let mut hook = PAUSE_AFTER_SEGMENTS_LOADED.lock().unwrap();
-        *hook = Some(PauseAfterSegmentsLoaded {
+        let previous = hook.insert(
             collection,
-            paused: Some(paused),
-            release: Some(release),
-        });
+            PauseAfterSegmentsLoaded {
+                paused: Some(paused),
+                release: Some(release),
+            },
+        );
+        assert!(
+            previous.is_none(),
+            "load hook already installed for collection"
+        );
     }
 
-    pub fn clear_pause_after_segments_loaded() {
+    pub fn clear_pause_after_segments_loaded(collection: &str) {
         let mut hook = PAUSE_AFTER_SEGMENTS_LOADED.lock().unwrap();
-        *hook = None;
+        hook.remove(collection);
     }
 
     pub async fn pause_after_segments_loaded(collection_name: &str) {
         let release = {
             let mut hook = PAUSE_AFTER_SEGMENTS_LOADED.lock().unwrap();
-            let Some(hook) = hook.as_mut() else {
+            let Some(mut hook) = hook.remove(collection_name) else {
                 return;
             };
-
-            if collection_name != hook.collection {
-                return;
-            }
 
             if let Some(paused) = hook.paused.take() {
                 let _ = paused.send(());
@@ -172,7 +176,7 @@ mod tests {
         // Let the load continue regardless of the outcome, so a failing assertion below doesn't
         // leave it hanging
         let _ = release_tx.send(());
-        clear_pause_after_segments_loaded();
+        clear_pause_after_segments_loaded(&collection_name);
 
         assert!(
             write_result.is_ok(),
