@@ -894,6 +894,8 @@ impl TableOfContent {
                     payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
                     vector_io_read: m(HwMetric::VectorIoRead),
                     vector_io_write: m(HwMetric::VectorIoWrite),
+                    remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
+                    remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
                 };
                 (key, hw_usage)
             })
