@@ -2,7 +2,7 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
@@ -21,7 +21,6 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_high_thread_priority;
-use common::defaults::CONSENSUS_META_OP_WAIT;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{INVALID_ID, SoftState, StateRole};
@@ -60,25 +59,6 @@ pub enum Message {
     FromPeer(Box<RaftMessage>),
 }
 
-/// Whether `message` proposes a Raft conf change: a local add/remove peer request,
-/// or a proposal forwarded by a follower that carries a conf-change entry.
-fn is_conf_change_proposal(message: &Message) -> bool {
-    match message {
-        Message::FromClient(operation) => operation.is_conf_change(),
-        Message::FromPeer(message) => {
-            message.get_msg_type() == MessageType::MsgPropose
-                && message.get_entries().iter().any(is_conf_change_entry)
-        }
-    }
-}
-
-fn is_conf_change_entry(entry: &Entry) -> bool {
-    match entry.get_entry_type() {
-        EntryType::EntryNormal => false,
-        EntryType::EntryConfChange | EntryType::EntryConfChangeV2 => true,
-    }
-}
-
 /// Aka Consensus Thread
 /// Manages proposed changes to consensus state, ensures that everything is ordered properly
 pub struct Consensus {
@@ -91,11 +71,6 @@ pub struct Consensus {
     config: ConsensusConfig,
     broker: RaftMessageBroker,
     raft_config: Config,
-    /// Conf changes, with arrival time, that Raft would drop if proposed now: while this node
-    /// is leader with an unapplied conf change, or while no leader is known.
-    ///
-    /// They are proposed in arrival order once that clears, unless their caller has given up.
-    deferred_conf_changes: VecDeque<(Instant, Message)>,
 }
 
 impl Consensus {
@@ -432,7 +407,6 @@ impl Consensus {
             config,
             broker,
             raft_config,
-            deferred_conf_changes: VecDeque::new(),
         };
 
         if !state_ref.is_new_deployment() {
@@ -730,24 +704,6 @@ impl Consensus {
             return Ok(0);
         }
 
-        if !self.must_defer_conf_change()
-            && let Some((deferred_at, message)) = self.deferred_conf_changes.pop_front()
-        {
-            // Expiry assumes callers use the default wait. A caller with a longer custom timeout
-            // loses its conf change here, as it would if it hadn't been deferred.
-            if deferred_at.elapsed() > CONSENSUS_META_OP_WAIT {
-                log::warn!(
-                    "Dropping conf change deferred for over {CONSENSUS_META_OP_WAIT:?}, its caller has given up",
-                );
-            } else {
-                log::debug!("Proposing deferred conf change");
-                if let Err(err) = self.advance_node_impl(message) {
-                    log::warn!("{err}");
-                }
-            }
-            return Ok(0);
-        }
-
         // This method propagates incoming client requests and Raft messages to Raft node
 
         // It's more efficient to process multiple events, so we propagate up to 128 events at a time
@@ -779,10 +735,12 @@ impl Consensus {
             // E.g., without this condition, if two nodes try to join cluster at the same time and
             // both conf-change requests are processed in the same batch, the second request would
             // be ignored and the node would fail to join.
-            let is_conf_change = match &message {
-                Message::FromClient(operation) => operation.is_conf_change(),
-                Message::FromPeer(_) => false,
-            };
+            let is_conf_change = matches!(
+                message,
+                Message::FromClient(
+                    ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_)
+                ),
+            );
 
             let is_raft_message = matches!(message, Message::FromPeer(_));
 
@@ -822,15 +780,6 @@ impl Consensus {
     }
 
     fn advance_node_impl(&mut self, message: Message) -> anyhow::Result<()> {
-        if is_conf_change_proposal(&message) && self.must_defer_conf_change() {
-            log::debug!(
-                "Deferring conf change until there is a leader without a pending conf change"
-            );
-            self.deferred_conf_changes
-                .push_back((Instant::now(), message));
-            return Ok(());
-        }
-
         match message {
             Message::FromClient(ConsensusOperations::AddPeer { peer_id, uri }) => {
                 let existing_uris = self
@@ -931,20 +880,6 @@ impl Consensus {
 
     fn is_leader(&self) -> bool {
         self.node.status().ss.raft_state == StateRole::Leader
-    }
-
-    /// Whether Raft would drop a conf change proposed now.
-    ///
-    /// A leader ignores it until the previous conf change is applied, and a new leader counts its
-    /// whole unapplied log tail as a possible conf change. Without a leader, any proposal is dropped.
-    fn must_defer_conf_change(&self) -> bool {
-        let raft = &self.node.raft;
-        match raft.state {
-            StateRole::Leader => raft.has_pending_conf(),
-            StateRole::Follower | StateRole::Candidate | StateRole::PreCandidate => {
-                raft.leader_id == INVALID_ID
-            }
-        }
     }
 
     fn try_sync_local_state(&self) -> anyhow::Result<()> {

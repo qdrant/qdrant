@@ -79,19 +79,6 @@ pub mod consensus_ops {
     }
 
     impl ConsensusOperations {
-        /// Whether this operation is proposed as a Raft configuration change, not a normal entry.
-        pub fn is_conf_change(&self) -> bool {
-            match self {
-                ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => true,
-                ConsensusOperations::CollectionMeta(_)
-                | ConsensusOperations::UpdatePeerMetadata { .. }
-                | ConsensusOperations::UpdateClusterMetadata { .. }
-                | ConsensusOperations::SetQuotaConfig(_)
-                | ConsensusOperations::RequestSnapshot
-                | ConsensusOperations::ReportSnapshot { .. } => false,
-            }
-        }
-
         pub fn abort_transfer(
             collection_id: CollectionId,
             transfer: ShardTransfer,
