@@ -428,6 +428,14 @@ fn install_restore_local_replica_before_flag_hook(
 }
 
 async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> ShardReplicaSet {
+    new_named_shard_replica_set(collection_dir, shard_id, TEST_COLLECTION_ID).await
+}
+
+async fn new_named_shard_replica_set(
+    collection_dir: &TempDir,
+    shard_id: ShardId,
+    collection_name: &str,
+) -> ShardReplicaSet {
     let update_runtime = Handle::current();
     let search_runtime = AdaptiveSearchHandle::current_for_tests();
 
@@ -466,7 +474,7 @@ async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> S
     ShardReplicaSet::build(
         shard_id,
         None,
-        TEST_COLLECTION_ID.to_string(),
+        collection_name.to_string(),
         TEST_PEER_ID,
         true,
         HashSet::new(),
@@ -493,4 +501,95 @@ fn dummy_on_replica_failure() -> ChangePeerFromState {
 
 fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_shard_transfer, _reason| {})
+}
+
+/// A refresh queued during recovery must configure the replacement, not the old shard.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_recovery_applies_optimizer_config_published_during_load() {
+    use crate::shards::local_shard::load_config_lock_tests::load_hooks::install_pause_after_segments_loaded;
+
+    let _scope = ambient::async_test_guard();
+    let collection_name = "recovery_optimizer_config_during_load";
+    let target_dir = tempfile::tempdir().unwrap();
+    let source_dir = tempfile::tempdir().unwrap();
+    let target =
+        new_named_shard_replica_set(&target_dir, TEST_TARGET_SHARD_ID, collection_name).await;
+    let source = new_shard_replica_set(&source_dir, TEST_SOURCE_SHARD_ID).await;
+    upsert_point(&target, 99).await;
+    upsert_point(&source, 10).await;
+    upsert_point(&source, 11).await;
+    source.force_flush_local_for_test().await;
+    source.stop_gracefully().await;
+    let replica_path = source_dir.path().join(TEST_SOURCE_SHARD_ID.to_string());
+
+    let initial_threshold = target
+        .collection_config
+        .read()
+        .await
+        .optimizer_config
+        .indexing_threshold;
+    assert_ne!(initial_threshold, Some(1234));
+    let (paused_tx, paused_rx) = oneshot::channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    install_pause_after_segments_loaded(collection_name.to_string(), paused_tx, release_rx);
+
+    let restore = target.restore_local_replica_from(
+        &replica_path,
+        RecoveryType::Full,
+        target_dir.path(),
+        cancel::CancellationToken::new(),
+    );
+    tokio::pin!(restore);
+    tokio::time::timeout(Duration::from_secs(30), async {
+        tokio::select! {
+            paused = paused_rx => paused.expect("recovery must pause inside LocalShard::load"),
+            result = &mut restore => panic!("recovery completed before load hook: {result:?}"),
+        }
+    })
+    .await
+    .unwrap();
+
+    // Publish while load is paused, then poll the normal replica-set callback until it
+    // waits on `local`. A pending poll here cannot have stopped any shard workers yet.
+    target
+        .collection_config
+        .try_write()
+        .unwrap()
+        .optimizer_config
+        .indexing_threshold = Some(1234);
+    assert!(
+        target.local.try_read().is_err(),
+        "recovery must still own local"
+    );
+    let refresh = target.on_optimizer_config_update();
+    tokio::pin!(refresh);
+    assert!(futures::poll!(refresh.as_mut()).is_pending());
+
+    release_tx.send(()).unwrap();
+    let (restored, refreshed) = tokio::time::timeout(Duration::from_secs(30), async {
+        tokio::join!(&mut restore, &mut refresh)
+    })
+    .await
+    .expect("recovery and queued refresh must finish");
+    assert!(restored.unwrap());
+    refreshed.unwrap();
+
+    // Inspect the actual installed optimizer thresholds, not the shared collection config.
+    let optimizers = target.local_optimizers_for_test().await.unwrap();
+    assert!(!optimizers.is_empty());
+    for optimizer in optimizers.iter() {
+        assert_eq!(optimizer.threshold_config().indexing_threshold_kb, 1234);
+    }
+    assert_eq!(
+        count_points(&target).await,
+        2,
+        "must install snapshot points"
+    );
+    upsert_point(&target, 12).await;
+    assert_eq!(
+        count_points(&target).await,
+        3,
+        "refreshed workers must accept writes"
+    );
+    target.stop_gracefully().await;
 }
