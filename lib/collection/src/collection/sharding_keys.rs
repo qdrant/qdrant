@@ -30,6 +30,7 @@ impl Collection {
         shard_key: Option<ShardKey>,
         shards: &[(ShardId, Vec<PeerId>, ReplicaState)],
     ) -> CollectionResult<()> {
+        let _lifecycle = self.shard_lifecycle_lock.lock().await;
         self.shards_holder.finish_shard_key_removals().await?;
         let existing: HashSet<_> = self
             .shards_holder
@@ -143,6 +144,7 @@ impl Collection {
         placement: ShardsPlacement,
         init_state: ReplicaState,
     ) -> CollectionResult<()> {
+        let _lifecycle = self.shard_lifecycle_lock.lock().await;
         self.shards_holder.finish_shard_key_removals().await?;
         let (sharding_method, key_mapping) = {
             let shards_holder = self.shards_holder.read().await;
@@ -251,6 +253,7 @@ impl Collection {
     }
 
     pub async fn drop_shard_key(&self, shard_key: ShardKey) -> CollectionResult<()> {
+        let _lifecycle = self.shard_lifecycle_lock.lock().await;
         let sharding_method = self.shards_holder.read().await.get_sharding_method();
 
         match sharding_method {

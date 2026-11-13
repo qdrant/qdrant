@@ -327,3 +327,58 @@ async fn collection_shutdown_waits_for_detached_cleanup() {
     assert!(!dir.path().join("0").exists());
     assert!(!dir.path().join("1").exists());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_shard_creation_and_key_drop_are_serialized() {
+    let dir = tempfile::tempdir().unwrap();
+    let collection = custom_collection(dir.path()).await;
+    // Pause a real create after its cleanup barrier and registered-ID snapshot,
+    // while it is building the replica set. Standalone requests can overlap here.
+    let config_guard = collection.collection_config.write().await;
+    let shards = [(3, vec![1], ReplicaState::Active)];
+    let mut creation =
+        Box::pin(collection.create_and_register_shards(Some(ShardKey::from("removed")), &shards));
+    assert!(futures::poll!(&mut creation).is_pending());
+    let mut deletion = Box::pin(collection.drop_shard_key(ShardKey::from("removed")));
+    let deletion_pending = futures::poll!(&mut deletion).is_pending();
+    let retained_ids = timeout(
+        Duration::from_secs(2),
+        collection.get_shard_ids(&ShardKey::from("retained")),
+    )
+    .await;
+
+    drop(config_guard);
+    timeout(Duration::from_secs(10), creation)
+        .await
+        .unwrap()
+        .unwrap();
+    // The broken implementation completes during the first poll; do not poll
+    // a completed future again while collecting its regression failure.
+    if deletion_pending {
+        timeout(Duration::from_secs(10), deletion)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    collection
+        .shards_holder()
+        .finish_shard_key_removals()
+        .await
+        .unwrap();
+    let registered: Vec<_> = collection
+        .shards_holder()
+        .read()
+        .await
+        .get_shards()
+        .map(|(id, _)| id)
+        .collect();
+    collection.stop_gracefully().await;
+
+    assert!(
+        deletion_pending,
+        "drop passed the in-progress shard creation"
+    );
+    assert_eq!(retained_ids.unwrap().unwrap(), vec![2]);
+    assert_eq!(registered, vec![2]);
+    assert!(!dir.path().join("3").exists());
+}

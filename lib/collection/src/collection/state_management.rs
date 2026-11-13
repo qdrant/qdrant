@@ -36,6 +36,7 @@ impl Collection {
         this_peer_id: PeerId,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
+        let _lifecycle = self.shard_lifecycle_lock.lock().await;
         self.shards_holder.finish_shard_key_removals().await?;
         let State {
             config,
