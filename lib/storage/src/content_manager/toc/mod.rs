@@ -885,7 +885,7 @@ impl TableOfContent {
             .map(|i| {
                 let key = i.key().clone();
                 let data = i.load();
-                let m = |metric: HwMetric| data[metric];
+                let m = |metric: HwMetric| Some(data[metric]);
                 let hw_usage = HardwareUsage {
                     cpu: m(HwMetric::Cpu),
                     payload_io_read: m(HwMetric::PayloadIoRead),

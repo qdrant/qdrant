@@ -7,10 +7,15 @@ use crate::common::telemetry_ops::hardware::HardwareTelemetry;
 
 impl HardwareTelemetry {
     // Helper function to create counter metrics of a single Hw type, like cpu.
-    fn make_metric_counters<F: Fn(&HardwareUsage) -> usize>(&self, f: F) -> Vec<Metric> {
+    fn make_metric_counters<F: Fn(&HardwareUsage) -> Option<usize>>(&self, f: F) -> Vec<Metric> {
         self.collection_data
             .iter()
-            .map(|(collection_id, hw_usage)| counter(f(hw_usage) as f64, &[("id", collection_id)]))
+            .map(|(collection_id, hw_usage)| {
+                counter(
+                    f(hw_usage).unwrap_or_default() as f64,
+                    &[("id", collection_id)],
+                )
+            })
             .collect()
     }
 }
