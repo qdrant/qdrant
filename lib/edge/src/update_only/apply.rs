@@ -3,6 +3,7 @@
 //! points it touches, not the operations in it.
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 use ahash::AHashMap;
 use common::ambient::{self, ThreadPoolExt as _};
@@ -30,6 +31,7 @@ use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
+    /// Total of every [`PointApplyRecord::usage`]; zero when not metered.
     pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
@@ -70,6 +72,37 @@ pub struct PointApplyRecord {
     /// invisible until a rebuild indexes it, so these keep serving readers
     /// until the rebuild's deduplication retires them.
     pub shadowed: Vec<(Uuid, PointOffsetType)>,
+    /// What storing the point cost, for a point stored by a metered apply;
+    /// `None` otherwise. See [`PointUsage`].
+    pub usage: Option<PointUsage>,
+}
+
+/// A stored point's metered bytes, tagged with the version it was stored at.
+///
+/// A batch folds every operation naming a point into one write, so a point
+/// two operations touched is measured once, in its final form. `version` is
+/// the highest operation number folded into it: callers that pack several
+/// requests into one batch attribute the bytes to the request owning that
+/// operation number (see [`UpdateBatchOutcome::usage_in`]). The sum over
+/// all requests then equals [`UpdateBatchOutcome::usage`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointUsage {
+    pub version: SeqNumberType,
+    pub bytes: UpdateBytes,
+}
+
+impl UpdateBatchOutcome {
+    /// Usage of the points stored at a version in `versions`: one request's
+    /// share of a batch, given the operation numbers it was applied with.
+    pub fn usage_in(&self, versions: RangeInclusive<SeqNumberType>) -> UpdateBytes {
+        let mut total = UpdateBytes::default();
+        for usage in self.points.iter().filter_map(|record| record.usage) {
+            if versions.contains(&usage.version) {
+                total += usage.bytes;
+            }
+        }
+        total
+    }
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -191,6 +224,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 action,
             } = point;
 
+            let mut usage = None;
             let kind = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
@@ -206,7 +240,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 }
                 PointAction::Store(point) => {
                     if let Some(metering) = metering {
-                        outcome.usage += metering.measure(&point)?;
+                        let bytes = metering.measure(&point)?;
+                        outcome.usage += bytes;
+                        usage = Some(PointUsage {
+                            version: point.version,
+                            bytes,
+                        });
                     }
                     to_store.push(*point);
                     stored_records.push(outcome.points.len());
@@ -225,6 +264,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 tombstoned: Vec::new(),
                 superseded: None,
                 shadowed: Vec::new(),
+                usage,
             };
 
             if kind.retires_slots() {

@@ -377,3 +377,92 @@ fn retained_vector_without_a_meter_is_rejected_before_decoding() {
         "unknown name must not be decoded as sparse: {err}"
     );
 }
+
+#[test]
+fn per_point_usage_splits_a_batch_by_the_version_each_point_was_stored_at() {
+    let config = test_config();
+    let metering = UpdateMetering::new(&config, []);
+    let (_dir, writer) = writer(config);
+
+    // Two requests packed into one batch: the first holds operations 1..=2,
+    // the second 3..=4. Operation 3 touches a point the first request created.
+    let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+        payload: payload_json! { "a": 1 },
+        points: Some(vec![PointId::NumId(2)]),
+        filter: None,
+        key: None,
+    }));
+    let operations = [
+        (1, PointOperation(UpsertPoints(PointsList(vec![point(1)])))),
+        (2, PointOperation(UpsertPoints(PointsList(vec![point(2)])))),
+        (3, set_payload),
+        (4, PointOperation(UpsertPoints(PointsList(vec![point(3)])))),
+    ];
+    let (_, outcome) = writer.apply_batch_metered(operations, &metering).unwrap();
+    assert_eq!(outcome.stored, 3);
+
+    let plain = UpdateBytes {
+        updated_bytes: 6,
+        indexed_bytes: 4,
+    };
+    let with_payload = UpdateBytes {
+        updated_bytes: r#"{"a":1}"#.len() as u64 + 4,
+        indexed_bytes: 4,
+    };
+    let versions = outcome
+        .points
+        .iter()
+        .map(|record| {
+            (
+                record.id,
+                record.usage.map(|usage| (usage.version, usage.bytes)),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        versions,
+        vec![
+            (PointId::NumId(1), Some((1, plain))),
+            (PointId::NumId(2), Some((3, with_payload))),
+            (PointId::NumId(3), Some((4, plain))),
+        ],
+        "a point folded across requests is measured once, at its last operation"
+    );
+
+    let first = outcome.usage_in(1..=2);
+    let second = outcome.usage_in(3..=4);
+    assert_eq!(first, plain);
+    let mut expected_second = with_payload;
+    expected_second += plain;
+    assert_eq!(second, expected_second);
+    let mut sum = first;
+    sum += second;
+    assert_eq!(sum, outcome.usage, "the shares add up to the batch total");
+}
+
+#[test]
+fn unmetered_and_unstored_points_carry_no_usage() {
+    let config = test_config();
+    let metering = UpdateMetering::new(&config, []);
+    let (_dir, writer) = writer(config);
+
+    let (writer, unmetered) = writer
+        .apply_batch([(1, PointOperation(UpsertPoints(PointsList(vec![point(1)]))))])
+        .unwrap();
+    assert!(unmetered.points.iter().all(|record| record.usage.is_none()));
+
+    let (_, deleted) = writer
+        .apply_batch_metered(
+            [(
+                2,
+                PointOperation(DeletePoints {
+                    ids: vec![PointId::NumId(1)],
+                }),
+            )],
+            &metering,
+        )
+        .unwrap();
+    assert_eq!(deleted.deleted, 1);
+    assert!(deleted.points.iter().all(|record| record.usage.is_none()));
+    assert_eq!(deleted.usage_in(0..=u64::MAX), UpdateBytes::default());
+}
