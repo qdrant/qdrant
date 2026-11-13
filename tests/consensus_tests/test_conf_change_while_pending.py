@@ -1,4 +1,4 @@
-"""A peer joining while another conf change is uncommitted must not be dropped by the leader."""
+"""A peer joining while another conf change is uncommitted must still join the cluster."""
 
 import os
 import signal
@@ -43,7 +43,7 @@ def test_join_while_peer_removal_is_pending(tmp_path):
             )
             time.sleep(1)
 
-            # The new peer's AddPeer reaches the leader while the removal is pending
+            # The new peer's AddPeer reaches the leader while the removal is pending, so Raft drops it
             new_peer_dir = make_peer_folder(tmp_path, 2)
             new_peer_uri = start_peer(new_peer_dir, "peer_0_2.log", leader_p2p_uri)
             time.sleep(3)
@@ -53,7 +53,7 @@ def test_join_while_peer_removal_is_pending(tmp_path):
     finally:
         os.kill(follower_pid, signal.SIGCONT)
 
-    # The new peer gives up and exits if its AddPeer isn't committed within 10 seconds
+    # The leader times out waiting for the dropped AddPeer after 10 seconds, then the new peer retries
     wait_for_peer_online(new_peer_uri)
     new_peer_id = get_cluster_info(new_peer_uri)["peer_id"]
     wait_for(

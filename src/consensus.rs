@@ -44,6 +44,13 @@ type Node = RawNode<ConsensusStateRef>;
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
+/// How many times a new peer retries joining the cluster through its bootstrap peer.
+///
+/// Raft can drop the `AddPeer` conf change, e.g. right after a leader election or while another
+/// conf change is still unapplied. The bootstrap peer then times out waiting for it.
+const BOOTSTRAP_MAX_RETRY_COUNT: u32 = 3;
+const BOOTSTRAP_RETRY_DELAY: Duration = Duration::from_secs(1);
+
 /// Initial delay before restarting the consensus thread after a failure
 const CONSENSUS_RESTART_INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 
@@ -578,16 +585,35 @@ impl Consensus {
         api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
-        let all_peers = Self::add_peer_to_known_for(
-            this_peer_id,
-            bootstrap_peer,
-            uri.clone(),
-            p2p_port,
-            config,
-            tls_config,
-            api_key,
-        )
-        .await?;
+
+        // Retrying is safe: re-adding an existing learner is a no-op in Raft, and this peer can't
+        // have been promoted to voter yet, because it doesn't run consensus until bootstrap is done.
+        let mut attempt = 0;
+        let all_peers = loop {
+            let result = Self::add_peer_to_known_for(
+                this_peer_id,
+                bootstrap_peer.clone(),
+                uri.clone(),
+                p2p_port,
+                config,
+                tls_config.clone(),
+                api_key,
+            )
+            .await;
+
+            match result {
+                Ok(all_peers) => break all_peers,
+                Err(err) if attempt < BOOTSTRAP_MAX_RETRY_COUNT => {
+                    attempt += 1;
+                    let delay = BOOTSTRAP_RETRY_DELAY * attempt;
+                    log::warn!(
+                        "Failed to join cluster through {bootstrap_peer}: {err:#}, retrying in {delay:?} (retry {attempt}/{BOOTSTRAP_MAX_RETRY_COUNT})",
+                    );
+                    sleep(delay).await;
+                }
+                Err(err) => return Err(err),
+            }
+        };
 
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
