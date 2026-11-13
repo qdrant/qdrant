@@ -45,4 +45,17 @@ impl<P: PayloadStorageRead> PayloadProvider<P> {
             .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
         callback(payload)
     }
+
+    /// Like [`Self::with_payload`], but the payload may hold only the top-level `field`.
+    pub fn with_payload_field<F, G>(&self, point_id: PointOffsetType, field: &str, callback: F) -> G
+    where
+        F: FnOnce(OwnedPayloadRef) -> G,
+    {
+        let guard = self.payload_storage.borrow();
+        // Same panic-on-error policy as `with_payload`
+        let payload = guard
+            .payload_ref_field(point_id, field)
+            .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
+        callback(payload)
+    }
 }

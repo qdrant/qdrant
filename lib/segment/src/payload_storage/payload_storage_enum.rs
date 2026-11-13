@@ -75,6 +75,20 @@ impl PayloadStorageRead for PayloadStorageEnum {
         }
     }
 
+    fn payload_ref_field(
+        &self,
+        point_offset: PointOffsetType,
+        field: &str,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(s) => s.payload_ref_field(point_offset, field),
+            PayloadStorageEnum::Mmap(s) => s.payload_ref_field(point_offset, field),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.payload_ref_field(point_offset, field),
+        }
+    }
+
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
