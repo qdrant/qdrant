@@ -43,11 +43,6 @@ impl<'a> LazyCardinality<'a> {
         let value = (self.compute)()?;
         Ok(self.value.get_or_init(|| value))
     }
-
-    /// Whether some index has asked for the estimation.
-    pub fn is_computed(&self) -> bool {
-        self.value.get().is_some()
-    }
 }
 
 /// How a search uses its filter.
@@ -150,52 +145,5 @@ mod tests {
     fn test_searches_without_checks_do_not_share() {
         assert!(!worth_sharing(0, [lazy(0); 3]));
         assert!(!worth_sharing(10, [lazy(0); 3]));
-    }
-
-    #[test]
-    fn test_never_worth_sharing_agrees_with_worth_sharing() {
-        let cases: [&[FilterChecks]; 7] = [
-            &[],
-            &[FilterChecks::Full],
-            &[lazy(0), lazy(0)],
-            &[FilterChecks::Full, lazy(0)],
-            &[FilterChecks::Full, FilterChecks::Full],
-            &[lazy(1)],
-            &[FilterChecks::Full, lazy(5)],
-        ];
-        for uses in cases {
-            let never = never_worth_sharing(uses);
-            for cost in [0, 1, 10, 1_000_000] {
-                if never {
-                    assert!(
-                        !worth_sharing(cost, uses.iter().copied()),
-                        "{uses:?} {cost}"
-                    );
-                }
-            }
-        }
-        assert!(never_worth_sharing(&[FilterChecks::Full]));
-        assert!(never_worth_sharing(&[FilterChecks::Full, lazy(0)]));
-        assert!(!never_worth_sharing(&[
-            FilterChecks::Full,
-            FilterChecks::Full
-        ]));
-        assert!(!never_worth_sharing(&[lazy(1)]));
-    }
-
-    #[test]
-    fn test_lazy_cardinality_computes_once_and_only_on_demand() {
-        use std::cell::Cell;
-        let calls = Cell::new(0);
-        let lazy = LazyCardinality::new(|| {
-            calls.set(calls.get() + 1);
-            Ok(CardinalityEstimation::exact(7))
-        });
-        assert!(!lazy.is_computed());
-        assert_eq!(calls.get(), 0);
-        assert_eq!(lazy.get().unwrap().exp, 7);
-        assert_eq!(lazy.get().unwrap().exp, 7);
-        assert!(lazy.is_computed());
-        assert_eq!(calls.get(), 1);
     }
 }

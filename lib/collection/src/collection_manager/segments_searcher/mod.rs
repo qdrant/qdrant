@@ -15,6 +15,8 @@ mod search;
 /// Batch search within one segment
 mod segment_search;
 #[cfg(test)]
+mod shared_filter_tests;
+#[cfg(test)]
 mod tests;
 
 use segment::types::ScoredPoint;

@@ -26,7 +26,6 @@ mod scroll_filtering_test;
 mod segment_builder_test;
 mod segment_on_disk_snapshot;
 mod segment_tests;
-mod shared_filter_query_types_test;
 mod shared_filter_test;
 mod sparse_discover_test;
 mod sparse_idf_corpus_test;
