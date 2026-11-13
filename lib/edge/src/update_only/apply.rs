@@ -31,7 +31,6 @@ use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
-    /// Total of every [`PointApplyRecord::usage`]; zero when not metered.
     pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
@@ -72,19 +71,11 @@ pub struct PointApplyRecord {
     /// invisible until a rebuild indexes it, so these keep serving readers
     /// until the rebuild's deduplication retires them.
     pub shadowed: Vec<(Uuid, PointOffsetType)>,
-    /// What storing the point cost, for a point stored by a metered apply;
-    /// `None` otherwise. See [`PointUsage`].
+    /// `None` unless the point was stored by a metered apply.
     pub usage: Option<PointUsage>,
 }
 
-/// A stored point's metered bytes, tagged with the version it was stored at.
-///
-/// A batch folds every operation naming a point into one write, so a point
-/// two operations touched is measured once, in its final form. `version` is
-/// the highest operation number folded into it: callers that pack several
-/// requests into one batch attribute the bytes to the request owning that
-/// operation number (see [`UpdateBatchOutcome::usage_in`]). The sum over
-/// all requests then equals [`UpdateBatchOutcome::usage`].
+/// `version` is the highest operation number folded into the point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PointUsage {
     pub version: SeqNumberType,
@@ -92,8 +83,7 @@ pub struct PointUsage {
 }
 
 impl UpdateBatchOutcome {
-    /// Usage of the points stored at a version in `versions`: one request's
-    /// share of a batch, given the operation numbers it was applied with.
+    /// Usage of the points stored at a version within `versions`.
     pub fn usage_in(&self, versions: RangeInclusive<SeqNumberType>) -> UpdateBytes {
         let mut total = UpdateBytes::default();
         for usage in self.points.iter().filter_map(|record| record.usage) {
