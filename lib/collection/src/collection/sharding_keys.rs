@@ -30,6 +30,7 @@ impl Collection {
         shard_key: Option<ShardKey>,
         shards: &[(ShardId, Vec<PeerId>, ReplicaState)],
     ) -> CollectionResult<()> {
+        self.shards_holder.finish_shard_key_removals().await?;
         let existing: HashSet<_> = self
             .shards_holder
             .read()
@@ -142,6 +143,7 @@ impl Collection {
         placement: ShardsPlacement,
         init_state: ReplicaState,
     ) -> CollectionResult<()> {
+        self.shards_holder.finish_shard_key_removals().await?;
         let (sharding_method, key_mapping) = {
             let shards_holder = self.shards_holder.read().await;
             (
@@ -287,11 +289,7 @@ impl Collection {
         }
 
         // Remove shard key
-        self.shards_holder
-            .write()
-            .await
-            .remove_shard_key(&shard_key)
-            .await
+        self.shards_holder.remove_shard_key(&shard_key).await
     }
 
     pub async fn get_shard_ids(&self, shard_key: &ShardKey) -> CollectionResult<Vec<ShardId>> {

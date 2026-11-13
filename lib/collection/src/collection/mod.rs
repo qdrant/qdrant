@@ -10,6 +10,8 @@ mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
+#[cfg(test)]
+mod sharding_keys_tests;
 mod snapshots;
 mod state_management;
 mod telemetry;
