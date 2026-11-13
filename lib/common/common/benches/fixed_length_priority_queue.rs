@@ -18,6 +18,7 @@ const CASES: [(usize, usize); 9] = [
     (50_000, 10_000),
 ];
 
+/// Compare priority-queue, scalar TopK and batched TopK insertion on the same scores.
 fn bench_push(c: &mut Criterion) {
     let mut group = c.benchmark_group("top_of");
 
@@ -41,6 +42,18 @@ fn bench_push(c: &mut Criterion) {
                 let mut top = TopK::new(limit);
                 for &point in points {
                     top.push(point);
+                }
+                top.into_vec()
+            });
+        });
+
+        let ids: Vec<_> = points.iter().map(|point| point.idx).collect();
+        let scores: Vec<_> = points.iter().map(|point| point.score).collect();
+        group.bench_function(BenchmarkId::new("top_k_batch", &case), |b| {
+            b.iter(|| {
+                let mut top = TopK::new(limit);
+                for (ids, scores) in ids.chunks(64).zip(scores.chunks(64)) {
+                    top.push_batch(ids, scores);
                 }
                 top.into_vec()
             });
