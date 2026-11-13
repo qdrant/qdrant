@@ -12,6 +12,7 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::data_types::vectors::QueryVector;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::quantized::quantized_batch_query_scorer::RawBatchScorer;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::query_scorer::QueryScorerBytes;
@@ -375,8 +376,66 @@ struct BatchSearch<'a> {
     top_k: TopK,
 }
 
+enum BatchScorers<'a> {
+    Individual(SmallVec<[BatchSearch<'a>; 1]>),
+    Shared {
+        scorer: Box<dyn RawBatchScorer + 'a>,
+        queues: Vec<TopK>,
+    },
+}
+
+impl BatchScorers<'_> {
+    /// Score an accepted point block and update each query's queue through the active scorer path.
+    fn score_points(
+        &mut self,
+        points: &[PointOffsetType],
+        scores: &mut SmallVec<[ScoreType; VECTOR_READ_BATCH_SIZE]>,
+    ) -> OperationResult<()> {
+        if points.is_empty() {
+            return Ok(());
+        }
+        match self {
+            Self::Individual(scorers) => {
+                scores.resize(points.len(), 0.0);
+                for BatchSearch { raw_scorer, top_k } in scorers {
+                    raw_scorer.score_points(points, scores)?;
+                    for (&idx, &score) in points.iter().zip(scores.iter()) {
+                        top_k.push(ScoredPointOffset { idx, score });
+                    }
+                }
+            }
+            Self::Shared { scorer, queues } => {
+                scores.resize(points.len() * queues.len(), 0.0);
+                scorer.score_points(points, scores)?;
+                for (top_k, scores) in queues.iter_mut().zip(scores.chunks_exact(points.len())) {
+                    for (&idx, &score) in points.iter().zip(scores) {
+                        top_k.push(ScoredPointOffset { idx, score });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Consume the per-query queues and return their results in the original query order.
+    fn into_results(self) -> Vec<Vec<ScoredPointOffset>> {
+        match self {
+            Self::Individual(scorers) => scorers
+                .into_iter()
+                .map(
+                    |BatchSearch {
+                         raw_scorer: _,
+                         top_k,
+                     }| top_k.into_vec(),
+                )
+                .collect(),
+            Self::Shared { scorer: _, queues } => queues.into_iter().map(TopK::into_vec).collect(),
+        }
+    }
+}
+
 pub struct BatchFilteredSearcher<'a> {
-    scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
+    scorer_batch: BatchScorers<'a>,
     filters: ScorerFilters<'a>,
 }
 
@@ -384,6 +443,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// Create a new batch filtered searcher.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
+    /// Supported quantized batches share a scorer; other queries retain individual scorers.
     pub fn new<V, Q>(
         queries: &[&QueryVector],
         vectors: &'a V,
@@ -396,18 +456,27 @@ impl<'a> BatchFilteredSearcher<'a> {
         V: VectorStorageRead + RawScorerBuilder,
         Q: QuantizedVectorsRead,
     {
-        let scorer_batch = queries
-            .iter()
-            .map(|&query| {
-                let query = query.to_owned();
-                let raw_scorer = match quantized_vectors {
-                    Some(quantized_vectors) => quantized_vectors.raw_scorer(query),
-                    None => vectors.build_raw_scorer(query),
-                };
-                let top_k = TopK::new(top);
-                raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, top_k })
-            })
-            .collect::<Result<_, _>>()?;
+        let scorer_batch =
+            if let Some(scorer) = quantized_vectors.and_then(|q| q.raw_batch_scorer(queries)) {
+                BatchScorers::Shared {
+                    scorer,
+                    queues: (0..queries.len()).map(|_| TopK::new(top)).collect(),
+                }
+            } else {
+                let individual = queries
+                    .iter()
+                    .map(|&query| {
+                        let query = query.to_owned();
+                        let raw_scorer = match quantized_vectors {
+                            Some(quantized_vectors) => quantized_vectors.raw_scorer(query),
+                            None => vectors.build_raw_scorer(query),
+                        };
+                        let top_k = TopK::new(top);
+                        raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, top_k })
+                    })
+                    .collect::<Result<_, _>>()?;
+                BatchScorers::Individual(individual)
+            };
         let filters =
             ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted));
         Ok(Self {
@@ -439,7 +508,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             })
             .collect();
         Self {
-            scorer_batch,
+            scorer_batch: BatchScorers::Individual(scorer_batch),
             filters: ScorerFilters::new(None, vector_storage.not_deleted_checker(point_deleted)),
         }
     }
@@ -515,7 +584,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         );
 
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
-        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = SmallVec::new();
         loop {
             let n = scan.next_chunk(&mut chunk);
             if n == 0 {
@@ -530,13 +599,10 @@ impl<'a> BatchFilteredSearcher<'a> {
             )?;
         }
 
-        let results = scorer_batch
-            .into_iter()
-            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
-            .collect();
-        Ok(results)
+        Ok(scorer_batch.into_results())
     }
 
+    /// Score filtered, non-deleted iterator candidates and collect each query's top results.
     /// This function expects deferred points to be already filtered from the iterator.
     pub fn peek_top_iter(
         mut self,
@@ -545,7 +611,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
-        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = SmallVec::new();
 
         loop {
             check_process_stopped(is_stopped)?;
@@ -568,25 +634,11 @@ impl<'a> BatchFilteredSearcher<'a> {
                 break;
             }
 
-            // Switching the loops improves batching performance, but slightly degrades single-query performance.
-            for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
-                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size])?;
-
-                for i in 0..chunk_size {
-                    top_k.push(ScoredPointOffset {
-                        idx: chunk[i],
-                        score: scores_buffer[i],
-                    });
-                }
-            }
+            self.scorer_batch
+                .score_points(&chunk[..chunk_size], &mut scores_buffer)?;
         }
 
-        let results = self
-            .scorer_batch
-            .into_iter()
-            .map(|BatchSearch { top_k, .. }| top_k.into_vec())
-            .collect();
-        Ok(results)
+        Ok(self.scorer_batch.into_results())
     }
 }
 
@@ -594,9 +646,9 @@ impl<'a> BatchFilteredSearcher<'a> {
 /// Applies `filter_context` if present; the deletion bitmaps were already folded into the harvest masks by the caller.
 fn score_chunk(
     filters: &ScorerFilters<'_>,
-    scorer_batch: &mut [BatchSearch<'_>],
+    scorer_batch: &mut BatchScorers<'_>,
     chunk: &mut [PointOffsetType],
-    scores_buffer: &mut [ScoreType; VECTOR_READ_BATCH_SIZE],
+    scores_buffer: &mut SmallVec<[ScoreType; VECTOR_READ_BATCH_SIZE]>,
 ) -> OperationResult<()> {
     let n = match &filters.filter_context {
         Some(f) => f.check_batched(chunk, Select::Matches, Rest::Discard)?,
@@ -606,16 +658,7 @@ fn score_chunk(
     if chunk.is_empty() {
         return Ok(());
     }
-    for BatchSearch { raw_scorer, top_k } in scorer_batch {
-        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()])?;
-        for i in 0..chunk.len() {
-            top_k.push(ScoredPointOffset {
-                idx: chunk[i],
-                score: scores_buffer[i],
-            });
-        }
-    }
-    Ok(())
+    scorer_batch.score_points(chunk, scores_buffer)
 }
 
 #[cfg(test)]
