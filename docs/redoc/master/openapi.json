@@ -13989,6 +13989,18 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "updated_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "updated_indexed_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

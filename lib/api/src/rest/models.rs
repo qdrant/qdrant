@@ -98,6 +98,10 @@ pub struct HardwareUsage {
     pub remote_io_cached_read: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_io_non_cached_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_indexed_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

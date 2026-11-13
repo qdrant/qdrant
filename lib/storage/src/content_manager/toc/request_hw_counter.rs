@@ -48,6 +48,8 @@ impl RequestHwCounter {
                 vector_io_write: m(HwMetric::VectorIoWrite),
                 remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
                 remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
+                updated_bytes: None,
+                updated_indexed_bytes: None,
             })
         } else {
             None

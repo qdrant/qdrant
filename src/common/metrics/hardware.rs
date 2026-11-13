@@ -39,6 +39,8 @@ impl MetricsProvider for HardwareTelemetry {
             vector_io_write: _,
             remote_io_cached_read: _,
             remote_io_non_cached_read: _,
+            updated_bytes: _,
+            updated_indexed_bytes: _,
         } = HardwareUsage::default();
 
         metrics.push_metric(metric_family(
