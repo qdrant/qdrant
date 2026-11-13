@@ -1801,14 +1801,13 @@ fn hnsw_two_vector_segment(
 
     use common::budget::ResourcePermit;
     use common::progress_tracker::ProgressTracker;
+    use rand::SeedableRng;
     use segment::segment_constructor::segment_builder::SegmentBuilder;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
         HnswConfig, HnswGlobalConfig, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType,
     };
     use uuid::Uuid;
-
-    use rand::SeedableRng;
 
     let source = two_vector_segment(path);
     let hnsw_config = HnswConfig {
