@@ -19,7 +19,7 @@ workspace = true
 
 [features]
 default = []
-service_debug = ["parking_lot/deadlock_detection", "collection/testing"]
+service_debug = ["parking_lot/deadlock_detection", "collection/testing", "dep:ctrlc"]
 tracing = [
     "api/tracing",
     "collection/tracing",
@@ -70,7 +70,7 @@ anyhow = "1.0.98"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true }
-ctrlc = "3.5.2"
+ctrlc = { version = "3.5.2", optional = true }
 env_logger = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
