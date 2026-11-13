@@ -13933,7 +13933,7 @@
         }
       },
       "HardwareUsage": {
-        "description": "Usage of the hardware resources, spent to process the request.\n\nEvery field is optional: a deployment reports only the measurements it collects, and omits the rest instead of reporting them as zero.",
+        "description": "Usage of the hardware resources, spent to process the request",
         "type": "object",
         "properties": {
           "cpu": {
@@ -13973,6 +13973,30 @@
             "nullable": true
           },
           "vector_io_write": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "remote_io_cached_read": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "remote_io_non_cached_read": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "updated_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "updated_indexed_bytes": {
             "type": "integer",
             "format": "uint",
             "minimum": 0,
