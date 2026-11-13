@@ -23,6 +23,7 @@ def setup(collection_name):
                 "size": 4,
                 "distance": "Cosine",
             },
+            "sparse_vectors": {"sparse": {}},
         }
     )
     assert response.ok
@@ -103,3 +104,31 @@ def test_async_batch_upsert_wrong_dimension_rejected(collection_name):
     assert not response.ok
     assert response.status_code == 400
     assert "dimension" in response.json()["status"]["error"].lower()
+
+
+@pytest.mark.parametrize("wait", ["true", "false"])
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("vector", [[0.1, 0.2, 0.3, 0.4], [[0.1, 0.2, 0.3, 0.4]]])
+def test_non_sparse_payload_for_sparse_name_rejected(collection_name, wait, batch, vector):
+    """Reject incorrect sparse payload kinds before acknowledging an upsert."""
+    if batch:
+        body = {
+            "batch": {
+                "ids": [10, 11],
+                "vectors": {
+                    "sparse": [{"indices": [1], "values": [0.5]}, vector],
+                },
+            },
+        }
+    else:
+        body = {"points": [{"id": 10, "vector": {"sparse": vector}}]}
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': wait},
+        body=body,
+    )
+    assert response.status_code == 400
+    assert "Wrong vector type for sparse vector name: sparse" in response.json()["status"]["error"]
