@@ -6,6 +6,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
 use super::SparseVectorIndexReadView;
+use super::filter_checks::is_nearest;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
@@ -15,6 +16,8 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::resolve_filter::resolve_for_query_vectors;
+use crate::index::query_optimization::resolved_points::contains_resolved_points;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -36,6 +39,9 @@ where
         top: usize,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let resolved = self.resolve_for_query_vectors(vectors, filter, top, query_context)?;
+        let filter = resolved.as_ref().or(filter);
+
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
 
@@ -64,6 +70,37 @@ where
             results.push(search_results);
         }
         Ok(results)
+    }
+
+    /// The inverted index checks the filter for every nearest query vector on its own: with
+    /// several of them, checking the points it matches may be cheaper. A plain search already
+    /// shares its filtered points between query vectors (`prefiltered_points`), and declines
+    /// here.
+    fn resolve_for_query_vectors(
+        &self,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        let Some(filter) = filter else {
+            return Ok(None);
+        };
+        // Other queries score the filtered points directly, and share them already
+        let all_nearest = vectors.iter().all(|vector| is_nearest(vector));
+        if vectors.len() < 2 || !all_nearest || contains_resolved_points(filter) {
+            return Ok(None);
+        }
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
+        let checks = self.nearest_filter_checks(vectors.len(), &cardinality, top);
+        resolve_for_query_vectors(
+            &self.payload_index,
+            self.id_tracker.total_point_count(),
+            filter,
+            &cardinality,
+            checks,
+            &query_context.is_stopped(),
+        )
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

@@ -1,13 +1,12 @@
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
-use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::adjust_to_available_vectors;
-use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::sample_estimation::MAX_ESTIMATED_POINTS;
 use crate::types::SearchParams;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -26,18 +25,18 @@ where
     pub(crate) fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &LazyCardinality<'_>,
+        cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> OperationResult<FilterChecks> {
+    ) -> FilterChecks {
         if top == 0 || query_vectors.is_empty() {
-            return Ok(FilterChecks::Lazy { expected_checks: 0 });
+            return FilterChecks::Lazy { expected_checks: 0 };
         }
 
         let is_hnsw_disabled = self.config.m == 0 && self.config.payload_m.unwrap_or(0) == 0;
         let exact = params.is_some_and(|params| params.exact);
         if exact || is_hnsw_disabled {
-            return Ok(FilterChecks::Full);
+            return FilterChecks::Full;
         }
 
         let CardinalityEstimation {
@@ -45,7 +44,7 @@ where
             min,
             exp,
             max,
-        } = *cardinality.get()?;
+        } = *cardinality;
         let cardinality = adjust_to_available_vectors(
             CardinalityEstimation {
                 primary_clauses: vec![],
@@ -59,23 +58,34 @@ where
 
         let threshold = self.config.full_scan_threshold;
         if cardinality.max < threshold {
-            return Ok(FilterChecks::Full);
+            return FilterChecks::Full;
         }
 
-        // A graph search checks the neighbours of the points it expands: about `ef` expansions
-        // of up to `m0` neighbours each
+        let mut checks = self.graph_filter_checks(query_vectors.len(), top, params);
+        if cardinality.min <= threshold {
+            // Sampling picks the strategy first, one check per sample
+            checks = checks.saturating_add(MAX_ESTIMATED_POINTS);
+        }
+        FilterChecks::Lazy {
+            expected_checks: checks,
+        }
+    }
+
+    /// Expected filter checks of a graph search over `query_vectors` query vectors.
+    ///
+    /// A graph search checks the neighbours of the points it expands: about `ef` expansions of
+    /// up to `m0` neighbours each, for every query vector.
+    pub(crate) fn graph_filter_checks(
+        &self,
+        query_vectors: usize,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> usize {
         let ef = params
             .and_then(|params| params.hnsw_ef)
             .unwrap_or(self.config.ef)
             .max(top);
         let per_query = ef.saturating_mul(self.config.m0.max(1));
-        let mut checks = per_query.saturating_mul(query_vectors.len());
-        if cardinality.min <= threshold {
-            // Sampling picks the strategy first, one check per sample
-            checks = checks.saturating_add(MAX_ESTIMATED_POINTS);
-        }
-        Ok(FilterChecks::Lazy {
-            expected_checks: checks,
-        })
+        per_query.saturating_mul(query_vectors)
     }
 }

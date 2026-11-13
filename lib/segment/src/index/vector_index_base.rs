@@ -17,7 +17,8 @@ use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -41,15 +42,11 @@ pub trait VectorIndexRead {
     /// `cardinality` points: evaluate it on every candidate, or check points lazily as it
     /// visits them. Makes the same choice of strategy as [`Self::search`].
     ///
-    /// The estimation is computed on the first [`LazyCardinality::get`]. Call it only when
-    /// the answer depends on it, so that searches which evaluate the filter the same way
-    /// whatever it matches (a plain index, an exact search, no query vectors) never pay for it.
-    ///
     /// No default on purpose: a new index must state how it evaluates filters.
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &LazyCardinality<'_>,
+        cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks>;
@@ -263,7 +260,7 @@ impl VectorIndexRead for VectorIndexEnum {
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &LazyCardinality<'_>,
+        cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {

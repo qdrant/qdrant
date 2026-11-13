@@ -1,20 +1,14 @@
-use common::types::DeferredBehavior;
-
-use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::filter_checks::{
-    LazyCardinality, never_worth_sharing, worth_sharing,
-};
-use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
-use crate::index::query_optimization::resolved_points::ResolvedPoints;
+use crate::index::query_optimization::filter_checks::worth_sharing;
+use crate::index::query_optimization::resolve_filter::resolve_filter;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::types::{Condition, Filter};
+use crate::types::Filter;
 
 impl<TIdT, TPI, TPS, TVD> SegmentReadView<'_, TIdT, TPI, TPS, TVD>
 where
@@ -32,16 +26,14 @@ where
         users: &[FilterUser<'_>],
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Option<Filter>> {
-        // Sharing needs at least two searches, which may be the query vectors of one user
-        if FilterUser::count_searches(users) < 2 {
+        if users.len() < 2 {
             return Ok(None);
         }
         // Account the filter evaluation to the query, like `search_batch` does
         let _scope = query_context.handoff().enter_guard();
 
-        // Estimated only if an index needs it to tell how it evaluates the filter: a plain
-        // index, an exact search or a search without query vectors never do
-        let cardinality = LazyCardinality::new(|| self.payload_index.estimate_cardinality(filter));
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
+        let materialization_cost = self.payload_index.materialization_cost(&cardinality)?;
 
         let mut uses = Vec::with_capacity(users.len());
         for user in users {
@@ -63,33 +55,18 @@ where
             )?;
             uses.push(checks);
         }
-        // Whatever it costs to materialize the filter, these searches won't beat it
-        if never_worth_sharing(&uses) {
-            return Ok(None);
-        }
-
-        let cardinality = cardinality.get()?;
-        let materialization_cost = self.payload_index.materialization_cost(cardinality)?;
         if !worth_sharing(materialization_cost, uses.iter().copied()) {
             return Ok(None);
         }
 
-        // The visibility vector searches use
-        let is_stopped = query_context.is_stopped_flag();
-        let points = self.payload_index.iter_filtered_points(
+        resolve_filter(
+            self.payload_index,
+            self.id_tracker.total_point_count(),
             filter,
-            cardinality,
-            is_stopped,
-            DeferredBehavior::VisibleOnly,
-        )?;
-        // Whether the set is a bitset or a list depends only on its density in the segment
-        let context = PointSetContext::by_density(self.id_tracker.total_point_count());
-        let points = PointSet::from_points(points, cardinality.exp, context);
-        // A stopped iteration ends early: never hand out a partial set
-        check_stopped(is_stopped)?;
-
-        Ok(Some(Filter::new_must(Condition::ResolvedPoints(
-            ResolvedPoints::new(self.segment_uuid, points, cardinality),
-        ))))
+            &cardinality,
+            query_context.is_stopped_flag(),
+            self.segment_uuid,
+        )
+        .map(Some)
     }
 }

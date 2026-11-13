@@ -1,9 +1,11 @@
 //! A batch whose searches share a filter must return what each search returns on its own.
 //!
-//! The segments are built so that sharing really happens (`share_group_filters` resolves the
-//! filter): HNSW indexes, filters matching far more points than the full scan threshold. Each
-//! case asserts that, so a change of the cost model can't turn this into a test of the
-//! unshared path. How much sharing saves is measured on the benchmark platform, not here.
+//! The segments are built so that sharing really happens: HNSW indexes, filters matching far
+//! more points than the full scan threshold. Several groups share at the segment
+//! (`share_group_filters` resolves the filter), which each case asserts, so a change of the cost
+//! model can't turn this into a test of the unshared path. One group with several query vectors
+//! shares inside the vector index instead, which the index's own tests assert. How much sharing
+//! saves is measured on the benchmark platform, not here.
 //!
 //! `Discover` is left out: its first stage picks entry points among the many points a context
 //! query scores the same, and the order the filter checker returns its candidates in can change
@@ -322,8 +324,8 @@ struct Case {
     name: &'static str,
     /// `(kind, vector name, exact)` of each search, in batch order
     searches: Vec<(Kind, &'static str, bool)>,
-    /// Whether the optimized segments share the filter of the large filters, if that is part
-    /// of what the case checks
+    /// Whether the optimized segments share the filter of the large filters between groups, if
+    /// that is part of what the case checks
     shares: Option<bool>,
 }
 
@@ -339,7 +341,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "one group of six searches",
             searches: vec![nearest1; 6],
-            shares: Some(true),
+            shares: Some(false),
         },
         Case {
             name: "one group of six searches and a search on another vector",
@@ -354,7 +356,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "one group of three context searches",
             searches: vec![(Kind::Context, VECTOR1_NAME, false); 3],
-            shares: Some(true),
+            shares: Some(false),
         },
         Case {
             name: "one group of three recommend searches",

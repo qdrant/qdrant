@@ -22,7 +22,7 @@ use segment::fixtures::index_fixtures::random_vector;
 use segment::index::field_index::CardinalityEstimation;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+use segment::index::query_optimization::filter_checks::FilterChecks;
 use segment::index::query_optimization::point_set::{PointSet, PointSetContext};
 use segment::index::query_optimization::resolved_points::ResolvedPoints;
 use segment::index::{PayloadIndexRead, VectorIndexRead};
@@ -386,12 +386,7 @@ fn test_hnsw_with_resolved_filter() {
         });
 
         let checks = hnsw_index
-            .filter_checks(
-                &queries,
-                &LazyCardinality::known(cardinality.clone()),
-                10,
-                None,
-            )
+            .filter_checks(&queries, &cardinality, 10, None)
             .unwrap();
         match checks {
             FilterChecks::Lazy { expected_checks } => {

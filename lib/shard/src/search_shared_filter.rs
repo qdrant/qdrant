@@ -14,9 +14,8 @@ use crate::search::SearchBatchGroup;
 ///
 /// Groups only hold consecutive searches with identical parameters, so a batch that runs one
 /// filter against several named vectors becomes one group per vector, each evaluating the
-/// filter again, and a group with several query vectors can evaluate it once per vector. Here
-/// the groups sharing a filter hand it to the segment once, which resolves it when that is
-/// cheaper than each search evaluating it (see
+/// filter again. Here the groups sharing a filter hand it to the segment once, which resolves
+/// it when that is cheaper than each group evaluating it (see
 /// [`ReadSegmentEntry::share_filter`]).
 ///
 /// The returned filters hold offsets of `segment`: the caller must keep it read-locked until
@@ -41,6 +40,10 @@ pub fn share_group_filters(
     }
 
     for (filter, members) in members_by_filter {
+        if members.len() < 2 {
+            continue;
+        }
+
         let users: Vec<FilterUser<'_>> = members
             .iter()
             .map(|&member| {
@@ -56,11 +59,6 @@ pub fn share_group_filters(
                 }
             })
             .collect();
-        // A group with several query vectors is several searches of the same filter: a graph
-        // search evaluates it once per query vector, so a single group can share it too.
-        if FilterUser::count_searches(&users) < 2 {
-            continue;
-        }
         let Some(resolved) = segment.share_filter(filter, &users, query_context)? else {
             continue;
         };

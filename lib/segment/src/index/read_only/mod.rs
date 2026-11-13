@@ -23,9 +23,10 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
 use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
-use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::read_only::{
@@ -414,7 +415,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &LazyCardinality<'_>,
+        cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {

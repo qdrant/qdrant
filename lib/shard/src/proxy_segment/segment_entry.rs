@@ -271,7 +271,7 @@ impl ReadSegmentEntry for ProxySegment {
             .filter(|user| !vector_name_changes.is_wrapped_data_stale(user.vector_name))
             .copied()
             .collect();
-        if FilterUser::count_searches(&users) < 2 {
+        if users.len() < 2 {
             return Ok(None);
         }
 

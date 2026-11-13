@@ -14,7 +14,8 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::sparse_index::indices_tracker::IndicesTracker;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::{PayloadIndexRead, VectorIndex, VectorIndexRead};
@@ -67,11 +68,11 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &LazyCardinality<'_>,
+        cardinality: &CardinalityEstimation,
         top: usize,
         _params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        self.with_view(|view| view.filter_checks(query_vectors, cardinality, top))
+        Ok(self.with_view(|view| view.filter_checks(query_vectors, cardinality, top)))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
