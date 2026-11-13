@@ -23,6 +23,8 @@ pub mod test_owned_storage;
 #[cfg(test)]
 pub mod test_pq;
 #[cfg(test)]
+pub mod test_scalar_matrix;
+#[cfg(test)]
 pub mod test_simple;
 #[cfg(test)]
 pub mod test_sse;
