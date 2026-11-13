@@ -2,11 +2,18 @@
 //!
 //! The kernels live in the `pairwise` crate. This module picks the vectors to score, the same
 //! ones as `FilteredScorer::new_internal`, and describes them to the kernels as
-//! [`MatrixOperands`].
+//! [`MatrixOperands`]. A build scores in phases: a [`MatrixPhase`] takes the jobs of a phase,
+//! schedules their matrix calls, and hands each job's result, a [`MatrixPicks`], to the caller.
 
+mod cpu_jobs;
 mod dense_operands;
+mod job;
+mod phase;
+mod picks;
+mod raw_picks;
 #[cfg(test)]
 mod tests;
+mod top_k_pool;
 mod turbo_source;
 
 use common::types::PointOffsetType;
@@ -17,6 +24,12 @@ use quantization::encoded_vectors_u8::ScalarOperands;
 use quantization::turboquant::matrix::{TurboMatrixOperands, TurboSource};
 
 use self::dense_operands::{DenseOperands, MatrixElement};
+pub use self::job::MatrixJob;
+use self::phase::CpuPhase;
+pub use self::phase::MatrixPhase;
+pub(crate) use self::phase::{Consume, DynPhase, Scored};
+pub use self::picks::MatrixPicks;
+pub(crate) use self::raw_picks::RawPicks;
 use self::turbo_source::TurboStorageSource;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::quantized::quantized_vectors::{
@@ -36,8 +49,13 @@ impl<'a> MatrixScorer<'a> {
         F: MatrixOperands + 'a,
         F::Error: Into<OperationError>,
     {
+        Self::from_dyn(operands)
+    }
+
+    /// A scorer on `matrix`, such as one that runs elsewhere than on the CPU kernels.
+    pub(crate) fn from_dyn(matrix: impl DynMatrix + 'a) -> Self {
         Self {
-            inner: Box::new(operands),
+            inner: Box::new(matrix),
         }
     }
 
@@ -56,6 +74,16 @@ impl<'a> MatrixScorer<'a> {
         out: &mut MatrixTopK,
     ) -> OperationResult<()> {
         self.inner.top_k(rows, cols, out)
+    }
+
+    /// The matrix calls of a phase of the build, whose jobs each keep at most `k` best per
+    /// row, see [`MatrixPhase`].
+    ///
+    /// Every row of every call gets `k` slots, so a `k` above the largest of the jobs, or
+    /// above the columns of the largest job, only costs memory. The caller clamps it.
+    #[must_use]
+    pub fn phase(&self, k: usize) -> MatrixPhase<'_> {
+        MatrixPhase::new(self.inner.phase(k))
     }
 }
 
@@ -202,15 +230,24 @@ where
     })
 }
 
-/// Object-safe face of a [`MatrixOperands`]: the only dynamic dispatch, once per matrix call.
-/// Everything below it is monomorphized per implementation.
-trait DynMatrix: Sync {
+/// Object-safe face of a [`MatrixOperands`]: one dynamic dispatch per matrix call, and
+/// everything below it is monomorphized per implementation. A phase adds one per
+/// [`MatrixPhase::for_each_top_k`], and one per report and result of a job.
+///
+/// Also what a scorer other than the CPU kernels implements, see [`MatrixScorer::from_dyn`].
+pub(crate) trait DynMatrix: Sync {
     fn top_k(
         &self,
         rows: &[PointOffsetType],
         cols: MatrixCols<'_>,
         out: &mut MatrixTopK,
     ) -> OperationResult<()>;
+
+    /// See [`MatrixScorer::phase`]. The default is [`Self::top_k`] calls in parallel on the
+    /// current rayon pool, see [`cpu_jobs::for_each_top_k`].
+    fn phase<'a>(&'a self, k: usize) -> Box<dyn DynPhase + 'a> {
+        Box::new(CpuPhase::new(self, k))
+    }
 }
 
 impl<F> DynMatrix for F

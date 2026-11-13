@@ -17,7 +17,8 @@
 //!   done, not points whose work is done. [`Share::split`] rounds so that the pieces add up to
 //!   the share exactly, in whatever order they finish:
 //!   - A step of partitioning has to hand shares to its clusters before it knows their work. It
-//!     keeps half of its share for its own matrix calls, see [`partition`](super::partition).
+//!     keeps half of its share for its matrix job, added as the job's rows are scored
+//!     ([`GradualShare`]), see [`partition`](super::partition).
 //!   - A leaf's work grows with the square of its size, so a leaf gets a share of the level's
 //!     points by that. Counting leaves would be simpler, but how many leaves a level has is only
 //!     known once its partitioning is done, and a tracker's total is set once, before the first
@@ -182,8 +183,9 @@ impl Counter<'_> {
 /// A share of a phase's points: `points` that some work adds to its [`Counter`] by the time it's
 /// done, in proportion to the work.
 ///
-/// Not `Copy` or `Clone`: [`Self::split`], [`Self::halves`] and [`Self::add`] consume it, so a
-/// share is added at most once, and one that is made but not used is warned about.
+/// Not `Copy` or `Clone`: [`Self::split`], [`Self::halves`], [`Self::gradual`] and [`Self::add`]
+/// consume it, so a share is added at most once, and one that is made but not used is warned
+/// about.
 #[derive(Debug)]
 #[must_use = "a share must be added or split, or its phase won't reach its total"]
 pub(super) struct Share<'a> {
@@ -234,9 +236,70 @@ impl<'a> Share<'a> {
         )
     }
 
+    /// The share for work of `units` equal pieces that get done a few at a time. Without
+    /// pieces, it's added at once.
+    pub fn gradual(self, units: u64) -> GradualShare<'a> {
+        let Self { counter, points } = self;
+        if units == 0 {
+            counter.add(points);
+        }
+        GradualShare {
+            counter,
+            points,
+            units,
+            done: AtomicU64::new(0),
+        }
+    }
+
     /// Adds the share to its counter.
     pub fn add(self) {
         self.counter.add(self.points);
+    }
+}
+
+/// A [`Share`] that is added in parts, as the `units` of its work get done, from several threads
+/// at once: the rows of a large matrix job.
+///
+/// The parts add up to the share exactly once all units are done, in whatever order: with
+/// `end` the units done up to a part, it adds `points · end / units` rounded down, minus the
+/// same for the units before.
+#[derive(Debug)]
+#[must_use = "a share must be added, or its phase won't reach its total"]
+pub(super) struct GradualShare<'a> {
+    counter: Counter<'a>,
+    points: u64,
+    units: u64,
+    done: AtomicU64,
+}
+
+impl GradualShare<'_> {
+    /// Adds the part of the share for `units` more of its units, in all at most its total:
+    /// checked in debug builds, and units beyond it add nothing.
+    pub fn add(&self, units: u64) {
+        if self.units == 0 {
+            // Added when it was made
+            return;
+        }
+        let before = self.done.fetch_add(units, Ordering::Relaxed);
+        let end = before.saturating_add(units);
+        debug_assert!(end <= self.units, "more units done than the share has");
+        self.counter.add(self.upto(end) - self.upto(before));
+    }
+
+    /// Ends the share once its work is done. All its units must have been added by then, or
+    /// its phase stays below its total: checked in debug builds.
+    pub fn finish(self) {
+        debug_assert_eq!(
+            self.done.load(Ordering::Relaxed),
+            self.units,
+            "units of the share added",
+        );
+    }
+
+    /// Points of the share for the first `done` of its units, of which it has some.
+    fn upto(&self, done: u64) -> u64 {
+        let done = done.min(self.units);
+        (u128::from(self.points) * u128::from(done) / u128::from(self.units)) as u64
     }
 }
 
@@ -299,6 +362,42 @@ mod tests {
         let counter = TestCounter::default();
         let shares = counter.share(points).split(sizes.iter().copied());
         shares.into_iter().map(|share| share.points).collect()
+    }
+
+    /// A gradual share adds up to the whole in any order of its parts, never more than its
+    /// proportion on the way, and at once without units.
+    #[test]
+    fn gradual_shares_add_up_to_the_whole() {
+        let mut rng = StdRng::seed_from_u64(2);
+        for case in 0..2000 {
+            let points = match case % 5 {
+                0 => rng.random_range(0..4),
+                1 => u64::MAX - rng.random_range(0..4),
+                _ => rng.random_range(0..1_000_000),
+            };
+            let parts: Vec<u64> = (0..rng.random_range(1..50))
+                .map(|_| rng.random_range(0..2000))
+                .collect();
+            let units: u64 = parts.iter().sum();
+            let counter = TestCounter::default();
+            let share = counter.share(points).gradual(units);
+            let mut done = 0;
+            for part in parts {
+                share.add(part);
+                done += part;
+                let exact = u128::from(points) * u128::from(done) / u128::from(units.max(1));
+                if units > 0 {
+                    assert_eq!(u128::from(counter.load()), exact, "{points} by {units}");
+                }
+            }
+            share.finish();
+            assert_eq!(counter.load(), points, "{points} by {units}");
+        }
+
+        let counter = TestCounter::default();
+        let share = counter.share(7).gradual(0);
+        assert_eq!(counter.load(), 7);
+        share.finish();
     }
 
     /// Shares add up to the whole for any points and sizes, including zeros, and each is within 1

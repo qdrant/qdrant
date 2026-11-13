@@ -69,7 +69,7 @@
 //! |---|---|---|
 //! | Reservoirs of 64 slots | 652 | Leaf k-NN and final prune |
 //! | Leaves, about 30 per point | 120 | Leaf k-NN |
-//! | Partitioning, fanout 10 | about 65 | Partitioning, before the reservoirs |
+//! | Partitioning, fanout 10 | about 105 | Partitioning, before the reservoirs |
 //! | Result, before the links | about 50 | Throughout |
 //! | Sketches | 48 | Throughout |
 //! | Fingerprints | 8 | Until the duplicates are found, before partitioning |
@@ -87,7 +87,6 @@ mod partition;
 mod progress;
 mod prune;
 mod sketches;
-mod top_k_pool;
 
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;

@@ -30,24 +30,38 @@
 //!   separately, which costs a few times the partitioning of those points. The build groups exact
 //!   duplicates before partitioning (`duplicates.rs`), which leaves quantized ties.
 //!
+//! # Children first
+//!
+//! A step doesn't score its own leaders; its parent does. The top step is scored as one job over
+//! all points. After grouping, a step samples the leaders of each child it will carve, from the
+//! child's own seed, exactly as the child would, and scores all those children in one call to
+//! the [`MatrixPhase`] of the partitioning, one job per child: the child's points against its
+//! leaders, keeping the child's `fanout` best per point. Then it recurses, and each child groups
+//! by the picks it was handed. So the scorer gets a whole level of a subtree at once, instead of
+//! one step at a time, which large batches on a GPU need. The seeds, leaders, and picks are those
+//! each step would draw and score itself, so the leaves are too.
+//!
+//! A step holds the nearest leaders of all its carved children from its call until each child
+//! has grouped its points: `fanout` 2-byte slots per point of a child. At the top step, with the
+//! default fanouts of 10 and 3, that's up to 60 bytes per point of the level, 3 slots in each of
+//! the up to 10 children a point is in.
+//!
 //! Randomness comes from seeds derived from the build's rng, so a build is reproducible. Each
 //! step draws its leaders and its children's seeds from its own seed, and the picks of a point
-//! don't depend on the other points of its matrix call, so the leaves don't depend on the number
-//! of threads either.
+//! don't depend on the other points of its matrix call or on the other jobs scored with it, so
+//! the leaves don't depend on the number of threads either.
 //!
 //! Progress: partitioning adds the points of the level as point-equivalents of its work, handed
 //! out as shares, see [`progress`](super::progress). A step must hand shares to its clusters
-//! before it knows their work, so a step that carves keeps half of its share for its matrix
-//! calls, adding it per call, and hands the other half to its clusters by size. A cluster that
-//! becomes a leaf, or is cut into chunks, adds its share at once; one that is carved again splits
-//! it the same way. The top step of a large level and the steps below it take about the same
+//! before it knows their work, so a step that carves keeps half of its share for its matrix job,
+//! added as the scorer reports its rows scored, and hands the other half to its clusters by
+//! size. A cluster that becomes a leaf, or is cut into chunks, adds its share at once; one that
+//! is carved again splits it the same way. The top step of a large level and the steps below it take about the same
 //! time.
 
 use std::num::NonZeroU16;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
@@ -55,13 +69,10 @@ use rand::{RngExt as _, SeedableRng as _};
 use rayon::prelude::*;
 
 use super::progress::Share;
-use super::top_k_pool::TopKPool;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer};
-
-/// Points per matrix call against the leaders. Every call packs the leaders again, so smaller
-/// calls would pay that more often.
-const POINTS_PER_CALL: usize = 1024;
+use crate::vector_storage::matrix_scorer::{
+    MatrixCols, MatrixJob, MatrixPhase, MatrixPicks, MatrixScorer,
+};
 
 /// Most leaders a step can have, so that a leader's position plus 1 fits into the
 /// `NonZeroU16` slots of [`Carving::nearest_leaders`].
@@ -148,9 +159,18 @@ impl Default for PartitionParams {
 ///
 /// Adds all of `progress` by the time it returns the leaves, per step, see the module docs.
 ///
-/// Memory: one step holds `fanout` leader slots per point of its cluster, 20 bytes per point at
-/// the top level with a fanout of 10, and then the clusters themselves, 40 bytes per point. The
-/// leaves hold about 4 bytes per point and leaf it's in, typically 30.
+/// Memory, per point of the level, with the default fanouts of 10 and 3:
+/// - The top step's matrix job, while its picks are turned into leader slots: the picks of the
+///   job, its `fanout` of 10 columns and scores of 4 bytes each plus a 4-byte count per row, 84
+///   bytes, and the slots, `fanout` of 2 bytes, 20 bytes. About 105 bytes together.
+/// - Then the top step's clusters, 40 bytes, and the leader slots of all its carved children,
+///   which its call scores together, up to 60 bytes, see [Children first](self#children-first).
+///   While that call runs, each child job in progress also holds its picks, 28 bytes per row
+///   with its fanout of 3. Children are scored a few at a time, so that's little, unless a
+///   step stalls on ties: then each of the 10 children has nearly all points, and the picks
+///   of all of them come to up to 280 bytes on top, 380 bytes with the clusters and slots.
+///
+/// The leaves hold about 4 bytes per point and leaf it's in, typically 30.
 pub(super) fn partition(
     scorer: &MatrixScorer<'_>,
     points: Vec<PointOffsetType>,
@@ -177,12 +197,16 @@ pub(super) fn partition(
     }
 
     let carving = Carving {
-        scorer,
         params,
         stopped,
-        top_k: TopKPool::new(top_k_size(params, points.len())),
+        phase: scorer.phase(top_k_size(params, points.len())),
     };
-    let leaves = carving.split(points, 0, seed, 0, progress)?;
+    let root = if points.len() <= params.max_leaf_size {
+        Next::Leaf(points)
+    } else {
+        carving.too_large(points, 0, seed, 0)
+    };
+    let leaves = carving.carve(vec![root], vec![progress], 0)?;
     debug_assert!(leaves.iter().all(|leaf| {
         !leaf.is_empty() && leaf.len() <= params.max_leaf_size && leaf.is_sorted_by(|a, b| a < b)
     }));
@@ -190,15 +214,14 @@ pub(super) fn partition(
 }
 
 /// What all steps of one [`partition`] call share.
-struct Carving<'a, 's> {
-    scorer: &'a MatrixScorer<'s>,
+struct Carving<'a> {
     params: &'a PartitionParams,
     stopped: &'a AtomicBool,
-    /// Buffers for the matrix calls of all steps, with `k` from [`top_k_size`]. One pool for all
-    /// steps, not one per step: there are thousands of them. Not one per fanout either, which
-    /// would hold a buffer per thread and fanout; steps with a smaller fanout read the first
-    /// picks of each row, at a slightly higher cost of the top-k sink.
-    top_k: TopKPool,
+    /// The matrix calls of all steps, with `k` from [`top_k_size`]. One phase for all steps,
+    /// not one per step: there are thousands of them. Not one per fanout either; the job of a
+    /// step with a smaller fanout keeps the first picks of each row, at a slightly higher cost
+    /// of the top-k sink.
+    phase: MatrixPhase<'a>,
 }
 
 /// What a step does with one of its clusters.
@@ -219,6 +242,35 @@ enum Next {
     },
 }
 
+/// A cluster to carve, with its leaders sampled from its own seed, as it would sample them
+/// itself, and the share of its clusters. Its matrix job is scored by its parent.
+struct Step<'p> {
+    points: Vec<PointOffsetType>,
+    /// Steps in a row that didn't shrink it.
+    stalls: usize,
+    /// Its rng after sampling the leaders, for its children's seeds and the merging.
+    rng: StdRng,
+    /// Sorted, as `points` is.
+    leaders: Vec<PointOffsetType>,
+    /// To how many of its leaders each point is assigned, at most the leaders.
+    fanout: usize,
+    /// The half of its share for its clusters. The other half, for its matrix job, goes with
+    /// the job.
+    clusters: Share<'p>,
+}
+
+/// One of a step's clusters, ready for the step's call to the phase.
+enum Prepared<'p> {
+    /// Its leaves, final.
+    Leaves(Vec<Vec<PointOffsetType>>),
+    /// To be scored, with its share of the matrix job, then carved. Boxed, since most clusters
+    /// are leaves and a step's rng is a few hundred bytes.
+    Carve {
+        step: Box<Step<'p>>,
+        matrix: Share<'p>,
+    },
+}
+
 impl Next {
     fn len(&self) -> usize {
         match self {
@@ -233,41 +285,141 @@ impl Next {
     }
 }
 
-impl Carving<'_, '_> {
-    /// Leaves of `points`, sorted and distinct, at recursion `depth`, after `stalls` steps in a
-    /// row that kept them together. Adds all of `progress` by the time it returns them.
-    fn split(
+impl Carving<'_> {
+    /// What becomes of `points`, more than a leaf, at recursion `depth`, after `stalls` steps
+    /// in a row that kept them together: carved, or cut into chunks past the maximum depth or
+    /// after [`MAX_STALLS`].
+    fn too_large(
         &self,
         points: Vec<PointOffsetType>,
         depth: usize,
         seed: u64,
         stalls: usize,
-        progress: Share<'_>,
+    ) -> Next {
+        if depth >= self.params.max_depth || stalls >= MAX_STALLS {
+            Next::Chunks { points, seed }
+        } else {
+            Next::Split {
+                points,
+                seed,
+                stalls,
+            }
+        }
+    }
+
+    /// Leaves of the clusters `next` of a step, in their order, each cluster's sorted and
+    /// distinct; the clusters to carve are at recursion `depth`. Scores all clusters to carve
+    /// in one call to the phase, then carves each. Adds all of `shares`, one per cluster, by the time
+    /// it returns them.
+    fn carve(
+        &self,
+        next: Vec<Next>,
+        shares: Vec<Share<'_>>,
+        depth: usize,
+    ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
+        let max_leaf_size = self.params.max_leaf_size;
+        let prepared: Vec<Prepared> = next
+            .into_par_iter()
+            .zip(shares)
+            .map(|(next, progress)| match next {
+                Next::Leaf(leaf) => {
+                    progress.add();
+                    Prepared::Leaves(vec![leaf])
+                }
+                Next::Split {
+                    points,
+                    seed,
+                    stalls,
+                } => {
+                    // Half for its matrix job, half for its clusters
+                    let (matrix, clusters) = progress.halves();
+                    let step = self.sample(points, depth, seed, stalls, clusters);
+                    Prepared::Carve {
+                        step: Box::new(step),
+                        matrix,
+                    }
+                }
+                Next::Chunks { points, seed } => {
+                    progress.add();
+                    Prepared::Leaves(random_chunks(points, max_leaf_size, seed))
+                }
+            })
+            .collect();
+
+        // The leaves of each cluster, `None` for the ones carved below
+        let mut leaves = Vec::with_capacity(prepared.len());
+        let (mut steps, mut matrix) = (Vec::new(), Vec::new());
+        for prepared in prepared {
+            match prepared {
+                Prepared::Leaves(done) => leaves.push(Some(done)),
+                Prepared::Carve {
+                    step,
+                    matrix: share,
+                } => {
+                    leaves.push(None);
+                    steps.push(*step);
+                    matrix.push(share);
+                }
+            }
+        }
+
+        let nearest = self.nearest_leaders(&steps, matrix)?;
+        let carved = steps
+            .into_par_iter()
+            .zip(nearest)
+            .map(|(step, nearest)| self.split(step, nearest, depth))
+            .collect::<OperationResult<Vec<_>>>()?;
+        let mut carved = carved.into_iter();
+        Ok(leaves
+            .into_iter()
+            .flat_map(|leaves| {
+                leaves.unwrap_or_else(|| carved.next().expect("a carved cluster per step"))
+            })
+            .collect())
+    }
+
+    /// The step that carves `points` at recursion `depth`, with its leaders drawn from `seed`.
+    fn sample<'p>(
+        &self,
+        points: Vec<PointOffsetType>,
+        depth: usize,
+        seed: u64,
+        stalls: usize,
+        clusters: Share<'p>,
+    ) -> Step<'p> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let leaders = sample_leaders(&points, leader_count(self.params, points.len()), &mut rng);
+        let fanout = step_fanout(self.params, depth, leaders.len());
+        Step {
+            points,
+            stalls,
+            rng,
+            leaders,
+            fanout,
+            clusters,
+        }
+    }
+
+    /// Leaves of the points of `step` at recursion `depth`, sorted and distinct, by the
+    /// `nearest` leaders of its points that its parent scored. Adds all of the step's
+    /// `clusters` share by the time it returns them.
+    fn split(
+        &self,
+        step: Step<'_>,
+        nearest: Vec<Option<NonZeroU16>>,
+        depth: usize,
     ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let params = self.params;
-        if points.len() <= params.max_leaf_size {
-            progress.add();
-            return Ok(vec![points]);
-        }
-        if depth >= params.max_depth || stalls >= MAX_STALLS {
-            progress.add();
-            return Ok(random_chunks(points, params.max_leaf_size, seed));
-        }
-        check_process_stopped(self.stopped)?;
-        // Half for this step's matrix calls, half for its clusters
-        let (own, children) = progress.halves();
-
-        let mut rng = StdRng::seed_from_u64(seed);
-        let leaders = sample_leaders(&points, self.leader_count(points.len()), &mut rng);
-        let fanout = params
-            .fanout
-            .get(depth)
-            .copied()
-            .unwrap_or(1)
-            .clamp(1, leaders.len());
-        let nearest = self.nearest_leaders(&points, &leaders, fanout, own)?;
+        let Step {
+            points,
+            stalls,
+            mut rng,
+            leaders,
+            fanout,
+            clusters: progress,
+        } = step;
         let (clusters, orphans) = group_by_leader(&points, &nearest, fanout, leaders.len());
-        drop(nearest);
+        drop((nearest, leaders));
         let parent_len = points.len();
         drop(points);
 
@@ -287,11 +439,7 @@ impl Carving<'_, '_> {
                     } else {
                         0
                     };
-                    Next::Split {
-                        points: cluster,
-                        seed,
-                        stalls,
-                    }
+                    self.too_large(cluster, depth + 1, seed, stalls)
                 } else {
                     Next::Chunks {
                         points: cluster,
@@ -307,75 +455,78 @@ impl Carving<'_, '_> {
         next.extend(merge_small(small, params.max_leaf_size, &mut rng).map(Next::Leaf));
 
         // Every point is in some cluster, so there's at least one
-        let shares = children.split(next.iter().map(|next| next.len() as u64));
-        let leaves = next
-            .into_par_iter()
-            .zip(shares)
-            .map(|(next, progress)| match next {
-                Next::Leaf(leaf) => {
-                    progress.add();
-                    Ok(vec![leaf])
-                }
-                Next::Split {
-                    points,
-                    seed,
-                    stalls,
-                } => self.split(points, depth + 1, seed, stalls, progress),
-                Next::Chunks { points, seed } => {
-                    progress.add();
-                    Ok(random_chunks(points, params.max_leaf_size, seed))
-                }
-            })
-            .collect::<OperationResult<Vec<_>>>()?;
-        Ok(leaves.into_iter().flatten().collect())
+        let shares = progress.split(next.iter().map(|next| next.len() as u64));
+        self.carve(next, shares, depth + 1)
     }
 
-    /// How many leaders a cluster of `len` points gets, `len` at least 2: the paper's
-    /// `min(P_samp · |P|, cap)`, and at least 2. The cap is `max_leaders`, at most
-    /// [`MAX_STEP_LEADERS`].
-    fn leader_count(&self, len: usize) -> usize {
-        // Saturates, so a NaN or negative fraction gives 0
-        let wanted = (len as f64 * self.params.leader_fraction).ceil() as usize;
-        let max = self.params.max_leaders.clamp(2, MAX_STEP_LEADERS);
-        wanted.clamp(2, max).min(len)
-    }
-
-    /// The `fanout` nearest leaders of each point, as positions in `leaders`: `fanout` slots
-    /// per point, best first, the unused ones `None`. Adds `progress` per matrix call,
-    /// by its points.
+    /// The `fanout` nearest leaders of each point of each of `steps`, as positions in its
+    /// leaders: `fanout` slots per point, best first, the unused ones `None`. One job per step
+    /// in one call to the phase. Adds each step's share of `matrix` as its rows are scored.
     fn nearest_leaders(
         &self,
-        points: &[PointOffsetType],
-        leaders: &[PointOffsetType],
-        fanout: usize,
-        progress: Share<'_>,
-    ) -> OperationResult<Vec<Option<NonZeroU16>>> {
-        // Points with NaN scores get fewer picks
-        let mut nearest = vec![None; points.len() * fanout];
-        let shares = progress.split(points.chunks(POINTS_PER_CALL).map(|rows| rows.len() as u64));
-        points
-            .par_chunks(POINTS_PER_CALL)
-            .zip(nearest.par_chunks_mut(POINTS_PER_CALL * fanout))
-            .zip(shares)
-            .try_for_each(|((rows, nearest), progress)| -> OperationResult<()> {
-                check_process_stopped(self.stopped)?;
-                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-                self.top_k.with(|top_k| {
-                    self.scorer.top_k(rows, MatrixCols::Other(leaders), top_k)?;
-                    for (r, slots) in nearest.chunks_exact_mut(fanout).enumerate() {
-                        // `top_k` may keep more than `fanout`, best first
-                        let (cols, _) = top_k.row(r);
-                        for (slot, &col) in slots.iter_mut().zip(cols) {
-                            *slot = Some(leader_slot(col));
-                        }
-                    }
-                    Ok::<_, OperationError>(())
-                })?;
-                progress.add();
+        steps: &[Step<'_>],
+        matrix: Vec<Share<'_>>,
+    ) -> OperationResult<Vec<Vec<Option<NonZeroU16>>>> {
+        let mut nearest = vec![Vec::new(); steps.len()];
+        let jobs = steps
+            .iter()
+            .zip(&mut nearest)
+            .zip(matrix)
+            .map(|((step, nearest), progress)| {
+                let job = MatrixJob {
+                    rows: &step.points,
+                    cols: MatrixCols::Other(&step.leaders),
+                    k: step.fanout,
+                };
+                let progress = progress.gradual(step.points.len() as u64);
+                (job, (nearest, step.fanout, progress))
+            });
+        self.phase.for_each_top_k(
+            jobs,
+            self.stopped,
+            |(_, _, progress), rows| progress.add(rows as u64),
+            |(nearest, fanout, progress), picks| {
+                progress.finish();
+                *nearest = leader_slots(picks, fanout);
                 Ok(())
-            })?;
+            },
+        )?;
         Ok(nearest)
     }
+}
+
+/// How many leaders a cluster of `len` points gets, `len` at least 2: the paper's
+/// `min(P_samp · |P|, cap)`, and at least 2. The cap is `max_leaders`, at most
+/// [`MAX_STEP_LEADERS`].
+fn leader_count(params: &PartitionParams, len: usize) -> usize {
+    // Saturates, so a NaN or negative fraction gives 0
+    let wanted = (len as f64 * params.leader_fraction).ceil() as usize;
+    let max = params.max_leaders.clamp(2, MAX_STEP_LEADERS);
+    wanted.clamp(2, max).min(len)
+}
+
+/// To how many of its `leaders` a step at recursion `depth` assigns each point.
+fn step_fanout(params: &PartitionParams, depth: usize, leaders: usize) -> usize {
+    params
+        .fanout
+        .get(depth)
+        .copied()
+        .unwrap_or(1)
+        .clamp(1, leaders)
+}
+
+/// The picks of each row of `picks`, the result of a job with `fanout` as its `k`, as leader
+/// slots: `fanout` per row, best first, the unused ones `None`. Points with NaN scores get fewer
+/// picks.
+fn leader_slots(picks: &MatrixPicks, fanout: usize) -> Vec<Option<NonZeroU16>> {
+    let mut nearest = vec![None; picks.rows() * fanout];
+    for (r, slots) in nearest.chunks_exact_mut(fanout).enumerate() {
+        let (cols, _) = picks.row(r);
+        for (slot, &col) in slots.iter_mut().zip(cols) {
+            *slot = Some(leader_slot(col));
+        }
+    }
+    nearest
 }
 
 /// `points` grouped by their nearest leaders: one list per leader, and one of the points without
@@ -492,11 +643,12 @@ fn random_chunks(
         .collect()
 }
 
-/// `k` of the top-k buffers for partitioning `len` points: the largest fanout, but at most the
-/// leaders a step can have, which every step clamps its fanout to. The buffers hold `k` slots per
-/// row, so an unclamped fanout far above the leaders would size them for picks that can't exist.
+/// `k` of the matrix phase for partitioning `len` points: the largest fanout, but at most the
+/// leaders a step can have, which every step clamps its fanout to. Every matrix call of the
+/// phase keeps `k` picks per row, so an unclamped fanout far above the leaders would size them
+/// for picks that can't exist.
 fn top_k_size(params: &PartitionParams, len: usize) -> usize {
-    // The upper bound of `Carving::leader_count`: no step has more points than the input
+    // The upper bound of `leader_count`: no step has more points than the input
     let leaders = params.max_leaders.clamp(2, MAX_STEP_LEADERS).min(len);
     let fanout = params.fanout.iter().copied().max().unwrap_or(1);
     fanout.min(leaders).max(1)
@@ -506,6 +658,7 @@ fn top_k_size(params: &PartitionParams, len: usize) -> usize {
 mod tests {
     use std::collections::HashSet;
 
+    use common::ambient;
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -1008,8 +1161,8 @@ mod tests {
         check_leaves(&leaves, &all(points), params.max_leaf_size);
     }
 
-    /// The top-k buffers have room for the largest fanout, but not for more leaders than a step
-    /// can have.
+    /// The `k` of the phase is the largest fanout, but not more than the leaders a step can
+    /// have.
     #[test]
     fn top_k_size_is_clamped_to_the_leaders() {
         let with = |fanout: Vec<usize>, max_leaders| PartitionParams {
@@ -1140,5 +1293,186 @@ mod tests {
             shared >= 0.95 && random < 0.4,
             "shared {shared}, random {random}"
         );
+    }
+
+    /// The `fanout` nearest leaders of each of `rows`, as slots, from one matrix call with `k`
+    /// the fanout.
+    fn scored_alone(
+        scorer: &MatrixScorer<'_>,
+        rows: &[PointOffsetType],
+        leaders: &[PointOffsetType],
+        fanout: usize,
+    ) -> Vec<Option<NonZeroU16>> {
+        let mut top = MatrixTopK::new(fanout);
+        scorer
+            .top_k(rows, MatrixCols::Other(leaders), &mut top)
+            .unwrap();
+        let top = &top;
+        (0..rows.len())
+            .flat_map(|r| {
+                let (cols, _) = top.row(r);
+                (0..fanout).map(move |i| cols.get(i).map(|&col| leader_slot(col)))
+            })
+            .collect()
+    }
+
+    /// Leaves as carving gave them before children first: every step samples its leaders and
+    /// scores them itself, one matrix call over all its points with `k` its own fanout, and
+    /// recurses into each cluster in turn.
+    fn self_scored(
+        scorer: &MatrixScorer<'_>,
+        params: &PartitionParams,
+        points: Vec<PointOffsetType>,
+        depth: usize,
+        seed: u64,
+        stalls: usize,
+    ) -> Vec<Vec<PointOffsetType>> {
+        if points.len() <= params.max_leaf_size {
+            return vec![points];
+        }
+        if depth >= params.max_depth || stalls >= MAX_STALLS {
+            return random_chunks(points, params.max_leaf_size, seed);
+        }
+        let mut rng = StdRng::seed_from_u64(seed);
+        let leaders = sample_leaders(&points, leader_count(params, points.len()), &mut rng);
+        let fanout = step_fanout(params, depth, leaders.len());
+        let nearest = scored_alone(scorer, &points, &leaders, fanout);
+        let (clusters, orphans) = group_by_leader(&points, &nearest, fanout, leaders.len());
+
+        let mut leaves = Vec::new();
+        let mut small = Vec::new();
+        let clusters = clusters.into_iter().map(|cluster| (cluster, true));
+        for (cluster, carve) in clusters.chain([(orphans, false)]) {
+            if cluster.is_empty() {
+                continue;
+            }
+            if cluster.len() > params.max_leaf_size {
+                let seed = rng.random();
+                if carve {
+                    let stalls = if stalled(points.len(), cluster.len()) {
+                        stalls + 1
+                    } else {
+                        0
+                    };
+                    leaves.extend(self_scored(
+                        scorer,
+                        params,
+                        cluster,
+                        depth + 1,
+                        seed,
+                        stalls,
+                    ));
+                } else {
+                    leaves.extend(random_chunks(cluster, params.max_leaf_size, seed));
+                }
+            } else if cluster.len() < params.min_leaf_size {
+                small.push(cluster);
+            } else {
+                leaves.push(cluster);
+            }
+        }
+        leaves.extend(merge_small(small, params.max_leaf_size, &mut rng));
+        leaves
+    }
+
+    /// Scoring children first, in calls the scorer cuts and scores with the phase's `k`, gives
+    /// the leaves of steps that each score themselves in one call with their own fanout as `k`.
+    #[test]
+    fn children_first_matches_scoring_each_step_itself() {
+        let _scope = ambient::test_guard();
+        let points = 3000;
+        let uniform16 = Fixture::uniform(points, 16, Distance::Euclid);
+        let mut vectors = uniform(points, 8, 42);
+        vectors[..1000].fill(vec![0.5; 8]);
+        let duplicates = Fixture::new(&vectors, Distance::Euclid, None);
+        let mut vectors = uniform(points, 8, 42);
+        vectors[..300].fill(vec![f32::NAN; 8]);
+        let nans = Fixture::new(&vectors, Distance::Dot, None);
+        let quantized = Fixture::new(&uniform(points, 16, 42), Distance::Dot, Some(scalar()));
+        let cases = [
+            (&uniform16, params()),
+            (
+                &uniform16,
+                PartitionParams {
+                    max_depth: 1,
+                    ..params()
+                },
+            ),
+            (
+                &uniform16,
+                PartitionParams {
+                    max_leaders: 2,
+                    fanout: vec![2; 16],
+                    ..params()
+                },
+            ),
+            (
+                &uniform16,
+                PartitionParams {
+                    fanout: vec![3, 10, 2],
+                    ..params()
+                },
+            ),
+            (&duplicates, params()),
+            (&nans, params()),
+            (&quantized, params()),
+        ];
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        for (i, (fixture, params)) in cases.into_iter().enumerate() {
+            let expected = self_scored(&fixture.scorer(), &params, all(points), 0, 7, 0);
+            let leaves = pool.install(|| fixture.partition(all(points), &params, 7));
+            check_leaves(&leaves, &all(points), params.max_leaf_size);
+            assert_eq!(leaves, expected, "case {i}");
+        }
+    }
+
+    /// A parent samples each child's leaders as the child would itself, scores all children in
+    /// one call, with the picks each would get alone, and adds their matrix shares as their rows
+    /// are scored.
+    #[test]
+    fn parent_scores_its_children() {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::uniform(3000, 16, Distance::Euclid);
+        let scorer = fixture.scorer();
+        let params = params();
+        let stopped = AtomicBool::new(false);
+        let carving = Carving {
+            params: &params,
+            stopped: &stopped,
+            phase: scorer.phase(top_k_size(&params, 3000)),
+        };
+        let counter = TestCounter::default();
+        // More rows than one matrix call takes, the second level's fanout, and a small child
+        let children: [(Vec<PointOffsetType>, usize, u64, usize); 3] = [
+            (all(3000), 0, 1, 10),
+            ((0..3000).step_by(2).collect(), 1, 2, 3),
+            ((500..1200).collect(), 1, 3, 3),
+        ];
+        let (mut steps, mut matrix) = (Vec::new(), Vec::new());
+        for (points, depth, seed, fanout) in children {
+            let (own, clusters) = counter.share(1000).halves();
+            let mut step = carving.sample(points.clone(), depth, seed, 0, clusters);
+            let mut rng = StdRng::seed_from_u64(seed);
+            let leaders = sample_leaders(&points, leader_count(&params, points.len()), &mut rng);
+            assert_eq!(step.leaders, leaders);
+            assert_eq!(step.fanout, fanout);
+            // The child goes on with the rng where its own sampling would have left it. Not
+            // split afterwards, so drawing from it here changes nothing
+            assert_eq!(step.rng.random::<u64>(), rng.random::<u64>());
+            steps.push(step);
+            matrix.push(own);
+        }
+
+        let nearest = carving.nearest_leaders(&steps, matrix).unwrap();
+        // The matrix halves, not the children's clusters
+        assert_eq!(counter.load(), 3 * 500);
+        assert_eq!(nearest.len(), steps.len());
+        for (step, nearest) in steps.iter().zip(&nearest) {
+            let alone = scored_alone(&scorer, &step.points, &step.leaders, step.fanout);
+            assert_eq!(nearest, &alone);
+        }
     }
 }
