@@ -58,17 +58,13 @@ jobs:
           save-if: ${{ github.event_name == 'schedule' }}
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
-      - name: Build model testing binary
-        run: |
-          RUSTFLAGS="--cfg tokio_unstable" \
-            cargo build --bin model_testing --features service_debug --profile perf
-        shell: bash
-        timeout-minutes: 60
-      # Resolve the per-run parameters. workflow_dispatch inputs override the env
-      # constants when set; otherwise we keep OP_NUM and pick a fresh random seed so
-      # each night explores a different op sequence. The seed is logged in each run's
-      # banner (model_testing: seed=...), so a failing night stays reproducible.
-      # Inputs are read via env (not ${{ }} interpolation) to avoid script injection.
+      # Resolve the per-run parameters before the build so a compile failure still
+      # produces a useful failure issue (seed / op budget / tested SHA).
+      # workflow_dispatch inputs override the env constants when set; otherwise we
+      # keep OP_NUM and pick a fresh random seed so each night explores a different
+      # op sequence. The seed is logged in each run's banner (model_testing: seed=...),
+      # so a failing night stays reproducible. Inputs are read via env (not ${{ }}
+      # interpolation) to avoid script injection.
       - name: Resolve run parameters
         env:
           INPUT_OP_NUM: ${{ inputs.op_num }}
@@ -87,9 +83,17 @@ jobs:
             echo "SEED=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_ENV"
           fi
         shell: bash
-      # Both runs reuse the single binary built above and share the same seed.
-      - name: Run model testing (async scorer)
-        id: async_scorer
+      - name: Build model testing binary
+        id: build
+        run: |
+          RUSTFLAGS="--cfg tokio_unstable" \
+            cargo build --bin model_testing --features "service_debug edge-verify" --profile perf
+        shell: bash
+        timeout-minutes: 60
+      # Two sequential passes sharing one binary and seed. Both use --async-scorer;
+      # the prior no-io_uring pass is dropped so the nightly axis is non-edge vs edge.
+      - name: Run model testing (non-edge)
+        id: non_edge
         run: |
           target/perf/model_testing \
             --seed "$SEED" \
@@ -101,10 +105,11 @@ jobs:
             --async-scorer
         shell: bash
         timeout-minutes: 360
-      - name: Run model testing (no io_uring)
-        id: no_io_uring
-        # Run even if the async-scorer pass failed, so both signals are collected.
-        if: ${{ !cancelled() }}
+      - name: Run model testing (edge)
+        id: edge
+        # Run even if non-edge failed, so Edge coverage is still collected.
+        # Skip if the build failed so we don't mislabel a missing binary as Edge.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           target/perf/model_testing \
             --seed "$SEED" \
@@ -112,27 +117,35 @@ jobs:
             --shard-count "$SHARD_COUNT" \
             --restart-probability "$RESTART_PROBABILITY" \
             --id-pool "$ID_POOL" \
-            --on-disk
+            --on-disk \
+            --async-scorer \
+            --edge-verify
         shell: bash
         timeout-minutes: 360
-      # Which of the two passes broke is the first thing triage needs: one failing while the
-      # other survives the same seed points at the io_uring read path (or rules it out), and
-      # every failure so far has split that way. Rendered here rather than in the issue template
+      # Which passes broke is the first thing triage needs: non-edge vs edge isolates
+      # follower/append-only divergences. Rendered here rather than in the issue template
       # so the template stays a plain fill-in-the-blanks form.
       - name: Describe which passes failed
         if: ${{ failure() && github.event_name == 'schedule' }}
         env:
-          ASYNC: ${{ steps.async_scorer.conclusion }}
-          PLAIN: ${{ steps.no_io_uring.conclusion }}
+          BUILD: ${{ steps.build.outcome }}
+          NON_EDGE: ${{ steps.non_edge.conclusion }}
+          EDGE: ${{ steps.edge.conclusion }}
         run: |
-          if [ "$ASYNC" = failure ] && [ "$PLAIN" = failure ]; then
-            summary="both passes"
-          elif [ "$ASYNC" = failure ]; then
-            summary="async scorer only (no io_uring passed the same seed)"
-          elif [ "$PLAIN" = failure ]; then
-            summary="no io_uring only (async scorer passed the same seed)"
+          failed=()
+          [ "$BUILD" = failure ] && failed+=("build")
+          [ "$NON_EDGE" = failure ] && failed+=("non-edge")
+          [ "$EDGE" = failure ] && failed+=("edge")
+          if [ "${#failed[@]}" -eq 0 ]; then
+            summary="no model-testing pass, the job broke around them (build=$BUILD, non-edge=$NON_EDGE, edge=$EDGE)"
+          elif [ "${#failed[@]}" -eq 1 ] && [ "$BUILD" = failure ]; then
+            summary="build (passes skipped)"
+          elif [ "${#failed[@]}" -eq 2 ] && [ "$BUILD" != failure ]; then
+            summary="both non-edge and edge"
           else
-            summary="neither pass, the job broke around them (async=$ASYNC, no-io_uring=$PLAIN)"
+            # Join with ", " then rewrite the last separator to " and " for readability.
+            summary=$(IFS=', '; echo "${failed[*]}" | sed 's/, \([^,]*\)$/ and \1/')
+            summary="$summary only"
           fi
           echo "FAILED_PASSES=$summary" >> "$GITHUB_ENV"
         shell: bash
@@ -144,6 +157,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SEED: ${{ env.SEED }}
+          OP_NUM: ${{ env.OP_NUM }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           # Falls back to github.sha if we failed before resolving the checked-out commit.
