@@ -8,8 +8,7 @@ use super::ReadOnlySparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::field_index::CardinalityEstimation;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -31,11 +30,11 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
         _params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        Ok(self.with_view(|view| view.filter_checks(query_vectors, cardinality, top)))
+        self.with_view(|view| view.filter_checks(query_vectors, cardinality, top))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

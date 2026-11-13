@@ -14,6 +14,7 @@ use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
+use segment::common::operation_error::OperationResult;
 use segment::data_types::filter_user::FilterUser;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -23,7 +24,7 @@ use segment::fixtures::index_fixtures::random_vector;
 use segment::index::field_index::CardinalityEstimation;
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::query_optimization::filter_checks::FilterChecks;
+use segment::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use segment::index::query_optimization::point_set::{PointSet, PointSetContext};
 use segment::index::query_optimization::resolved_points::ResolvedPoints;
 use segment::index::{PayloadIndexRead, VectorIndexRead};
@@ -390,7 +391,12 @@ fn test_hnsw_with_resolved_filter() {
         });
 
         let checks = hnsw_index
-            .filter_checks(&queries, &cardinality, 10, None)
+            .filter_checks(
+                &queries,
+                &LazyCardinality::known(cardinality.clone()),
+                10,
+                None,
+            )
             .unwrap();
         match checks {
             FilterChecks::Lazy { expected_checks } => {
@@ -933,4 +939,101 @@ fn test_group_with_several_vectors_shares_with_another_group() {
             |n| n % 2 == 0,
         );
     }
+}
+
+/// An estimation that fails the test if an index asks for it.
+fn estimation_not_needed() -> LazyCardinality<'static> {
+    LazyCardinality::new(|| -> OperationResult<CardinalityEstimation> {
+        panic!("the filter's cardinality must not be estimated here")
+    })
+}
+
+/// Searches whose way of evaluating the filter doesn't depend on how many points it matches
+/// must say so without the estimation: it costs a pass over the payload index, and the search
+/// repeats it.
+#[test]
+fn test_filter_checks_without_estimation() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(11);
+    let batch = queries(&mut rng, 4, 3);
+
+    // A plain index checks every candidate once per call
+    let plain_dir = Builder::new().prefix("plain_dir").tempdir().unwrap();
+    let plain = two_vector_segment(plain_dir.path(), &mut rng);
+    let checks = plain.vector_data[VECTOR1_NAME]
+        .vector_index
+        .borrow()
+        .filter_checks(&batch, &estimation_not_needed(), 10, None)
+        .unwrap();
+    assert_eq!(checks, FilterChecks::Full);
+
+    // HNSW: an exact search, no query vectors and `top == 0`
+    let (hnsw, _temp, _out) = hnsw_two_vector_segment(&mut rng);
+    let index = hnsw.vector_data[VECTOR1_NAME].vector_index.borrow();
+    let exact = SearchParams {
+        exact: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        index
+            .filter_checks(&batch, &estimation_not_needed(), 10, Some(&exact))
+            .unwrap(),
+        FilterChecks::Full
+    );
+    let no_checks = FilterChecks::Lazy { expected_checks: 0 };
+    assert_eq!(
+        index
+            .filter_checks(&batch, &estimation_not_needed(), 0, None)
+            .unwrap(),
+        no_checks
+    );
+    assert_eq!(
+        index
+            .filter_checks(&[], &estimation_not_needed(), 10, None)
+            .unwrap(),
+        no_checks
+    );
+
+    // A graph search of the same index does need it
+    let estimation = LazyCardinality::known(CardinalityEstimation::exact(500));
+    assert!(matches!(
+        index.filter_checks(&batch, &estimation, 10, None).unwrap(),
+        FilterChecks::Lazy { expected_checks } if expected_checks > 0
+    ));
+    assert!(estimation.is_computed());
+}
+
+/// An HNSW index without links (`m == 0`) searches plain: every candidate is checked.
+#[test]
+fn test_filter_checks_hnsw_disabled_without_estimation() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(12);
+    let dim = 8;
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
+    for n in 0..200u64 {
+        let vector = random_vector(&mut rng, dim);
+        segment
+            .upsert_point(n as SeqNumberType, n.into(), only_default_vector(&vector))
+            .unwrap();
+    }
+    let hnsw_config = HnswConfig {
+        memory: None,
+        m: 0,
+        ef_construct: 32,
+        full_scan_threshold: 4,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let index = build_hnsw(&segment, hnsw_config, hnsw_dir.path(), &mut rng);
+    let batch = queries(&mut rng, dim, 3);
+    assert_eq!(
+        index
+            .filter_checks(&batch, &estimation_not_needed(), 10, None)
+            .unwrap(),
+        FilterChecks::Full
+    );
 }

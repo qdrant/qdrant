@@ -1,12 +1,13 @@
 use sparse::index::inverted_index::InvertedIndex;
 
 use super::SparseVectorIndexReadView;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::adjust_to_available_vectors;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::types::DEFAULT_SPARSE_FULL_SCAN_THRESHOLD;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
@@ -22,11 +23,11 @@ where
     pub fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
-    ) -> FilterChecks {
+    ) -> OperationResult<FilterChecks> {
         if top == 0 || query_vectors.is_empty() {
-            return FilterChecks::Lazy { expected_checks: 0 };
+            return Ok(FilterChecks::Lazy { expected_checks: 0 });
         }
 
         // Queries other than nearest are scored against every point matching the filter.
@@ -38,7 +39,7 @@ where
                 | QueryVector::RecommendSumScores(_)
                 | QueryVector::Discover(_)
                 | QueryVector::Context(_)
-                | QueryVector::FeedbackNaive(_) => return FilterChecks::Full,
+                | QueryVector::FeedbackNaive(_) => return Ok(FilterChecks::Full),
             }
         }
 
@@ -48,7 +49,7 @@ where
             min,
             exp,
             max,
-        } = *cardinality;
+        } = *cardinality.get()?;
         let cardinality = adjust_to_available_vectors(
             CardinalityEstimation {
                 primary_clauses: vec![],
@@ -65,7 +66,7 @@ where
             .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
 
         if cardinality.max < threshold {
-            return FilterChecks::Full;
+            return Ok(FilterChecks::Full);
         }
 
         // The inverted index checks a point once its score beats the current top: until `top`
@@ -75,8 +76,8 @@ where
             .checked_div(cardinality.exp)
             .unwrap_or(available_vectors)
             .min(available_vectors);
-        FilterChecks::Lazy {
+        Ok(FilterChecks::Lazy {
             expected_checks: per_query.saturating_mul(query_vectors.len()),
-        }
+        })
     }
 }

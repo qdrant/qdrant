@@ -1,12 +1,13 @@
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::adjust_to_available_vectors;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::index::sample_estimation::MAX_ESTIMATED_POINTS;
 use crate::types::SearchParams;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -25,18 +26,18 @@ where
     pub(crate) fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
         params: Option<&SearchParams>,
-    ) -> FilterChecks {
+    ) -> OperationResult<FilterChecks> {
         if top == 0 || query_vectors.is_empty() {
-            return FilterChecks::Lazy { expected_checks: 0 };
+            return Ok(FilterChecks::Lazy { expected_checks: 0 });
         }
 
         let is_hnsw_disabled = self.config.m == 0 && self.config.payload_m.unwrap_or(0) == 0;
         let exact = params.is_some_and(|params| params.exact);
         if exact || is_hnsw_disabled {
-            return FilterChecks::Full;
+            return Ok(FilterChecks::Full);
         }
 
         let CardinalityEstimation {
@@ -44,7 +45,7 @@ where
             min,
             exp,
             max,
-        } = *cardinality;
+        } = *cardinality.get()?;
         let cardinality = adjust_to_available_vectors(
             CardinalityEstimation {
                 primary_clauses: vec![],
@@ -58,7 +59,7 @@ where
 
         let threshold = self.config.full_scan_threshold;
         if cardinality.max < threshold {
-            return FilterChecks::Full;
+            return Ok(FilterChecks::Full);
         }
 
         // A graph search checks the neighbours of the points it expands: about `ef` expansions
@@ -73,8 +74,8 @@ where
             // Sampling picks the strategy first, one check per sample
             checks = checks.saturating_add(MAX_ESTIMATED_POINTS);
         }
-        FilterChecks::Lazy {
+        Ok(FilterChecks::Lazy {
             expected_checks: checks,
-        }
+        })
     }
 }

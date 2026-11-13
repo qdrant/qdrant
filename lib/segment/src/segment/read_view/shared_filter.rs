@@ -5,7 +5,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::filter_checks::worth_sharing;
+use crate::index::query_optimization::filter_checks::{
+    LazyCardinality, never_worth_sharing, worth_sharing,
+};
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
@@ -37,8 +39,9 @@ where
         // Account the filter evaluation to the query, like `search_batch` does
         let _scope = query_context.handoff().enter_guard();
 
-        let cardinality = self.payload_index.estimate_cardinality(filter)?;
-        let materialization_cost = self.payload_index.materialization_cost(&cardinality)?;
+        // Estimated only if an index needs it to tell how it evaluates the filter: a plain
+        // index, an exact search or a search without query vectors never do
+        let cardinality = LazyCardinality::new(|| self.payload_index.estimate_cardinality(filter));
 
         let mut uses = Vec::with_capacity(users.len());
         for user in users {
@@ -60,6 +63,13 @@ where
             )?;
             uses.push(checks);
         }
+        // Whatever it costs to materialize the filter, these searches won't beat it
+        if never_worth_sharing(&uses) {
+            return Ok(None);
+        }
+
+        let cardinality = cardinality.get()?;
+        let materialization_cost = self.payload_index.materialization_cost(cardinality)?;
         if !worth_sharing(materialization_cost, uses.iter().copied()) {
             return Ok(None);
         }
@@ -68,7 +78,7 @@ where
         let is_stopped = query_context.is_stopped_flag();
         let points = self.payload_index.iter_filtered_points(
             filter,
-            &cardinality,
+            cardinality,
             is_stopped,
             DeferredBehavior::VisibleOnly,
         )?;
@@ -79,7 +89,7 @@ where
         check_stopped(is_stopped)?;
 
         Ok(Some(Filter::new_must(Condition::ResolvedPoints(
-            ResolvedPoints::new(self.segment_uuid, points, &cardinality),
+            ResolvedPoints::new(self.segment_uuid, points, cardinality),
         ))))
     }
 }

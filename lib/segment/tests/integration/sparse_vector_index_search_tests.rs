@@ -845,3 +845,68 @@ fn test_sparse_search_top_zero() {
         .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
 }
+
+/// Queries other than nearest score every point matching the filter, and a search without
+/// query vectors or with `top == 0` does nothing: neither needs the filter's cardinality.
+#[test]
+fn test_sparse_filter_checks_without_estimation() {
+    use segment::common::operation_error::OperationResult;
+    use segment::index::field_index::CardinalityEstimation;
+    use segment::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
+    use segment::vector_storage::query::RecoQuery;
+
+    let mut rnd = StdRng::seed_from_u64(44);
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
+    let index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
+    );
+    let not_needed = || {
+        LazyCardinality::new(|| -> OperationResult<CardinalityEstimation> {
+            panic!("the filter's cardinality must not be estimated here")
+        })
+    };
+
+    let nearest: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+    let reco = QueryVector::RecommendBestScore(RecoQuery::new(
+        vec![VectorInternal::from(random_sparse_vector(
+            &mut rnd,
+            MAX_SPARSE_DIM,
+        ))],
+        vec![VectorInternal::from(random_sparse_vector(
+            &mut rnd,
+            MAX_SPARSE_DIM,
+        ))],
+    ));
+
+    assert_eq!(
+        index
+            .filter_checks(&[reco], &not_needed(), 10, None)
+            .unwrap(),
+        FilterChecks::Full
+    );
+    let no_checks = FilterChecks::Lazy { expected_checks: 0 };
+    assert_eq!(
+        index
+            .filter_checks(std::slice::from_ref(&nearest), &not_needed(), 0, None)
+            .unwrap(),
+        no_checks
+    );
+    assert_eq!(
+        index.filter_checks(&[], &not_needed(), 10, None).unwrap(),
+        no_checks
+    );
+
+    // A nearest query with checks to count does need it
+    let estimation = LazyCardinality::known(CardinalityEstimation::exact(NUM_VECTORS / 2));
+    assert!(matches!(
+        index
+            .filter_checks(std::slice::from_ref(&nearest), &estimation, 10, None)
+            .unwrap(),
+        FilterChecks::Lazy { expected_checks } if expected_checks > 0
+    ));
+    assert!(estimation.is_computed());
+}

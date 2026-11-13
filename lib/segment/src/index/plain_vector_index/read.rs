@@ -9,8 +9,7 @@ use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::index::VectorIndexRead;
-use crate::index::field_index::CardinalityEstimation;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
@@ -42,7 +41,7 @@ impl VectorIndexRead for PlainVectorIndex {
     fn filter_checks(
         &self,
         _query_vectors: &[QueryVector],
-        _cardinality: &CardinalityEstimation,
+        _cardinality: &LazyCardinality<'_>,
         _top: usize,
         _params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {

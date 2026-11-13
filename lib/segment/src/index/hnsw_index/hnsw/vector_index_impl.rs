@@ -8,9 +8,8 @@ use super::HNSWIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::index::{VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -31,11 +30,11 @@ impl VectorIndexRead for HNSWIndex {
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        self.with_view(|view| Ok(view.filter_checks(query_vectors, cardinality, top, params)))
+        self.with_view(|view| view.filter_checks(query_vectors, cardinality, top, params))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

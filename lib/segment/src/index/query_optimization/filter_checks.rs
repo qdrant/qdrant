@@ -6,6 +6,50 @@
 //! search, so the price of the filter itself (a `nested` clause or a single indexed `match`)
 //! cancels out of the comparison.
 
+use std::cell::OnceCell;
+
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::CardinalityEstimation;
+
+/// The cardinality estimation of a filter, computed the first time an index asks for it.
+///
+/// Whether a search evaluates its filter on every candidate can be known without the
+/// estimation: a plain index, an exact search or a search that doesn't run never need it. An
+/// index that does need it calls [`Self::get`]; when no index does, the estimation is never
+/// computed.
+pub struct LazyCardinality<'a> {
+    compute: Box<dyn Fn() -> OperationResult<CardinalityEstimation> + 'a>,
+    value: OnceCell<CardinalityEstimation>,
+}
+
+impl<'a> LazyCardinality<'a> {
+    pub fn new(compute: impl Fn() -> OperationResult<CardinalityEstimation> + 'a) -> Self {
+        Self {
+            compute: Box::new(compute),
+            value: OnceCell::new(),
+        }
+    }
+
+    /// An estimation that is already known.
+    pub fn known(estimation: CardinalityEstimation) -> LazyCardinality<'static> {
+        LazyCardinality::new(move || Ok(estimation.clone()))
+    }
+
+    /// The estimation, computed on the first call.
+    pub fn get(&self) -> OperationResult<&CardinalityEstimation> {
+        if let Some(value) = self.value.get() {
+            return Ok(value);
+        }
+        let value = (self.compute)()?;
+        Ok(self.value.get_or_init(|| value))
+    }
+
+    /// Whether some index has asked for the estimation.
+    pub fn is_computed(&self) -> bool {
+        self.value.get().is_some()
+    }
+}
+
 /// How a search uses its filter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterChecks {
@@ -51,6 +95,26 @@ pub fn worth_sharing(
     materialization_cost < unshared
 }
 
+/// Whether [`worth_sharing`] is false for `uses` whatever the materialization cost is, so the
+/// cost needn't be computed.
+///
+/// A [`FilterChecks::Full`] search costs as much as materializing, so fewer than two of them
+/// never beat it, and searches without lazy checks add nothing.
+pub fn never_worth_sharing(uses: &[FilterChecks]) -> bool {
+    let full = uses
+        .iter()
+        .filter(|checks| matches!(checks, FilterChecks::Full))
+        .count();
+    let lazy_checks = uses
+        .iter()
+        .map(|checks| match checks {
+            FilterChecks::Full => 0,
+            FilterChecks::Lazy { expected_checks } => *expected_checks,
+        })
+        .fold(0usize, usize::saturating_add);
+    full < 2 && lazy_checks == 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +150,52 @@ mod tests {
     fn test_searches_without_checks_do_not_share() {
         assert!(!worth_sharing(0, [lazy(0); 3]));
         assert!(!worth_sharing(10, [lazy(0); 3]));
+    }
+
+    #[test]
+    fn test_never_worth_sharing_agrees_with_worth_sharing() {
+        let cases: [&[FilterChecks]; 7] = [
+            &[],
+            &[FilterChecks::Full],
+            &[lazy(0), lazy(0)],
+            &[FilterChecks::Full, lazy(0)],
+            &[FilterChecks::Full, FilterChecks::Full],
+            &[lazy(1)],
+            &[FilterChecks::Full, lazy(5)],
+        ];
+        for uses in cases {
+            let never = never_worth_sharing(uses);
+            for cost in [0, 1, 10, 1_000_000] {
+                if never {
+                    assert!(
+                        !worth_sharing(cost, uses.iter().copied()),
+                        "{uses:?} {cost}"
+                    );
+                }
+            }
+        }
+        assert!(never_worth_sharing(&[FilterChecks::Full]));
+        assert!(never_worth_sharing(&[FilterChecks::Full, lazy(0)]));
+        assert!(!never_worth_sharing(&[
+            FilterChecks::Full,
+            FilterChecks::Full
+        ]));
+        assert!(!never_worth_sharing(&[lazy(1)]));
+    }
+
+    #[test]
+    fn test_lazy_cardinality_computes_once_and_only_on_demand() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let lazy = LazyCardinality::new(|| {
+            calls.set(calls.get() + 1);
+            Ok(CardinalityEstimation::exact(7))
+        });
+        assert!(!lazy.is_computed());
+        assert_eq!(calls.get(), 0);
+        assert_eq!(lazy.get().unwrap().exp, 7);
+        assert_eq!(lazy.get().unwrap().exp, 7);
+        assert!(lazy.is_computed());
+        assert_eq!(calls.get(), 1);
     }
 }

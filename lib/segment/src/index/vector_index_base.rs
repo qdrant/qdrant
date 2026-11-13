@@ -17,8 +17,7 @@ use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::index::field_index::CardinalityEstimation;
-use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::filter_checks::{FilterChecks, LazyCardinality};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -46,7 +45,7 @@ pub trait VectorIndexRead {
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks>;
@@ -260,7 +259,7 @@ impl VectorIndexRead for VectorIndexEnum {
     fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
-        cardinality: &CardinalityEstimation,
+        cardinality: &LazyCardinality<'_>,
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
