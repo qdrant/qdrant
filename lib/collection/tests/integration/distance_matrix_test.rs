@@ -3,6 +3,7 @@ use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::CollectionError;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use rand::prelude::SmallRng;
@@ -13,6 +14,29 @@ use tempfile::Builder;
 use crate::common::simple_collection_fixture;
 
 const SEED: u64 = 42;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn distance_matrix_limit_per_sample_max_usize_is_rejected() {
+    let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
+
+    let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+    let request = CollectionSearchMatrixRequest {
+        sample_size: 4,
+        limit_per_sample: usize::MAX,
+        filter: None,
+        using: DEFAULT_VECTOR_NAME.to_owned(),
+    };
+
+    // The per-sample search asks for `limit + 1` results, so `usize::MAX`
+    // cannot be served and must not be answered with an empty matrix.
+    let error = collection
+        .search_points_matrix(request, ShardSelectorInternal::All, None, None, None)
+        .await
+        .expect_err("usize::MAX per-sample limit must be rejected");
+
+    assert!(matches!(error, CollectionError::BadInput { .. }));
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn distance_matrix_empty() {
