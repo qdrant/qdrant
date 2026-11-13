@@ -37,7 +37,7 @@ impl RequestHwCounter {
     pub fn to_rest_api(self) -> Option<api::rest::models::HardwareUsage> {
         if self.report_to_api {
             let data = self.counter.hw_data();
-            let m = |metric: HwMetric| data[metric];
+            let m = |metric: HwMetric| Some(data[metric]);
             Some(api::rest::models::HardwareUsage {
                 cpu: m(HwMetric::Cpu),
                 payload_io_read: m(HwMetric::PayloadIoRead),
