@@ -52,14 +52,6 @@ where
         let deleted_points = vector_query_context
             .deleted_points()
             .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
-        // With the segment's own flags, nothing deleted in it, and a flag for
-        // every stored vector (a point without a flag counts as deleted), the
-        // per-point deleted checks of the walk all pass. The id tracker's
-        // count comes last: the disk tracker counts its bitmap's bits for it.
-        let nothing_deleted = vector_query_context.deleted_points().is_none()
-            && self.vector_storage.deleted_vector_count() == 0
-            && deleted_points.len() >= self.vector_storage.total_vector_count()
-            && self.id_tracker.deleted_point_count() == 0;
 
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
@@ -131,6 +123,14 @@ where
                 params,
                 filter_context,
             )?;
+            // With the segment's own flags, nothing deleted in it, and a flag for
+            // every stored vector (a point without a flag counts as deleted), the
+            // per-point deleted checks of the walk all pass. The id tracker's
+            // count comes last: the disk tracker counts its bitmap's bits for it.
+            let nothing_deleted = vector_query_context.deleted_points().is_none()
+                && self.vector_storage.deleted_vector_count() == 0
+                && deleted_points.len() >= self.vector_storage.total_vector_count()
+                && self.id_tracker.deleted_point_count() == 0;
             if nothing_deleted {
                 points_scorer.assume_nothing_deleted();
             }
