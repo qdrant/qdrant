@@ -186,7 +186,7 @@ impl GraphBuilderMethod for GpuBuilder<'_> {
         match gpu.build_main(&local.ctx, &local.graph, &local.points)? {
             Some(graph) => {
                 local.graph = graph;
-                // The phases only time CPU work, so they end unstarted
+                // The phases only time CPU work, so they end without running
                 drop(local.ctx.progress.take());
                 Ok(())
             }

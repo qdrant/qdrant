@@ -355,7 +355,7 @@ fn find_progress<'a>(tree: &'a ProgressTree, name: &str) -> Option<&'a ProgressT
 }
 
 /// Where PiPNN applies, the GPU still builds the main graph: PiPNN only builds what the GPU
-/// fails to build. The CPU main graph phase stays unstarted, and blocks and recall are as with
+/// fails to build. The CPU main graph phase never runs, and blocks and recall are as with
 /// the GPU alone.
 #[test]
 fn test_gpu_before_pipnn() {
@@ -409,7 +409,8 @@ fn test_gpu_before_pipnn() {
     let progress = progress_view.snapshot("index");
     let main_graph = find_progress(&progress, "main_graph").expect("main graph progress");
     assert!(
-        main_graph.started_at.is_none(),
+        // A phase dropped without running ends finished, with zero duration
+        main_graph.duration_sec == Some(0.0),
         "the CPU built the main graph: {main_graph:?}",
     );
 
