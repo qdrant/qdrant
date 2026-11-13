@@ -4,7 +4,6 @@ use std::path::Path;
 
 use ::common::save_on_disk::SaveOnDisk;
 use parking_lot::RwLock;
-use validator::Validate as _;
 
 use crate::quota::config::QuotaConfig;
 use crate::quota::error::{QuotaError, QuotaResult};
@@ -32,7 +31,7 @@ impl Store {
             SaveOnDisk::load_or_init(storage_path.join(QUOTA_CONFIG_FILE), || from_settings)
                 .map_err(|err| QuotaError::Io(format!("Failed to read quota config: {err}")))?;
 
-        validate(&config.read())?;
+        config.read().ensure_valid()?;
 
         Ok(Store::Persisted(config))
     }
@@ -52,7 +51,7 @@ impl Store {
     /// Written to disk before the in-memory value is swapped, so a crash can only
     /// lose the update, never apply an unpersisted one.
     pub fn write(&self, new: QuotaConfig) -> QuotaResult<()> {
-        validate(&new)?;
+        new.ensure_valid()?;
 
         match self {
             Store::Persisted(config) => config
@@ -64,33 +63,6 @@ impl Store {
             }
         }
     }
-}
-
-/// The REST handler validates its own body, but a hand-edited quota file and a
-/// config arriving through consensus do not. A `0%` limit would reject every
-/// update forever, one above `100%` would cap nothing.
-fn validate(config: &QuotaConfig) -> QuotaResult<()> {
-    config.validate().map_err(|errs| {
-        let fields = errs
-            .field_errors()
-            .iter()
-            .map(|(field, errs)| {
-                let messages = errs
-                    .iter()
-                    .map(|err| {
-                        err.message
-                            .as_deref()
-                            .map_or_else(|| err.code.to_string(), ToString::to_string)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{field}: {messages}")
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        QuotaError::InvalidConfig(format!("Invalid quota config: [{fields}]"))
-    })
 }
 
 #[cfg(test)]

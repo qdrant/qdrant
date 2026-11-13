@@ -113,7 +113,9 @@ impl ConsensusStateMachine {
                 self.state.plan_update_cluster_metadata(key, value)
             }
 
-            ConsensusOperations::SetQuotaConfig(config) => self.state.plan_set_quota_config(config),
+            ConsensusOperations::SetQuotaConfig(config) => {
+                self.state.plan_set_quota_config(config)?
+            }
 
             ConsensusOperations::AddPeer { peer_id, uri } => {
                 self.state.plan_add_peer(*peer_id, uri)?

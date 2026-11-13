@@ -72,6 +72,12 @@ impl ClusterState {
             )));
         }
 
+        // `CreateCollectionOperation::new` validates vector names before proposal, but a committed
+        // entry does not have to come through it. Segment creation would reject an invalid name
+        // when applying the action, a failed action is a service error, and consensus would retry
+        // the entry forever. A dense and a sparse vector with the same name would share storage.
+        op.create_collection.validate_vector_names()?;
+
         let distribution = context.shard_distribution(op);
         let config = context.collection_config(&op.create_collection, distribution.len())?;
 
@@ -296,6 +302,12 @@ impl ClusterState {
         } = op;
 
         let collection = self.resolve_collection(collection_name)?;
+
+        // Same as in `plan_create_collection`: the API validates the name before proposal,
+        // but a committed entry does not have to come through it
+        common::validation::validate_vector_name(vector_name).map_err(|err| {
+            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+        })?;
 
         // Reject vector that already exists with different config.
         //
@@ -1636,9 +1648,32 @@ impl ClusterState {
             transfers.sort_by_key(|&key| transfer_sort_key(key));
 
             for key in transfers {
+                // Aborting a resharding transfer aborts resharding, which unregisters
+                // other related transfers and, when resharding up, drops the new shard
+                let planned_collection =
+                    planned.collection(&collection).expect("collection exists");
+
+                if transfer_by_key(planned_collection, key).is_none() {
+                    continue;
+                }
+
                 let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
+            }
+
+            // Keep aborting after a resharding abort drops the shard: an ordinary transfer of
+            // the dropped shard is not related to resharding, so the resharding abort leaves it
+            // registered. The retained handler aborts it too, then fails its final write to the
+            // dropped shard. Skip that write instead, as the resharding branch above does.
+            let shard_exists = planned
+                .collection(&collection)
+                .expect("collection exists")
+                .shards
+                .contains_key(&shard_id);
+
+            if !shard_exists {
+                return Ok(actions);
             }
         }
 
@@ -1683,10 +1718,15 @@ impl ClusterState {
         }]
     }
 
-    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> Actions {
+    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> StorageResult<Actions> {
+        // The API validates the config before proposal, but a committed entry does not have to
+        // come through it. Quota storage would reject an invalid config when applying the action,
+        // a failed action is a service error, and consensus would retry the entry forever.
+        config.ensure_valid()?;
+
         // `QuotaManager::set_config` additionally clears exceeded-quota flags,
         // so we always emit the action, even if the config is the same
-        vec![Action::SetQuotaConfig { config }]
+        Ok(vec![Action::SetQuotaConfig { config }])
     }
 
     pub fn plan_add_peer(&self, peer_id: PeerId, uri: &str) -> StorageResult<Actions> {

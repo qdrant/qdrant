@@ -2,6 +2,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::quota::error::{QuotaError, QuotaResult};
+
 /// How far below its limit a resource has to fall before the node accepts work
 /// again, when the config does not say.
 pub const DEFAULT_RELEASE_MARGIN_PERCENT: u8 = 5;
@@ -69,6 +71,36 @@ impl QuotaConfig {
             release_margin_percent: release_margin_percent
                 .unwrap_or(DEFAULT_RELEASE_MARGIN_PERCENT),
         }
+    }
+
+    /// Check the [`Validate`] rules, naming each invalid field in the error.
+    ///
+    /// The REST handler validates its own body, but a hand-edited quota file and a
+    /// config arriving through consensus do not, so everything that installs or
+    /// accepts a config goes through this. A `0%` limit would reject every update
+    /// forever, one above `100%` would cap nothing.
+    pub fn ensure_valid(&self) -> QuotaResult<()> {
+        self.validate().map_err(|errs| {
+            let fields = errs
+                .field_errors()
+                .iter()
+                .map(|(field, errs)| {
+                    let messages = errs
+                        .iter()
+                        .map(|err| {
+                            err.message
+                                .as_deref()
+                                .map_or_else(|| err.code.to_string(), ToString::to_string)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{field}: {messages}")
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            QuotaError::InvalidConfig(format!("Invalid quota config: [{fields}]"))
+        })
     }
 }
 
