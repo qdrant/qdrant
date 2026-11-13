@@ -70,6 +70,8 @@ thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = { workspace = true }
 memchr = { workspace = true }
+regex = { workspace = true }
+regex-syntax = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
