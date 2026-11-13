@@ -50,12 +50,16 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::Mutex;
 use rayon::prelude::*;
 
-/// Candidate reservoirs of the points of one level, written by all threads of the build.
+/// Candidate reservoirs of points of one level, all of them or a range, written by all threads
+/// of the build.
 pub(super) struct Reservoirs {
     /// Slots per point.
     capacity: usize,
-    /// Position of every point among the points, which indexes `heads` and the slots.
+    /// Position of every point of the level among them.
     positions: Positions,
+    /// Positions of the points with a reservoir. Their offset in it indexes `heads` and the
+    /// slots.
+    owners: Range<usize>,
     /// Lock and used slots of every point.
     heads: Box<[Mutex<Head>]>,
     /// Bucket of every slot, `capacity` consecutive slots per point.
@@ -65,21 +69,33 @@ pub(super) struct Reservoirs {
 }
 
 impl Reservoirs {
-    /// Reservoirs for `points` (sorted, distinct: the points of one level), `capacity` each.
+    /// Reservoirs for all of `points`, see [`Self::for_owners`].
+    #[cfg(test)]
+    pub fn new(points: &[PointOffsetType], capacity: usize) -> Self {
+        Self::for_owners(points, 0..points.len(), capacity)
+    }
+
+    /// Reservoirs for the points at `owners` in `points` (sorted, distinct: the points of one
+    /// level), `capacity` each. The other points of the level are candidates only: inserts for
+    /// them are ignored, and they have no candidates.
     ///
     /// Allocates and initializes all slots up front, in parallel on the current rayon pool.
-    pub fn new(points: &[PointOffsetType], capacity: usize) -> Self {
+    pub fn for_owners(points: &[PointOffsetType], owners: Range<usize>, capacity: usize) -> Self {
         debug_assert!(
             points.is_sorted_by(|a, b| a < b),
             "points must be sorted and distinct",
         );
+        debug_assert!(
+            owners.start <= owners.end && owners.end <= points.len(),
+            "owners must be a range of the points",
+        );
         // `Head` counts slots in u32, more than any reservoir needs
         let capacity = capacity.min(u32::MAX as usize);
-        let slots = points.len() * capacity;
+        let slots = owners.len() * capacity;
         Self {
             capacity,
             positions: Positions::new(points),
-            heads: (0..points.len())
+            heads: (0..owners.len())
                 .into_par_iter()
                 .map(|_| Mutex::default())
                 .collect(),
@@ -91,6 +107,7 @@ impl Reservoirs {
                 .into_par_iter()
                 .map(|_| AtomicU64::new(0))
                 .collect(),
+            owners,
         }
     }
 
@@ -101,9 +118,10 @@ impl Reservoirs {
     /// check that a candidate doesn't come with two hashes. Ignored are:
     /// - a point as its own candidate,
     /// - NaN scores, which have no place in the order of candidates,
-    /// - a `point` without a reservoir, which fails a debug assertion.
+    /// - a `point` of the level without a reservoir,
+    /// - a `point` that isn't of the level, which fails a debug assertion.
     ///
-    /// `candidate` must be one of the points too, which only debug builds check.
+    /// `candidate` must be a point of the level too, which only debug builds check.
     pub fn insert(
         &self,
         point: PointOffsetType,
@@ -138,7 +156,8 @@ impl Reservoirs {
     /// The candidates of `point`, best first (ties to the lower id). Callable concurrently for
     /// different points, for a parallel final prune.
     ///
-    /// Empty for a point without a reservoir, which fails a debug assertion.
+    /// Empty for a point without a reservoir. One that isn't of the level fails a debug
+    /// assertion.
     pub fn candidates(&self, point: PointOffsetType) -> Vec<ScoredPointOffset> {
         let Some(position) = self.position(point) else {
             return Vec::new();
@@ -154,11 +173,13 @@ impl Reservoirs {
         keys.into_iter().map(Key::scored).collect()
     }
 
-    /// Position of `point` among the points, `None` if it has no reservoir.
+    /// Position of `point` among the points with a reservoir, `None` if it has none.
     fn position(&self, point: PointOffsetType) -> Option<usize> {
         let position = self.positions.get(point);
         debug_assert!(position.is_some(), "point {point} has no reservoir");
         position
+            .filter(|position| self.owners.contains(position))
+            .map(|position| position - self.owners.start)
     }
 
     /// Slots of the point at `position`.
@@ -878,6 +899,31 @@ mod tests {
         let reservoirs = Reservoirs::new(&[0, 2], 4);
         reservoirs.insert(0, 2, 0, 1.0);
         assert!(reservoirs.candidates(1).is_empty());
+    }
+
+    /// Reservoirs for a range of the points take the same inserts as reservoirs for all of
+    /// them, and ignore the inserts for the other points, which stay candidates.
+    #[test]
+    fn owners_keep_their_candidates() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let points = random_points(&mut rng, 40, 100);
+        let inserts = random_inserts(&mut rng, &points, 2000, 16);
+        let all = Reservoirs::new(&points, 8);
+        insert_all(&all, &inserts);
+        for owners in [0..40, 0..13, 13..29, 29..40, 7..8, 5..5] {
+            let reservoirs = Reservoirs::for_owners(&points, owners.clone(), 8);
+            assert_eq!(reservoirs.heads.len(), owners.len());
+            assert_eq!(reservoirs.keys.len(), owners.len() * 8);
+            insert_all(&reservoirs, &inserts);
+            for (position, &point) in points.iter().enumerate() {
+                let candidates = reservoirs.candidates(point);
+                if owners.contains(&position) {
+                    assert_eq!(candidates, all.candidates(point), "point {point}");
+                } else {
+                    assert!(candidates.is_empty(), "point {point}");
+                }
+            }
+        }
     }
 
     #[test]
