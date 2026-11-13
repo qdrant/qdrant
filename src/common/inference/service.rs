@@ -181,6 +181,13 @@ impl InferenceService {
         let remote_result = self
             .infer_remote(remote_inference_inputs, inference_type, inference_params)
             .await?;
+        if remote_result.embeddings.len() != remote_inference_positions.len() {
+            return Err(StorageError::service_error(format!(
+                "Inference service returned {} embeddings for {} inputs",
+                remote_result.embeddings.len(),
+                remote_inference_positions.len(),
+            )));
+        }
 
         Ok(Self::merge_local_and_remote_result(
             local_model_results,
@@ -599,7 +606,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn too_few_remote_embeddings_are_an_error_not_a_panic() {
+    async fn too_few_remote_embeddings_are_an_error() {
         let mut server = mockito::Server::new_async().await;
         let _mock = server
             .mock("POST", "/")
@@ -620,18 +627,24 @@ mod test {
             token: Some(String::default()),
         }));
         let mut rng = StdRng::seed_from_u64(42);
-        let inputs = vec![
-            make_bm25_inference_input("local"),
-            make_normal_inference_input("remote", &mut rng),
-        ];
+        // Remote input last, the merge returned a shorter list; remote input first, it panicked.
+        for remote_first in [false, true] {
+            let mut inputs = vec![
+                make_bm25_inference_input("local"),
+                make_normal_inference_input("remote", &mut rng),
+            ];
+            if remote_first {
+                inputs.reverse();
+            }
 
-        let result = service
-            .infer(
-                inputs,
-                InferenceType::Update,
-                InferenceParams::new(InferenceApiKeys::new(None), None),
-            )
-            .await;
-        assert!(result.is_err());
+            let result = service
+                .infer(
+                    inputs,
+                    InferenceType::Update,
+                    InferenceParams::new(InferenceApiKeys::new(None), None),
+                )
+                .await;
+            assert!(result.is_err(), "remote first: {remote_first}");
+        }
     }
 }
