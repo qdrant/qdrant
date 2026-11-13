@@ -12,3 +12,12 @@ pub struct FilterUser<'a> {
     pub top: usize,
     pub params: Option<&'a SearchParams>,
 }
+
+impl FilterUser<'_> {
+    /// Number of searches `users` stand for: one per query vector. A filter is worth sharing
+    /// only between two or more of them, wherever they come from: a graph search evaluates its
+    /// filter once per query vector, so one user with several query vectors can share too.
+    pub fn count_searches(users: &[FilterUser<'_>]) -> usize {
+        users.iter().map(|user| user.query_vectors.len()).sum()
+    }
+}

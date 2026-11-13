@@ -30,7 +30,8 @@ where
         users: &[FilterUser<'_>],
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Option<Filter>> {
-        if users.len() < 2 {
+        // Sharing needs at least two searches, which may be the query vectors of one user
+        if FilterUser::count_searches(users) < 2 {
             return Ok(None);
         }
         // Account the filter evaluation to the query, like `search_batch` does

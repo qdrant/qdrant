@@ -4,6 +4,7 @@
 // Deprecated storage placement params (`on_disk`) are still handled here
 #![allow(deprecated)]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -30,14 +31,17 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MinShould,
-    PayloadSchemaType, Range, SeqNumberType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, MinShould,
+    PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
+    VectorStorageType, WithPayload,
 };
 use tempfile::Builder;
+use uuid::Uuid;
 
 const NUM_POINTS: u64 = 1_000;
 
@@ -593,5 +597,340 @@ fn resolved_points(shared: &Filter) -> &PointSet {
     match shared.must.as_deref() {
         Some([Condition::ResolvedPoints(resolved)]) => resolved.points(),
         other => panic!("a shared filter is a single `ResolvedPoints` condition, got {other:?}"),
+    }
+}
+
+/// `two_vector_segment` rebuilt with an HNSW index on both vectors. Their full scan thresholds
+/// are 256 and 170 points: `half = 1` matches 500 points (graph search, lazy checks) and
+/// `tenth = 3` matches 100 (plain search, every candidate checked).
+fn hnsw_two_vector_segment(rng: &mut StdRng) -> (Segment, tempfile::TempDir, tempfile::TempDir) {
+    let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
+    let source = two_vector_segment(source_dir.path(), rng);
+
+    let hnsw_config = HnswConfig {
+        memory: None,
+        m: 8,
+        ef_construct: 32,
+        full_scan_threshold: 4,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+    let vector_data = |name: &str| {
+        let config = &source.segment_config.vector_data[name];
+        (
+            name.to_owned(),
+            VectorDataConfig {
+                size: config.size,
+                distance: config.distance,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Hnsw(hnsw_config),
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )
+    };
+    let segment_config = SegmentConfig {
+        vector_data: HashMap::from([vector_data(VECTOR1_NAME), vector_data(VECTOR2_NAME)]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let temp_dir = Builder::new().prefix("builder_temp").tempdir().unwrap();
+    let out_dir = Builder::new().prefix("builder_out").tempdir().unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &segment_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
+    let permit = ResourcePermit::dummy(2);
+    let segment = builder
+        .build(
+            out_dir.path(),
+            Uuid::new_v4(),
+            None,
+            true,
+            permit,
+            &AtomicBool::new(false),
+            rng,
+            ProgressTracker::new_for_test(),
+        )
+        .unwrap();
+    (segment, temp_dir, out_dir)
+}
+
+fn queries(rng: &mut StdRng, dim: usize, count: usize) -> Vec<QueryVector> {
+    (0..count)
+        .map(|_| QueryVector::from(random_vector(rng, dim)))
+        .collect()
+}
+
+fn search_with(
+    segment: &Segment,
+    vector_name: &str,
+    queries: &[QueryVector],
+    filter: &Filter,
+    top: usize,
+    params: Option<&SearchParams>,
+) -> Vec<Vec<segment::types::ScoredPoint>> {
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let refs: Vec<&QueryVector> = queries.iter().collect();
+    segment
+        .search_batch(
+            vector_name,
+            &refs,
+            &WithPayload::default(),
+            &false.into(),
+            Some(filter),
+            top,
+            params,
+            &segment_query_context,
+        )
+        .unwrap()
+}
+
+/// Smallest mean recall against an exact search that a shared-filter graph search must reach.
+/// A 1000-point graph searched with a large `ef` is far above it, and a broken shared set is
+/// far below.
+const MIN_RECALL: f64 = 0.9;
+
+/// Checks a graph search with the shared filter without comparing it to the unshared search.
+/// A graph search is approximate, and its graph is built by several threads, so two equivalent
+/// filters may legitimately return different near neighbours. What must hold is:
+///
+/// - every result satisfies the original filter (`point_matches` on the numeric id), and
+///   there are `top` of them, so the shared set holds no wrong point and misses none that
+///   matter;
+/// - the mean recall against an exact search with the original filter is at least
+///   [`MIN_RECALL`], so sharing doesn't make the search worse than an approximate one.
+fn assert_shared_search_is_sound(
+    segment: &Segment,
+    vector_name: &str,
+    queries: &[QueryVector],
+    (filter, shared): (&Filter, &Filter),
+    top: usize,
+    params: &SearchParams,
+    point_matches: impl Fn(u64) -> bool,
+) {
+    let results = search_with(segment, vector_name, queries, shared, top, Some(params));
+    let exact_params = SearchParams {
+        exact: true,
+        ..Default::default()
+    };
+    let exact = search_with(
+        segment,
+        vector_name,
+        queries,
+        filter,
+        top,
+        Some(&exact_params),
+    );
+
+    let mut recall = 0.0;
+    for (result, exact) in results.iter().zip(&exact) {
+        assert_eq!(result.len(), top);
+        assert!(result.iter().all(|point| match point.id {
+            segment::types::PointIdType::NumId(n) => point_matches(n),
+            segment::types::PointIdType::Uuid(_) => false,
+        }));
+        let found = exact
+            .iter()
+            .filter(|point| result.iter().any(|r| r.id == point.id))
+            .count();
+        recall += found as f64 / exact.len() as f64;
+    }
+    let recall = recall / results.len() as f64;
+    assert!(recall >= MIN_RECALL, "recall {recall} against exact search");
+}
+
+/// One search call with several query vectors on a graph search checks the filter once per
+/// vector, so a single user can share it; the shared search returns the same results.
+#[test]
+fn test_one_user_with_several_vectors_shares_on_graph_search() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(7);
+    let (segment, _temp, _out) = hnsw_two_vector_segment(&mut rng);
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let filter = match_filter("half", 1);
+    let batch = queries(&mut rng, 4, 6);
+    let params = SearchParams {
+        hnsw_ef: Some(200),
+        ..Default::default()
+    };
+    let user = |query_vectors| FilterUser {
+        vector_name: VECTOR1_NAME,
+        query_vectors,
+        top: 10,
+        params: Some(&params),
+    };
+
+    // A single search never shares, with or without the change
+    assert!(
+        segment
+            .share_filter(&filter, &[user(&batch[..1])], &segment_query_context)
+            .unwrap()
+            .is_none()
+    );
+
+    // Six searches on one vector do
+    let shared = segment
+        .share_filter(&filter, &[user(&batch)], &segment_query_context)
+        .unwrap()
+        .expect("six graph searches share their filter");
+
+    let expected = search_with(&segment, VECTOR1_NAME, &batch, &filter, 10, Some(&params));
+    assert_shared_search_is_sound(
+        &segment,
+        VECTOR1_NAME,
+        &batch,
+        (&filter, &shared),
+        10,
+        &params,
+        |n| n % 2 == 1,
+    );
+    // ... and each as a search of its own
+    for (index, query) in batch.iter().enumerate() {
+        let alone = search_with(
+            &segment,
+            VECTOR1_NAME,
+            std::slice::from_ref(query),
+            &filter,
+            10,
+            Some(&params),
+        );
+        assert_eq!(alone[0], expected[index]);
+    }
+}
+
+/// A filter below the full scan threshold takes the plain path, which checks every candidate
+/// once for all query vectors: one user never shares, as before.
+#[test]
+fn test_one_user_with_several_vectors_does_not_share_on_plain_search() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(8);
+    let (segment, _temp, _out) = hnsw_two_vector_segment(&mut rng);
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let batch = queries(&mut rng, 4, 6);
+    let user = FilterUser {
+        vector_name: VECTOR1_NAME,
+        query_vectors: &batch,
+        top: 10,
+        params: None,
+    };
+    let shared = segment
+        .share_filter(&match_filter("tenth", 3), &[user], &segment_query_context)
+        .unwrap();
+    assert!(shared.is_none());
+}
+
+/// The cost model declines when the searches check fewer points than resolving the filter
+/// would: a tiny `ef` and `top` against a filter matching 500 points.
+#[test]
+fn test_cost_model_declines_to_share_cheap_graph_searches() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(9);
+    let (segment, _temp, _out) = hnsw_two_vector_segment(&mut rng);
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let filter = match_filter("half", 1);
+    let batch = queries(&mut rng, 4, 6);
+    let cheap = SearchParams {
+        hnsw_ef: Some(2),
+        ..Default::default()
+    };
+    let shared = |params: &SearchParams, top| {
+        segment
+            .share_filter(
+                &filter,
+                &[FilterUser {
+                    vector_name: VECTOR1_NAME,
+                    query_vectors: &batch,
+                    top,
+                    params: Some(params),
+                }],
+                &segment_query_context,
+            )
+            .unwrap()
+    };
+    // 2 × 16 neighbours × 6 vectors checks, against about 500 candidates
+    assert!(shared(&cheap, 1).is_none());
+    // top == 0 runs no search at all
+    assert!(shared(&cheap, 0).is_none());
+    // The same batch with a large ef pays for resolving
+    let costly = SearchParams {
+        hnsw_ef: Some(200),
+        ..Default::default()
+    };
+    assert!(shared(&costly, 10).is_some());
+
+    // The declined search is the plain search of the original filter
+    let expected = search_with(&segment, VECTOR1_NAME, &batch, &filter, 1, Some(&cheap));
+    for (index, query) in batch.iter().enumerate() {
+        let alone = search_with(
+            &segment,
+            VECTOR1_NAME,
+            std::slice::from_ref(query),
+            &filter,
+            1,
+            Some(&cheap),
+        );
+        assert_eq!(alone[0], expected[index]);
+    }
+}
+
+/// A group with several vectors and another group with the same filter resolve it once, and
+/// both searches see the same points.
+#[test]
+fn test_group_with_several_vectors_shares_with_another_group() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(10);
+    let (segment, _temp, _out) = hnsw_two_vector_segment(&mut rng);
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let filter = match_filter("half", 0);
+    let first = queries(&mut rng, 4, 3);
+    let second = queries(&mut rng, 6, 1);
+    let params = SearchParams {
+        hnsw_ef: Some(200),
+        ..Default::default()
+    };
+    let users = [
+        FilterUser {
+            vector_name: VECTOR1_NAME,
+            query_vectors: &first,
+            top: 10,
+            params: Some(&params),
+        },
+        FilterUser {
+            vector_name: VECTOR2_NAME,
+            query_vectors: &second,
+            top: 10,
+            params: Some(&params),
+        },
+    ];
+    let shared = segment
+        .share_filter(&filter, &users, &segment_query_context)
+        .unwrap()
+        .expect("four graph searches share their filter");
+
+    for (name, batch) in [(VECTOR1_NAME, &first), (VECTOR2_NAME, &second)] {
+        assert_shared_search_is_sound(
+            &segment,
+            name,
+            batch,
+            (&filter, &shared),
+            10,
+            &params,
+            |n| n % 2 == 0,
+        );
     }
 }
