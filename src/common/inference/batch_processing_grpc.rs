@@ -61,18 +61,15 @@ fn collect_vector_input(vector: &VectorInput, batch: &mut BatchAccumGrpc) -> Res
         Variant::Sparse(_) => {}
         Variant::MultiDense(_) => {}
         Variant::Document(document) => {
-            let doc = rest::Document::try_from(document.clone())
-                .map_err(|e| Status::internal(format!("Document conversion error: {e:?}")))?;
+            let doc = rest::Document::try_from(document.clone())?;
             batch.add(InferenceData::Document(doc));
         }
         Variant::Image(image) => {
-            let img = rest::Image::try_from(image.clone())
-                .map_err(|e| Status::internal(format!("Image conversion error: {e:?}")))?;
+            let img = rest::Image::try_from(image.clone())?;
             batch.add(InferenceData::Image(img));
         }
         Variant::Object(object) => {
-            let obj = rest::InferenceObject::try_from(object.clone())
-                .map_err(|e| Status::internal(format!("Object conversion error: {e:?}")))?;
+            let obj = rest::InferenceObject::try_from(object.clone())?;
             batch.add(InferenceData::Object(obj));
         }
     }
@@ -312,5 +309,21 @@ mod tests {
         batch.add(InferenceData::Document(doc2));
 
         assert_eq!(batch.objects.len(), 2);
+    }
+
+    #[test]
+    fn an_image_input_without_its_image_is_an_invalid_argument() {
+        let query = Query {
+            variant: Some(query::Variant::Nearest(VectorInput {
+                variant: Some(Variant::Image(api::grpc::qdrant::Image {
+                    image: None,
+                    model: "test-model".to_string(),
+                    options: Default::default(),
+                })),
+            })),
+        };
+
+        let err = collect_query(&query, &mut BatchAccumGrpc::new()).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
     }
 }
