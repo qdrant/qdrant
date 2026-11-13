@@ -43,6 +43,12 @@ impl AmbientContext {
         Self::node(root, None, || EcoString::from(name))
     }
 
+    /// Start independent request counters while sharing this request's collection drain.
+    /// Background work can then finish charging the collection after its caller times out.
+    pub fn root_with_shared_collection(&self, name: &str) -> Self {
+        Self::root(name, self.0.root.collection.clone(), None)
+    }
+
     #[cfg(feature = "testing")]
     #[expect(clippy::new_without_default)]
     pub fn new() -> Self {

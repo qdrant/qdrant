@@ -298,3 +298,22 @@ fn out_of_order_drop_clears_the_context_before_panicking() {
     assert_eq!(result.is_err(), cfg!(debug_assertions));
     assert!(current().context().is_none());
 }
+
+/// Detached batch counters charge the collection once, including work after an early response.
+#[test]
+fn independent_root_preserves_late_collection_usage() {
+    use std::sync::Arc;
+
+    use super::hw::{HardwareData, HwSharedDrain};
+    let collection = Arc::new(HwSharedDrain::default());
+    let request = AmbientContext::root("request", Some(collection.clone()), None);
+    let batch = request.root_with_shared_collection("batch");
+    batch.accumulate(HardwareData::from_fn(|_| 7));
+    request.accumulate_request(batch.hw_data());
+    assert_eq!(request.hw_data()[HwMetric::Cpu], 7);
+    assert_eq!(collection.load()[HwMetric::Cpu], 7);
+    batch.accumulate(HardwareData::from_fn(|_| 3));
+    assert_eq!(request.hw_data()[HwMetric::Cpu], 7);
+    assert_eq!(batch.hw_data()[HwMetric::Cpu], 10);
+    assert_eq!(collection.load()[HwMetric::Cpu], 10);
+}

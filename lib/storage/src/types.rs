@@ -37,6 +37,10 @@ pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
 #[derive(Debug, Deserialize, Serialize, Clone, Validate)]
 pub struct PerformanceConfig {
+    /// Opt-in maximum for compatible plain dense SQ8 search batches; zero disables it.
+    #[serde(default)]
+    #[validate(range(max = 64))]
+    pub dynamic_search_batch_max: usize,
     pub max_search_threads: usize,
     #[serde(default)]
     pub max_optimization_runtime_threads: usize,
@@ -148,7 +152,7 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     pub fn to_shared_storage_config(&self, is_distributed: bool) -> SharedStorageConfig {
-        SharedStorageConfig::new(
+        let mut shared = SharedStorageConfig::new(
             self.update_queue_size,
             self.node_type,
             self.handle_collection_load_errors,
@@ -166,7 +170,9 @@ impl StorageConfig {
             self.hnsw_global_config.clone(),
             self.performance.load_concurrency.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
-        )
+        );
+        shared.dynamic_search_batch_max = self.performance.dynamic_search_batch_max;
+        shared
     }
 }
 
