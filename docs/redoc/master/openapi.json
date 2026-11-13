@@ -13933,52 +13933,50 @@
         }
       },
       "HardwareUsage": {
-        "description": "Usage of the hardware resources, spent to process the request",
+        "description": "Usage of the hardware resources, spent to process the request.\n\nEvery field is optional: a deployment reports only the measurements it collects, and omits the rest instead of reporting them as zero.",
         "type": "object",
-        "required": [
-          "cpu",
-          "payload_index_io_read",
-          "payload_index_io_write",
-          "payload_io_read",
-          "payload_io_write",
-          "vector_io_read",
-          "vector_io_write"
-        ],
         "properties": {
           "cpu": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_index_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_index_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "vector_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "vector_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

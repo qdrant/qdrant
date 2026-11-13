@@ -75,18 +75,28 @@ fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
     u.as_ref().is_none_or(|usage| usage.is_empty())
 }
 
-/// Usage of the hardware resources, spent to process the request
+/// Usage of the hardware resources, spent to process the request.
+///
+/// Every field is optional: a deployment reports only the measurements it
+/// collects, and omits the rest instead of reporting them as zero.
 #[derive(Debug, Default, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HardwareUsage {
-    pub cpu: usize,
-    pub payload_io_read: usize,
-    pub payload_io_write: usize,
-    pub payload_index_io_read: usize,
-    pub payload_index_io_write: usize,
-    pub vector_io_read: usize,
-    pub vector_io_write: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_io_write: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_index_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_index_io_write: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_io_write: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
