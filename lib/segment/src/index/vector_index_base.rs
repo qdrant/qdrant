@@ -41,6 +41,10 @@ pub trait VectorIndexRead {
     /// `cardinality` points: evaluate it on every candidate, or check points lazily as it
     /// visits them. Makes the same choice of strategy as [`Self::search`].
     ///
+    /// The estimation is computed on the first [`LazyCardinality::get`]. Call it only when
+    /// the answer depends on it, so that searches which evaluate the filter the same way
+    /// whatever it matches (a plain index, an exact search, no query vectors) never pay for it.
+    ///
     /// No default on purpose: a new index must state how it evaluates filters.
     fn filter_checks(
         &self,

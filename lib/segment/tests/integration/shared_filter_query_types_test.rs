@@ -95,8 +95,9 @@ fn source_segment(path: &std::path::Path, multivector: bool, rng: &mut StdRng) -
     segment
 }
 
-/// `source_segment` rebuilt with an HNSW index. A filter matching 750 of its 1,500 points is
-/// far above the full scan threshold (4 KB, about 100 points), so it takes the graph search.
+/// `source_segment` rebuilt with an HNSW index. The full scan threshold is 4 KB: about 128
+/// dense vectors of 32 bytes, or about 64 multivectors of 1 to 3 such vectors. A filter matching
+/// 750 of the 1,500 points is far above either, so it takes the graph search.
 fn hnsw_segment(multivector: bool, rng: &mut StdRng) -> (Segment, Vec<TempDir>) {
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let source = source_segment(source_dir.path(), multivector, rng);
