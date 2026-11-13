@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use common::condition_checker::ConditionChecker;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
@@ -240,6 +242,18 @@ where
         if vector.is_empty() {
             return Ok(vec![]);
         }
+
+        // Select the query dimensions here, before `remap_vector` drops the dimensions that a
+        // segment does not contain.
+        let vector = match vector_query_context.max_sparse_dims() {
+            Some(max_sparse_dims) => {
+                let mut cut_vector = vector.clone();
+                cut_vector.cut(max_sparse_dims);
+                Cow::Owned(cut_vector)
+            }
+            None => Cow::Borrowed(vector),
+        };
+        let vector = vector.as_ref();
 
         match filter {
             Some(filter) => {

@@ -718,6 +718,15 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idf: Option<IdfParams>,
+
+    /// Only applicable to sparse vectors.
+    /// Keep only the provided number of dimensions from the query. Dimensions are selected by
+    /// largest absolute weight. This parameter enables approximate sparse search (Qdrant's
+    /// default is exact): use with caution.
+    #[serde(default)]
+    #[validate(range(min = 1))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_sparse_dims: Option<usize>,
 }
 
 /// Population over which IDF statistics are computed for scoring — the *IDF
