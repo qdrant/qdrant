@@ -124,6 +124,28 @@ impl RemappedSparseVector {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Cut the vector to its top N dimensions, selected by absolute weight (largest to smallest).
+    /// The vector is then re-sorted by indices.
+    pub fn cut(&mut self, top_dims: usize) {
+        // top_dims should be already validated by the API
+        // spec to make sure is >= 1
+        debug_assert!(top_dims >= 1);
+        if top_dims >= self.len() {
+            return;
+        }
+        let mut idx = (0..self.len()).collect::<Vec<usize>>();
+        idx.select_nth_unstable_by(top_dims, |&a, &b| {
+            self.values[b]
+                .abs()
+                .total_cmp(&self.values[a].abs())
+                .then_with(|| self.indices[a].cmp(&self.indices[b]))
+        });
+        idx.truncate(top_dims);
+        self.indices = idx.iter().map(|&i| self.indices[i]).collect();
+        self.values = idx.iter().map(|&i| self.values[i]).collect();
+        self.sort_by_indices();
+    }
 }
 
 impl SparseVector {
@@ -327,6 +349,9 @@ pub fn validate_sparse_vector_impl<T: Clone + Eq + Hash>(
 
 #[cfg(test)]
 mod tests {
+    use rand::rngs::StdRng;
+    use rand::{RngExt, SeedableRng};
+
     use super::*;
 
     #[test]
@@ -408,5 +433,67 @@ mod tests {
         let sum = a.combine_aggregate(&b, |x, y| x + 2.0 * y);
         assert_eq!(sum.indices, vec![1, 2, 3, 4]);
         assert_eq!(sum.values, vec![0.1, 4.2, 6.3, 8.0]);
+    }
+
+    /// Compare `cut` against a naive reference on random vectors.
+    ///
+    /// Weights are drawn from a small pool of magnitudes with random signs, so that ties
+    /// (including `+x` vs `-x`) are frequent, which the fixture's continuous values never produce.
+    #[test]
+    fn cut_matches_reference() {
+        const MAGNITUDES: [f32; 6] = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+
+        let mut rnd_gen = StdRng::seed_from_u64(42);
+
+        for _ in 0..500 {
+            let mut indices: Vec<DimOffset> =
+                (0..100).filter(|_| rnd_gen.random_bool(0.3)).collect();
+            if indices.is_empty() {
+                indices.push(rnd_gen.random_range(0..100));
+            }
+            let values: Vec<DimWeight> = indices
+                .iter()
+                .map(|_| {
+                    let magnitude = MAGNITUDES[rnd_gen.random_range(0..MAGNITUDES.len())];
+                    if rnd_gen.random_bool(0.5) {
+                        magnitude
+                    } else {
+                        -magnitude
+                    }
+                })
+                .collect();
+            let original = RemappedSparseVector::new(indices, values).unwrap();
+
+            // include values at and beyond the length to cover the no-op path
+            let top_dims = rnd_gen.random_range(1..=original.len() + 2);
+
+            // reference: rank by (abs weight desc, index asc), keep the top, restore index order
+            let mut expected: Vec<(DimOffset, DimWeight)> = original
+                .indices
+                .iter()
+                .copied()
+                .zip(original.values.iter().copied())
+                .collect();
+            expected.sort_by(|&(i1, v1), &(i2, v2)| {
+                v2.abs().total_cmp(&v1.abs()).then_with(|| i1.cmp(&i2))
+            });
+            expected.truncate(top_dims);
+            expected.sort_by_key(|&(index, _)| index);
+            let (expected_indices, expected_values): (Vec<_>, Vec<_>) =
+                expected.into_iter().unzip();
+
+            let mut cut = original.clone();
+            cut.cut(top_dims);
+
+            assert!(cut.is_sorted(), "cut result must stay sorted by index");
+            assert_eq!(
+                cut.indices, expected_indices,
+                "top_dims = {top_dims}, input = {original:?}"
+            );
+            assert_eq!(
+                cut.values, expected_values,
+                "top_dims = {top_dims}, input = {original:?}"
+            );
+        }
     }
 }

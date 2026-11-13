@@ -174,7 +174,10 @@ where
         .filter(|&idx| not_deleted.check_infallible(idx))
         .collect_vec();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        let mut sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        if let Some(max_sparse_dims) = vector_query_context.max_sparse_dims() {
+            sparse_vector.cut(max_sparse_dims);
+        }
         let mut scratch = self.search_scratch_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -206,7 +209,10 @@ where
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        let mut sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        if let Some(max_sparse_dims) = vector_query_context.max_sparse_dims() {
+            sparse_vector.cut(max_sparse_dims);
+        }
         let mut scratch = self.search_scratch_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
