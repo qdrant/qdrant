@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
@@ -264,6 +264,12 @@ pub struct ResourcePermit {
     ///
     /// WARN: is not called on drop, only when `release()` is called.
     on_manual_release: Option<Box<dyn Fn() + Send + Sync>>,
+
+    /// Whether the CPUs are lent back to the budget, see [`Self::suspend_cpu`].
+    cpu_suspended: AtomicBool,
+    /// Serializes [`Self::suspend_cpu`] and [`Self::resume_cpu`] on a shared permit, so that
+    /// CPUs are lent and taken back exactly once each.
+    cpu_lending: parking_lot::Mutex<()>,
 }
 
 impl ResourcePermit {
@@ -284,6 +290,8 @@ impl ResourcePermit {
             num_io: io_count,
             io_permit,
             on_manual_release: None,
+            cpu_suspended: AtomicBool::new(false),
+            cpu_lending: parking_lot::Mutex::new(()),
         }
     }
 
@@ -293,6 +301,10 @@ impl ResourcePermit {
 
     /// Merge the other resource permit into this one
     pub fn merge(&mut self, mut other: Self) {
+        debug_assert!(
+            !self.is_cpu_suspended() && !other.is_cpu_suspended(),
+            "Cannot merge permits with lent CPUs",
+        );
         self.num_cpus += other.num_cpus;
         self.num_io += other.num_io;
 
@@ -332,11 +344,88 @@ impl ResourcePermit {
             num_io: 0,
             io_permit: None,
             on_manual_release: None,
+            cpu_suspended: AtomicBool::new(false),
+            cpu_lending: parking_lot::Mutex::new(()),
+        }
+    }
+
+    /// Lend the CPUs of this permit back to the budget, while the task holding it waits for
+    /// work done elsewhere (e.g. a graph built by a remote indexer). Other tasks can acquire
+    /// them in the meantime. [`Self::num_cpus`] is unchanged: [`Self::resume_cpu`] gets the
+    /// same number back.
+    ///
+    /// Takes `&self`, because the permit is shared by the vector indexes of one segment build.
+    /// Returns whether any CPUs were lent.
+    pub fn suspend_cpu(&self) -> bool {
+        let Some(permit) = &self.cpu_permit else {
+            return false;
+        };
+        let _lending = self.cpu_lending.lock();
+        if permit.num_permits() == 0 || self.cpu_suspended.swap(true, Ordering::AcqRel) {
+            return false;
+        }
+        // The permit keeps holding its own semaphore permits. Adding the same number to the
+        // semaphore lends them out; `resume_cpu` takes them back and forgets them again.
+        permit.semaphore().add_permits(permit.num_permits());
+        if let Some(on_release) = &self.on_manual_release {
+            on_release();
+        }
+        true
+    }
+
+    /// Take back the CPUs lent by [`Self::suspend_cpu`]. Blocks until they are available.
+    /// Returns `false` if `stopped` was set while waiting: the CPUs stay lent then, and are
+    /// accounted for when the permit is dropped or released.
+    pub fn resume_cpu(&self, stopped: &AtomicBool) -> bool {
+        let Some(permit) = &self.cpu_permit else {
+            return true;
+        };
+        // Held while waiting: a concurrent caller waits too, then finds the CPUs back
+        let _lending = self.cpu_lending.lock();
+        if !self.cpu_suspended.load(Ordering::Acquire) {
+            return true;
+        }
+        let semaphore = permit.semaphore().clone();
+        let num_permits = permit.num_permits() as u32;
+        let mut delay = Duration::from_micros(100);
+        while !stopped.load(Ordering::Relaxed) {
+            match Semaphore::try_acquire_many_owned(semaphore.clone(), num_permits) {
+                Ok(lent) => {
+                    lent.forget();
+                    self.cpu_suspended.store(false, Ordering::Release);
+                    return true;
+                }
+                Err(TryAcquireError::NoPermits) => {
+                    std::thread::sleep(delay);
+                    delay = (delay * 2).min(Duration::from_secs(2));
+                }
+                Err(TryAcquireError::Closed) => unreachable!(
+                    "Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen",
+                ),
+            }
+        }
+        false
+    }
+
+    /// Whether the CPUs are lent back to the budget, see [`Self::suspend_cpu`].
+    pub fn is_cpu_suspended(&self) -> bool {
+        self.cpu_suspended.load(Ordering::Acquire)
+    }
+
+    /// If the CPUs are lent, they are already back in the semaphore: forget the permit instead
+    /// of returning it a second time.
+    fn settle_suspended_cpu(&mut self) {
+        if self.cpu_suspended.swap(false, Ordering::AcqRel)
+            && let Some(permit) = self.cpu_permit.take()
+        {
+            permit.forget();
+            self.num_cpus = 0;
         }
     }
 
     /// Release CPU permit, giving them back to the semaphore.
     fn release_cpu(&mut self) {
+        self.settle_suspended_cpu();
         self.num_cpus = 0;
         self.cpu_permit.take();
     }
@@ -352,6 +441,8 @@ impl ResourcePermit {
         if release_count == 0 {
             return;
         }
+        // Lent CPUs are released whole
+        self.settle_suspended_cpu();
 
         if self.num_cpus > release_count {
             self.num_cpus -= release_count;
@@ -389,15 +480,105 @@ impl ResourcePermit {
 
 impl Drop for ResourcePermit {
     fn drop(&mut self) {
+        self.settle_suspended_cpu();
         let Self {
             num_cpus: _,
             cpu_permit,
             num_io: _,
             io_permit,
             on_manual_release: _, // Only explicit release() should call the callback
+            cpu_suspended: _,
+            cpu_lending: _,
         } = self;
 
         let _ = cpu_permit.take();
         let _ = io_permit.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn available_cpus(budget: &ResourceBudget) -> usize {
+        budget.cpu_semaphore.available_permits()
+    }
+
+    #[test]
+    fn suspend_and_resume_cpu() {
+        let budget = ResourceBudget::new(4, 4);
+        let stopped = AtomicBool::new(false);
+        let permit = budget.try_acquire(4, 0).unwrap();
+        assert_eq!(available_cpus(&budget), 0);
+
+        assert!(permit.suspend_cpu());
+        assert!(!permit.suspend_cpu(), "already suspended");
+        assert_eq!(available_cpus(&budget), 4);
+        assert_eq!(permit.num_cpus, 4, "nominal count is kept");
+
+        // Somebody else borrows 2 CPUs while we wait
+        let other = budget.try_acquire(2, 0).unwrap();
+        assert_eq!(available_cpus(&budget), 2);
+        drop(other);
+
+        assert!(permit.resume_cpu(&stopped));
+        assert_eq!(available_cpus(&budget), 0);
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 4);
+    }
+
+    #[test]
+    fn drop_while_suspended_keeps_accounting() {
+        let budget = ResourceBudget::new(4, 4);
+        let permit = budget.try_acquire(3, 0).unwrap();
+        assert!(permit.suspend_cpu());
+        assert_eq!(available_cpus(&budget), 4);
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 4);
+    }
+
+    #[test]
+    fn release_while_suspended_keeps_accounting() {
+        let budget = ResourceBudget::new(4, 4);
+        let mut permit = budget.try_acquire(4, 0).unwrap();
+        assert!(permit.suspend_cpu());
+        permit.release(1, 0);
+        assert_eq!(permit.num_cpus, 0);
+        assert_eq!(available_cpus(&budget), 4);
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 4);
+    }
+
+    #[test]
+    fn concurrent_resume_takes_cpus_back_once() {
+        let budget = ResourceBudget::new(4, 4);
+        let stopped = AtomicBool::new(false);
+        let permit = Arc::new(budget.try_acquire(4, 0).unwrap());
+        for _ in 0..20 {
+            assert!(permit.suspend_cpu());
+            assert_eq!(available_cpus(&budget), 4);
+            std::thread::scope(|scope| {
+                for _ in 0..4 {
+                    scope.spawn(|| assert!(permit.resume_cpu(&stopped)));
+                }
+            });
+            assert_eq!(available_cpus(&budget), 0, "CPUs taken back more than once");
+        }
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 4);
+    }
+
+    #[test]
+    fn resume_cancelled_by_stop() {
+        let budget = ResourceBudget::new(2, 2);
+        let stopped = AtomicBool::new(false);
+        let permit = budget.try_acquire(2, 0).unwrap();
+        assert!(permit.suspend_cpu());
+        let other = budget.try_acquire(2, 0).unwrap();
+        stopped.store(true, Ordering::Relaxed);
+        assert!(!permit.resume_cpu(&stopped));
+        drop(other);
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 2);
     }
 }

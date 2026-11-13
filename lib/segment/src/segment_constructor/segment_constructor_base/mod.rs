@@ -40,6 +40,8 @@ pub use sparse_vector_index::create_sparse_vector_index_test;
 pub(crate) use sparse_vector_index::open_or_create_sparse_vector_index;
 pub use vector_index::VectorIndexBuildArgs;
 pub(crate) use vector_index::{VectorIndexOpenArgs, build_vector_index};
+#[cfg(feature = "remote-indexing")]
+pub use vector_storage::open_vector_storage_for_remote_build;
 pub(crate) use vector_storage::{create_sparse_vector_storage, open_vector_storage};
 
 /// Wrap a value in a shared, interior-mutable cell — the ubiquitous storage

@@ -16,6 +16,8 @@ pub mod hnsw;
 mod links_container;
 mod pipnn;
 pub mod point_scorer;
+#[cfg(feature = "remote-indexing")]
+pub mod remote;
 mod search_context;
 
 #[cfg(feature = "gpu")]

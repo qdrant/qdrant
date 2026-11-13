@@ -5,18 +5,21 @@ use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
 
+use super::block_filter::BlockSkip;
 use super::context::GraphBuildContext;
 #[cfg(feature = "gpu")]
 use super::gpu_builder::{GpuBuilder, GpuState};
 use super::healing_builder::HealingBuilder;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
-use super::payload_blocks::FieldBlocks;
+use super::payload_blocks::{FieldBlocks, PayloadBlock};
 use super::pipnn_builder::PipnnBuilder;
+#[cfg(feature = "remote-indexing")]
+use super::remote_builder::{RemoteBuildArgs, RemoteBuilder};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-#[cfg(feature = "gpu")]
+#[cfg(any(feature = "gpu", feature = "remote-indexing"))]
 use crate::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 #[cfg(feature = "gpu")]
@@ -29,6 +32,8 @@ pub(super) enum GraphBuilder<'a> {
     Pipnn(PipnnBuilder<'a>),
     #[cfg(feature = "gpu")]
     Gpu(Box<GpuBuilder<'a>>),
+    #[cfg(feature = "remote-indexing")]
+    Remote(Box<RemoteBuilder<'a>>),
 }
 
 /// The steps of a graph build. Implemented by every method.
@@ -60,6 +65,9 @@ pub(super) struct GraphBuildOptions<'a> {
     /// Whether any payload block graphs will be built. Without a main graph and blocks,
     /// nothing is uploaded anywhere.
     pub has_payload_blocks: bool,
+    /// Set if a remote indexer is configured and the vector data is large enough (§4.2).
+    #[cfg(feature = "remote-indexing")]
+    pub remote: Option<RemoteBuildArgs<'a>>,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -75,6 +83,10 @@ impl<'a> GraphBuilder<'a> {
     /// 4. PiPNN, unless the `pipnn_graph_building` feature flag is off, if it applies, see
     ///    [`PipnnBuilder::new`].
     /// 5. Otherwise, HNSW.
+    ///
+    /// With remote indexing, rule 3 comes before rule 2, followed by: a remote indexer, if
+    /// `options.remote` is set (D11, D12). Healing always stays local. The remote method keeps
+    /// the method of rules 4 and 5 as its local fallback; it does not hold a GPU while it waits.
     pub fn select(
         ctx: GraphBuildContext<'a>,
         pool: &'a ThreadPool,
@@ -85,9 +97,23 @@ impl<'a> GraphBuilder<'a> {
             old_index,
             gpu_device,
             has_payload_blocks,
+            #[cfg(feature = "remote-indexing")]
+            remote,
         } = options;
 
         let local = LocalBuilder::new(ctx, pool, rng, old_index)?;
+
+        #[cfg(feature = "remote-indexing")]
+        if let Some(remote) = remote
+            && old_index.is_none()
+            && (local.ctx.has_main_graph() || has_payload_blocks)
+            && local.points.len() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
+        {
+            return Ok(Self::Remote(Box::new(RemoteBuilder::new(
+                Self::without_gpu(local, None),
+                remote,
+            ))));
+        }
 
         #[cfg(feature = "gpu")]
         if let Some(gpu_device) = gpu_device
@@ -148,6 +174,55 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
+    /// Like [`Self::build_field_blocks`], for blocks whose points were read already: those of
+    /// a block plan, on the indexer.
+    #[cfg_attr(not(feature = "remote-indexing"), expect(dead_code))]
+    pub fn build_loaded_field_blocks(
+        &mut self,
+        progress: &common::progress_tracker::ProgressTracker,
+        skip: BlockSkip,
+        blocks: impl IntoIterator<Item = PayloadBlock>,
+    ) -> OperationResult<()> {
+        let counter = progress.track_progress(None);
+        for block in blocks {
+            check_process_stopped(self.local().ctx.stopped)?;
+            if !self.local().fits(block.cardinality) {
+                continue;
+            }
+            if self.local().should_build(&block, skip) {
+                self.build_block(&block.points, &counter)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the builder takes all payload blocks up front, with [`Self::set_block_plan`],
+    /// instead of block by block. Checked again after `build_main`: still true means the
+    /// blocks are linked already.
+    pub fn takes_block_plan(&self) -> bool {
+        match self {
+            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => false,
+            #[cfg(feature = "gpu")]
+            GraphBuilder::Gpu(_) => false,
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.takes_block_plan(),
+        }
+    }
+
+    /// Hand the block plan to a builder that [takes it](Self::takes_block_plan). Call before
+    /// `build_main`.
+    #[cfg(feature = "remote-indexing")]
+    pub fn set_block_plan(&mut self, plan: crate::index::hnsw_index::remote::wire::BlockPlan) {
+        match self {
+            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => {
+                debug_assert!(false, "builder does not take a block plan");
+            }
+            #[cfg(feature = "gpu")]
+            GraphBuilder::Gpu(_) => debug_assert!(false, "builder does not take a block plan"),
+            GraphBuilder::Remote(builder) => builder.set_block_plan(plan),
+        }
+    }
+
     /// The state the method builds on.
     pub(super) fn local(&mut self) -> &mut LocalBuilder<'a> {
         match self {
@@ -156,6 +231,8 @@ impl<'a> GraphBuilder<'a> {
             GraphBuilder::Pipnn(builder) => &mut builder.local,
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.cpu.local(),
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.cpu.local(),
         }
     }
 }
@@ -168,6 +245,8 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
             GraphBuilder::Pipnn(builder) => builder.build_main(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.build_main(),
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.build_main(),
         }
     }
 
@@ -182,6 +261,8 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
             GraphBuilder::Pipnn(builder) => builder.build_block(points, counter),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.build_block(points, counter),
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.build_block(points, counter),
         }
     }
 
@@ -192,6 +273,8 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
             GraphBuilder::Pipnn(builder) => builder.finalize(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.finalize(),
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.finalize(),
         }
     }
 
@@ -202,6 +285,8 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
             GraphBuilder::Pipnn(builder) => builder.seeds_payload_blocks(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.seeds_payload_blocks(),
+            #[cfg(feature = "remote-indexing")]
+            GraphBuilder::Remote(builder) => builder.seeds_payload_blocks(),
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod collections_api;
 pub mod collections_internal_api;
+pub mod indexing_task_api;
 pub mod points_api;
 pub mod points_internal_api;
 pub mod qdrant_internal_api;

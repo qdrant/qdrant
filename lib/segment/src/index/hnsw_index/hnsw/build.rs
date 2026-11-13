@@ -37,6 +37,10 @@ mod hnsw_builder;
 mod local_builder;
 mod payload_blocks;
 mod pipnn_builder;
+#[cfg(feature = "remote-indexing")]
+mod remote_builder;
+#[cfg(feature = "remote-indexing")]
+pub(crate) mod remote_executor;
 
 use self::block_filter::BlockSkip;
 use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
@@ -127,6 +131,18 @@ impl HNSWIndex {
             main_graph: progress.subtask("main_graph"),
         });
         let payload_block_fields = payload_block_fields(&payload_index_ref, payload_m);
+
+        // Remote indexing, if configured and the vector data is large enough (§4.2). Whether
+        // the build actually goes remote is decided by `GraphBuilder::select`.
+        #[cfg(feature = "remote-indexing")]
+        let remote = remote_build_args(
+            path,
+            &vector_storage,
+            &vector_storage_ref,
+            quantized_vectors_ref.as_ref(),
+            &permit,
+            &progress,
+        );
         let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
             let progress_additional_links = progress.subtask("additional_links");
             let fields = payload_block_fields
@@ -156,6 +172,19 @@ impl HNSWIndex {
             .max_by_key(|old_index| old_index.valid_points)
             .map(|old_index| old_index.reuse(total_vector_count));
 
+        // Healing stays local (D12)
+        #[cfg(feature = "remote-indexing")]
+        let remote = match remote {
+            Some(_) if old_index.is_some() => {
+                crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS
+                    .local_for_healing
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                debug!("old graph worth healing, building locally");
+                None
+            }
+            remote => remote,
+        };
+
         debug!(
             "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
@@ -173,11 +202,39 @@ impl HNSWIndex {
                 old_index: old_index.as_ref(),
                 gpu_device,
                 has_payload_blocks: progress_payload_blocks.is_some(),
+                #[cfg(feature = "remote-indexing")]
+                remote,
             },
         )?;
 
+        // A remote builder links all blocks in the same task, so it gets them up front (D4)
+        #[cfg(feature = "remote-indexing")]
+        if builder.takes_block_plan() {
+            let plan = match &progress_payload_blocks {
+                Some((_, fields)) => payload_blocks::collect_block_plan(
+                    fields.iter().map(|(_, field, schema)| (field, schema)),
+                    &payload_index_ref,
+                    &vector_storage_ref,
+                    &config,
+                    builder.local().ctx.has_main_graph(),
+                    stopped,
+                )?,
+                None => Default::default(),
+            };
+            builder.set_block_plan(plan);
+        }
+
         // Links nothing when `m == 0`
         builder.build_main()?;
+
+        // Still taking the plan after `build_main`: the blocks are linked already
+        let progress_payload_blocks = match progress_payload_blocks {
+            Some(_) if builder.takes_block_plan() => {
+                debug!("payload blocks linked by the remote indexer");
+                None
+            }
+            progress_payload_blocks => progress_payload_blocks,
+        };
 
         check_process_stopped(stopped)?;
 
@@ -270,6 +327,102 @@ impl HNSWIndex {
             searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
+}
+
+/// What a remote build needs, if a remote indexer is configured, the storage can be built
+/// remotely, and the vector data is large enough (D3, D11).
+#[cfg(feature = "remote-indexing")]
+fn remote_build_args<'a>(
+    path: &Path,
+    vector_storage: &Arc<atomic_refcell::AtomicRefCell<VectorStorageEnum>>,
+    vector_storage_ref: &VectorStorageEnum,
+    quantized_vectors: Option<&QuantizedVectors>,
+    permit: &'a common::budget::ResourcePermit,
+    progress: &common::progress_tracker::ProgressTracker,
+) -> Option<self::remote_builder::RemoteBuildArgs<'a>> {
+    use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
+    use crate::index::hnsw_index::remote::wire::VectorSource;
+    use crate::index::hnsw_index::remote::{TaskScope, remote_indexer};
+
+    let indexer = remote_indexer()?;
+    let layout = RemoteVectorLayout::of(vector_storage_ref)?;
+    // `total_vector_count × dim × element size`, like `indexing_threshold_kb`
+    let vector_bytes = vector_storage_ref.size_of_available_vectors_in_bytes() as u64;
+    if !self::remote_builder::worth_remote(indexer.config(), vector_bytes) {
+        return None;
+    }
+
+    // Send the quantized vectors if the indexer can build from them (O2): scalar and binary
+    // score from them alone, TurboQuant queries are reconstructed from them as a TurboQuant
+    // storage does. Product quantization: the storage's vectors, and the indexer builds
+    // without PQ.
+    let (source, files) = match quantized_vectors.filter(|q| q.remote_build_from_quantized()) {
+        Some(quantized) => match quantized_files(quantized) {
+            Some(files) => (VectorSource::Quantized, files),
+            None => (VectorSource::Storage, Vec::new()),
+        },
+        None => (VectorSource::Storage, Vec::new()),
+    };
+
+    Some(self::remote_builder::RemoteBuildArgs {
+        indexer,
+        vector_storage: vector_storage.clone(),
+        layout,
+        scope: TaskScope {
+            index_path: path.to_owned(),
+            vector_name: vector_name_from_index_path(path),
+        },
+        vector_bytes,
+        source,
+        files,
+        permit,
+        progress: progress.subtask("remote_build"),
+    })
+}
+
+/// The files of `quantized`, named relative to its directory. `None` if a file is outside it.
+#[cfg(feature = "remote-indexing")]
+fn quantized_files(quantized: &QuantizedVectors) -> Option<Vec<(String, std::path::PathBuf)>> {
+    quantized
+        .files()
+        .into_iter()
+        .map(|file| {
+            let name = file
+                .strip_prefix(quantized.path())
+                .ok()?
+                .to_str()?
+                .to_owned();
+            Some((name, file))
+        })
+        .collect()
+}
+
+/// The vector name of a vector index directory, see `get_vector_index_path`. Names may
+/// contain `/`, so it is whatever follows the `vector_index` component.
+#[cfg(feature = "remote-indexing")]
+fn vector_name_from_index_path(path: &Path) -> String {
+    use crate::segment_constructor::VECTOR_INDEX_PATH;
+
+    let components: Vec<_> = path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let prefix = format!("{VECTOR_INDEX_PATH}-");
+    for (i, component) in components.iter().enumerate().rev() {
+        let first = if component == VECTOR_INDEX_PATH {
+            String::new()
+        } else if let Some(name) = component.strip_prefix(&prefix) {
+            name.to_string()
+        } else {
+            continue;
+        };
+        return std::iter::once(first)
+            .chain(components[i + 1..].iter().cloned())
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    String::new()
 }
 
 /// Rayon pool for graph construction. On Linux its threads run at low priority so they

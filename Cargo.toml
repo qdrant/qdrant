@@ -123,11 +123,11 @@ raft-proto = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c61
 common = { workspace = true }
 cancel = { path = "lib/common/cancel" }
 issues = { path = "lib/common/issues" }
-segment = { path = "lib/segment", default-features = false }
+segment = { path = "lib/segment", default-features = false, features = ["remote-indexing"] }
 shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
-api = { path = "lib/api" }
+api = { path = "lib/api", features = ["remote-indexing"] }
 bm25 = { path = "lib/bm25" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }

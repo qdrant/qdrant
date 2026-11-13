@@ -5368,6 +5368,1583 @@ pub mod collections_internal_server {
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingTaskSubmission {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    /// One-time token, hex. Send it back in the `x-qdrant-indexing-token` header.
+    #[prost(string, tag = "2")]
+    pub token: ::prost::alloc::string::String,
+    /// Internal gRPC address of the qdrant peer serving the task, e.g. `qdrant-0.qdrant-headless:6335`.
+    #[prost(string, tag = "3")]
+    pub advertise_url: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub collection: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "5")]
+    pub shard_id: u32,
+    #[prost(string, tag = "6")]
+    pub vector_name: ::prost::alloc::string::String,
+    /// Version of the qdrant core, e.g. `1.18.0`.
+    #[prost(string, tag = "7")]
+    pub core_version: ::prost::alloc::string::String,
+    /// Graph formats core reads.
+    #[prost(uint32, repeated, tag = "8")]
+    pub graph_format_versions: ::prost::alloc::vec::Vec<u32>,
+    /// Size of the vector data, for scheduling and billing.
+    #[prost(uint64, tag = "9")]
+    pub vector_bytes: u64,
+    #[prost(uint64, tag = "10")]
+    pub point_count: u64,
+    /// 0 for the first submission, then one more per retry.
+    #[prost(uint32, tag = "11")]
+    pub attempt: u32,
+    /// Cluster identifier, if configured, for billing.
+    #[prost(string, optional, tag = "12")]
+    pub cluster_id: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SubmitIndexingTaskResponse {
+    /// Whether the task was accepted. A refused task is retried or built locally by core,
+    /// depending on `refusal`.
+    #[prost(bool, tag = "1")]
+    pub accepted: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// Why the task was refused. Ignored when `accepted`.
+    #[prost(enumeration = "IndexingTaskRefusal", tag = "3")]
+    pub refusal: i32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingTaskRefusal {
+    /// A later submission may be accepted: queue full, shutting down. Core retries per its
+    /// `on_failure` policy. Also what indexers that do not set `refusal` mean.
+    IndexingRefusalTransient = 0,
+    /// This task will never be accepted by this indexer: too large, unsupported graph format.
+    /// Core builds it locally right away, without retrying.
+    IndexingRefusalPermanent = 1,
+}
+impl IndexingTaskRefusal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingRefusalTransient => "IndexingRefusalTransient",
+            Self::IndexingRefusalPermanent => "IndexingRefusalPermanent",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingRefusalTransient" => Some(Self::IndexingRefusalTransient),
+            "IndexingRefusalPermanent" => Some(Self::IndexingRefusalPermanent),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+pub mod indexing_service_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+    /// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+    /// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+    /// pulls the data through the `IndexingTask` service.
+    #[derive(Debug, Clone)]
+    pub struct IndexingServiceClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl IndexingServiceClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> IndexingServiceClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> IndexingServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            IndexingServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        pub async fn submit_task(
+            &mut self,
+            request: impl tonic::IntoRequest<super::IndexingTaskSubmission>,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitIndexingTaskResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingService/SubmitTask",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingService", "SubmitTask"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod indexing_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with IndexingServiceServer.
+    #[async_trait]
+    pub trait IndexingService: std::marker::Send + std::marker::Sync + 'static {
+        async fn submit_task(
+            &self,
+            request: tonic::Request<super::IndexingTaskSubmission>,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitIndexingTaskResponse>,
+            tonic::Status,
+        >;
+    }
+    /// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+    /// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+    /// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+    /// pulls the data through the `IndexingTask` service.
+    #[derive(Debug)]
+    pub struct IndexingServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> IndexingServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for IndexingServiceServer<T>
+    where
+        T: IndexingService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/qdrant.IndexingService/SubmitTask" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubmitTaskSvc<T: IndexingService>(pub Arc<T>);
+                    impl<
+                        T: IndexingService,
+                    > tonic::server::UnaryService<super::IndexingTaskSubmission>
+                    for SubmitTaskSvc<T> {
+                        type Response = super::SubmitIndexingTaskResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::IndexingTaskSubmission>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingService>::submit_task(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubmitTaskSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for IndexingServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "qdrant.IndexingService";
+    impl<T> tonic::server::NamedService for IndexingServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingFile {
+    /// Path relative to the quantized vectors directory.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub size: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetIndexingTaskRequest {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingTaskDescription {
+    /// UUID of the task, also used for billing.
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub vector_name: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub dim: u64,
+    #[prost(enumeration = "IndexingVectorDatatype", tag = "4")]
+    pub datatype: i32,
+    #[prost(enumeration = "IndexingDistance", tag = "5")]
+    pub distance: i32,
+    /// Set for multivectors: each vector is then a flattened list of `dim`-sized vectors.
+    #[prost(enumeration = "IndexingMultiVectorComparator", optional, tag = "6")]
+    pub multivector_comparator: ::core::option::Option<i32>,
+    #[prost(uint64, tag = "7")]
+    pub m: u64,
+    #[prost(uint64, tag = "8")]
+    pub m0: u64,
+    #[prost(uint64, tag = "9")]
+    pub ef_construct: u64,
+    #[prost(uint64, tag = "10")]
+    pub entry_points_num: u64,
+    #[prost(uint64, tag = "11")]
+    pub payload_m: u64,
+    #[prost(uint64, tag = "12")]
+    pub payload_m0: u64,
+    /// Point offsets are `0..point_count`, deleted included.
+    #[prost(uint64, tag = "13")]
+    pub point_count: u64,
+    #[prost(uint64, tag = "14")]
+    pub indexed_point_count: u64,
+    /// Encoding of the vectors in `ReadVectors`.
+    #[prost(string, tag = "15")]
+    pub vector_representation: ::prost::alloc::string::String,
+    /// Graph formats core reads. The indexer must upload one of them, or fail the task.
+    #[prost(uint32, repeated, tag = "16")]
+    pub graph_format_versions: ::prost::alloc::vec::Vec<u32>,
+    /// Payload blocks chosen by core, per field, in build order.
+    #[prost(message, repeated, tag = "17")]
+    pub block_plan: ::prost::alloc::vec::Vec<IndexingFieldBlocks>,
+    #[prost(enumeration = "IndexingVectorSource", tag = "18")]
+    pub vector_source: i32,
+    #[prost(message, repeated, tag = "19")]
+    pub files: ::prost::alloc::vec::Vec<IndexingFile>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingFieldBlocks {
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    /// Skip blocks the graph built so far already connects well.
+    #[prost(bool, tag = "2")]
+    pub skip_if_connected: bool,
+    #[prost(message, repeated, tag = "3")]
+    pub blocks: ::prost::alloc::vec::Vec<IndexingPayloadBlock>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingPayloadBlock {
+    /// Estimated block size, which the size limit is checked against.
+    #[prost(uint64, tag = "1")]
+    pub cardinality: u64,
+    #[prost(uint32, repeated, tag = "2")]
+    pub points: ::prost::alloc::vec::Vec<u32>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadIndexingVectorsRequest {
+    #[prost(uint32, tag = "1")]
+    pub start: u32,
+    /// Exclusive. Clamped to the point count.
+    #[prost(uint32, tag = "2")]
+    pub end: u32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingVectorsChunk {
+    /// Offset of the first vector of the chunk.
+    #[prost(uint32, tag = "1")]
+    pub start: u32,
+    /// One entry per offset from `start`. Empty: the point has no vector, or is deleted.
+    #[prost(bytes = "vec", repeated, tag = "2")]
+    pub vectors: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadIndexingFileRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingFileChunk {
+    #[prost(uint64, tag = "1")]
+    pub offset: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadIndexingDeletedRequest {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingDeletedMask {
+    #[prost(uint64, tag = "1")]
+    pub point_count: u64,
+    /// One bit per point, LSB first: set if the point must not be linked.
+    #[prost(bytes = "vec", tag = "2")]
+    pub deleted: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingHeartbeatRequest {
+    #[prost(string, tag = "1")]
+    pub phase: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub done: u64,
+    #[prost(uint64, tag = "3")]
+    pub total: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingHeartbeatResponse {
+    #[prost(enumeration = "IndexingHeartbeatAction", tag = "1")]
+    pub action: i32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingEntryPoint {
+    #[prost(uint32, tag = "1")]
+    pub point_id: u32,
+    #[prost(uint32, tag = "2")]
+    pub level: u32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingGraphHeader {
+    #[prost(uint32, tag = "1")]
+    pub format_version: u32,
+    #[prost(uint64, tag = "2")]
+    pub point_count: u64,
+    #[prost(message, repeated, tag = "3")]
+    pub entry_points: ::prost::alloc::vec::Vec<IndexingEntryPoint>,
+    #[prost(message, repeated, tag = "4")]
+    pub extra_entry_points: ::prost::alloc::vec::Vec<IndexingEntryPoint>,
+}
+/// Consecutive points of the graph, from `start`: for each point its level, then for each of
+/// its levels from 0 the number of links, and the links in the same order.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingGraphLinks {
+    #[prost(uint32, tag = "1")]
+    pub start: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub levels: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, repeated, tag = "3")]
+    pub link_counts: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, tag = "4")]
+    pub links: ::prost::alloc::vec::Vec<u32>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UploadIndexingGraphRequest {
+    #[prost(oneof = "upload_indexing_graph_request::Part", tags = "1, 2")]
+    pub part: ::core::option::Option<upload_indexing_graph_request::Part>,
+}
+/// Nested message and enum types in `UploadIndexingGraphRequest`.
+pub mod upload_indexing_graph_request {
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Part {
+        #[prost(message, tag = "1")]
+        Header(super::IndexingGraphHeader),
+        #[prost(message, tag = "2")]
+        Links(super::IndexingGraphLinks),
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UploadIndexingGraphResponse {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FailIndexingTaskRequest {
+    #[prost(string, tag = "1")]
+    pub reason: ::prost::alloc::string::String,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FailIndexingTaskResponse {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingVectorDatatype {
+    IndexingFloat32 = 0,
+    IndexingFloat16 = 1,
+    IndexingUint8 = 2,
+    IndexingTurbo4 = 3,
+    IndexingTurbo8 = 4,
+    IndexingTurbo16 = 5,
+}
+impl IndexingVectorDatatype {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingFloat32 => "IndexingFloat32",
+            Self::IndexingFloat16 => "IndexingFloat16",
+            Self::IndexingUint8 => "IndexingUint8",
+            Self::IndexingTurbo4 => "IndexingTurbo4",
+            Self::IndexingTurbo8 => "IndexingTurbo8",
+            Self::IndexingTurbo16 => "IndexingTurbo16",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingFloat32" => Some(Self::IndexingFloat32),
+            "IndexingFloat16" => Some(Self::IndexingFloat16),
+            "IndexingUint8" => Some(Self::IndexingUint8),
+            "IndexingTurbo4" => Some(Self::IndexingTurbo4),
+            "IndexingTurbo8" => Some(Self::IndexingTurbo8),
+            "IndexingTurbo16" => Some(Self::IndexingTurbo16),
+            _ => None,
+        }
+    }
+}
+/// What the indexer reads to build the graph.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingVectorSource {
+    /// `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
+    IndexingSourceStorage = 0,
+    /// `ReadFile` for each of `files`: the quantized vectors; no original vectors.
+    IndexingSourceQuantized = 1,
+}
+impl IndexingVectorSource {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingSourceStorage => "IndexingSourceStorage",
+            Self::IndexingSourceQuantized => "IndexingSourceQuantized",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingSourceStorage" => Some(Self::IndexingSourceStorage),
+            "IndexingSourceQuantized" => Some(Self::IndexingSourceQuantized),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingDistance {
+    Unknown = 0,
+    IndexingCosine = 1,
+    IndexingEuclid = 2,
+    IndexingDot = 3,
+    IndexingManhattan = 4,
+}
+impl IndexingDistance {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "IndexingDistanceUnknown",
+            Self::IndexingCosine => "IndexingCosine",
+            Self::IndexingEuclid => "IndexingEuclid",
+            Self::IndexingDot => "IndexingDot",
+            Self::IndexingManhattan => "IndexingManhattan",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingDistanceUnknown" => Some(Self::Unknown),
+            "IndexingCosine" => Some(Self::IndexingCosine),
+            "IndexingEuclid" => Some(Self::IndexingEuclid),
+            "IndexingDot" => Some(Self::IndexingDot),
+            "IndexingManhattan" => Some(Self::IndexingManhattan),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingMultiVectorComparator {
+    IndexingMaxSim = 0,
+}
+impl IndexingMultiVectorComparator {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingMaxSim => "IndexingMaxSim",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingMaxSim" => Some(Self::IndexingMaxSim),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingHeartbeatAction {
+    IndexingContinue = 0,
+    IndexingCancel = 1,
+}
+impl IndexingHeartbeatAction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingContinue => "IndexingContinue",
+            Self::IndexingCancel => "IndexingCancel",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingContinue" => Some(Self::IndexingContinue),
+            "IndexingCancel" => Some(Self::IndexingCancel),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+pub mod indexing_task_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// Remote indexing (core side). Served by core on the internal gRPC port, called by an
+    /// indexing service that builds the HNSW graph of one vector of a segment under construction.
+    ///
+    /// Every call carries the one-time task token in the `x-qdrant-indexing-token` metadata header.
+    /// The token is checked by the service itself: the indexer has no API key. A token only gives
+    /// access to its own task, and is revoked when the task ends: further calls get
+    /// PERMISSION_DENIED, except `Heartbeat` on a task core cancelled, which answers CANCEL.
+    #[derive(Debug, Clone)]
+    pub struct IndexingTaskClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl IndexingTaskClient<tonic::transport::Channel> {
+        /// Attempt to create a new client by connecting to a given endpoint.
+        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        where
+            D: TryInto<tonic::transport::Endpoint>,
+            D::Error: Into<StdError>,
+        {
+            let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+            Ok(Self::new(conn))
+        }
+    }
+    impl<T> IndexingTaskClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> IndexingTaskClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            IndexingTaskClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// Task parameters and payload block plan.
+        pub async fn get_task(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingTaskDescription>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/GetTask",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "GetTask"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+        /// For tasks with vector source STORAGE.
+        pub async fn read_vectors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReadIndexingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::IndexingVectorsChunk>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/ReadVectors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadVectors"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
+        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
+        pub async fn read_file(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReadIndexingFileRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::IndexingFileChunk>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/ReadFile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadFile"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        /// The points not to link.
+        pub async fn read_deleted(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReadIndexingDeletedRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingDeletedMask>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/ReadDeleted",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadDeleted"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Renew the lease and report progress. The reply tells whether to go on.
+        pub async fn heartbeat(
+            &mut self,
+            request: impl tonic::IntoRequest<super::IndexingHeartbeatRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingHeartbeatResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/Heartbeat",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "Heartbeat"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Upload the finished graph: a header, then link chunks. Ends the task.
+        pub async fn upload_graph(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<
+                Message = super::UploadIndexingGraphRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::UploadIndexingGraphResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/UploadGraph",
+            );
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "UploadGraph"));
+            self.inner.client_streaming(req, path, codec).await
+        }
+        /// Give up on the task. Core retries with a new token, or builds locally.
+        pub async fn fail(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FailIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FailIndexingTaskResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.IndexingTask/Fail");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.IndexingTask", "Fail"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated server implementations.
+pub mod indexing_task_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with IndexingTaskServer.
+    #[async_trait]
+    pub trait IndexingTask: std::marker::Send + std::marker::Sync + 'static {
+        /// Task parameters and payload block plan.
+        async fn get_task(
+            &self,
+            request: tonic::Request<super::GetIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingTaskDescription>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the ReadVectors method.
+        type ReadVectorsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::IndexingVectorsChunk, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+        /// For tasks with vector source STORAGE.
+        async fn read_vectors(
+            &self,
+            request: tonic::Request<super::ReadIndexingVectorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::ReadVectorsStream>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the ReadFile method.
+        type ReadFileStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::IndexingFileChunk, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
+        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
+        async fn read_file(
+            &self,
+            request: tonic::Request<super::ReadIndexingFileRequest>,
+        ) -> std::result::Result<tonic::Response<Self::ReadFileStream>, tonic::Status>;
+        /// The points not to link.
+        async fn read_deleted(
+            &self,
+            request: tonic::Request<super::ReadIndexingDeletedRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingDeletedMask>,
+            tonic::Status,
+        >;
+        /// Renew the lease and report progress. The reply tells whether to go on.
+        async fn heartbeat(
+            &self,
+            request: tonic::Request<super::IndexingHeartbeatRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingHeartbeatResponse>,
+            tonic::Status,
+        >;
+        /// Upload the finished graph: a header, then link chunks. Ends the task.
+        async fn upload_graph(
+            &self,
+            request: tonic::Request<tonic::Streaming<super::UploadIndexingGraphRequest>>,
+        ) -> std::result::Result<
+            tonic::Response<super::UploadIndexingGraphResponse>,
+            tonic::Status,
+        >;
+        /// Give up on the task. Core retries with a new token, or builds locally.
+        async fn fail(
+            &self,
+            request: tonic::Request<super::FailIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FailIndexingTaskResponse>,
+            tonic::Status,
+        >;
+    }
+    /// Remote indexing (core side). Served by core on the internal gRPC port, called by an
+    /// indexing service that builds the HNSW graph of one vector of a segment under construction.
+    ///
+    /// Every call carries the one-time task token in the `x-qdrant-indexing-token` metadata header.
+    /// The token is checked by the service itself: the indexer has no API key. A token only gives
+    /// access to its own task, and is revoked when the task ends: further calls get
+    /// PERMISSION_DENIED, except `Heartbeat` on a task core cancelled, which answers CANCEL.
+    #[derive(Debug)]
+    pub struct IndexingTaskServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> IndexingTaskServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for IndexingTaskServer<T>
+    where
+        T: IndexingTask,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/qdrant.IndexingTask/GetTask" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetTaskSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::UnaryService<super::GetIndexingTaskRequest>
+                    for GetTaskSvc<T> {
+                        type Response = super::IndexingTaskDescription;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIndexingTaskRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::get_task(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetTaskSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/ReadVectors" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadVectorsSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::ServerStreamingService<
+                        super::ReadIndexingVectorsRequest,
+                    > for ReadVectorsSvc<T> {
+                        type Response = super::IndexingVectorsChunk;
+                        type ResponseStream = T::ReadVectorsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReadIndexingVectorsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::read_vectors(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadVectorsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/ReadFile" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadFileSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::ServerStreamingService<
+                        super::ReadIndexingFileRequest,
+                    > for ReadFileSvc<T> {
+                        type Response = super::IndexingFileChunk;
+                        type ResponseStream = T::ReadFileStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReadIndexingFileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::read_file(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadFileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/ReadDeleted" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadDeletedSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::UnaryService<super::ReadIndexingDeletedRequest>
+                    for ReadDeletedSvc<T> {
+                        type Response = super::IndexingDeletedMask;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReadIndexingDeletedRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::read_deleted(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadDeletedSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/Heartbeat" => {
+                    #[allow(non_camel_case_types)]
+                    struct HeartbeatSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::UnaryService<super::IndexingHeartbeatRequest>
+                    for HeartbeatSvc<T> {
+                        type Response = super::IndexingHeartbeatResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::IndexingHeartbeatRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::heartbeat(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = HeartbeatSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/UploadGraph" => {
+                    #[allow(non_camel_case_types)]
+                    struct UploadGraphSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::ClientStreamingService<
+                        super::UploadIndexingGraphRequest,
+                    > for UploadGraphSvc<T> {
+                        type Response = super::UploadIndexingGraphResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                tonic::Streaming<super::UploadIndexingGraphRequest>,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::upload_graph(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UploadGraphSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.client_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/Fail" => {
+                    #[allow(non_camel_case_types)]
+                    struct FailSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::UnaryService<super::FailIndexingTaskRequest>
+                    for FailSvc<T> {
+                        type Response = super::FailIndexingTaskResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FailIndexingTaskRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::fail(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = FailSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for IndexingTaskServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "qdrant.IndexingTask";
+    impl<T> tonic::server::NamedService for IndexingTaskServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WriteOrdering {
     /// Write ordering guarantees

@@ -266,6 +266,78 @@ pub struct GpuConfig {
     pub allow_emulated: bool,
 }
 
+/// What to do when a remote build fails.
+#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexingOnFailure {
+    /// Build locally.
+    #[default]
+    Local,
+    /// Submit again with a new token, up to `max_retries` times, then build locally. A task
+    /// the indexer refuses for good (e.g. too large for it) is built locally right away.
+    Retry,
+}
+
+/// Remote indexing: build large HNSW graphs on an external indexing service. Absent: build
+/// everything locally (D3).
+#[derive(Debug, Deserialize, Clone, Validate)]
+pub struct IndexingServiceConfig {
+    /// Where tasks are submitted, with gRPC `IndexingService.SubmitTask`: an indexing service,
+    /// or a queue or sidecar implementing the same API, e.g. `http://indexer:6340`.
+    #[validate(length(min = 1))]
+    pub url: String,
+    /// Sent with every submission as `api-key`.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Internal gRPC address the indexer connects back to, set per pod (D10),
+    /// e.g. `qdrant-0.qdrant-headless:6335`.
+    #[validate(length(min = 1))]
+    pub advertise_url: String,
+    /// Build remotely only if the vector data of a vector name is at least this large (D11).
+    #[serde(default = "default_min_index_size_bytes")]
+    pub min_index_size_bytes: usize,
+    /// Give a task up if the indexer does not call within this time (D6).
+    #[serde(default = "default_heartbeat_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub heartbeat_timeout_sec: u64,
+    /// Give a submitted task up if the indexer does not fetch it within this time. Nothing
+    /// heartbeats a task waiting in a queue, so this is longer than the heartbeat timeout.
+    #[serde(default = "default_queue_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub queue_timeout_sec: u64,
+    #[serde(default)]
+    pub on_failure: IndexingOnFailure,
+    #[serde(default = "default_indexing_max_retries")]
+    pub max_retries: u32,
+    /// Timeout of one submission to the entry point.
+    #[serde(default = "default_submit_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub submit_timeout_sec: u64,
+    /// Sent with every task, for billing.
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+}
+
+const fn default_min_index_size_bytes() -> usize {
+    128 * 1024 * 1024
+}
+
+const fn default_heartbeat_timeout_sec() -> u64 {
+    60
+}
+
+const fn default_queue_timeout_sec() -> u64 {
+    300
+}
+
+const fn default_indexing_max_retries() -> u32 {
+    3
+}
+
+const fn default_submit_timeout_sec() -> u64 {
+    10
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct Settings {
     #[serde(default)]
@@ -295,6 +367,10 @@ pub struct Settings {
     #[serde(default)]
     #[validate(nested)]
     pub gpu: Option<GpuConfig>,
+    /// Remote indexing service. Absent: local indexing only.
+    #[serde(default)]
+    #[validate(nested)]
+    pub indexing_service: Option<IndexingServiceConfig>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
     /// Audit logging configuration.

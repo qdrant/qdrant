@@ -155,3 +155,13 @@ pub(crate) fn create_sparse_vector_storage(
         }
     }
 }
+
+/// Open (create) the vector storage an indexing service builds a remote graph from.
+/// See `RemoteVectorLayout::create_storage`.
+#[cfg(feature = "remote-indexing")]
+pub fn open_vector_storage_for_remote_build(
+    vector_config: &VectorDataConfig,
+    dir: &Path,
+) -> OperationResult<VectorStorageEnum> {
+    open_vector_storage(vector_config, &dir.join("vectors"), &dir.join("index"))
+}

@@ -420,6 +420,18 @@ impl GraphLayersBuilder {
         self.links_layers.len()
     }
 
+    /// Number of points the builder has links for.
+    #[cfg(feature = "remote-indexing")]
+    pub(crate) fn links_layers_len(&self) -> usize {
+        self.links_layers.len()
+    }
+
+    /// Replace the entry points, e.g. with those of a graph built elsewhere.
+    #[cfg(feature = "remote-indexing")]
+    pub(crate) fn set_entry_points(&mut self, entry_points: EntryPoints) {
+        *self.entry_points.get_mut() = entry_points;
+    }
+
     /// Generate random level for a new point, according to geometric distribution
     pub fn get_random_layer<R>(&self, rng: &mut R) -> usize
     where

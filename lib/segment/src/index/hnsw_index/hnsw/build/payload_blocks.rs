@@ -194,3 +194,65 @@ fn condition_points(
         .collect())
     })
 }
+
+/// The block plan a remote build sends to the indexer (D4): the blocks of every field, in
+/// build order, with their points.
+///
+/// Leaves out mostly deleted blocks, and blocks too large to ever be built. The local size
+/// limit depends on the average connectivity of the finished main graph, which is remote, so
+/// this uses a bound that is never below it: average connectivity is at least `m0 / 4`. The
+/// indexer applies the exact limit, and the connectivity check (O1).
+#[cfg(feature = "remote-indexing")]
+pub(super) fn collect_block_plan<'f>(
+    fields: impl IntoIterator<Item = (&'f PayloadKeyType, &'f PayloadFieldSchema)>,
+    payload_index: &StructPayloadIndex,
+    vector_storage: &VectorStorageEnum,
+    config: &HnswGraphConfig,
+    has_main_graph: bool,
+    stopped: &AtomicBool,
+) -> OperationResult<crate::index::hnsw_index::remote::wire::BlockPlan> {
+    use crate::index::hnsw_index::remote::wire::{BlockPlan, FieldBlockPlan, PlannedBlock};
+
+    // Same as `BlockFilter::new`, with the connectivity bound above
+    const PERCOLATION_MULTIPLIER: usize = 4;
+    let max_block_size = if has_main_graph {
+        let min_average_links = (config.m0 / 4).max(1);
+        vector_storage.total_vector_count() / min_average_links * PERCOLATION_MULTIPLIER
+    } else {
+        usize::MAX
+    };
+
+    let loader = BlockLoader {
+        payload_index,
+        vector_storage,
+        config,
+        stopped,
+    };
+    let mut plan = BlockPlan::default();
+    for (index_pos, (field, schema)) in fields.into_iter().enumerate() {
+        // Tenant blocks are always built, see `HNSWIndex::build`
+        let skip_if_connected = index_pos > 0 && !payload_index.is_tenant(field);
+        let mut planned = Vec::new();
+        for block in field_payload_blocks(field, schema, payload_index, None, config, stopped)? {
+            if block.cardinality > max_block_size {
+                continue;
+            }
+            if let Some(PayloadBlock {
+                cardinality,
+                points,
+            }) = loader.load(block)?
+            {
+                planned.push(PlannedBlock {
+                    cardinality,
+                    points,
+                });
+            }
+        }
+        plan.fields.push(FieldBlockPlan {
+            field: field.to_string(),
+            skip_if_connected,
+            blocks: planned,
+        });
+    }
+    Ok(plan)
+}
