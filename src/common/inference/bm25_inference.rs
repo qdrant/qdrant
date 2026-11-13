@@ -1,18 +1,10 @@
 use std::borrow::Cow;
-use std::str::FromStr;
-use std::sync::Arc;
 
 use api::rest::{Bm25Config, TextPreprocessingConfig};
 use bm25::{Bm25 as Bm25Core, Bm25Params, SparseEmbedding};
 use collection::operations::point_ops::VectorPersisted;
-use segment::data_types::index::{Language, StopwordsInterface};
-use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
-use segment::index::field_index::full_text_index::tokenizers::{
-    Stemmer, Tokenizer, TokensProcessor,
-};
+use segment::index::field_index::full_text_index::tokenizers::{Tokenizer, TokensProcessor};
 use storage::content_manager::errors::StorageError;
-
-const DEFAULT_LANGUAGE: &str = "english";
 
 /// Adapter: builds a `bm25::Bm25` from the REST/gRPC `Bm25Config` and runs it
 /// over `segment`'s text-preprocessing pipeline. Returns qdrant's `VectorPersisted`.
@@ -70,48 +62,11 @@ fn build_tokens_processor(value: TextPreprocessingConfig) -> TokensProcessor {
         min_token_len,
         max_token_len,
     } = value;
-
-    let lowercase = lowercase.unwrap_or(true);
-    let ascii_folding = ascii_folding.unwrap_or(false);
-    let language = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
-
-    // Warn if the language is unrecognized. Historically `language: "none"`
-    // (and any other unsupported value) silently disabled both stemming and
-    // stopwords. That hack is deprecated: use `stemmer: {"type": "none"}` plus an
-    // empty stopword set instead. We still tolerate it for now to avoid breaking
-    // existing configs on upgrade, but emit a warning so users can migrate.
-    // `build_tokens_processor` runs once per inference item, so the warning is
-    // gated behind a `Once` to avoid flooding the log on every request.
-    if stopwords.is_none() && stemmer.is_none() && Language::from_str(&language).is_err() {
-        static DEPRECATION_WARNING: std::sync::Once = std::sync::Once::new();
-        DEPRECATION_WARNING.call_once(|| {
-            log::warn!(
-                "BM25 text preprocessing: language {language:?} is not recognized; \
-                 stemming and stopwords are disabled as a side effect. This behavior \
-                 (notably `language: \"none\"`) is deprecated and may be rejected in a \
-                 future release. To disable language-specific processing explicitly, \
-                 set `stemmer` to {{\"type\": \"none\"}} and configure an empty stopword set.",
-            );
-        });
-    }
-
-    let stemmer = match stemmer {
-        None => Stemmer::try_default_from_language(&language),
-        // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
-        Some(algorithm) => Stemmer::from_algorithm(&algorithm),
-    };
-
-    let stopwords_config = match stopwords {
-        None => Language::from_str(&language)
-            .ok()
-            .map(StopwordsInterface::Language),
-        Some(interface) => Some(interface),
-    };
-
-    TokensProcessor::new(
+    TokensProcessor::for_bm25(
+        language.as_deref(),
         lowercase,
         ascii_folding,
-        Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
+        stopwords,
         stemmer,
         min_token_len,
         max_token_len,

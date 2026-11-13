@@ -11,34 +11,24 @@
 
 use std::borrow::Cow;
 use std::fmt;
-use std::str::FromStr;
-use std::sync::Arc;
 
 use bm25::SparseEmbedding;
 use ordered_float::NotNan;
-use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
-use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
-use segment::index::field_index::full_text_index::tokenizers::{
-    Stemmer, Tokenizer, TokensProcessor,
-};
+use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
+use segment::index::field_index::full_text_index::tokenizers::{Tokenizer, TokensProcessor};
 use sparse::common::sparse_vector::SparseVector;
-
-const DEFAULT_LANGUAGE: Language = Language::English;
 
 /// Error returned by [`EdgeBm25::new`] for invalid configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EdgeBm25Error {
     /// BM25 hyperparameters failed validation (see [`bm25::Bm25Error`]).
     Bm25(bm25::Bm25Error),
-    /// `language` did not match any supported [`Language`] variant.
-    UnsupportedLanguage(String),
 }
 
 impl fmt::Display for EdgeBm25Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Bm25(e) => write!(f, "{e}"),
-            Self::UnsupportedLanguage(lang) => write!(f, "unsupported language: {lang:?}"),
         }
     }
 }
@@ -143,15 +133,15 @@ impl EdgeBm25 {
             avg_doc_len: config.avg_len.into_inner(),
         };
 
-        let processor = build_tokens_processor(
-            config.language,
+        let processor = TokensProcessor::for_bm25(
+            config.language.as_deref(),
             config.lowercase,
             config.ascii_folding,
             config.stopwords,
             config.stemmer,
             config.min_token_len,
             config.max_token_len,
-        )?;
+        );
         let tokenizer = Tokenizer::new(config.tokenizer, processor);
 
         Ok(Self {
@@ -179,49 +169,6 @@ fn to_sparse_vector(e: SparseEmbedding) -> SparseVector {
         indices: e.indices,
         values: e.values,
     }
-}
-
-fn build_tokens_processor(
-    language: Option<String>,
-    lowercase: Option<bool>,
-    ascii_folding: Option<bool>,
-    stopwords: Option<StopwordsInterface>,
-    stemmer: Option<StemmingAlgorithm>,
-    min_token_len: Option<usize>,
-    max_token_len: Option<usize>,
-) -> Result<TokensProcessor, EdgeBm25Error> {
-    let lowercase = lowercase.unwrap_or(true);
-    let ascii_folding = ascii_folding.unwrap_or(false);
-
-    // Resolve language up-front so a typo / unsupported value fails the build
-    // instead of silently disabling stemming and stopwords.
-    let resolved_language = match language {
-        Some(name) => {
-            Language::from_str(&name).map_err(|_| EdgeBm25Error::UnsupportedLanguage(name))?
-        }
-        None => DEFAULT_LANGUAGE,
-    };
-    let language_str = resolved_language.to_string();
-
-    let stemmer = match stemmer {
-        None => Stemmer::try_default_from_language(&language_str),
-        // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
-        Some(algorithm) => Stemmer::from_algorithm(&algorithm),
-    };
-
-    let stopwords_config = match stopwords {
-        None => Some(StopwordsInterface::Language(resolved_language)),
-        Some(interface) => Some(interface),
-    };
-
-    Ok(TokensProcessor::new(
-        lowercase,
-        ascii_folding,
-        Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
-        stemmer,
-        min_token_len,
-        max_token_len,
-    ))
 }
 
 #[cfg(test)]
@@ -288,13 +235,15 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_language_is_rejected() {
+    fn an_unrecognized_language_disables_stemming_and_stopwords_as_in_qdrant() {
         let cfg = EdgeBm25Config {
-            language: Some("klingon".to_string()),
+            language: Some("none".to_string()),
             ..Default::default()
         };
-        let err = EdgeBm25::new(cfg).expect_err("klingon should not be accepted");
-        assert_matches!(err, EdgeBm25Error::UnsupportedLanguage(ref s) if s == "klingon");
+        let model = EdgeBm25::new(cfg).expect("qdrant accepts an unrecognized language");
+        // English would drop "the" and stem both words to "run".
+        assert!(!model.embed_query("the").indices.is_empty());
+        assert_eq!(model.embed_document("running run").indices.len(), 2);
     }
 
     #[test]

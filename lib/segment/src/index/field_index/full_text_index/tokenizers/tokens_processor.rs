@@ -1,8 +1,12 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::str::FromStr;
+use std::sync::{Arc, Once};
 
 use super::stemmer::Stemmer;
+use crate::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface};
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
+
+const DEFAULT_BM25_LANGUAGE: &str = "english";
 
 /// Tokens are cut to this many characters before any other processing, whatever `max_token_len`
 /// is. Real words are much shorter, and processing longer tokens gets expensive: snowball
@@ -49,6 +53,56 @@ impl TokensProcessor {
             min_token_len,
             max_token_len,
         }
+    }
+
+    /// BM25 inference preprocessing, shared by qdrant and edge so both embed text alike. An
+    /// unrecognized `language` disables stemming and stopwords: deprecated, kept for old configs.
+    pub fn for_bm25(
+        language: Option<&str>,
+        lowercase: Option<bool>,
+        ascii_folding: Option<bool>,
+        stopwords: Option<StopwordsInterface>,
+        stemmer: Option<StemmingAlgorithm>,
+        min_token_len: Option<usize>,
+        max_token_len: Option<usize>,
+    ) -> Self {
+        let lowercase = lowercase.unwrap_or(true);
+        let language = language.unwrap_or(DEFAULT_BM25_LANGUAGE);
+
+        if stopwords.is_none() && stemmer.is_none() && Language::from_str(language).is_err() {
+            // Once per process: this runs for every embedded input.
+            static DEPRECATION_WARNING: Once = Once::new();
+            DEPRECATION_WARNING.call_once(|| {
+                log::warn!(
+                    "BM25 text preprocessing: language {language:?} is not recognized; \
+                     stemming and stopwords are disabled as a side effect. This behavior \
+                     (notably `language: \"none\"`) is deprecated and may be rejected in a \
+                     future release. To disable language-specific processing explicitly, \
+                     set `stemmer` to {{\"type\": \"none\"}} and configure an empty stopword set.",
+                );
+            });
+        }
+
+        let stemmer = match stemmer {
+            None => Stemmer::try_default_from_language(language),
+            // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
+            Some(algorithm) => Stemmer::from_algorithm(&algorithm),
+        };
+        let stopwords = match stopwords {
+            None => Language::from_str(language)
+                .ok()
+                .map(StopwordsInterface::Language),
+            Some(interface) => Some(interface),
+        };
+
+        Self::new(
+            lowercase,
+            ascii_folding.unwrap_or(false),
+            Arc::new(StopwordsFilter::new(&stopwords, lowercase)),
+            stemmer,
+            min_token_len,
+            max_token_len,
+        )
     }
 
     /// Applies stemming if enabled and applies the configured stemming algorithm. Does nothing if
