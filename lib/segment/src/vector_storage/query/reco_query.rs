@@ -170,7 +170,7 @@ fn avg_vectors<'a>(
         match vector {
             VectorRef::Dense(vector) => {
                 dense_count += 1;
-                if avg_dense.is_empty() {
+                if dense_count == 1 {
                     avg_dense.reserve(vector.len());
                 } else if avg_dense.len() != vector.len() {
                     return Err(OperationError::WrongVectorDimension {
@@ -447,6 +447,25 @@ mod test {
                 .into(),
         ];
         assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
+    }
+
+    #[test]
+    fn test_avg_vectors_rejects_empty_nonempty_dense_mismatch() {
+        for vectors in [
+            vec![Vec::<f32>::new().into(), vec![2.0].into()],
+            vec![vec![2.0].into(), Vec::<f32>::new().into()],
+        ] {
+            let vectors: Vec<VectorInternal> = vectors;
+            assert!(matches!(
+                avg_vectors(vectors.iter().map(VectorRef::from)),
+                Err(OperationError::WrongVectorDimension { .. })
+            ));
+        }
+        let vectors: Vec<VectorInternal> = vec![Vec::<f32>::new().into(), Vec::<f32>::new().into()];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            Vec::<f32>::new().into(),
+        );
     }
 
     /// Regression for issue #10524: dense inputs of mismatched length must
