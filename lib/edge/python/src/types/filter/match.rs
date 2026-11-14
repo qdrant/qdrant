@@ -131,8 +131,10 @@ impl FromPyObject<'_, '_> for PyValueVariants {
         #[derive(FromPyObject)]
         enum Helper {
             String(String),
-            Integer(IntPayloadType),
+            // Before `Integer`: Python's `bool` is a subclass of `int`, so `True` would otherwise
+            // be taken as `1`. Extracting a `bool` is strict, so an `int` never matches here.
             Bool(bool),
+            Integer(IntPayloadType),
         }
 
         fn _variants(value: ValueVariants) {
