@@ -1,5 +1,3 @@
-#[cfg(feature = "remote-indexing")]
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use common::flags::feature_flags;
@@ -17,11 +15,11 @@ use super::local_builder::LocalBuilder;
 use super::payload_blocks::{FieldBlocks, PayloadBlock};
 use super::pipnn_builder::PipnnBuilder;
 #[cfg(feature = "remote-indexing")]
-use super::remote_builder::{RemoteBuildArgs, RemoteBuilder};
+use super::remote_builder::RemoteBuilder;
+use super::remote_steps::{self, RemoteBuildArgs};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-#[cfg(any(feature = "gpu", feature = "remote-indexing"))]
 use crate::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 #[cfg(feature = "gpu")]
@@ -68,7 +66,7 @@ pub(super) struct GraphBuildOptions<'a> {
     /// nothing is uploaded anywhere.
     pub has_payload_blocks: bool,
     /// Set if a remote indexer is configured and the vector data is large enough (§4.2).
-    #[cfg(feature = "remote-indexing")]
+    /// Never set without the `remote-indexing` feature.
     pub remote: Option<RemoteBuildArgs<'a>>,
 }
 
@@ -99,23 +97,24 @@ impl<'a> GraphBuilder<'a> {
             old_index,
             gpu_device,
             has_payload_blocks,
-            #[cfg(feature = "remote-indexing")]
             remote,
         } = options;
 
         let local = LocalBuilder::new(ctx, pool, rng, old_index)?;
 
-        #[cfg(feature = "remote-indexing")]
-        if let Some(remote) = remote
-            && old_index.is_none()
-            && (local.ctx.has_main_graph() || has_payload_blocks)
-            && local.points.len() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
-        {
-            return Ok(Self::Remote(Box::new(RemoteBuilder::new(
-                Self::without_gpu(local, None),
-                remote,
-                has_payload_blocks,
-            ))));
+        if let Some(remote) = remote {
+            if old_index.is_some() {
+                // Healing stays local (D12)
+                remote_steps::kept_local_for_healing();
+            } else if (local.ctx.has_main_graph() || has_payload_blocks)
+                && local.points.len() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
+            {
+                return Ok(remote_steps::remote_builder(
+                    Self::without_gpu(local, None),
+                    remote,
+                    has_payload_blocks,
+                ));
+            }
         }
 
         #[cfg(feature = "gpu")]
@@ -199,41 +198,14 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
-    /// For a remote builder: submit the task, and return the stream to append the payload
-    /// blocks to while the indexer builds. Finish the stream, then call `build_main`. `None`
-    /// for local builders, which read the blocks themselves after `build_main`.
+    /// The remote method, if this is it.
     #[cfg(feature = "remote-indexing")]
-    pub fn start_remote(
-        &mut self,
-    ) -> Option<Arc<crate::index::hnsw_index::remote::blocks::BlockStream>> {
+    pub(super) fn remote(&mut self) -> Option<&mut RemoteBuilder<'a>> {
         match self {
             GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => None,
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(_) => None,
-            GraphBuilder::Remote(builder) => Some(builder.start()),
-        }
-    }
-
-    /// After `build_main`: whether the payload blocks are linked already, by the indexer.
-    #[cfg(feature = "remote-indexing")]
-    pub fn blocks_linked_remotely(&self) -> bool {
-        match self {
-            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => false,
-            #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(_) => false,
-            GraphBuilder::Remote(builder) => builder.blocks_linked(),
-        }
-    }
-
-    /// After `build_main`: the payload blocks a remote build prepared before it fell back, for
-    /// the local build to link. `None` if there are none to reuse.
-    #[cfg(feature = "remote-indexing")]
-    pub fn fallback_blocks(&self) -> Option<crate::index::hnsw_index::remote::wire::BlockPlan> {
-        match self {
-            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => None,
-            #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(_) => None,
-            GraphBuilder::Remote(builder) => builder.fallback_blocks(),
+            GraphBuilder::Remote(builder) => Some(builder),
         }
     }
 
