@@ -49,10 +49,13 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/ClearPayload",
     "/qdrant.Points/Count",
+    "/qdrant.Points/CreateFieldIndex",
     "/qdrant.Points/CreateVectorName",
     "/qdrant.Points/Delete",
+    "/qdrant.Points/DeleteFieldIndex",
     "/qdrant.Points/DeletePayload",
     "/qdrant.Points/DeleteVectorName",
+    "/qdrant.Points/DeleteVectors",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
     "/qdrant.Points/Facet",
@@ -68,6 +71,8 @@ const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/Search",
     "/qdrant.Points/SearchBatch",
     "/qdrant.Points/SearchGroups",
+    "/qdrant.Points/SearchMatrixOffsets",
+    "/qdrant.Points/SearchMatrixPairs",
     "/qdrant.Points/SetPayload",
     "/qdrant.Points/UpdateBatch",
     "/qdrant.Points/UpdateVectors",
@@ -298,6 +303,30 @@ impl OperationDurationMetricsBuilder {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_grpc_whitelist_matches_rest_sibling_endpoints() {
+        use super::GRPC_ENDPOINT_WHITELIST;
+
+        // Every one of these gRPC RPCs already has a whitelisted REST sibling
+        // (DeleteVectors -> /points/vectors/delete, CreateFieldIndex/
+        // DeleteFieldIndex -> /index, SearchMatrixPairs/SearchMatrixOffsets ->
+        // /points/search/matrix/{pairs,offsets}); the gRPC whitelist had drifted
+        // out of sync with REST's, so `grpc_responses_total` was silently
+        // missing for these operations while `rest_responses_total` had them.
+        for endpoint in [
+            "/qdrant.Points/CreateFieldIndex",
+            "/qdrant.Points/DeleteFieldIndex",
+            "/qdrant.Points/DeleteVectors",
+            "/qdrant.Points/SearchMatrixOffsets",
+            "/qdrant.Points/SearchMatrixPairs",
+        ] {
+            assert!(
+                GRPC_ENDPOINT_WHITELIST.binary_search(&endpoint).is_ok(),
+                "{endpoint} must be in GRPC_ENDPOINT_WHITELIST to match its REST sibling",
+            );
+        }
+    }
+
     #[test]
     fn test_endpoint_whitelists_sorted() {
         use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
