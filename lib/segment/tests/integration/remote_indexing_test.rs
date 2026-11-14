@@ -56,6 +56,7 @@ fn config(on_failure: OnFailure, heartbeat_timeout: Duration) -> RemoteIndexingC
         queue_timeout: heartbeat_timeout,
         on_failure,
         max_retries: 3,
+        max_block_wait: Duration::from_secs(30),
     }
 }
 
@@ -129,6 +130,18 @@ fn build(
     stopped: &AtomicBool,
     rng: &mut StdRng,
 ) -> OperationResult<(TempDir, HNSWIndex)> {
+    build_m(segment, permit, stopped, rng, 16, None)
+}
+
+/// Like [`build`], with main graph `m` and `payload_m`.
+fn build_m(
+    segment: &Segment,
+    permit: Arc<ResourcePermit>,
+    stopped: &AtomicBool,
+    rng: &mut StdRng,
+    m: usize,
+    payload_m: Option<usize>,
+) -> OperationResult<(TempDir, HNSWIndex)> {
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let data = &segment.vector_data[DEFAULT_VECTOR_NAME];
     let index = HNSWIndex::build(
@@ -140,12 +153,12 @@ fn build(
             payload_index: segment.payload_index.clone(),
             hnsw_config: HnswConfig {
                 memory: None,
-                m: 16,
+                m,
                 ef_construct: 64,
                 full_scan_threshold: 16, // KB: payload blocks of ~250 points
                 max_indexing_threads: 2,
                 on_disk: Some(false),
-                payload_m: None,
+                payload_m,
                 inline_storage: None,
             },
         },
@@ -312,6 +325,37 @@ fn remote_pipnn_graph_is_accepted() {
         remote_accuracy.1 + 25 >= local_accuracy.1,
         "{remote_accuracy:?}"
     );
+}
+
+/// `m = 0`: no main graph, only payload blocks. The indexer starts by waiting for them.
+#[test]
+fn payload_blocks_only_graph_is_built_remotely() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(9);
+    let (_dir, segment) = segment(&mut rng);
+    let stopped = AtomicBool::new(false);
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config(OnFailure::Local, Duration::from_secs(10)),
+        vec![LoopbackBehavior::Build],
+    ));
+    let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
+    let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
+        build_m(
+            &segment,
+            Arc::new(ResourcePermit::dummy(2)),
+            &stopped,
+            &mut rng,
+            0,
+            Some(16),
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        indexer.wait_outcomes(1, Duration::from_secs(5)),
+        vec![RunOutcome::Uploaded]
+    );
+    let (_hits, filtered_hits) = accuracy(&segment, &index, &mut rng);
+    assert!(filtered_hits >= 450, "{filtered_hits}");
 }
 
 /// Runs a build where the indexer misbehaves per `behaviors`. Returns the indexer and whether

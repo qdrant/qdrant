@@ -10,6 +10,7 @@
 //!
 //! `lib/segment` has no gRPC: the server registers the transport as a [`RemoteIndexer`].
 
+pub mod blocks;
 pub mod executor;
 pub mod layout;
 pub mod loopback;
@@ -53,6 +54,9 @@ pub struct RemoteIndexingConfig {
     pub on_failure: OnFailure,
     /// Resubmissions with `OnFailure::Retry`.
     pub max_retries: u32,
+    /// How long the indexer waits for the next payload block, while core prepares them,
+    /// before it fails the task.
+    pub max_block_wait: Duration,
 }
 
 /// A task as sent to the entry point (§4.8).

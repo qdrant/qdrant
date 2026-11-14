@@ -126,6 +126,7 @@ impl RemoteIndexingClient {
                 IndexingOnFailure::Retry => OnFailure::Retry,
             },
             max_retries: config.max_retries,
+            max_block_wait: Duration::from_secs(config.max_block_wait_sec),
         };
         Ok(Self {
             inner: Arc::new(ClientInner {

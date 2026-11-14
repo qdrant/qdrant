@@ -1,7 +1,8 @@
 //! Indexer side of a remote build: the same graph builders as a local build, run on what the
 //! indexer read from core.
 
-use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use common::progress_tracker::ProgressTracker;
 use rand::Rng;
@@ -15,17 +16,18 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::remote::wire::{BlockPlan, RemoteGraphParams};
+use crate::index::hnsw_index::remote::blocks::StreamedBlock;
+use crate::index::hnsw_index::remote::wire::RemoteGraphParams;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
-/// Build the graph `params` and `plan` ask for, over `vector_storage`, whose deleted vectors
-/// are the points not to link, scoring with `quantized_vectors` if given, as a local build
-/// does. `id_tracker` maps every offset of the storage.
+/// Build the graph `params` asks for, over `vector_storage`, whose deleted vectors are the
+/// points not to link, scoring with `quantized_vectors` if given, as a local build does.
+/// `id_tracker` maps every offset of the storage. After the main graph, links the payload
+/// blocks `next_blocks` returns, batch by batch, in order, until it returns `None`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_requested_graph(
     params: &RemoteGraphParams,
-    plan: &BlockPlan,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
     id_tracker: &IdTrackerEnum,
@@ -34,6 +36,7 @@ pub(crate) fn build_requested_graph(
     rng: &mut dyn Rng,
     stopped: &AtomicBool,
     progress: &ProgressTracker,
+    next_blocks: &mut dyn FnMut() -> OperationResult<Option<Vec<StreamedBlock>>>,
 ) -> OperationResult<GraphLayersBuilder> {
     let mut ctx = GraphBuildContext {
         id_tracker,
@@ -56,12 +59,6 @@ pub(crate) fn build_requested_graph(
         migrate: progress.subtask("migrate"),
         main_graph: progress.subtask("main_graph"),
     });
-    let has_payload_blocks = plan.num_blocks() > 0;
-    let field_progress: Vec<_> = plan
-        .fields
-        .iter()
-        .map(|field| progress.subtask(format!("additional_links:{}", field.field)))
-        .collect();
 
     let pool = build_thread_pool(num_threads.max(1))?;
     let mut builder = GraphBuilder::select(
@@ -71,7 +68,7 @@ pub(crate) fn build_requested_graph(
         GraphBuildOptions {
             old_index: None,
             gpu_device,
-            has_payload_blocks,
+            has_payload_blocks: params.has_payload_blocks,
             // Never forward the task again
             remote: None,
         },
@@ -79,22 +76,41 @@ pub(crate) fn build_requested_graph(
 
     builder.build_main()?;
 
-    for (field, field_progress) in plan.fields.iter().zip(field_progress) {
-        field_progress.start();
-        let skip = if field.skip_if_connected {
-            BlockSkip::IfConnected
-        } else {
-            BlockSkip::Never
-        };
-        builder.build_loaded_field_blocks(
-            &field_progress,
-            skip,
-            field.blocks.iter().map(|block| PayloadBlock {
-                cardinality: block.cardinality,
-                points: block.points.clone(),
-            }),
-        )?;
+    // Blocks of a field come together, fields in build order
+    let mut field: Option<(String, BlockSkip, ProgressTracker, Arc<AtomicU64>)> = None;
+    while let Some(blocks) = next_blocks()? {
+        for block in blocks {
+            let StreamedBlock {
+                field: name,
+                skip_if_connected,
+                cardinality,
+                points,
+            } = block;
+            if field.as_ref().is_none_or(|(current, ..)| *current != name) {
+                let field_progress = progress.subtask(format!("additional_links:{name}"));
+                field_progress.start();
+                let counter = field_progress.track_progress(None);
+                let skip = if skip_if_connected {
+                    BlockSkip::IfConnected
+                } else {
+                    BlockSkip::Never
+                };
+                field = Some((name, skip, field_progress, counter));
+            }
+            let Some((_, skip, _, counter)) = &field else {
+                unreachable!("set above");
+            };
+            builder.build_loaded_field_blocks(
+                counter,
+                *skip,
+                std::iter::once(PayloadBlock {
+                    cardinality,
+                    points,
+                }),
+            )?;
+        }
     }
+    drop(field);
 
     let (graph, _indexed) = builder.finalize()?;
     Ok(graph)

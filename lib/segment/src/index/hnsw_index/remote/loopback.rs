@@ -10,6 +10,7 @@ use std::time::Duration;
 use common::types::PointOffsetType;
 use parking_lot::Mutex;
 
+use super::blocks::BlocksBatch;
 use super::executor::{
     FetchedTask, RunOptions, RunOutcome, RunReport, SourceError, SourceResult, TaskSource, run_task,
 };
@@ -48,7 +49,9 @@ pub struct RegistrySource {
 fn source_err(err: RemoteTaskError) -> SourceError {
     match err {
         RemoteTaskError::PermissionDenied => SourceError::PermissionDenied,
-        RemoteTaskError::InvalidArgument(e) | RemoteTaskError::Internal(e) => SourceError::Other(e),
+        RemoteTaskError::InvalidArgument(e)
+        | RemoteTaskError::FailedPrecondition(e)
+        | RemoteTaskError::Internal(e) => SourceError::Other(e),
     }
 }
 
@@ -60,7 +63,6 @@ impl TaskSource for RegistrySource {
         Ok(FetchedTask {
             task_id: description.task_id,
             params: description.params,
-            block_plan: (*description.block_plan).clone(),
             graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
         })
     }
@@ -85,6 +87,12 @@ impl TaskSource for RegistrySource {
             next = after;
         }
         Ok(())
+    }
+
+    fn read_payload_blocks(&self, next: u64) -> SourceResult<BlocksBatch> {
+        REMOTE_INDEXING_TASKS
+            .read_payload_blocks(&self.token, next)
+            .map_err(source_err)
     }
 
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
@@ -121,6 +129,10 @@ impl TaskSource for CorruptingSource {
     ) -> SourceResult<()> {
         self.0.read_vectors(start, end, sink)
     }
+    fn read_payload_blocks(&self, next: u64) -> SourceResult<BlocksBatch> {
+        self.0.read_payload_blocks(next)
+    }
+
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
         self.0.heartbeat(progress)
     }

@@ -13,12 +13,15 @@ import "collections.proto";
 // access to its own task, and is revoked when the task ends: further calls get
 // PERMISSION_DENIED, except `Heartbeat` on a task core cancelled, which answers CANCEL.
 service IndexingTask {
-  // Task parameters and payload block plan.
+  // Task parameters.
   rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
   // The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
   // for vector source STORAGE, quantized codes for vector source QUANTIZED. Points not to be
   // indexed (deleted, or without a vector) have an empty entry.
   rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
+  // Payload blocks from a sequence number, as core prepares them while the indexer builds the
+  // main graph. Waits a few seconds for the next block before answering that it is not ready.
+  rpc ReadPayloadBlocks(ReadIndexingPayloadBlocksRequest) returns (IndexingPayloadBlocksBatch) {}
   // Renew the lease and report progress. The reply tells whether to go on.
   rpc Heartbeat(IndexingHeartbeatRequest) returns (IndexingHeartbeatResponse) {}
   // Upload the finished graph: a header, then link chunks. Ends the task.
@@ -81,11 +84,14 @@ message IndexingTaskDescription {
   string vector_representation = 14;
   // Graph formats core reads. The indexer must upload one of them, or fail the task.
   repeated uint32 graph_format_versions = 15;
-  // Payload blocks chosen by core, per field, in build order.
-  repeated IndexingFieldBlocks block_plan = 16;
-  IndexingVectorSource vector_source = 17;
+  IndexingVectorSource vector_source = 16;
   // Set for vector source QUANTIZED: how the codes were encoded.
-  IndexingQuantization quantization = 18;
+  IndexingQuantization quantization = 17;
+  // Whether payload blocks may come: read them with `ReadPayloadBlocks` after the main
+  // graph, until it answers `finished`.
+  bool has_payload_blocks = 18;
+  // Fail the task if no payload block comes for this long. Reset by every block.
+  uint64 max_block_wait_sec = 19;
 }
 
 // Everything needed, besides the codes, to score quantized codes as core does.
@@ -166,17 +172,41 @@ message IndexingTurboParameters {
   optional IndexingTurboErrorCorrection error_correction = 4;
 }
 
-message IndexingFieldBlocks {
-  string field = 1;
-  // Skip blocks the graph built so far already connects well.
-  bool skip_if_connected = 2;
-  repeated IndexingPayloadBlock blocks = 3;
+message ReadIndexingPayloadBlocksRequest {
+  // Sequence number of the first block wanted. Asking again for the same number gives the
+  // same blocks.
+  uint64 next = 1;
 }
 
+message IndexingPayloadBlocksBatch {
+  oneof result {
+    // Blocks from `next`, in build order, about 1 MB at most.
+    IndexingPayloadBlocks blocks = 1;
+    // No block at `next` yet: ask again.
+    IndexingPayloadBlocksNotReady not_ready = 2;
+    // No block at or after `next`, and none will come.
+    IndexingPayloadBlocksFinished finished = 3;
+  }
+}
+
+message IndexingPayloadBlocks {
+  // Sequence number of the first block, the `next` asked for.
+  uint64 first = 1;
+  repeated IndexingPayloadBlock blocks = 2;
+}
+
+message IndexingPayloadBlocksNotReady {}
+
+message IndexingPayloadBlocksFinished {}
+
+// Blocks of a field come together, fields in build order.
 message IndexingPayloadBlock {
+  string field = 1;
+  // Skip the block if the graph built so far already connects it well.
+  bool skip_if_connected = 2;
   // Estimated block size, which the size limit is checked against.
-  uint64 cardinality = 1;
-  repeated uint32 points = 2;
+  uint64 cardinality = 3;
+  repeated uint32 points = 4;
 }
 
 message ReadIndexingVectorsRequest {
