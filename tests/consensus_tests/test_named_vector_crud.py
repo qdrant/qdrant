@@ -356,9 +356,11 @@ def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
         wait_collection_points_count(uri, COLLECTION_NAME, 1000)
 
     # Kill the last peer
+    killed_peer_id = get_cluster_info(peer_api_uris[-1])["peer_id"]
     killed_peer = processes.pop()
     restart_port = killed_peer.p2p_port
     killed_peer.kill()
+    wait_for_live_leader(peer_api_uris[0], killed_peer_id)
     print(f"Killed peer at port {killed_peer.http_port}")
 
     # Perform some consensus operations to trigger WAL compaction + snapshot.
