@@ -377,13 +377,6 @@ impl TaskRegistry {
         Ok((vectors, next))
     }
 
-    /// `ReadDeleted`: one flag per point, set if the point must not be linked.
-    pub fn read_deleted(&self, token: &TaskToken) -> Result<Arc<BitVec>, RemoteTaskError> {
-        let state = self.get(token)?;
-        state.touch();
-        Ok(state.deleted.clone())
-    }
-
     /// `Heartbeat`: renew the lease and report progress (D6). A revoked task answers `CANCEL`
     /// for a while, so the indexer stops promptly.
     pub fn heartbeat(
@@ -623,7 +616,6 @@ mod tests {
                 payload_m: 4,
                 payload_m0: 8,
                 point_count,
-                points_to_index: point_count - 1,
                 vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
                 vector_source: VectorSource::Storage,
                 quantization: None,

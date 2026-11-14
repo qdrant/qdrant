@@ -499,7 +499,6 @@ name = "api"
 version = "1.20.3-dev"
 dependencies = [
  "ahash",
- "bitvec",
  "chrono",
  "common",
  "itertools 0.15.0",

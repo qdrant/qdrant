@@ -59,7 +59,7 @@ pub enum QuantizerParameters {
     Turbo(TurboParameters),
 }
 
-/// Everything the indexer needs to build the graph, besides the vectors and the deleted mask.
+/// Everything the indexer needs to build the graph, besides the vectors.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteGraphParams {
     pub vector_name: String,
@@ -77,10 +77,9 @@ pub struct RemoteGraphParams {
     /// `m` and `m0` of payload block graphs.
     pub payload_m: usize,
     pub payload_m0: usize,
-    /// Number of point offsets in the segment, deleted included: `0..point_count`.
+    /// Number of point offsets in the segment, deleted included: `0..point_count`. Points
+    /// not to be indexed have an empty entry in `ReadVectors`.
     pub point_count: usize,
-    /// Number of points to index (link): `point_count` minus deleted.
-    pub points_to_index: usize,
     pub vector_representation: String,
     pub vector_source: VectorSource,
     /// Set for [`VectorSource::Quantized`] only.
@@ -438,7 +437,6 @@ mod tests {
             payload_m: 2,
             payload_m0: 4,
             point_count,
-            points_to_index: point_count,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: VectorSource::Storage,
             quantization: None,

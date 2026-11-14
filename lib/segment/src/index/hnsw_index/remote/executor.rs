@@ -56,16 +56,13 @@ pub trait TaskSource: Sync {
     fn get_task(&self) -> SourceResult<FetchedTask>;
 
     /// Feed the vectors in `start..end` to `sink`, in order: storage-native bytes, or quantized
-    /// codes for [`VectorSource::Quantized`]. Empty bytes: no vector, or not linked.
+    /// codes for [`VectorSource::Quantized`]. Empty bytes: the point is not to be indexed.
     fn read_vectors(
         &self,
         start: PointOffsetType,
         end: PointOffsetType,
         sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
     ) -> SourceResult<()>;
-
-    /// One flag per point, set if it is not to be linked.
-    fn read_deleted(&self) -> SourceResult<BitVec>;
 
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction>;
 
@@ -335,15 +332,6 @@ fn build(
         |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
 
     let timer = Instant::now();
-    let deleted = source.read_deleted()?;
-    if deleted.len() != params.point_count {
-        return Err(SourceError::Other(format!(
-            "deleted mask has {} points, expected {}",
-            deleted.len(),
-            params.point_count,
-        )));
-    }
-
     let layout = RemoteVectorLayout {
         dim: params.dim,
         datatype: params.datatype,
@@ -362,7 +350,6 @@ fn build(
                 source,
                 params,
                 &layout,
-                &deleted,
                 storage_dir.path(),
                 options,
                 stopped,
@@ -371,10 +358,9 @@ fn build(
             (storage, None)
         }
         VectorSource::Quantized => {
-            let quantized = read_quantized(
+            let (quantized, deleted) = read_quantized(
                 source,
                 params,
-                &deleted,
                 &storage_dir.path().join("quantized"),
                 options,
                 stopped,
@@ -438,30 +424,17 @@ fn build(
     Ok(WireGraph::from_graph_layers_builder(&graph))
 }
 
-/// Read the vectors core serves into a new storage of `layout` in `dir`, and delete the
-/// points not to link.
-#[allow(clippy::too_many_arguments)]
-fn read_storage(
+/// Stream the entries of all points, in order, to `sink`, and return which points are not
+/// to be indexed: those with an empty entry.
+fn read_entries(
     source: &dyn TaskSource,
     params: &RemoteGraphParams,
-    layout: &RemoteVectorLayout,
-    deleted: &BitVec,
-    dir: &Path,
     options: &RunOptions,
     stopped: &AtomicBool,
     bytes_read: &mut u64,
-) -> SourceResult<VectorStorageEnum> {
-    let other =
-        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
-    let mut storage = layout.create_storage(dir).map_err(other)?;
-    // Points without a vector keep their offset with a zero vector, and are deleted below.
-    // Inserted as a vector rather than bytes: TurboQuant storages encode it.
-    let zeros = vec![0.0; params.dim];
-    let placeholder = match params.multivector_config {
-        Some(_) => VectorRef::from(TypedMultiDenseVectorRef::new(&zeros, params.dim)),
-        None => VectorRef::from(&zeros[..]),
-    };
-
+    mut sink: impl FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
+) -> SourceResult<BitVec> {
+    let mut deleted = BitVec::repeat(false, params.point_count);
     let mut start = 0;
     while (start as usize) < params.point_count {
         if stopped.load(Ordering::Relaxed) {
@@ -477,12 +450,10 @@ fn read_storage(
             }
             expected += 1;
             *bytes_read += bytes.len() as u64;
-            let inserted = if bytes.is_empty() {
-                storage.insert_vector(offset, placeholder)
-            } else {
-                storage.insert_vector_bytes(offset, bytes)
-            };
-            inserted.map_err(|err| SourceError::Other(err.to_string()))
+            if bytes.is_empty() {
+                deleted.set(offset as usize, true);
+            }
+            sink(offset, bytes)
         })?;
         if expected != end {
             return Err(SourceError::Other(format!(
@@ -491,6 +462,45 @@ fn read_storage(
         }
         start = end;
     }
+    Ok(deleted)
+}
+
+/// Read the vectors core serves into a new storage of `layout` in `dir`, with the points not
+/// to be indexed deleted.
+fn read_storage(
+    source: &dyn TaskSource,
+    params: &RemoteGraphParams,
+    layout: &RemoteVectorLayout,
+    dir: &Path,
+    options: &RunOptions,
+    stopped: &AtomicBool,
+    bytes_read: &mut u64,
+) -> SourceResult<VectorStorageEnum> {
+    let other =
+        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
+    let mut storage = layout.create_storage(dir).map_err(other)?;
+    // Points not to be indexed keep their offset with a zero vector, and are deleted below.
+    // Inserted as a vector rather than bytes: TurboQuant storages encode it.
+    let zeros = vec![0.0; params.dim];
+    let placeholder = match params.multivector_config {
+        Some(_) => VectorRef::from(TypedMultiDenseVectorRef::new(&zeros, params.dim)),
+        None => VectorRef::from(&zeros[..]),
+    };
+    let deleted = read_entries(
+        source,
+        params,
+        options,
+        stopped,
+        bytes_read,
+        |offset, bytes| {
+            let inserted = if bytes.is_empty() {
+                storage.insert_vector(offset, placeholder)
+            } else {
+                storage.insert_vector_bytes(offset, bytes)
+            };
+            inserted.map_err(|err| SourceError::Other(err.to_string()))
+        },
+    )?;
     for point in deleted.iter_ones() {
         storage
             .delete_vector(point as PointOffsetType)
@@ -542,17 +552,16 @@ fn dequantized_storage(
     Ok(storage)
 }
 
-/// Read the quantized codes core serves, in point order, into quantized vectors in `dir`.
-#[allow(clippy::too_many_arguments)]
+/// Read the quantized codes core serves into quantized vectors in `dir`. Also returns which
+/// points are not to be indexed.
 fn read_quantized(
     source: &dyn TaskSource,
     params: &RemoteGraphParams,
-    deleted: &BitVec,
     dir: &Path,
     options: &RunOptions,
     stopped: &AtomicBool,
     bytes_read: &mut u64,
-) -> SourceResult<QuantizedVectors> {
+) -> SourceResult<(QuantizedVectors, BitVec)> {
     let other =
         |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
     let Some(quantization) = &params.quantization else {
@@ -573,46 +582,20 @@ fn read_quantized(
         dir,
     )
     .map_err(other)?;
-    // Points not linked have no code: any code of the right size keeps their offset
+    // Points not to be indexed have no code: any code of the right size keeps their offset
     let placeholder = vec![0u8; builder.code_size()];
-
-    let mut start = 0;
-    while (start as usize) < params.point_count {
-        if stopped.load(Ordering::Relaxed) {
-            return Err(SourceError::Other("stopped".to_string()));
-        }
-        let end = (start + options.read_batch).min(params.point_count as PointOffsetType);
-        let mut expected = start;
-        source.read_vectors(start, end, &mut |offset, code| {
-            if offset != expected {
-                return Err(SourceError::Other(format!(
-                    "code {offset} out of order, expected {expected}"
-                )));
-            }
-            expected += 1;
-            *bytes_read += code.len() as u64;
-            let code = if code.is_empty() {
-                if !deleted[offset as usize] {
-                    return Err(SourceError::Other(format!(
-                        "no quantized code for point {offset}, which is to be indexed"
-                    )));
-                }
-                &placeholder[..]
-            } else {
-                code
-            };
-            builder.push(code).map_err(other)
-        })?;
-        if expected != end {
-            return Err(SourceError::Other(format!(
-                "core sent codes up to {expected}, expected {end}"
-            )));
-        }
-        start = end;
-    }
-    builder
+    let deleted = read_entries(source, params, options, stopped, bytes_read, |_, code| {
+        let code = if code.is_empty() {
+            &placeholder[..]
+        } else {
+            code
+        };
+        builder.push(code).map_err(other)
+    })?;
+    let quantized = builder
         .finish(params.distance, params.datatype)
-        .map_err(other)
+        .map_err(other)?;
+    Ok((quantized, deleted))
 }
 
 /// Process-wide default directory for temporary storages.

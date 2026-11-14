@@ -5915,25 +5915,23 @@ pub struct IndexingTaskDescription {
     pub payload_m: u64,
     #[prost(uint64, tag = "12")]
     pub payload_m0: u64,
-    /// Point offsets are `0..point_count`, deleted included.
+    /// Point offsets are `0..point_count`, deleted included. Which points to index follows
+    /// from `ReadVectors`: those with a non-empty entry.
     #[prost(uint64, tag = "13")]
     pub point_count: u64,
-    /// Points to index (link): `point_count` minus the deleted ones.
-    #[prost(uint64, tag = "14")]
-    pub points_to_index: u64,
     /// Encoding of the vectors in `ReadVectors`.
-    #[prost(string, tag = "15")]
+    #[prost(string, tag = "14")]
     pub vector_representation: ::prost::alloc::string::String,
     /// Graph formats core reads. The indexer must upload one of them, or fail the task.
-    #[prost(uint32, repeated, tag = "16")]
+    #[prost(uint32, repeated, tag = "15")]
     pub graph_format_versions: ::prost::alloc::vec::Vec<u32>,
     /// Payload blocks chosen by core, per field, in build order.
-    #[prost(message, repeated, tag = "17")]
+    #[prost(message, repeated, tag = "16")]
     pub block_plan: ::prost::alloc::vec::Vec<IndexingFieldBlocks>,
-    #[prost(enumeration = "IndexingVectorSource", tag = "18")]
+    #[prost(enumeration = "IndexingVectorSource", tag = "17")]
     pub vector_source: i32,
     /// Set for vector source QUANTIZED: how the codes were encoded.
-    #[prost(message, optional, tag = "19")]
+    #[prost(message, optional, tag = "18")]
     pub quantization: ::core::option::Option<IndexingQuantization>,
 }
 /// Everything needed, besides the codes, to score quantized codes as core does.
@@ -6065,23 +6063,9 @@ pub struct IndexingVectorsChunk {
     #[prost(uint32, tag = "1")]
     pub start: u32,
     /// One entry per offset from `start`: storage-native bytes, or the quantized code. Empty:
-    /// the point has no vector, or is deleted.
+    /// the point is not to be indexed (deleted, or without a vector).
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub vectors: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-}
-#[allow(clippy::all)]
-#[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadIndexingDeletedRequest {}
-#[allow(clippy::all)]
-#[derive(serde::Serialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct IndexingDeletedMask {
-    #[prost(uint64, tag = "1")]
-    pub point_count: u64,
-    /// One bit per point, LSB first: set if the point must not be linked.
-    #[prost(bytes = "vec", tag = "2")]
-    pub deleted: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -6622,7 +6606,8 @@ pub mod indexing_task_client {
             self.inner.unary(req, path, codec).await
         }
         /// The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
-        /// for vector source STORAGE, quantized codes for vector source QUANTIZED.
+        /// for vector source STORAGE, quantized codes for vector source QUANTIZED. Points not to be
+        /// indexed (deleted, or without a vector) have an empty entry.
         pub async fn read_vectors(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadIndexingVectorsRequest>,
@@ -6646,31 +6631,6 @@ pub mod indexing_task_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadVectors"));
             self.inner.server_streaming(req, path, codec).await
-        }
-        /// The points not to link.
-        pub async fn read_deleted(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadIndexingDeletedRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::IndexingDeletedMask>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.IndexingTask/ReadDeleted",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadDeleted"));
-            self.inner.unary(req, path, codec).await
         }
         /// Renew the lease and report progress. The reply tells whether to go on.
         pub async fn heartbeat(
@@ -6776,20 +6736,13 @@ pub mod indexing_task_server {
             + std::marker::Send
             + 'static;
         /// The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
-        /// for vector source STORAGE, quantized codes for vector source QUANTIZED.
+        /// for vector source STORAGE, quantized codes for vector source QUANTIZED. Points not to be
+        /// indexed (deleted, or without a vector) have an empty entry.
         async fn read_vectors(
             &self,
             request: tonic::Request<super::ReadIndexingVectorsRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::ReadVectorsStream>,
-            tonic::Status,
-        >;
-        /// The points not to link.
-        async fn read_deleted(
-            &self,
-            request: tonic::Request<super::ReadIndexingDeletedRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::IndexingDeletedMask>,
             tonic::Status,
         >;
         /// Renew the lease and report progress. The reply tells whether to go on.
@@ -6988,51 +6941,6 @@ pub mod indexing_task_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.IndexingTask/ReadDeleted" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadDeletedSvc<T: IndexingTask>(pub Arc<T>);
-                    impl<
-                        T: IndexingTask,
-                    > tonic::server::UnaryService<super::ReadIndexingDeletedRequest>
-                    for ReadDeletedSvc<T> {
-                        type Response = super::IndexingDeletedMask;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadIndexingDeletedRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as IndexingTask>::read_deleted(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadDeletedSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
