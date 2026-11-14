@@ -254,6 +254,15 @@ pub struct EncodedScalarVector<TBitsStoreType: BitsStoreType> {
     pub encoded_vector: Vec<TBitsStoreType>,
 }
 
+/// Encoder parameters of binary quantization: with the vector parameters, everything needed
+/// to score its codes. See [`EncodedVectorsBin::from_parameters`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinaryParameters {
+    pub encoding: Encoding,
+    pub query_encoding: QueryEncoding,
+    pub vector_stats: Option<VectorStats>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     vector_parameters: VectorParameters,
@@ -715,6 +724,61 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // equally-sized query) also holds in release builds without a per-score check.
         validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
+        Ok(result)
+    }
+
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> BinaryParameters {
+        let Metadata {
+            vector_parameters: _,
+            encoding,
+            query_encoding,
+            vector_stats,
+        } = &self.metadata;
+        BinaryParameters {
+            encoding: *encoding,
+            query_encoding: *query_encoding,
+            vector_stats: vector_stats.clone(),
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: BinaryParameters,
+    ) -> std::io::Result<Self> {
+        let BinaryParameters {
+            encoding,
+            query_encoding,
+            vector_stats,
+        } = parameters;
+        if let Some(stats) = &vector_stats
+            && stats.elements_stats.len() != vector_parameters.dim
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "binary quantization: {} element stats for dim {}",
+                    stats.elements_stats.len(),
+                    vector_parameters.dim,
+                ),
+            ));
+        }
+        let result = Self {
+            metadata: Metadata {
+                vector_parameters,
+                encoding,
+                query_encoding,
+                vector_stats,
+            },
+            metadata_path: None,
+            encoded_vectors,
+            bits_store_type: PhantomData,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.get_quantized_vector_size())?;
         Ok(result)
     }
 

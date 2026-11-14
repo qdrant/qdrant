@@ -3,6 +3,8 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+import "collections.proto";
+
 // Remote indexing (core side). Served by core on the internal gRPC port, called by an
 // indexing service that builds the HNSW graph of one vector of a segment under construction.
 //
@@ -13,12 +15,9 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 service IndexingTask {
   // Task parameters and payload block plan.
   rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
-  // Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
-  // For tasks with vector source STORAGE.
+  // The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
+  // for vector source STORAGE, quantized codes for vector source QUANTIZED.
   rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
-  // Content of one of the task's files, in chunks of about 1 MB. For vector source
-  // QUANTIZED: the quantized vectors, loaded by the indexer as they are.
-  rpc ReadFile(ReadIndexingFileRequest) returns (stream IndexingFileChunk) {}
   // The points not to link.
   rpc ReadDeleted(ReadIndexingDeletedRequest) returns (IndexingDeletedMask) {}
   // Renew the lease and report progress. The reply tells whether to go on.
@@ -42,14 +41,9 @@ enum IndexingVectorDatatype {
 enum IndexingVectorSource {
   // `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
   IndexingSourceStorage = 0;
-  // `ReadFile` for each of `files`: the quantized vectors; no original vectors.
+  // `ReadVectors` returns the quantized code of each point, read with `quantization`; no
+  // original vectors.
   IndexingSourceQuantized = 1;
-}
-
-message IndexingFile {
-  // Path relative to the quantized vectors directory.
-  string name = 1;
-  uint64 size = 2;
 }
 
 enum IndexingDistance {
@@ -83,7 +77,8 @@ message IndexingTaskDescription {
   uint64 payload_m0 = 12;
   // Point offsets are `0..point_count`, deleted included.
   uint64 point_count = 13;
-  uint64 indexed_point_count = 14;
+  // Points to index (link): `point_count` minus the deleted ones.
+  uint64 points_to_index = 14;
   // Encoding of the vectors in `ReadVectors`.
   string vector_representation = 15;
   // Graph formats core reads. The indexer must upload one of them, or fail the task.
@@ -91,7 +86,86 @@ message IndexingTaskDescription {
   // Payload blocks chosen by core, per field, in build order.
   repeated IndexingFieldBlocks block_plan = 17;
   IndexingVectorSource vector_source = 18;
-  repeated IndexingFile files = 19;
+  // Set for vector source QUANTIZED: how the codes were encoded.
+  IndexingQuantization quantization = 19;
+}
+
+// Everything needed, besides the codes, to score quantized codes as core does.
+message IndexingQuantization {
+  // The quantization config of the vector, as in the collection config.
+  QuantizationConfig config = 1;
+  // Encoder parameters, for the method of `config`.
+  oneof parameters {
+    IndexingScalarParameters scalar = 2;
+    IndexingBinaryParameters binary = 3;
+    IndexingTurboParameters turbo = 4;
+  }
+}
+
+// Int8 scalar quantization. Each code: an f32 offset, then `actual_dim` bytes.
+message IndexingScalarParameters {
+  uint64 actual_dim = 1;
+  float alpha = 2;
+  float offset = 3;
+  float multiplier = 4;
+}
+
+enum IndexingBinaryEncoding {
+  IndexingBinaryOneBit = 0;
+  IndexingBinaryTwoBits = 1;
+  IndexingBinaryOneAndHalfBits = 2;
+}
+
+enum IndexingBinaryQueryEncoding {
+  IndexingBinaryQuerySameAsStorage = 0;
+  IndexingBinaryQueryScalar4Bits = 1;
+  IndexingBinaryQueryScalar8Bits = 2;
+}
+
+message IndexingVectorElementStats {
+  float min = 1;
+  float max = 2;
+  float mean = 3;
+  float stddev = 4;
+}
+
+message IndexingBinaryParameters {
+  IndexingBinaryEncoding encoding = 1;
+  IndexingBinaryQueryEncoding query_encoding = 2;
+  // Per dimension, if the encoder keeps them; empty otherwise.
+  repeated IndexingVectorElementStats vector_stats = 3;
+}
+
+enum IndexingTurboBits {
+  IndexingTurbo8Bits = 0;
+  IndexingTurbo16Bits = 1;
+  IndexingTurbo4Bits = 2;
+  IndexingTurbo2Bits = 3;
+  IndexingTurboOneAndHalfBits = 4;
+  IndexingTurbo1Bit = 5;
+}
+
+enum IndexingTurboMode {
+  IndexingTurboNormal = 0;
+  IndexingTurboPlus = 1;
+}
+
+enum IndexingTurboRotation {
+  IndexingTurboPadded = 0;
+  IndexingTurboUnpadded = 1;
+}
+
+// TQ+ error correction, per padded dimension.
+message IndexingTurboErrorCorrection {
+  repeated float shift = 1;
+  repeated float scale = 2;
+}
+
+message IndexingTurboParameters {
+  IndexingTurboBits bits = 1;
+  IndexingTurboMode mode = 2;
+  IndexingTurboRotation rotation = 3;
+  optional IndexingTurboErrorCorrection error_correction = 4;
 }
 
 message IndexingFieldBlocks {
@@ -116,17 +190,9 @@ message ReadIndexingVectorsRequest {
 message IndexingVectorsChunk {
   // Offset of the first vector of the chunk.
   uint32 start = 1;
-  // One entry per offset from `start`. Empty: the point has no vector, or is deleted.
+  // One entry per offset from `start`: storage-native bytes, or the quantized code. Empty:
+  // the point has no vector, or is deleted.
   repeated bytes vectors = 2;
-}
-
-message ReadIndexingFileRequest {
-  string name = 1;
-}
-
-message IndexingFileChunk {
-  uint64 offset = 1;
-  bytes data = 2;
 }
 
 message ReadIndexingDeletedRequest {}

@@ -139,6 +139,7 @@ impl HNSWIndex {
             path,
             &vector_storage,
             &vector_storage_ref,
+            &quantized_vectors,
             quantized_vectors_ref.as_ref(),
             &permit,
             &progress,
@@ -336,7 +337,8 @@ fn remote_build_args<'a>(
     path: &Path,
     vector_storage: &Arc<atomic_refcell::AtomicRefCell<VectorStorageEnum>>,
     vector_storage_ref: &VectorStorageEnum,
-    quantized_vectors: Option<&QuantizedVectors>,
+    quantized_vectors: &Arc<atomic_refcell::AtomicRefCell<Option<QuantizedVectors>>>,
+    quantized_vectors_ref: Option<&QuantizedVectors>,
     permit: &'a common::budget::ResourcePermit,
     progress: &common::progress_tracker::ProgressTracker,
 ) -> Option<self::remote_builder::RemoteBuildArgs<'a>> {
@@ -352,16 +354,14 @@ fn remote_build_args<'a>(
         return None;
     }
 
-    // Send the quantized vectors if the indexer can build from them (O2): scalar and binary
+    // Send the quantized codes if the indexer can build from them (O2): scalar and binary
     // score from them alone, TurboQuant queries are reconstructed from them as a TurboQuant
     // storage does. Product quantization: the storage's vectors, and the indexer builds
     // without PQ.
-    let (source, files) = match quantized_vectors.filter(|q| q.remote_build_from_quantized()) {
-        Some(quantized) => match quantized_files(quantized) {
-            Some(files) => (VectorSource::Quantized, files),
-            None => (VectorSource::Storage, Vec::new()),
-        },
-        None => (VectorSource::Storage, Vec::new()),
+    let quantization = quantized_vectors_ref.and_then(QuantizedVectors::remote_quantization);
+    let (source, quantized_vectors) = match &quantization {
+        Some(_) => (VectorSource::Quantized, Some(quantized_vectors.clone())),
+        None => (VectorSource::Storage, None),
     };
 
     Some(self::remote_builder::RemoteBuildArgs {
@@ -374,27 +374,11 @@ fn remote_build_args<'a>(
         },
         vector_bytes,
         source,
-        files,
+        quantization,
+        quantized_vectors,
         permit,
         progress: progress.subtask("remote_build"),
     })
-}
-
-/// The files of `quantized`, named relative to its directory. `None` if a file is outside it.
-#[cfg(feature = "remote-indexing")]
-fn quantized_files(quantized: &QuantizedVectors) -> Option<Vec<(String, std::path::PathBuf)>> {
-    quantized
-        .files()
-        .into_iter()
-        .map(|file| {
-            let name = file
-                .strip_prefix(quantized.path())
-                .ok()?
-                .to_str()?
-                .to_owned();
-            Some((name, file))
-        })
-        .collect()
 }
 
 /// The vector name of a vector index directory, see `get_vector_index_path`. Names may

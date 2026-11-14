@@ -6,6 +6,8 @@ mod load;
 mod pq;
 mod read_access;
 mod read_only;
+#[cfg(feature = "remote-indexing")]
+pub mod remote;
 mod scalar;
 mod storage;
 mod turbo;
@@ -57,11 +59,6 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
-    /// Directory of the quantized vector files.
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     /// Whether graph builds score from the quantized vectors alone: the query of an inserted
     /// point is encoded from its quantized vector, so the original vectors are not read.
     /// Product and TurboQuant quantization encode queries from the original vector.
@@ -101,43 +98,6 @@ impl QuantizedVectors {
             | QuantizedVectorStorage::TQRamMulti(_)
             | QuantizedVectorStorage::TQMmapMulti(_)
             | QuantizedVectorStorage::TQChunkedMmapMulti(_) => None,
-        }
-    }
-
-    /// Whether a remote build can do with the quantized vectors instead of the originals:
-    /// either the build scores from them alone, or, for TurboQuant, queries can be
-    /// reconstructed from them, as a TurboQuant vector storage does. Product quantization
-    /// needs the originals.
-    pub fn remote_build_from_quantized(&self) -> bool {
-        self.builds_without_originals() || self.is_tq_single()
-    }
-
-    fn is_tq_single(&self) -> bool {
-        match &self.storage_impl {
-            QuantizedVectorStorage::TQRam(_)
-            | QuantizedVectorStorage::TQMmap(_)
-            | QuantizedVectorStorage::TQChunkedMmap(_) => true,
-            QuantizedVectorStorage::ScalarRam(_)
-            | QuantizedVectorStorage::ScalarMmap(_)
-            | QuantizedVectorStorage::ScalarChunkedMmap(_)
-            | QuantizedVectorStorage::PQRam(_)
-            | QuantizedVectorStorage::PQMmap(_)
-            | QuantizedVectorStorage::PQChunkedMmap(_)
-            | QuantizedVectorStorage::BinaryRam(_)
-            | QuantizedVectorStorage::BinaryMmap(_)
-            | QuantizedVectorStorage::BinaryChunkedMmap(_)
-            | QuantizedVectorStorage::ScalarRamMulti(_)
-            | QuantizedVectorStorage::ScalarMmapMulti(_)
-            | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
-            | QuantizedVectorStorage::PQRamMulti(_)
-            | QuantizedVectorStorage::PQMmapMulti(_)
-            | QuantizedVectorStorage::PQChunkedMmapMulti(_)
-            | QuantizedVectorStorage::BinaryRamMulti(_)
-            | QuantizedVectorStorage::BinaryMmapMulti(_)
-            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
-            | QuantizedVectorStorage::TQRamMulti(_)
-            | QuantizedVectorStorage::TQMmapMulti(_)
-            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => false,
         }
     }
 
