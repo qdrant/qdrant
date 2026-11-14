@@ -208,34 +208,39 @@ impl HNSWIndex {
             },
         )?;
 
-        // A remote builder links all blocks in the same task, so it gets them up front (D4)
+        // A remote builder submits first: the indexer builds the main graph while the payload
+        // blocks are prepared here and streamed to it
         #[cfg(feature = "remote-indexing")]
-        if builder.takes_block_plan() {
-            let plan = match &progress_payload_blocks {
-                Some((_, fields)) => payload_blocks::collect_block_plan(
+        if let Some(stream) = builder.start_remote() {
+            if let Some((_, fields)) = &progress_payload_blocks {
+                payload_blocks::stream_payload_blocks(
                     fields.iter().map(|(_, field, schema)| (field, schema)),
                     &payload_index_ref,
                     &vector_storage_ref,
                     &config,
                     builder.local().ctx.has_main_graph(),
                     stopped,
-                )?,
-                None => Default::default(),
-            };
-            builder.set_block_plan(plan);
+                    &stream,
+                )?;
+            }
+            stream.finish();
         }
 
         // Links nothing when `m == 0`
         builder.build_main()?;
 
-        // Still taking the plan after `build_main`: the blocks are linked already
+        // Linked by the remote indexer already
+        #[cfg(feature = "remote-indexing")]
         let progress_payload_blocks = match progress_payload_blocks {
-            Some(_) if builder.takes_block_plan() => {
+            Some(_) if builder.blocks_linked_remotely() => {
                 debug!("payload blocks linked by the remote indexer");
                 None
             }
             progress_payload_blocks => progress_payload_blocks,
         };
+        // A remote build that fell back prepared the blocks already
+        #[cfg(feature = "remote-indexing")]
+        let fallback_blocks = builder.fallback_blocks();
 
         check_process_stopped(stopped)?;
 
@@ -253,6 +258,32 @@ impl HNSWIndex {
 
                 debug!("building additional index for field {field}");
 
+                // Tenant blocks are always built
+                let skip = if index_pos > 0 && !payload_index_ref.is_tenant(&field) {
+                    BlockSkip::IfConnected
+                } else {
+                    BlockSkip::Never
+                };
+
+                #[cfg(feature = "remote-indexing")]
+                if let Some(plan) = &fallback_blocks {
+                    let counter = field_progress.track_progress(None);
+                    let blocks = plan
+                        .field(&field.to_string())
+                        .into_iter()
+                        .flat_map(|planned| {
+                            planned
+                                .blocks
+                                .iter()
+                                .map(|block| payload_blocks::PayloadBlock {
+                                    cardinality: block.cardinality,
+                                    points: block.points.clone(),
+                                })
+                        });
+                    builder.build_loaded_field_blocks(&counter, skip, blocks)?;
+                    continue;
+                }
+
                 let blocks = field_payload_blocks(
                     &field,
                     &payload_schema,
@@ -261,13 +292,6 @@ impl HNSWIndex {
                     &config,
                     stopped,
                 )?;
-
-                // Tenant blocks are always built
-                let skip = if index_pos > 0 && !payload_index_ref.is_tenant(&field) {
-                    BlockSkip::IfConnected
-                } else {
-                    BlockSkip::Never
-                };
 
                 builder.build_field_blocks(FieldBlocks {
                     progress: field_progress,

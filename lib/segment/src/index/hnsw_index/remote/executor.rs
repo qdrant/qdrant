@@ -13,12 +13,14 @@ use common::progress_tracker::{ProgressTree, new_progress_tracker};
 use common::types::PointOffsetType;
 use uuid::Uuid;
 
+use super::blocks::{BlocksBatch, StreamedBlock};
 use super::layout::RemoteVectorLayout;
 use super::registry::{HeartbeatAction, TaskProgress};
 use super::wire::{
-    BlockPlan, GRAPH_FORMAT_VERSION_V1, RemoteGraphParams, VECTOR_REPRESENTATION_STORAGE_NATIVE,
-    VectorSource, WireGraph,
+    GRAPH_FORMAT_VERSION_V1, RemoteGraphParams, VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+    WireGraph,
 };
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorRef};
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker as _, IdTrackerEnum};
@@ -34,7 +36,6 @@ use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorage
 pub struct FetchedTask {
     pub task_id: Uuid,
     pub params: RemoteGraphParams,
-    pub block_plan: BlockPlan,
     /// Graph formats core reads (D9).
     pub graph_format_versions: Vec<u32>,
 }
@@ -63,6 +64,10 @@ pub trait TaskSource: Sync {
         end: PointOffsetType,
         sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
     ) -> SourceResult<()>;
+
+    /// The payload blocks from sequence number `next`, or that none is ready yet, or that
+    /// there are no more. May wait a few seconds for core to prepare the next one.
+    fn read_payload_blocks(&self, next: u64) -> SourceResult<BlocksBatch>;
 
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction>;
 
@@ -285,9 +290,7 @@ fn check_task(task: &FetchedTask) -> Result<(), String> {
             return Err("quantized vector source without quantization parameters".to_string());
         }
     }
-    task.block_plan
-        .validate(task.params.point_count)
-        .map_err(|err| err.to_string())
+    Ok(())
 }
 
 /// The deepest running phase, with its counters.
@@ -407,9 +410,16 @@ fn build(
 
     let timer = Instant::now();
     let mut rng = rand::rng();
+    let mut blocks = BlockReader {
+        source,
+        params,
+        stopped,
+        next: 0,
+        last_block: Instant::now(),
+        error: None,
+    };
     let graph = build_requested_graph(
         params,
-        &task.block_plan,
         &storage,
         quantized.as_ref(),
         &id_tracker,
@@ -418,10 +428,95 @@ fn build(
         &mut rng,
         stopped,
         progress,
-    )
-    .map_err(other)?;
+        &mut || blocks.next_batch(),
+    );
+    // A source error, e.g. a revoked token, rather than the build error it caused
+    if let Some(err) = blocks.error.take() {
+        return Err(err);
+    }
+    let graph = graph.map_err(other)?;
     report.build_time = timer.elapsed();
     Ok(WireGraph::from_graph_layers_builder(&graph))
+}
+
+/// How long to wait before asking again for a payload block that is not ready. Core holds
+/// each request a few seconds already, see `BLOCKS_LONG_POLL`.
+const BLOCKS_RETRY: Duration = Duration::from_millis(100);
+
+/// Reads the payload blocks core streams, by sequence number, after the main graph.
+struct BlockReader<'a> {
+    source: &'a dyn TaskSource,
+    params: &'a RemoteGraphParams,
+    stopped: &'a AtomicBool,
+    /// Sequence number of the next block.
+    next: u64,
+    /// When the last block arrived, or reading started: the wait limit counts from it.
+    last_block: Instant,
+    /// The source error that ended reading, if any.
+    error: Option<SourceError>,
+}
+
+impl BlockReader<'_> {
+    /// The next batch of blocks, or `None` once core finished them. Fails if none comes
+    /// within `max_block_wait`.
+    fn next_batch(&mut self) -> OperationResult<Option<Vec<StreamedBlock>>> {
+        if !self.params.has_payload_blocks {
+            return Ok(None);
+        }
+        loop {
+            check_process_stopped(self.stopped)?;
+            let batch = match self.source.read_payload_blocks(self.next) {
+                Ok(batch) => batch,
+                Err(err) => {
+                    let message = err.to_string();
+                    self.error = Some(err);
+                    return Err(OperationError::service_error(message));
+                }
+            };
+            match batch {
+                BlocksBatch::Blocks { first, blocks } => {
+                    self.check(first, &blocks)?;
+                    self.next += blocks.len() as u64;
+                    self.last_block = Instant::now();
+                    return Ok(Some(blocks));
+                }
+                BlocksBatch::NotReady => {
+                    let waited = self.last_block.elapsed();
+                    if waited > self.params.max_block_wait {
+                        let reason = format!(
+                            "no payload block from core in {:?} (limit {:?})",
+                            waited, self.params.max_block_wait,
+                        );
+                        self.error = Some(SourceError::Other(reason.clone()));
+                        return Err(OperationError::service_error(reason));
+                    }
+                    std::thread::sleep(BLOCKS_RETRY);
+                }
+                BlocksBatch::Finished => return Ok(None),
+            }
+        }
+    }
+
+    /// Reject batches out of sequence, and blocks pointing outside the segment.
+    fn check(&self, first: u64, blocks: &[StreamedBlock]) -> OperationResult<()> {
+        if first != self.next || blocks.is_empty() {
+            return Err(OperationError::service_error(format!(
+                "core sent {} payload blocks from {first}, expected some from {}",
+                blocks.len(),
+                self.next,
+            )));
+        }
+        let point_count = self.params.point_count;
+        for block in blocks {
+            if let Some(&point) = block.points.iter().find(|&&p| p as usize >= point_count) {
+                return Err(OperationError::validation_error(format!(
+                    "block of field {} has point {point} >= {point_count}",
+                    block.field,
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Stream the entries of all points, in order, to `sink`, and return which points are not
@@ -601,4 +696,116 @@ fn read_quantized(
 /// Process-wide default directory for temporary storages.
 pub fn default_work_dir() -> std::path::PathBuf {
     std::env::temp_dir()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::index::hnsw_index::remote::wire::{
+        VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+    };
+    use crate::types::{Distance, VectorStorageDatatype};
+
+    /// A core that never gets the next payload block ready.
+    struct SlowCore;
+
+    impl TaskSource for SlowCore {
+        fn get_task(&self) -> SourceResult<FetchedTask> {
+            unimplemented!()
+        }
+
+        fn read_vectors(
+            &self,
+            _start: PointOffsetType,
+            _end: PointOffsetType,
+            _sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
+        ) -> SourceResult<()> {
+            unimplemented!()
+        }
+
+        fn read_payload_blocks(&self, _next: u64) -> SourceResult<BlocksBatch> {
+            Ok(BlocksBatch::NotReady)
+        }
+
+        fn heartbeat(&self, _progress: TaskProgress) -> SourceResult<HeartbeatAction> {
+            unimplemented!()
+        }
+
+        fn upload(&self, _graph: WireGraph) -> SourceResult<()> {
+            unimplemented!()
+        }
+
+        fn fail(&self, _reason: &str) -> SourceResult<()> {
+            unimplemented!()
+        }
+    }
+
+    fn params(max_block_wait: Duration) -> RemoteGraphParams {
+        RemoteGraphParams {
+            vector_name: String::new(),
+            dim: 2,
+            datatype: VectorStorageDatatype::Float32,
+            distance: Distance::Dot,
+            multivector_config: None,
+            m: 4,
+            m0: 8,
+            ef_construct: 8,
+            entry_points_num: 1,
+            payload_m: 4,
+            payload_m0: 8,
+            point_count: 10,
+            vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
+            vector_source: VectorSource::Storage,
+            quantization: None,
+            has_payload_blocks: true,
+            max_block_wait,
+        }
+    }
+
+    #[test]
+    fn waiting_for_payload_blocks_is_bounded() {
+        let params = params(Duration::from_millis(300));
+        let stopped = AtomicBool::new(false);
+        let mut reader = BlockReader {
+            source: &SlowCore,
+            params: &params,
+            stopped: &stopped,
+            next: 0,
+            last_block: Instant::now(),
+            error: None,
+        };
+        let started = Instant::now();
+        assert!(reader.next_batch().is_err());
+        assert!(started.elapsed() >= params.max_block_wait);
+        assert!(
+            matches!(reader.error, Some(SourceError::Other(ref reason)) if reason.contains("no payload block"))
+        );
+    }
+
+    #[test]
+    fn out_of_sequence_blocks_are_rejected() {
+        let params = params(Duration::from_secs(1));
+        let stopped = AtomicBool::new(false);
+        let reader = BlockReader {
+            source: &SlowCore,
+            params: &params,
+            stopped: &stopped,
+            next: 3,
+            last_block: Instant::now(),
+            error: None,
+        };
+        let block = |points: Vec<PointOffsetType>| StreamedBlock {
+            field: "f".to_string(),
+            skip_if_connected: false,
+            cardinality: points.len(),
+            points,
+        };
+        assert!(reader.check(3, &[block(vec![1, 2])]).is_ok());
+        assert!(reader.check(2, &[block(vec![1])]).is_err());
+        assert!(reader.check(3, &[]).is_err());
+        assert!(
+            reader.check(3, &[block(vec![10])]).is_err(),
+            "point out of range"
+        );
+    }
 }

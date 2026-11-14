@@ -19,8 +19,9 @@ use parking_lot::{Condvar, Mutex, RwLock};
 use rand::RngExt as _;
 use uuid::Uuid;
 
+use super::blocks::{BlockStream, BlocksBatch};
 use super::metrics::REMOTE_INDEXING_METRICS;
-use super::wire::{BlockPlan, GraphLimits, RemoteGraphParams, VectorSource, WireGraph};
+use super::wire::{GraphLimits, RemoteGraphParams, VectorSource, WireGraph};
 use crate::common::operation_error::OperationError;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
@@ -68,6 +69,9 @@ pub enum RemoteTaskError {
     PermissionDenied,
     #[error("invalid request: {0}")]
     InvalidArgument(String),
+    /// The request comes too early, e.g. a graph uploaded before the payload blocks finished.
+    #[error("{0}")]
+    FailedPrecondition(String),
     #[error("{0}")]
     Internal(String),
 }
@@ -91,7 +95,6 @@ pub struct TaskScope {
 pub struct TaskDescription {
     pub task_id: Uuid,
     pub params: RemoteGraphParams,
-    pub block_plan: Arc<BlockPlan>,
 }
 
 /// Progress reported with a heartbeat.
@@ -145,6 +148,8 @@ pub struct TaskState {
     task_id: Uuid,
     scope: TaskScope,
     description: TaskDescription,
+    /// Payload blocks, appended by core while the indexer builds. Shared by all attempts.
+    blocks: Arc<BlockStream>,
     /// Read-only: writes to the segment go to the proxies while it is built (§4.4).
     /// Taken on revoke, under the write lock, which waits for reads in flight: the segment
     /// builder must be the only owner again once the task ends (graph-inline finalization).
@@ -191,6 +196,10 @@ enum Tombstone {
 /// How long revoked tokens answer heartbeats with `CANCEL` instead of `PERMISSION_DENIED`.
 const TOMBSTONE_TTL: Duration = Duration::from_secs(600);
 
+/// How long a `ReadPayloadBlocks` call waits for the next block before answering that it is
+/// not ready: the indexer does not have to poll fast, and gets a block as soon as it is ready.
+pub const BLOCKS_LONG_POLL: Duration = Duration::from_secs(5);
+
 /// Max size of one `ReadVectors` chunk.
 pub const READ_CHUNK_BYTES: usize = 1 << 20;
 
@@ -207,7 +216,7 @@ pub static REMOTE_INDEXING_TASKS: LazyLock<TaskRegistry> = LazyLock::new(TaskReg
 pub struct NewTask {
     pub scope: TaskScope,
     pub params: RemoteGraphParams,
-    pub block_plan: Arc<BlockPlan>,
+    pub blocks: Arc<BlockStream>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub deleted: Arc<BitVec>,
     /// For [`VectorSource::Quantized`]: the quantized vectors whose codes `read_vectors`
@@ -224,7 +233,7 @@ impl TaskRegistry {
         let NewTask {
             scope,
             params,
-            block_plan,
+            blocks,
             vector_storage,
             deleted,
             quantized_vectors,
@@ -234,11 +243,8 @@ impl TaskRegistry {
         let state = Arc::new(TaskState {
             task_id,
             scope,
-            description: TaskDescription {
-                task_id,
-                params,
-                block_plan,
-            },
+            description: TaskDescription { task_id, params },
+            blocks,
             vector_storage: RwLock::new(Some(vector_storage)),
             quantized_vectors: RwLock::new(quantized_vectors),
             deleted,
@@ -377,6 +383,53 @@ impl TaskRegistry {
         Ok((vectors, next))
     }
 
+    /// `ReadPayloadBlocks`: the payload blocks from sequence number `next`. Waits up to
+    /// [`BLOCKS_LONG_POLL`] for core to prepare the next one before answering
+    /// [`BlocksBatch::NotReady`].
+    ///
+    /// May block: call from a blocking thread.
+    pub fn read_payload_blocks(
+        &self,
+        token: &TaskToken,
+        next: u64,
+    ) -> Result<BlocksBatch, RemoteTaskError> {
+        let state = self.get(token)?;
+        state.touch();
+        let batch = state.blocks.read(next, BLOCKS_LONG_POLL);
+        if let BlocksBatch::Blocks { blocks, .. } = &batch {
+            let size: usize = blocks
+                .iter()
+                .map(|block| block.points.len() * size_of::<PointOffsetType>())
+                .sum();
+            state.bytes_served.fetch_add(size as u64, Ordering::Relaxed);
+            REMOTE_INDEXING_METRICS
+                .bytes_served
+                .fetch_add(size as u64, Ordering::Relaxed);
+        }
+        Ok(batch)
+    }
+
+    /// Start of `UploadGraph`: the number of points over all payload blocks, which bounds the
+    /// size of the upload. An upload before core finished the blocks ends the task, as an
+    /// invalid graph does.
+    pub fn start_upload(&self, token: &TaskToken) -> Result<usize, RemoteTaskError> {
+        let state = self.get(token)?;
+        match state.blocks.finished_num_points() {
+            Some(points) => Ok(points),
+            None => Err(self.reject_early_upload(token, &state)),
+        }
+    }
+
+    fn reject_early_upload(&self, token: &TaskToken, state: &TaskState) -> RemoteTaskError {
+        let reason = "graph uploaded before the payload blocks finished".to_string();
+        log::warn!("Remote indexing task {}: {reason}", state.task_id);
+        REMOTE_INDEXING_METRICS
+            .validation_failures
+            .fetch_add(1, Ordering::Relaxed);
+        self.finish(token, state, TaskOutcome::Rejected(reason.clone()));
+        RemoteTaskError::FailedPrecondition(reason)
+    }
+
     /// `Heartbeat`: renew the lease and report progress (D6). A revoked task answers `CANCEL`
     /// for a while, so the indexer stops promptly.
     pub fn heartbeat(
@@ -409,11 +462,11 @@ impl TaskRegistry {
     /// whatever the outcome: a rejected graph is not retried on the same token.
     pub fn upload(&self, token: &TaskToken, graph: WireGraph) -> Result<(), RemoteTaskError> {
         let state = self.get(token)?;
-        let limits = GraphLimits::new(
-            &state.description.params,
-            &state.description.block_plan,
-            &state.deleted,
-        );
+        // The degree bounds depend on every block: the indexer reads them all before uploading
+        let Some(plan) = state.blocks.finished_plan() else {
+            return Err(self.reject_early_upload(token, &state));
+        };
+        let limits = GraphLimits::new(&state.description.params, &plan, &state.deleted);
         let _scope = common::ambient::unmeasured_guard(common::reason::reason(
             "remote indexing upload, not a request",
         ));
@@ -581,11 +634,17 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::VectorRef;
     use crate::index::hnsw_index::remote::wire::{
-        VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+        PlannedBlock, VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
     };
     use crate::types::{Distance, VectorStorageDatatype};
     use crate::vector_storage::VectorStorage as _;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+
+    fn finished_blocks() -> BlockStream {
+        let blocks = BlockStream::default();
+        blocks.finish();
+        blocks
+    }
 
     fn new_task(point_count: usize) -> (NewTask, Arc<AtomicRefCell<VectorStorageEnum>>) {
         let mut storage = new_volatile_dense_vector_storage(2, Distance::Dot);
@@ -619,8 +678,10 @@ mod tests {
                 vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
                 vector_source: VectorSource::Storage,
                 quantization: None,
+                has_payload_blocks: false,
+                max_block_wait: Duration::from_secs(1),
             },
-            block_plan: Arc::new(BlockPlan::default()),
+            blocks: Arc::new(finished_blocks()),
             vector_storage: storage.clone(),
             deleted: Arc::new(deleted),
             quantized_vectors: None,
@@ -702,6 +763,43 @@ mod tests {
             REMOTE_INDEXING_TASKS.fail(&token, "again".to_string()),
             Err(RemoteTaskError::PermissionDenied)
         ));
+    }
+
+    #[test]
+    fn upload_before_blocks_finished_is_rejected() {
+        let (mut task, _storage) = new_task(3);
+        let blocks = Arc::new(BlockStream::default());
+        blocks.push(
+            "f",
+            false,
+            PlannedBlock {
+                cardinality: 2,
+                points: vec![0, 2],
+            },
+        );
+        task.blocks = blocks.clone();
+        let handle = REMOTE_INDEXING_TASKS.register(task);
+        let token = handle.token();
+
+        let batch = REMOTE_INDEXING_TASKS
+            .read_payload_blocks(&token, 0)
+            .unwrap();
+        assert!(matches!(batch, BlocksBatch::Blocks { first: 0, ref blocks } if blocks.len() == 1));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.start_upload(&token),
+            Err(RemoteTaskError::FailedPrecondition(_))
+        ));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.read_payload_blocks(&token, 1),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+        let outcome = handle.wait(
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+            || false,
+        );
+        assert!(matches!(outcome, Ok(TaskOutcome::Rejected(_))));
     }
 
     #[test]

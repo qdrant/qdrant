@@ -303,6 +303,11 @@ pub struct IndexingServiceConfig {
     pub on_failure: IndexingOnFailure,
     #[serde(default = "default_indexing_max_retries")]
     pub max_retries: u32,
+    /// How long the indexer waits for the next payload block, while core prepares them,
+    /// before it fails the task. Reset by every block.
+    #[serde(default = "default_max_block_wait_sec")]
+    #[validate(range(min = 1))]
+    pub max_block_wait_sec: u64,
     /// Timeout of one submission to the entry point.
     #[serde(default = "default_submit_timeout_sec")]
     #[validate(range(min = 1))]
@@ -322,6 +327,10 @@ const fn default_heartbeat_timeout_sec() -> u64 {
 
 const fn default_queue_timeout_sec() -> u64 {
     300
+}
+
+const fn default_max_block_wait_sec() -> u64 {
+    600
 }
 
 const fn default_indexing_max_retries() -> u32 {
