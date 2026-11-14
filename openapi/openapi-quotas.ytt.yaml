@@ -24,7 +24,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/QuotaConfig"
+              $ref: "#/components/schemas/UpdateQuotas"
       parameters:
         - name: wait
           in: query
