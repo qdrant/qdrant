@@ -236,12 +236,7 @@ impl HNSWIndex {
 
                 debug!("building additional index for field {field}");
 
-                // Tenant blocks are always built
-                let skip = if index_pos > 0 && !payload_index_ref.is_tenant(&field) {
-                    BlockSkip::IfConnected
-                } else {
-                    BlockSkip::Never
-                };
+                let skip = BlockSkip::for_field(index_pos, payload_index_ref.is_tenant(&field));
 
                 if let Some(plan) = &fallback_blocks {
                     remote_steps::build_fallback_field_blocks(

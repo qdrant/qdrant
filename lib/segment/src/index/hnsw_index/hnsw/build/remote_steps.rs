@@ -12,7 +12,7 @@ use common::budget::ResourcePermit;
 use common::progress_tracker::ProgressTracker;
 use log::debug;
 
-use super::block_filter::BlockSkip;
+use super::block_filter::{BlockSkip, max_block_size};
 use super::graph_builder::GraphBuilder;
 use super::payload_blocks::{BlockLoader, PayloadBlock, field_payload_blocks};
 pub(super) use super::remote_builder::RemoteBuildArgs;
@@ -179,14 +179,12 @@ fn stream_payload_blocks<'f>(
     stopped: &AtomicBool,
     stream: &BlockStream,
 ) -> OperationResult<()> {
-    // Same as `BlockFilter::new`, with the connectivity bound above
-    const PERCOLATION_MULTIPLIER: usize = 4;
-    let max_block_size = if has_main_graph {
-        let min_average_links = (config.m0 / 4).max(1);
-        vector_storage.total_vector_count() / min_average_links * PERCOLATION_MULTIPLIER
-    } else {
-        usize::MAX
-    };
+    // The limit of `BlockFilter`, with the lower bound on connectivity above
+    let max_block_size = max_block_size(
+        vector_storage.total_vector_count(),
+        config.m0 / 4,
+        has_main_graph,
+    );
 
     let loader = BlockLoader {
         payload_index,
@@ -195,8 +193,7 @@ fn stream_payload_blocks<'f>(
         stopped,
     };
     for (index_pos, (field, schema)) in fields.into_iter().enumerate() {
-        // Tenant blocks are always built, see `HNSWIndex::build`
-        let skip_if_connected = index_pos > 0 && !payload_index.is_tenant(field);
+        let skip = BlockSkip::for_field(index_pos, payload_index.is_tenant(field));
         let field_name = field.to_string();
         for block in field_payload_blocks(field, schema, payload_index, None, config, stopped)? {
             if block.cardinality > max_block_size {
@@ -209,7 +206,7 @@ fn stream_payload_blocks<'f>(
             {
                 stream.push(
                     &field_name,
-                    skip_if_connected,
+                    skip.skip_if_connected(),
                     PlannedBlock {
                         cardinality,
                         points,
