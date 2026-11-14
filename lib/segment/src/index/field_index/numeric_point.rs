@@ -140,12 +140,7 @@ impl Numericable for i64 {
     }
 
     fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
-        Range {
-            lt: range.lt.map(|f| f.0.ceil() as Self),
-            gt: range.gt.map(|f| f.0.floor() as Self),
-            gte: range.gte.map(|f| f.0.ceil() as Self),
-            lte: range.lte.map(|f| f.0.floor() as Self),
-        }
+        integer_range_from_f64(range)
     }
 }
 
@@ -197,11 +192,219 @@ impl Numericable for u128 {
     }
 
     fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
-        Range {
-            lt: range.lt.map(|f| f.0.ceil() as Self),
-            gt: range.gt.map(|f| f.0.floor() as Self),
-            gte: range.gte.map(|f| f.0.ceil() as Self),
-            lte: range.lte.map(|f| f.0.floor() as Self),
+        integer_range_from_f64(range)
+    }
+}
+
+/// A fractional bound mapped onto an integer type.
+enum IntegerBound<T> {
+    /// Every value of `T` satisfies the bound.
+    Unbounded,
+    /// No value of `T` satisfies the bound.
+    Empty,
+    Value(T),
+}
+
+/// Convert a fractional range into an integer range with the same meaning.
+///
+/// Each bound is rounded away from the matching set, ceil for `lt`/`gte` and
+/// floor for `gt`/`lte` (#9049). A bound past the range of `T` is not
+/// saturated, which would move the predicate: `lt: 1e20` admits every `i64`
+/// and `gte: 1e20` admits none (#11379). `as` saturates, so the bound is
+/// compared against `T`'s limits first.
+fn integer_range_from_f64<T: Numericable>(
+    range: Range<OrderedFloat<FloatPayloadType>>,
+) -> Range<T> {
+    let min = T::min_value().to_f64();
+    let max = T::max_value().to_f64();
+
+    // `x < f`: true for every x once f reaches max (f64 rounds max up), false for every x
+    // once f is at or below min.
+    let lt = |f: f64| match f {
+        f if f >= max => IntegerBound::Unbounded,
+        f if f <= min => IntegerBound::Empty,
+        f => IntegerBound::Value(T::from_f64(f.ceil())),
+    };
+    // `x > f`: false for every x once f reaches max, true for every x below min.
+    let gt = |f: f64| match f {
+        f if f >= max => IntegerBound::Empty,
+        f if f < min => IntegerBound::Unbounded,
+        f => IntegerBound::Value(T::from_f64(f.floor())),
+    };
+    // `x >= f`: false for every x once f reaches max, true for every x at or below min.
+    let gte = |f: f64| match f {
+        f if f >= max => IntegerBound::Empty,
+        f if f <= min => IntegerBound::Unbounded,
+        f => IntegerBound::Value(T::from_f64(f.ceil())),
+    };
+    // `x <= f`: true for every x once f reaches max, false for every x below min.
+    let lte = |f: f64| match f {
+        f if f >= max => IntegerBound::Unbounded,
+        f if f < min => IntegerBound::Empty,
+        f => IntegerBound::Value(T::from_f64(f.floor())),
+    };
+
+    let bounds = [
+        range.lt.map(|f| lt(f.0)),
+        range.gt.map(|f| gt(f.0)),
+        range.gte.map(|f| gte(f.0)),
+        range.lte.map(|f| lte(f.0)),
+    ];
+    if bounds
+        .iter()
+        .any(|bound| matches!(bound, Some(IntegerBound::Empty)))
+    {
+        // Nothing can match: `x < min` keeps the range empty whatever else it holds.
+        return Range {
+            lt: Some(T::min_value()),
+            gt: None,
+            gte: None,
+            lte: None,
+        };
+    }
+    let value = |bound: Option<IntegerBound<T>>| match bound {
+        Some(IntegerBound::Value(value)) => Some(value),
+        Some(IntegerBound::Unbounded) | Some(IntegerBound::Empty) | None => None,
+    };
+    let [lt, gt, gte, lte] = bounds;
+    Range {
+        lt: value(lt),
+        gt: value(gt),
+        gte: value(gte),
+        lte: value(lte),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn float_range(
+        lt: Option<f64>,
+        gt: Option<f64>,
+        gte: Option<f64>,
+        lte: Option<f64>,
+    ) -> Range<OrderedFloat<FloatPayloadType>> {
+        Range { lt, gt, gte, lte }.map(OrderedFloat::from)
+    }
+
+    fn matches_i64(range: Range<OrderedFloat<FloatPayloadType>>, value: i64) -> bool {
+        i64::from_f64_range(range).check_range(value)
+    }
+
+    #[test]
+    fn i64_range_bounds_past_the_type_are_not_saturated() {
+        let values = [i64::MIN, 1, i64::MAX];
+
+        // Every value is above -1e20 and below 1e20.
+        for value in values {
+            assert!(matches_i64(
+                float_range(None, Some(-1e20), None, None),
+                value
+            ));
+            assert!(matches_i64(
+                float_range(Some(1e20), None, None, None),
+                value
+            ));
+            assert!(matches_i64(
+                float_range(None, None, Some(-1e20), None),
+                value
+            ));
+            assert!(matches_i64(
+                float_range(None, None, None, Some(1e20)),
+                value
+            ));
         }
+        // No value reaches 1e20 or goes down to -1e20.
+        for value in values {
+            assert!(!matches_i64(
+                float_range(None, None, Some(1e20), None),
+                value
+            ));
+            assert!(!matches_i64(
+                float_range(None, None, None, Some(-1e20)),
+                value
+            ));
+            assert!(!matches_i64(
+                float_range(None, Some(1e20), None, None),
+                value
+            ));
+            assert!(!matches_i64(
+                float_range(Some(-1e20), None, None, None),
+                value
+            ));
+        }
+        // An empty bound empties the whole range, whatever the other bounds say.
+        assert!(!matches_i64(
+            float_range(Some(1e20), Some(-1e20), Some(1e20), None),
+            1
+        ));
+    }
+
+    #[test]
+    fn i64_range_bounds_at_the_type_limits_keep_their_meaning() {
+        let min = i64::MIN as f64;
+        // `> MIN` excludes MIN, `>= MIN` and `<= MIN` include it, `< MIN` matches nothing.
+        assert!(!matches_i64(
+            float_range(None, Some(min), None, None),
+            i64::MIN
+        ));
+        assert!(matches_i64(
+            float_range(None, Some(min), None, None),
+            i64::MIN + 1
+        ));
+        assert!(matches_i64(
+            float_range(None, None, Some(min), None),
+            i64::MIN
+        ));
+        assert!(matches_i64(
+            float_range(None, None, None, Some(min)),
+            i64::MIN
+        ));
+        assert!(!matches_i64(
+            float_range(Some(min), None, None, None),
+            i64::MIN
+        ));
+        // `i64::MAX as f64` rounds up to 2^63, which no i64 reaches: `< 2^63` and
+        // `<= 2^63` admit MAX, `> 2^63` and `>= 2^63` admit nothing.
+        let max = i64::MAX as f64;
+        assert!(matches_i64(
+            float_range(Some(max), None, None, None),
+            i64::MAX
+        ));
+        assert!(matches_i64(
+            float_range(None, None, None, Some(max)),
+            i64::MAX
+        ));
+        assert!(!matches_i64(
+            float_range(None, Some(max), None, None),
+            i64::MAX
+        ));
+        assert!(!matches_i64(
+            float_range(None, None, Some(max), None),
+            i64::MAX
+        ));
+    }
+
+    #[test]
+    fn i64_fractional_bounds_still_round_away_from_the_matching_set() {
+        // #9049: `gte: 1.5` must not admit 1, `lt: 1.5` must admit 1 and not 2.
+        assert_eq!(
+            i64::from_f64_range(float_range(Some(1.5), Some(1.5), Some(1.5), Some(1.5))),
+            Range {
+                lt: Some(2),
+                gt: Some(1),
+                gte: Some(2),
+                lte: Some(1),
+            }
+        );
+    }
+
+    #[test]
+    fn u128_negative_bounds_are_not_saturated_to_zero() {
+        // `> -1.0` admits 0; saturating `-1.0 as u128` to 0 would have excluded it.
+        assert!(u128::from_f64_range(float_range(None, Some(-1.0), None, None)).check_range(0));
+        // `<= -1.0` admits nothing.
+        assert!(!u128::from_f64_range(float_range(None, None, None, Some(-1.0))).check_range(0));
     }
 }
