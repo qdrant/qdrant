@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 tracing = ["dep:tracing", "segment/tracing"]
-remote-indexing = ["segment/remote-indexing", "dep:bitvec", "dep:quantization"]
+remote-indexing = ["segment/remote-indexing", "dep:quantization"]
 
 [dependencies]
 ahash = { workspace = true }
@@ -25,7 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
-bitvec = { workspace = true, optional = true }
 tokio = { workspace = true }
 rand = { workspace = true }
 chrono = { workspace = true }

@@ -9,14 +9,14 @@ use std::time::Duration;
 
 use api::grpc::qdrant::indexing_task_server::IndexingTask;
 use api::grpc::qdrant::{
-    FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest, IndexingDeletedMask,
+    FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest,
     IndexingHeartbeatRequest, IndexingHeartbeatResponse, IndexingTaskDescription,
-    IndexingVectorsChunk, ReadIndexingDeletedRequest, ReadIndexingVectorsRequest,
-    UploadIndexingGraphRequest, UploadIndexingGraphResponse,
+    IndexingVectorsChunk, ReadIndexingVectorsRequest, UploadIndexingGraphRequest,
+    UploadIndexingGraphResponse,
 };
 use api::grpc::remote_indexing::{
-    GraphAssembler, INDEXING_TOKEN_HEADER, deleted_to_grpc, heartbeat_action_to_grpc,
-    heartbeat_from_grpc, task_description_to_grpc,
+    GraphAssembler, INDEXING_TOKEN_HEADER, heartbeat_action_to_grpc, heartbeat_from_grpc,
+    task_description_to_grpc,
 };
 use futures::Stream;
 use segment::index::hnsw_index::remote::registry::{
@@ -136,15 +136,6 @@ impl IndexingTask for IndexingTaskService {
             }
         });
         Ok(Response::new(receiver_stream(receiver)))
-    }
-
-    async fn read_deleted(
-        &self,
-        request: Request<ReadIndexingDeletedRequest>,
-    ) -> Result<Response<IndexingDeletedMask>, Status> {
-        let token = token(&request)?;
-        let deleted = REMOTE_INDEXING_TASKS.read_deleted(&token).map_err(status)?;
-        Ok(Response::new(deleted_to_grpc(&deleted)))
     }
 
     async fn heartbeat(

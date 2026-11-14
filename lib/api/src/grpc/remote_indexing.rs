@@ -3,7 +3,6 @@
 
 mod quantization;
 
-use bitvec::vec::BitVec;
 use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
 use segment::index::hnsw_index::remote::registry::{
@@ -17,8 +16,8 @@ use uuid::Uuid;
 
 use self::quantization::{quantization_from_grpc, quantization_to_grpc};
 use super::qdrant::{
-    IndexingDeletedMask, IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks,
-    IndexingGraphHeader, IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
+    IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks, IndexingGraphHeader,
+    IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
     IndexingHeartbeatResponse, IndexingMultiVectorComparator, IndexingPayloadBlock,
     IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
     UploadIndexingGraphRequest, upload_indexing_graph_request,
@@ -112,7 +111,6 @@ pub fn task_description_to_grpc(
         payload_m,
         payload_m0,
         point_count,
-        points_to_index,
         vector_representation,
         vector_source,
         quantization,
@@ -135,7 +133,6 @@ pub fn task_description_to_grpc(
         payload_m: *payload_m as u64,
         payload_m0: *payload_m0 as u64,
         point_count: *point_count as u64,
-        points_to_index: *points_to_index as u64,
         vector_representation: vector_representation.clone(),
         vector_source: i32::from(source_to_grpc(*vector_source)),
         quantization: quantization.as_ref().map(quantization_to_grpc),
@@ -177,7 +174,6 @@ pub fn task_description_from_grpc(
         payload_m,
         payload_m0,
         point_count,
-        points_to_index,
         vector_representation,
         graph_format_versions,
         block_plan,
@@ -218,7 +214,6 @@ pub fn task_description_from_grpc(
             payload_m: payload_m as usize,
             payload_m0: payload_m0 as usize,
             point_count: point_count as usize,
-            points_to_index: points_to_index as usize,
             vector_representation,
             vector_source,
             quantization: quantization.map(quantization_from_grpc).transpose()?,
@@ -242,35 +237,6 @@ pub fn task_description_from_grpc(
         },
         graph_format_versions,
     })
-}
-
-/// Deleted mask as bytes, LSB first.
-pub fn deleted_to_grpc(deleted: &BitVec) -> IndexingDeletedMask {
-    let mut bytes = vec![0u8; deleted.len().div_ceil(8)];
-    for idx in deleted.iter_ones() {
-        bytes[idx / 8] |= 1 << (idx % 8);
-    }
-    IndexingDeletedMask {
-        point_count: deleted.len() as u64,
-        deleted: bytes,
-    }
-}
-
-pub fn deleted_from_grpc(mask: IndexingDeletedMask) -> Result<BitVec, String> {
-    let IndexingDeletedMask {
-        point_count,
-        deleted,
-    } = mask;
-    let point_count = point_count as usize;
-    if deleted.len() != point_count.div_ceil(8) {
-        return Err(format!(
-            "deleted mask has {} bytes for {point_count} points",
-            deleted.len()
-        ));
-    }
-    Ok((0..point_count)
-        .map(|idx| deleted[idx / 8] & (1 << (idx % 8)) != 0)
-        .collect())
 }
 
 pub fn heartbeat_to_grpc(progress: TaskProgress) -> IndexingHeartbeatRequest {
@@ -558,14 +524,5 @@ mod tests {
             assembler.push(header.clone()).unwrap();
             assert!(assembler.push(case).is_err(), "case {i} accepted");
         }
-    }
-
-    #[test]
-    fn deleted_mask_roundtrip() {
-        let deleted: BitVec = (0..21).map(|i| i % 3 == 0).collect();
-        assert_eq!(
-            deleted_from_grpc(deleted_to_grpc(&deleted)).unwrap(),
-            deleted
-        );
     }
 }
