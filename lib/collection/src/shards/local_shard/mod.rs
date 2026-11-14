@@ -14,6 +14,8 @@ mod telemetry;
 pub(super) mod updaters;
 
 #[cfg(test)]
+mod load_tests;
+#[cfg(test)]
 mod optimizer_config_update_tests;
 #[cfg(test)]
 mod snapshot_tests;
@@ -386,18 +388,20 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         let total_started = Instant::now();
 
-        let collection_config_read = collection_config.read().await;
+        // Snapshot the collection config, so the read guard is released before the disk and index
+        // loading below. Holding it during that phase would block collection config writes.
+        let collection_config_snapshot = collection_config.read().await.clone();
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
-        let deferred_internal_id = collection_config_read.params.get_deferred_point_id(
-            &collection_config_read.hnsw_config,
+        let deferred_internal_id = collection_config_snapshot.params.get_deferred_point_id(
+            &collection_config_snapshot.hnsw_config,
             effective_optimizers_config.get_deferred_points_threshold_bytes(),
         );
 
         let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(&wal_path, (&collection_config_read.wal_config).into())
+            SerdeWal::new(&wal_path, (&collection_config_snapshot.wal_config).into())
                 .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
         // Walk over segments directory and collect all directory entries now
@@ -445,7 +449,8 @@ impl LocalShard {
             .map(|entry| entry.path());
 
         // Build desired vector names from collection config for segment reconciliation
-        let desired_vector_names = desired_vector_names_from_config(&collection_config_read.params);
+        let desired_vector_names =
+            desired_vector_names_from_config(&collection_config_snapshot.params);
 
         let handoff = ambient::current();
         let mut segment_stream = futures::stream::iter(segment_paths)
@@ -537,14 +542,14 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             collection_config.clone(),
-            &collection_config_read.params,
+            &collection_config_snapshot.params,
             &effective_optimizers_config,
-            &collection_config_read.hnsw_config,
+            &collection_config_snapshot.hnsw_config,
             &shared_storage_config.hnsw_global_config,
-            &collection_config_read.quantization_config,
+            &collection_config_snapshot.quantization_config,
         );
 
-        drop(collection_config_read); // release `shared_config` from borrow checker
+        drop(collection_config_snapshot);
 
         let clocks = LocalShardClocks::load(shard_path)?;
 
