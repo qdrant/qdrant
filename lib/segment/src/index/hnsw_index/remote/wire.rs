@@ -4,6 +4,9 @@
 use bitvec::slice::BitSlice;
 use common::bitvec::BitSliceExt as _;
 use common::types::PointOffsetType;
+use quantization::encoded_vectors_binary::BinaryParameters;
+use quantization::encoded_vectors_tq::TurboParameters;
+use quantization::encoded_vectors_u8::ScalarParameters;
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -11,7 +14,7 @@ use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::entry_points::{EntryPoint, EntryPoints};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC;
-use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
+use crate::types::{Distance, MultiVectorConfig, QuantizationConfig, VectorStorageDatatype};
 
 /// Version of [`WireGraph`]. Bump on any change to its meaning, and keep reading the old one
 /// for as long as indexers may send it (D9).
@@ -32,22 +35,32 @@ pub enum VectorSource {
     /// Vectors through `ReadVectors`, in the storage-native encoding: raw for float32,
     /// float16 and uint8, already encoded for TurboQuant storages.
     Storage,
-    /// The quantized vectors, through `ReadFile`, and no original vectors. Used when the
-    /// local build would score from quantized data only (scalar and binary quantization), so
-    /// the remote graph is the same, from a fraction of the bytes.
+    /// The quantized codes through `ReadVectors`, as the quantizer stores them, read with
+    /// [`RemoteGraphParams::quantization`]. No original vectors. Used when the build scores
+    /// from the codes alone (scalar and binary quantization), or reconstructs its queries
+    /// from them (TurboQuant), so the remote graph is the same, from a fraction of the bytes.
     Quantized,
 }
 
-/// A file the indexer downloads with `ReadFile`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RemoteFile {
-    /// Path relative to the quantized vectors directory.
-    pub name: String,
-    pub size: u64,
+/// How the codes of [`VectorSource::Quantized`] were encoded: everything the indexer needs,
+/// besides the codes, to score them as core does. Independent of how core stores them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteQuantization {
+    /// The quantization config of the vector, as in the collection config.
+    pub config: QuantizationConfig,
+    pub parameters: QuantizerParameters,
+}
+
+/// Encoder parameters, per quantization method.
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuantizerParameters {
+    Scalar(ScalarParameters),
+    Binary(BinaryParameters),
+    Turbo(TurboParameters),
 }
 
 /// Everything the indexer needs to build the graph, besides the vectors and the deleted mask.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RemoteGraphParams {
     pub vector_name: String,
     pub dim: usize,
@@ -66,12 +79,12 @@ pub struct RemoteGraphParams {
     pub payload_m0: usize,
     /// Number of point offsets in the segment, deleted included: `0..point_count`.
     pub point_count: usize,
-    /// Number of points to link: `point_count` minus deleted.
-    pub indexed_point_count: usize,
+    /// Number of points to index (link): `point_count` minus deleted.
+    pub points_to_index: usize,
     pub vector_representation: String,
     pub vector_source: VectorSource,
-    /// For [`VectorSource::Quantized`]: the files of the quantized vectors.
-    pub files: Vec<RemoteFile>,
+    /// Set for [`VectorSource::Quantized`] only.
+    pub quantization: Option<RemoteQuantization>,
 }
 
 impl RemoteGraphParams {
@@ -425,10 +438,10 @@ mod tests {
             payload_m: 2,
             payload_m0: 4,
             point_count,
-            indexed_point_count: point_count,
+            points_to_index: point_count,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: VectorSource::Storage,
-            files: Vec::new(),
+            quantization: None,
         }
     }
 

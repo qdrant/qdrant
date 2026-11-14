@@ -1,6 +1,8 @@
 //! Conversions between the remote indexing protocol and its segment-side types. Used by core
 //! (`IndexingTask` service) and by the indexing service (client).
 
+mod quantization;
+
 use bitvec::vec::BitVec;
 use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
@@ -8,13 +10,14 @@ use segment::index::hnsw_index::remote::registry::{
     HeartbeatAction, TaskDescription, TaskProgress,
 };
 use segment::index::hnsw_index::remote::wire::{
-    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteFile, RemoteGraphParams, VectorSource, WireGraph,
+    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteGraphParams, VectorSource, WireGraph,
 };
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
 
+use self::quantization::{quantization_from_grpc, quantization_to_grpc};
 use super::qdrant::{
-    IndexingDeletedMask, IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks, IndexingFile,
+    IndexingDeletedMask, IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks,
     IndexingGraphHeader, IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
     IndexingHeartbeatResponse, IndexingMultiVectorComparator, IndexingPayloadBlock,
     IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
@@ -109,10 +112,10 @@ pub fn task_description_to_grpc(
         payload_m,
         payload_m0,
         point_count,
-        indexed_point_count,
+        points_to_index,
         vector_representation,
         vector_source,
-        files,
+        quantization,
     } = params;
     Ok(IndexingTaskDescription {
         task_id: task_id.to_string(),
@@ -132,16 +135,10 @@ pub fn task_description_to_grpc(
         payload_m: *payload_m as u64,
         payload_m0: *payload_m0 as u64,
         point_count: *point_count as u64,
-        indexed_point_count: *indexed_point_count as u64,
+        points_to_index: *points_to_index as u64,
         vector_representation: vector_representation.clone(),
         vector_source: i32::from(source_to_grpc(*vector_source)),
-        files: files
-            .iter()
-            .map(|file| IndexingFile {
-                name: file.name.clone(),
-                size: file.size,
-            })
-            .collect(),
+        quantization: quantization.as_ref().map(quantization_to_grpc),
         graph_format_versions: graph_format_versions.to_vec(),
         block_plan: block_plan
             .fields
@@ -180,12 +177,12 @@ pub fn task_description_from_grpc(
         payload_m,
         payload_m0,
         point_count,
-        indexed_point_count,
+        points_to_index,
         vector_representation,
         graph_format_versions,
         block_plan,
         vector_source,
-        files,
+        quantization,
     } = description;
     let vector_source = IndexingVectorSource::try_from(vector_source)
         .map(source_from_grpc)
@@ -221,16 +218,10 @@ pub fn task_description_from_grpc(
             payload_m: payload_m as usize,
             payload_m0: payload_m0 as usize,
             point_count: point_count as usize,
-            indexed_point_count: indexed_point_count as usize,
+            points_to_index: points_to_index as usize,
             vector_representation,
             vector_source,
-            files: files
-                .into_iter()
-                .map(|file| RemoteFile {
-                    name: file.name,
-                    size: file.size,
-                })
-                .collect(),
+            quantization: quantization.map(quantization_from_grpc).transpose()?,
         },
         block_plan: BlockPlan {
             fields: block_plan

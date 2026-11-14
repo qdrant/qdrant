@@ -36,6 +36,16 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoding_buffer: Vec<f64>,
 }
 
+/// Encoder parameters of TurboQuant: with the vector parameters, everything needed to score
+/// its codes. See [`EncodedVectorsTQ::from_parameters`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurboParameters {
+    pub bits: TQBits,
+    pub mode: TQMode,
+    pub rotation: TQRotation,
+    pub error_correction: Option<ErrorCorrectionMetadata>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
     pub vector_parameters: VectorParameters,
@@ -97,7 +107,7 @@ fn new_error_correction_from_metadata(
 /// On-disk form of TQ+'s [`ErrorCorrection`]. Stores only `shift` and `scale`
 /// — derived caches like `D'_i²` and `⟨M, M⟩` are recomputed at load time so
 /// `shift` / `scale` remain the single source of truth.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ErrorCorrectionMetadata {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
@@ -379,6 +389,56 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         // check.
         validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
+        Ok(result)
+    }
+
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> TurboParameters {
+        let Metadata {
+            vector_parameters: _,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        } = &self.metadata;
+        TurboParameters {
+            bits: *bits,
+            mode: *mode,
+            rotation: *rotation,
+            error_correction: error_correction.clone(),
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: TurboParameters,
+    ) -> std::io::Result<Self> {
+        let TurboParameters {
+            bits,
+            mode,
+            rotation,
+            error_correction,
+        } = parameters;
+        let metadata = Metadata {
+            vector_parameters,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        };
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: None,
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
         Ok(result)
     }
 

@@ -15,8 +15,7 @@ use super::executor::{
     FetchedTask, RunOptions, RunOutcome, RunReport, SourceError, SourceResult, TaskSource, run_task,
 };
 use super::registry::{
-    HeartbeatAction, READ_CHUNK_BYTES, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskProgress,
-    TaskToken,
+    HeartbeatAction, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskProgress, TaskToken,
 };
 use super::wire::{SUPPORTED_GRAPH_FORMAT_VERSIONS, WireGraph};
 use super::{RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission};
@@ -96,24 +95,6 @@ impl TaskSource for RegistrySource {
             .map_err(source_err)
     }
 
-    fn read_file(
-        &self,
-        name: &str,
-        sink: &mut dyn FnMut(&[u8]) -> SourceResult<()>,
-    ) -> SourceResult<()> {
-        let mut offset = 0u64;
-        loop {
-            let chunk = REMOTE_INDEXING_TASKS
-                .read_file(&self.token, name, offset, READ_CHUNK_BYTES)
-                .map_err(source_err)?;
-            if chunk.is_empty() {
-                return Ok(());
-            }
-            offset += chunk.len() as u64;
-            sink(&chunk)?;
-        }
-    }
-
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
         REMOTE_INDEXING_TASKS
             .heartbeat(&self.token, progress)
@@ -150,13 +131,6 @@ impl TaskSource for CorruptingSource {
     }
     fn read_deleted(&self) -> SourceResult<BitVec> {
         self.0.read_deleted()
-    }
-    fn read_file(
-        &self,
-        name: &str,
-        sink: &mut dyn FnMut(&[u8]) -> SourceResult<()>,
-    ) -> SourceResult<()> {
-        self.0.read_file(name, sink)
     }
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
         self.0.heartbeat(progress)

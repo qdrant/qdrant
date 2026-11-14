@@ -507,6 +507,7 @@ dependencies = [
  "prost 0.14.4",
  "prost-types 0.14.4",
  "prost-wkt-types",
+ "quantization",
  "rand 0.10.3",
  "schemars",
  "segment",

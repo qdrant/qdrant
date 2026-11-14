@@ -5757,16 +5757,6 @@ pub mod indexing_service_server {
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct IndexingFile {
-    /// Path relative to the quantized vectors directory.
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub size: u64,
-}
-#[allow(clippy::all)]
-#[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetIndexingTaskRequest {}
 #[allow(clippy::all)]
@@ -5802,8 +5792,9 @@ pub struct IndexingTaskDescription {
     /// Point offsets are `0..point_count`, deleted included.
     #[prost(uint64, tag = "13")]
     pub point_count: u64,
+    /// Points to index (link): `point_count` minus the deleted ones.
     #[prost(uint64, tag = "14")]
-    pub indexed_point_count: u64,
+    pub points_to_index: u64,
     /// Encoding of the vectors in `ReadVectors`.
     #[prost(string, tag = "15")]
     pub vector_representation: ::prost::alloc::string::String,
@@ -5815,8 +5806,98 @@ pub struct IndexingTaskDescription {
     pub block_plan: ::prost::alloc::vec::Vec<IndexingFieldBlocks>,
     #[prost(enumeration = "IndexingVectorSource", tag = "18")]
     pub vector_source: i32,
-    #[prost(message, repeated, tag = "19")]
-    pub files: ::prost::alloc::vec::Vec<IndexingFile>,
+    /// Set for vector source QUANTIZED: how the codes were encoded.
+    #[prost(message, optional, tag = "19")]
+    pub quantization: ::core::option::Option<IndexingQuantization>,
+}
+/// Everything needed, besides the codes, to score quantized codes as core does.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingQuantization {
+    /// The quantization config of the vector, as in the collection config.
+    #[prost(message, optional, tag = "1")]
+    pub config: ::core::option::Option<QuantizationConfig>,
+    /// Encoder parameters, for the method of `config`.
+    #[prost(oneof = "indexing_quantization::Parameters", tags = "2, 3, 4")]
+    pub parameters: ::core::option::Option<indexing_quantization::Parameters>,
+}
+/// Nested message and enum types in `IndexingQuantization`.
+pub mod indexing_quantization {
+    /// Encoder parameters, for the method of `config`.
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Parameters {
+        #[prost(message, tag = "2")]
+        Scalar(super::IndexingScalarParameters),
+        #[prost(message, tag = "3")]
+        Binary(super::IndexingBinaryParameters),
+        #[prost(message, tag = "4")]
+        Turbo(super::IndexingTurboParameters),
+    }
+}
+/// Int8 scalar quantization. Each code: an f32 offset, then `actual_dim` bytes.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct IndexingScalarParameters {
+    #[prost(uint64, tag = "1")]
+    pub actual_dim: u64,
+    #[prost(float, tag = "2")]
+    pub alpha: f32,
+    #[prost(float, tag = "3")]
+    pub offset: f32,
+    #[prost(float, tag = "4")]
+    pub multiplier: f32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct IndexingVectorElementStats {
+    #[prost(float, tag = "1")]
+    pub min: f32,
+    #[prost(float, tag = "2")]
+    pub max: f32,
+    #[prost(float, tag = "3")]
+    pub mean: f32,
+    #[prost(float, tag = "4")]
+    pub stddev: f32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingBinaryParameters {
+    #[prost(enumeration = "IndexingBinaryEncoding", tag = "1")]
+    pub encoding: i32,
+    #[prost(enumeration = "IndexingBinaryQueryEncoding", tag = "2")]
+    pub query_encoding: i32,
+    /// Per dimension, if the encoder keeps them; empty otherwise.
+    #[prost(message, repeated, tag = "3")]
+    pub vector_stats: ::prost::alloc::vec::Vec<IndexingVectorElementStats>,
+}
+/// TQ+ error correction, per padded dimension.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingTurboErrorCorrection {
+    #[prost(float, repeated, tag = "1")]
+    pub shift: ::prost::alloc::vec::Vec<f32>,
+    #[prost(float, repeated, tag = "2")]
+    pub scale: ::prost::alloc::vec::Vec<f32>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingTurboParameters {
+    #[prost(enumeration = "IndexingTurboBits", tag = "1")]
+    pub bits: i32,
+    #[prost(enumeration = "IndexingTurboMode", tag = "2")]
+    pub mode: i32,
+    #[prost(enumeration = "IndexingTurboRotation", tag = "3")]
+    pub rotation: i32,
+    #[prost(message, optional, tag = "4")]
+    pub error_correction: ::core::option::Option<IndexingTurboErrorCorrection>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -5857,25 +5938,10 @@ pub struct IndexingVectorsChunk {
     /// Offset of the first vector of the chunk.
     #[prost(uint32, tag = "1")]
     pub start: u32,
-    /// One entry per offset from `start`. Empty: the point has no vector, or is deleted.
+    /// One entry per offset from `start`: storage-native bytes, or the quantized code. Empty:
+    /// the point has no vector, or is deleted.
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub vectors: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-}
-#[allow(clippy::all)]
-#[derive(serde::Serialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadIndexingFileRequest {
-    #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
-}
-#[allow(clippy::all)]
-#[derive(serde::Serialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct IndexingFileChunk {
-    #[prost(uint64, tag = "1")]
-    pub offset: u64,
-    #[prost(bytes = "vec", tag = "2")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -6028,7 +6094,8 @@ impl IndexingVectorDatatype {
 pub enum IndexingVectorSource {
     /// `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
     IndexingSourceStorage = 0,
-    /// `ReadFile` for each of `files`: the quantized vectors; no original vectors.
+    /// `ReadVectors` returns the quantized code of each point, read with `quantization`; no
+    /// original vectors.
     IndexingSourceQuantized = 1,
 }
 impl IndexingVectorSource {
@@ -6109,6 +6176,170 @@ impl IndexingMultiVectorComparator {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "IndexingMaxSim" => Some(Self::IndexingMaxSim),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingBinaryEncoding {
+    IndexingBinaryOneBit = 0,
+    IndexingBinaryTwoBits = 1,
+    IndexingBinaryOneAndHalfBits = 2,
+}
+impl IndexingBinaryEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingBinaryOneBit => "IndexingBinaryOneBit",
+            Self::IndexingBinaryTwoBits => "IndexingBinaryTwoBits",
+            Self::IndexingBinaryOneAndHalfBits => "IndexingBinaryOneAndHalfBits",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingBinaryOneBit" => Some(Self::IndexingBinaryOneBit),
+            "IndexingBinaryTwoBits" => Some(Self::IndexingBinaryTwoBits),
+            "IndexingBinaryOneAndHalfBits" => Some(Self::IndexingBinaryOneAndHalfBits),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingBinaryQueryEncoding {
+    IndexingBinaryQuerySameAsStorage = 0,
+    IndexingBinaryQueryScalar4Bits = 1,
+    IndexingBinaryQueryScalar8Bits = 2,
+}
+impl IndexingBinaryQueryEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingBinaryQuerySameAsStorage => "IndexingBinaryQuerySameAsStorage",
+            Self::IndexingBinaryQueryScalar4Bits => "IndexingBinaryQueryScalar4Bits",
+            Self::IndexingBinaryQueryScalar8Bits => "IndexingBinaryQueryScalar8Bits",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingBinaryQuerySameAsStorage" => {
+                Some(Self::IndexingBinaryQuerySameAsStorage)
+            }
+            "IndexingBinaryQueryScalar4Bits" => {
+                Some(Self::IndexingBinaryQueryScalar4Bits)
+            }
+            "IndexingBinaryQueryScalar8Bits" => {
+                Some(Self::IndexingBinaryQueryScalar8Bits)
+            }
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingTurboBits {
+    IndexingTurbo8Bits = 0,
+    IndexingTurbo16Bits = 1,
+    IndexingTurbo4Bits = 2,
+    IndexingTurbo2Bits = 3,
+    IndexingTurboOneAndHalfBits = 4,
+    IndexingTurbo1Bit = 5,
+}
+impl IndexingTurboBits {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingTurbo8Bits => "IndexingTurbo8Bits",
+            Self::IndexingTurbo16Bits => "IndexingTurbo16Bits",
+            Self::IndexingTurbo4Bits => "IndexingTurbo4Bits",
+            Self::IndexingTurbo2Bits => "IndexingTurbo2Bits",
+            Self::IndexingTurboOneAndHalfBits => "IndexingTurboOneAndHalfBits",
+            Self::IndexingTurbo1Bit => "IndexingTurbo1Bit",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingTurbo8Bits" => Some(Self::IndexingTurbo8Bits),
+            "IndexingTurbo16Bits" => Some(Self::IndexingTurbo16Bits),
+            "IndexingTurbo4Bits" => Some(Self::IndexingTurbo4Bits),
+            "IndexingTurbo2Bits" => Some(Self::IndexingTurbo2Bits),
+            "IndexingTurboOneAndHalfBits" => Some(Self::IndexingTurboOneAndHalfBits),
+            "IndexingTurbo1Bit" => Some(Self::IndexingTurbo1Bit),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingTurboMode {
+    IndexingTurboNormal = 0,
+    IndexingTurboPlus = 1,
+}
+impl IndexingTurboMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingTurboNormal => "IndexingTurboNormal",
+            Self::IndexingTurboPlus => "IndexingTurboPlus",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingTurboNormal" => Some(Self::IndexingTurboNormal),
+            "IndexingTurboPlus" => Some(Self::IndexingTurboPlus),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingTurboRotation {
+    IndexingTurboPadded = 0,
+    IndexingTurboUnpadded = 1,
+}
+impl IndexingTurboRotation {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingTurboPadded => "IndexingTurboPadded",
+            Self::IndexingTurboUnpadded => "IndexingTurboUnpadded",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingTurboPadded" => Some(Self::IndexingTurboPadded),
+            "IndexingTurboUnpadded" => Some(Self::IndexingTurboUnpadded),
             _ => None,
         }
     }
@@ -6264,8 +6495,8 @@ pub mod indexing_task_client {
                 .insert(GrpcMethod::new("qdrant.IndexingTask", "GetTask"));
             self.inner.unary(req, path, codec).await
         }
-        /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
-        /// For tasks with vector source STORAGE.
+        /// The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
+        /// for vector source STORAGE, quantized codes for vector source QUANTIZED.
         pub async fn read_vectors(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadIndexingVectorsRequest>,
@@ -6288,32 +6519,6 @@ pub mod indexing_task_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadVectors"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
-        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
-        pub async fn read_file(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadIndexingFileRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::IndexingFileChunk>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.IndexingTask/ReadFile",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadFile"));
             self.inner.server_streaming(req, path, codec).await
         }
         /// The points not to link.
@@ -6444,8 +6649,8 @@ pub mod indexing_task_server {
             >
             + std::marker::Send
             + 'static;
-        /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
-        /// For tasks with vector source STORAGE.
+        /// The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
+        /// for vector source STORAGE, quantized codes for vector source QUANTIZED.
         async fn read_vectors(
             &self,
             request: tonic::Request<super::ReadIndexingVectorsRequest>,
@@ -6453,18 +6658,6 @@ pub mod indexing_task_server {
             tonic::Response<Self::ReadVectorsStream>,
             tonic::Status,
         >;
-        /// Server streaming response type for the ReadFile method.
-        type ReadFileStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<super::IndexingFileChunk, tonic::Status>,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
-        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
-        async fn read_file(
-            &self,
-            request: tonic::Request<super::ReadIndexingFileRequest>,
-        ) -> std::result::Result<tonic::Response<Self::ReadFileStream>, tonic::Status>;
         /// The points not to link.
         async fn read_deleted(
             &self,
@@ -6658,53 +6851,6 @@ pub mod indexing_task_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ReadVectorsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.IndexingTask/ReadFile" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadFileSvc<T: IndexingTask>(pub Arc<T>);
-                    impl<
-                        T: IndexingTask,
-                    > tonic::server::ServerStreamingService<
-                        super::ReadIndexingFileRequest,
-                    > for ReadFileSvc<T> {
-                        type Response = super::IndexingFileChunk;
-                        type ResponseStream = T::ReadFileStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadIndexingFileRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as IndexingTask>::read_file(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadFileSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

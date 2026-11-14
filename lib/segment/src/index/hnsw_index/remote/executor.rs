@@ -26,6 +26,7 @@ use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::build_requested_graph;
 use crate::types::ExtendedPointId;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::quantized::quantized_vectors::remote::RemoteQuantizedBuilder;
 use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorageRead as _};
 
 /// A task as the indexer reads it with `GetTask`.
@@ -54,7 +55,8 @@ pub type SourceResult<T> = Result<T, SourceError>;
 pub trait TaskSource: Sync {
     fn get_task(&self) -> SourceResult<FetchedTask>;
 
-    /// Feed the vectors in `start..end` to `sink`, in order. Empty bytes: no vector.
+    /// Feed the vectors in `start..end` to `sink`, in order: storage-native bytes, or quantized
+    /// codes for [`VectorSource::Quantized`]. Empty bytes: no vector, or not linked.
     fn read_vectors(
         &self,
         start: PointOffsetType,
@@ -64,13 +66,6 @@ pub trait TaskSource: Sync {
 
     /// One flag per point, set if it is not to be linked.
     fn read_deleted(&self) -> SourceResult<BitVec>;
-
-    /// Feed the content of the task file `name` to `sink`, in order.
-    fn read_file(
-        &self,
-        name: &str,
-        sink: &mut dyn FnMut(&[u8]) -> SourceResult<()>,
-    ) -> SourceResult<()>;
 
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction>;
 
@@ -284,6 +279,15 @@ fn check_task(task: &FetchedTask) -> Result<(), String> {
             task.params.vector_representation,
         ));
     }
+    match (task.params.vector_source, &task.params.quantization) {
+        (VectorSource::Storage, None) | (VectorSource::Quantized, Some(_)) => {}
+        (VectorSource::Storage, Some(_)) => {
+            return Err("quantization parameters for the storage vector source".to_string());
+        }
+        (VectorSource::Quantized, None) => {
+            return Err("quantized vector source without quantization parameters".to_string());
+        }
+    }
     task.block_plan
         .validate(task.params.point_count)
         .map_err(|err| err.to_string())
@@ -367,16 +371,18 @@ fn build(
             (storage, None)
         }
         VectorSource::Quantized => {
-            let quantized_dir = storage_dir.path().join("quantized");
-            for file in &params.files {
-                bytes_read +=
-                    download_file(source, &quantized_dir, &file.name, file.size, stopped)?;
-            }
+            let quantized = read_quantized(
+                source,
+                params,
+                &deleted,
+                &storage_dir.path().join("quantized"),
+                options,
+                stopped,
+                &mut bytes_read,
+            )?;
             // Scalar and binary: the quantized vectors are all the build reads, the storage
             // only carries the point count, the deleted flags and the vector parameters
             let placeholder = layout.placeholder_storage(&deleted);
-            let quantized =
-                QuantizedVectors::load_copied(&placeholder, &quantized_dir).map_err(other)?;
             let storage = if quantized.builds_without_originals() {
                 placeholder
             } else {
@@ -536,47 +542,77 @@ fn dequantized_storage(
     Ok(storage)
 }
 
-/// Download one file of the task into `dir`. Returns its size.
-fn download_file(
+/// Read the quantized codes core serves, in point order, into quantized vectors in `dir`.
+#[allow(clippy::too_many_arguments)]
+fn read_quantized(
     source: &dyn TaskSource,
+    params: &RemoteGraphParams,
+    deleted: &BitVec,
     dir: &Path,
-    name: &str,
-    expected_size: u64,
+    options: &RunOptions,
     stopped: &AtomicBool,
-) -> SourceResult<u64> {
-    use std::io::Write as _;
+    bytes_read: &mut u64,
+) -> SourceResult<QuantizedVectors> {
+    let other =
+        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
+    let Some(quantization) = &params.quantization else {
+        return Err(SourceError::Other(
+            "quantized vector source without quantization parameters".to_string(),
+        ));
+    };
+    if params.multivector_config.is_some() {
+        return Err(SourceError::Other(
+            "quantized vector source for multivectors".to_string(),
+        ));
+    }
+    let mut builder = RemoteQuantizedBuilder::new(
+        quantization,
+        params.distance,
+        params.dim,
+        params.point_count,
+        dir,
+    )
+    .map_err(other)?;
+    // Points not linked have no code: any code of the right size keeps their offset
+    let placeholder = vec![0u8; builder.code_size()];
 
-    // Names come from core: keep them inside `dir`
-    let relative = Path::new(name);
-    if name.is_empty()
-        || relative.is_absolute()
-        || relative
-            .components()
-            .any(|c| !matches!(c, std::path::Component::Normal(_)))
-    {
-        return Err(SourceError::Other(format!("invalid file name {name:?}")));
-    }
-    let path = dir.join(relative);
-    let io = |err: std::io::Error| SourceError::Other(format!("{name}: {err}"));
-    if let Some(parent) = path.parent() {
-        fs_err::create_dir_all(parent).map_err(io)?;
-    }
-    let mut file = std::io::BufWriter::new(fs_err::File::create(&path).map_err(io)?);
-    let mut size = 0u64;
-    source.read_file(name, &mut |chunk| {
+    let mut start = 0;
+    while (start as usize) < params.point_count {
         if stopped.load(Ordering::Relaxed) {
             return Err(SourceError::Other("stopped".to_string()));
         }
-        size += chunk.len() as u64;
-        file.write_all(chunk).map_err(io)
-    })?;
-    file.flush().map_err(io)?;
-    if size != expected_size {
-        return Err(SourceError::Other(format!(
-            "{name}: got {size} bytes, expected {expected_size}"
-        )));
+        let end = (start + options.read_batch).min(params.point_count as PointOffsetType);
+        let mut expected = start;
+        source.read_vectors(start, end, &mut |offset, code| {
+            if offset != expected {
+                return Err(SourceError::Other(format!(
+                    "code {offset} out of order, expected {expected}"
+                )));
+            }
+            expected += 1;
+            *bytes_read += code.len() as u64;
+            let code = if code.is_empty() {
+                if !deleted[offset as usize] {
+                    return Err(SourceError::Other(format!(
+                        "no quantized code for point {offset}, which is to be indexed"
+                    )));
+                }
+                &placeholder[..]
+            } else {
+                code
+            };
+            builder.push(code).map_err(other)
+        })?;
+        if expected != end {
+            return Err(SourceError::Other(format!(
+                "core sent codes up to {expected}, expected {end}"
+            )));
+        }
+        start = end;
     }
-    Ok(size)
+    builder
+        .finish(params.distance, params.datatype)
+        .map_err(other)
 }
 
 /// Process-wide default directory for temporary storages.
