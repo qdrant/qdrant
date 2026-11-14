@@ -90,11 +90,7 @@ pub(crate) fn build_requested_graph(
                 let field_progress = progress.subtask(format!("additional_links:{name}"));
                 field_progress.start();
                 let counter = field_progress.track_progress(None);
-                let skip = if skip_if_connected {
-                    BlockSkip::IfConnected
-                } else {
-                    BlockSkip::Never
-                };
+                let skip = BlockSkip::from_skip_if_connected(skip_if_connected);
                 field = Some((name, skip, field_progress, counter));
             }
             let Some((_, skip, _, counter)) = &field else {
