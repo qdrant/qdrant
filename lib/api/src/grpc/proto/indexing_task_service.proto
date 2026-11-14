@@ -16,10 +16,9 @@ service IndexingTask {
   // Task parameters and payload block plan.
   rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
   // The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
-  // for vector source STORAGE, quantized codes for vector source QUANTIZED.
+  // for vector source STORAGE, quantized codes for vector source QUANTIZED. Points not to be
+  // indexed (deleted, or without a vector) have an empty entry.
   rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
-  // The points not to link.
-  rpc ReadDeleted(ReadIndexingDeletedRequest) returns (IndexingDeletedMask) {}
   // Renew the lease and report progress. The reply tells whether to go on.
   rpc Heartbeat(IndexingHeartbeatRequest) returns (IndexingHeartbeatResponse) {}
   // Upload the finished graph: a header, then link chunks. Ends the task.
@@ -75,19 +74,18 @@ message IndexingTaskDescription {
   uint64 entry_points_num = 10;
   uint64 payload_m = 11;
   uint64 payload_m0 = 12;
-  // Point offsets are `0..point_count`, deleted included.
+  // Point offsets are `0..point_count`, deleted included. Which points to index follows
+  // from `ReadVectors`: those with a non-empty entry.
   uint64 point_count = 13;
-  // Points to index (link): `point_count` minus the deleted ones.
-  uint64 points_to_index = 14;
   // Encoding of the vectors in `ReadVectors`.
-  string vector_representation = 15;
+  string vector_representation = 14;
   // Graph formats core reads. The indexer must upload one of them, or fail the task.
-  repeated uint32 graph_format_versions = 16;
+  repeated uint32 graph_format_versions = 15;
   // Payload blocks chosen by core, per field, in build order.
-  repeated IndexingFieldBlocks block_plan = 17;
-  IndexingVectorSource vector_source = 18;
+  repeated IndexingFieldBlocks block_plan = 16;
+  IndexingVectorSource vector_source = 17;
   // Set for vector source QUANTIZED: how the codes were encoded.
-  IndexingQuantization quantization = 19;
+  IndexingQuantization quantization = 18;
 }
 
 // Everything needed, besides the codes, to score quantized codes as core does.
@@ -191,16 +189,8 @@ message IndexingVectorsChunk {
   // Offset of the first vector of the chunk.
   uint32 start = 1;
   // One entry per offset from `start`: storage-native bytes, or the quantized code. Empty:
-  // the point has no vector, or is deleted.
+  // the point is not to be indexed (deleted, or without a vector).
   repeated bytes vectors = 2;
-}
-
-message ReadIndexingDeletedRequest {}
-
-message IndexingDeletedMask {
-  uint64 point_count = 1;
-  // One bit per point, LSB first: set if the point must not be linked.
-  bytes deleted = 2;
 }
 
 message IndexingHeartbeatRequest {

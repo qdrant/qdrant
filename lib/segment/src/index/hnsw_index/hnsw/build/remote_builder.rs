@@ -136,7 +136,6 @@ impl<'a> RemoteBuilder<'a> {
             payload_m: local.ctx.block_params.hnsw_m.m,
             payload_m0: local.ctx.block_params.hnsw_m.m0,
             point_count: local.ctx.vector_storage.total_vector_count(),
-            points_to_index: local.points.len(),
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: args.source,
             quantization: args.quantization.clone(),
@@ -149,6 +148,7 @@ impl<'a> RemoteBuilder<'a> {
         let local = self.cpu.local();
         let params = Self::params(&self.args, local);
         let stopped = local.ctx.stopped;
+        let points_to_index = local.points.len();
         let mut deleted = BitVec::repeat(true, params.point_count);
         for &point in &local.points {
             deleted.set(point as usize, false);
@@ -166,7 +166,7 @@ impl<'a> RemoteBuilder<'a> {
         let counter: Arc<AtomicU64> = self
             .args
             .progress
-            .track_progress(Some(params.points_to_index as u64));
+            .track_progress(Some(points_to_index as u64));
 
         for attempt in 0..attempts {
             check_process_stopped(stopped)?;

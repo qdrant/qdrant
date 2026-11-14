@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 use parking_lot::Mutex;
 
@@ -88,13 +87,6 @@ impl TaskSource for RegistrySource {
         Ok(())
     }
 
-    fn read_deleted(&self) -> SourceResult<BitVec> {
-        REMOTE_INDEXING_TASKS
-            .read_deleted(&self.token)
-            .map(|deleted| (*deleted).clone())
-            .map_err(source_err)
-    }
-
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
         REMOTE_INDEXING_TASKS
             .heartbeat(&self.token, progress)
@@ -128,9 +120,6 @@ impl TaskSource for CorruptingSource {
         sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
     ) -> SourceResult<()> {
         self.0.read_vectors(start, end, sink)
-    }
-    fn read_deleted(&self) -> SourceResult<BitVec> {
-        self.0.read_deleted()
     }
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction> {
         self.0.heartbeat(progress)
