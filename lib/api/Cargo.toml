@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 tracing = ["dep:tracing", "segment/tracing"]
-remote-indexing = ["segment/remote-indexing", "dep:bitvec"]
+remote-indexing = ["segment/remote-indexing", "dep:bitvec", "dep:quantization"]
 
 [dependencies]
 ahash = { workspace = true }
@@ -37,6 +37,7 @@ ordered-float = { workspace = true }
 
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
+quantization = { path = "../quantization", optional = true }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }

@@ -577,8 +577,8 @@ const LIVE_POINTS: usize = (NUM_VECTORS - NUM_VECTORS / 10) as usize;
 
 #[test]
 fn scalar_quantization_sends_quantized_vectors_only() {
-    // One byte per dimension instead of four, plus a 4-byte correction per vector, for all
-    // offsets: quantized files are sent whole
+    // One byte per dimension instead of four, plus a 4-byte correction per vector, for the
+    // points to index only
     check_remote_matches_local(
         None,
         Some(QuantizationConfig::Scalar(ScalarQuantization {
@@ -589,7 +589,7 @@ fn scalar_quantization_sends_quantized_vectors_only() {
                 memory: None,
             },
         })),
-        NUM_VECTORS as usize * (DIM + 4),
+        LIVE_POINTS * (DIM + 4),
     );
 }
 
@@ -606,13 +606,30 @@ fn binary_quantization_sends_quantized_vectors_only() {
                 query_encoding: None,
             },
         })),
-        NUM_VECTORS as usize * 16,
+        LIVE_POINTS * 16,
+    );
+}
+
+#[test]
+fn quantized_codes_do_not_depend_on_how_core_stores_them() {
+    // Mmap-backed quantized vectors on core: the same codes, the same build
+    check_remote_matches_local(
+        None,
+        Some(QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: ScalarQuantizationConfig {
+                r#type: ScalarType::Int8,
+                quantile: Some(0.99),
+                always_ram: Some(false),
+                memory: None,
+            },
+        })),
+        LIVE_POINTS * (DIM + 4),
     );
 }
 
 #[test]
 fn turbo_quantization_sends_quantized_vectors_only() {
-    // 8 bits per dimension plus a 4-byte trailer, for all offsets. The indexer reconstructs
+    // 8 bits per dimension plus a 4-byte trailer, for the points to index. The indexer reconstructs
     // query vectors from the codes, as a TurboQuant vector storage does; the local build uses
     // the originals, hence the tolerance of `check_remote_matches_local`
     check_remote_matches_local(
@@ -624,7 +641,7 @@ fn turbo_quantization_sends_quantized_vectors_only() {
                 bits: Some(TurboQuantBitSize::Bits8),
             },
         })),
-        NUM_VECTORS as usize * (DIM + 4),
+        LIVE_POINTS * (DIM + 4),
     );
 }
 

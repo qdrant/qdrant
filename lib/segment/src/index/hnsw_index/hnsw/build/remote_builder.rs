@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -16,10 +15,10 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
 use crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS;
 use crate::index::hnsw_index::remote::registry::{
-    NewTask, REMOTE_INDEXING_TASKS, TaskOutcome, WaitInterrupt,
+    NewTask, REMOTE_INDEXING_TASKS, SharedQuantizedVectors, TaskOutcome, WaitInterrupt,
 };
 use crate::index::hnsw_index::remote::wire::{
-    BlockPlan, RemoteFile, RemoteGraphParams, SUPPORTED_GRAPH_FORMAT_VERSIONS,
+    BlockPlan, RemoteGraphParams, RemoteQuantization, SUPPORTED_GRAPH_FORMAT_VERSIONS,
     VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
 };
 use crate::index::hnsw_index::remote::{
@@ -56,10 +55,12 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs<'a> {
     pub scope: TaskScope,
     /// Size of the vector data, for the size threshold and billing.
     pub vector_bytes: u64,
-    /// What the indexer reads: the storage's vectors, or the quantized vectors.
+    /// What the indexer reads: the storage's vectors, or the quantized codes.
     pub source: VectorSource,
-    /// For [`VectorSource::Quantized`]: name sent to the indexer → path.
-    pub files: Vec<(String, PathBuf)>,
+    /// For [`VectorSource::Quantized`]: how the codes were encoded.
+    pub quantization: Option<RemoteQuantization>,
+    /// For [`VectorSource::Quantized`]: served to the indexer, like `vector_storage`.
+    pub quantized_vectors: Option<SharedQuantizedVectors>,
     /// Its CPUs are lent back to the budget while the indexer works (§4.6).
     pub permit: &'a ResourcePermit,
     /// Shows the indexer's progress in the optimizations view.
@@ -135,17 +136,10 @@ impl<'a> RemoteBuilder<'a> {
             payload_m: local.ctx.block_params.hnsw_m.m,
             payload_m0: local.ctx.block_params.hnsw_m.m0,
             point_count: local.ctx.vector_storage.total_vector_count(),
-            indexed_point_count: local.points.len(),
+            points_to_index: local.points.len(),
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: args.source,
-            files: args
-                .files
-                .iter()
-                .map(|(name, path)| RemoteFile {
-                    name: name.clone(),
-                    size: fs_err::metadata(path).map_or(0, |m| m.len()),
-                })
-                .collect(),
+            quantization: args.quantization.clone(),
         }
     }
 
@@ -172,7 +166,7 @@ impl<'a> RemoteBuilder<'a> {
         let counter: Arc<AtomicU64> = self
             .args
             .progress
-            .track_progress(Some(params.indexed_point_count as u64));
+            .track_progress(Some(params.points_to_index as u64));
 
         for attempt in 0..attempts {
             check_process_stopped(stopped)?;
@@ -192,7 +186,7 @@ impl<'a> RemoteBuilder<'a> {
                 block_plan: plan.clone(),
                 vector_storage: self.args.vector_storage.clone(),
                 deleted: deleted.clone(),
-                files: self.args.files.clone(),
+                quantized_vectors: self.args.quantized_vectors.clone(),
             });
             handle.set_progress_counter(counter.clone());
             let submission = TaskSubmission {

@@ -20,8 +20,9 @@ use rand::RngExt as _;
 use uuid::Uuid;
 
 use super::metrics::REMOTE_INDEXING_METRICS;
-use super::wire::{BlockPlan, GraphLimits, RemoteGraphParams, WireGraph};
+use super::wire::{BlockPlan, GraphLimits, RemoteGraphParams, VectorSource, WireGraph};
 use crate::common::operation_error::OperationError;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// One-time task token: 256 random bits. Sent as hex in a metadata header.
@@ -148,10 +149,11 @@ pub struct TaskState {
     /// Taken on revoke, under the write lock, which waits for reads in flight: the segment
     /// builder must be the only owner again once the task ends (graph-inline finalization).
     vector_storage: RwLock<Option<Arc<AtomicRefCell<VectorStorageEnum>>>>,
+    /// For [`VectorSource::Quantized`]: the quantized vectors whose codes are served instead
+    /// of the vectors. Taken on revoke, like `vector_storage`.
+    quantized_vectors: RwLock<Option<SharedQuantizedVectors>>,
     /// One flag per point: set if the point is not linked (deleted, or without vector).
     deleted: Arc<BitVec>,
-    /// Files the indexer may download, by the name it asks for. Nothing else is readable.
-    files: HashMap<String, PathBuf>,
     inner: Mutex<TaskInner>,
     finished: Condvar,
     bytes_served: AtomicU64,
@@ -208,9 +210,13 @@ pub struct NewTask {
     pub block_plan: Arc<BlockPlan>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub deleted: Arc<BitVec>,
-    /// Files served by `read_file`: name sent to the indexer → path on disk.
-    pub files: Vec<(String, PathBuf)>,
+    /// For [`VectorSource::Quantized`]: the quantized vectors whose codes `read_vectors`
+    /// serves.
+    pub quantized_vectors: Option<SharedQuantizedVectors>,
 }
+
+/// The quantized vectors of a segment under construction, as the vector index holds them.
+pub type SharedQuantizedVectors = Arc<AtomicRefCell<Option<QuantizedVectors>>>;
 
 impl TaskRegistry {
     /// Register a task under a new token. The task is revoked when the handle is dropped.
@@ -221,7 +227,7 @@ impl TaskRegistry {
             block_plan,
             vector_storage,
             deleted,
-            files,
+            quantized_vectors,
         } = task;
         let task_id = Uuid::new_v4();
         let now = Instant::now();
@@ -234,8 +240,8 @@ impl TaskRegistry {
                 block_plan,
             },
             vector_storage: RwLock::new(Some(vector_storage)),
+            quantized_vectors: RwLock::new(quantized_vectors),
             deleted,
-            files: files.into_iter().collect(),
             inner: Mutex::new(TaskInner {
                 status: TaskStatus::Queued,
                 last_seen: now,
@@ -273,6 +279,7 @@ impl TaskRegistry {
         if let Some(state) = removed {
             // Waits for reads in flight
             state.vector_storage.write().take();
+            state.quantized_vectors.write().take();
             let mut tombstones = self.tombstones.lock();
             let now = Instant::now();
             tombstones.retain(|_, (at, _)| now.duration_since(*at) < TOMBSTONE_TTL);
@@ -308,9 +315,10 @@ impl TaskRegistry {
         Ok(state.description.clone())
     }
 
-    /// `ReadVectors`: storage-native bytes of the vectors from `start`, until `end` or about
-    /// [`READ_CHUNK_BYTES`]. An empty entry means the point has no vector. Returns the vectors
-    /// and the offset to continue from.
+    /// `ReadVectors`: the vectors from `start`, until `end` or about [`READ_CHUNK_BYTES`]:
+    /// their storage-native bytes, or their quantized codes for [`VectorSource::Quantized`].
+    /// An empty entry means the point has no vector, or is not linked. Returns the vectors and
+    /// the offset to continue from.
     ///
     /// Reads from storage, which may do IO: call from a blocking thread.
     pub fn read_vectors(
@@ -332,68 +340,41 @@ impl TaskRegistry {
         let _scope = common::ambient::unmeasured_guard(common::reason::reason(
             "remote indexing reads, not a request",
         ));
-        let storage_guard = state.vector_storage.read();
-        let Some(storage) = storage_guard.as_ref() else {
-            return Err(RemoteTaskError::PermissionDenied);
+        let (vectors, next) = match state.description.params.vector_source {
+            VectorSource::Storage => {
+                let guard = state.vector_storage.read();
+                let Some(storage) = guard.as_ref() else {
+                    return Err(RemoteTaskError::PermissionDenied);
+                };
+                let storage = storage.borrow();
+                read_chunk(&state.deleted, start, end, |point| {
+                    Ok(storage
+                        .vector_bytes_opt::<Random>(point)?
+                        .unwrap_or_default())
+                })?
+            }
+            VectorSource::Quantized => {
+                let guard = state.quantized_vectors.read();
+                let Some(quantized) = guard.as_ref() else {
+                    return Err(RemoteTaskError::PermissionDenied);
+                };
+                let quantized = quantized.borrow();
+                let Some(quantized) = quantized.as_ref() else {
+                    return Err(RemoteTaskError::Internal(
+                        "quantized vectors are gone".to_string(),
+                    ));
+                };
+                read_chunk(&state.deleted, start, end, |point| {
+                    Ok(quantized.remote_code(point).into_owned())
+                })?
+            }
         };
-        let storage = storage.borrow();
-        let mut vectors = Vec::new();
-        let mut size = 0;
-        let mut next = start;
-        while next < end && size < READ_CHUNK_BYTES {
-            let bytes = if state.deleted[next as usize] {
-                // Not linked: no need to send it
-                Vec::new()
-            } else {
-                storage
-                    .vector_bytes_opt::<Random>(next)?
-                    .unwrap_or_default()
-            };
-            size += bytes.len().max(1);
-            vectors.push(bytes);
-            next += 1;
-        }
+        let size: usize = vectors.iter().map(|bytes| bytes.len().max(1)).sum();
         state.bytes_served.fetch_add(size as u64, Ordering::Relaxed);
         REMOTE_INDEXING_METRICS
             .bytes_served
             .fetch_add(size as u64, Ordering::Relaxed);
         Ok((vectors, next))
-    }
-
-    /// `ReadFile`: up to `max_len` bytes of a file of the task, from `offset`. Empty at the
-    /// end of the file. Only the files registered with the task can be read.
-    ///
-    /// Reads from disk: call from a blocking thread.
-    pub fn read_file(
-        &self,
-        token: &TaskToken,
-        name: &str,
-        offset: u64,
-        max_len: usize,
-    ) -> Result<Vec<u8>, RemoteTaskError> {
-        use std::io::{Read as _, Seek as _, SeekFrom};
-
-        let state = self.get(token)?;
-        state.touch();
-        let Some(path) = state.files.get(name) else {
-            return Err(RemoteTaskError::InvalidArgument(format!(
-                "no file {name:?} in this task"
-            )));
-        };
-        let io = |err: std::io::Error| RemoteTaskError::Internal(format!("{name}: {err}"));
-        let mut file = fs_err::File::open(path).map_err(io)?;
-        file.seek(SeekFrom::Start(offset)).map_err(io)?;
-        let mut data = Vec::with_capacity(max_len.min(READ_CHUNK_BYTES));
-        file.take(max_len as u64)
-            .read_to_end(&mut data)
-            .map_err(io)?;
-        state
-            .bytes_served
-            .fetch_add(data.len() as u64, Ordering::Relaxed);
-        REMOTE_INDEXING_METRICS
-            .bytes_served
-            .fetch_add(data.len() as u64, Ordering::Relaxed);
-        Ok(data)
     }
 
     /// `ReadDeleted`: one flag per point, set if the point must not be linked.
@@ -490,6 +471,31 @@ impl TaskRegistry {
         self.revoke(token, Tombstone::Finished);
         state.finished.notify_all();
     }
+}
+
+/// The bytes of the points from `start`, until `end` or about [`READ_CHUNK_BYTES`], read with
+/// `read`; empty for points not linked. Returns them and the offset to continue from.
+fn read_chunk(
+    deleted: &BitVec,
+    start: PointOffsetType,
+    end: PointOffsetType,
+    mut read: impl FnMut(PointOffsetType) -> Result<Vec<u8>, OperationError>,
+) -> Result<(Vec<Vec<u8>>, PointOffsetType), RemoteTaskError> {
+    let mut vectors = Vec::new();
+    let mut size = 0;
+    let mut next = start;
+    while next < end && size < READ_CHUNK_BYTES {
+        let bytes = if deleted[next as usize] {
+            // Not linked: no need to send it
+            Vec::new()
+        } else {
+            read(next)?
+        };
+        size += bytes.len().max(1);
+        vectors.push(bytes);
+        next += 1;
+    }
+    Ok((vectors, next))
 }
 
 /// Why waiting on a task ended without an outcome.
@@ -617,15 +623,15 @@ mod tests {
                 payload_m: 4,
                 payload_m0: 8,
                 point_count,
-                indexed_point_count: point_count - 1,
+                points_to_index: point_count - 1,
                 vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
                 vector_source: VectorSource::Storage,
-                files: Vec::new(),
+                quantization: None,
             },
             block_plan: Arc::new(BlockPlan::default()),
             vector_storage: storage.clone(),
             deleted: Arc::new(deleted),
-            files: Vec::new(),
+            quantized_vectors: None,
         };
         (task, storage)
     }
