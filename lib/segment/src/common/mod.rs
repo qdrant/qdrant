@@ -21,7 +21,9 @@ use std::sync::atomic::AtomicBool;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
+use crate::types::{
+    SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageDatatype,
+};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 
@@ -160,6 +162,29 @@ pub fn check_named_vectors(
     Ok(())
 }
 
+/// Reject components the preprocessed vector cannot store as a finite value.
+/// Runs after metric preprocessing, so cosine inputs can normalize into range.
+pub fn check_stored_vector_values(
+    vectors: &NamedVectors,
+    segment_config: &SegmentConfig,
+) -> OperationResult<()> {
+    for (vector_name, vector_data) in vectors.iter() {
+        let Ok(vector_config) = get_vector_config_or_error(vector_name, segment_config) else {
+            continue;
+        };
+        match vector_data {
+            VectorRef::Dense(vector) => check_vector_values(vector, vector_config.datatype)?,
+            VectorRef::MultiDense(multi) => {
+                for vector in multi.multi_vectors() {
+                    check_vector_values(vector, vector_config.datatype)?;
+                }
+            }
+            VectorRef::Sparse(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// Get the vector config for the given name, or return a name error.
 ///
 /// Returns an error if incompatible.
@@ -219,6 +244,44 @@ fn check_vector_against_config(
             }
             Ok(())
         }
+    }
+}
+
+/// Reject components the storage datatype cannot hold as a finite value:
+/// `f16::from_f32` saturates out-of-range components to ±inf instead of failing.
+pub fn check_vector_values(
+    vector: &[f32],
+    datatype: Option<VectorStorageDatatype>,
+) -> OperationResult<()> {
+    if let Some(index) = find_unrepresentable_component(vector, datatype) {
+        return Err(OperationError::WrongVectorValue {
+            index,
+            datatype: datatype_label(datatype.unwrap_or_default()),
+        });
+    }
+    Ok(())
+}
+
+/// Index of the first component the datatype cannot store as a finite value.
+pub fn find_unrepresentable_component(
+    vector: &[f32],
+    datatype: Option<VectorStorageDatatype>,
+) -> Option<usize> {
+    let representable = match datatype.unwrap_or_default() {
+        VectorStorageDatatype::Float16 => |x: &f32| half::f16::from_f32(*x).is_finite(),
+        VectorStorageDatatype::Float32
+        | VectorStorageDatatype::Uint8
+        | VectorStorageDatatype::Turbo4 => |x: &f32| x.is_finite(),
+    };
+    vector.iter().position(|x| !representable(x))
+}
+
+pub fn datatype_label(datatype: VectorStorageDatatype) -> &'static str {
+    match datatype {
+        VectorStorageDatatype::Float16 => "float16",
+        VectorStorageDatatype::Uint8 => "uint8",
+        VectorStorageDatatype::Turbo4 => "turbo4",
+        VectorStorageDatatype::Float32 => "float32",
     }
 }
 

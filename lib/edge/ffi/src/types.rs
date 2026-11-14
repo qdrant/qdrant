@@ -120,10 +120,9 @@ pub enum NamedVector {
 }
 
 /// Reject non-finite (NaN / ±∞) components before a vector crosses into the
-/// engine. The engine validates only dimensionality, so a poisoned component
-/// would otherwise be stored and later serialized back to the host as JSON
-/// `null` — a silent corruption. Mirrors the `is_finite()` guard the geo
-/// conversions already apply.
+/// engine, so a poisoned component is never stored and later serialized back
+/// to the host as JSON `null` — a silent corruption. Mirrors the
+/// `is_finite()` guard the geo conversions already apply.
 fn reject_non_finite(values: &[f32], ctx: &str) -> Result<(), crate::error::EdgeError> {
     if let Some(pos) = values.iter().position(|x| !x.is_finite()) {
         return Err(crate::error::EdgeError::invalid_argument(format!(
