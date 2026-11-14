@@ -1,6 +1,8 @@
 //! What core and the indexer exchange: the task parameters, the payload block plan, and the
 //! uploaded graph. Transport-independent: the gRPC layer converts these to and from protobuf.
 
+use std::time::Duration;
+
 use bitvec::slice::BitSlice;
 use common::bitvec::BitSliceExt as _;
 use common::types::PointOffsetType;
@@ -84,6 +86,10 @@ pub struct RemoteGraphParams {
     pub vector_source: VectorSource,
     /// Set for [`VectorSource::Quantized`] only.
     pub quantization: Option<RemoteQuantization>,
+    /// Whether payload blocks may come, through `ReadPayloadBlocks`.
+    pub has_payload_blocks: bool,
+    /// How long the indexer waits for the next payload block before failing the task.
+    pub max_block_wait: Duration,
 }
 
 impl RemoteGraphParams {
@@ -96,10 +102,11 @@ impl RemoteGraphParams {
     }
 }
 
-/// Payload blocks chosen by core (D4): per indexed field, in build order, the point sets to
-/// link among themselves. Core leaves out blocks that are too large (by an estimate that does
-/// not need the graph) or mostly deleted. The indexer decides which of the rest are worth
-/// linking given its graph, and how (O1).
+/// Payload blocks chosen by core: per indexed field, in build order, the point sets to link
+/// among themselves. Core leaves out blocks that are too large (by an estimate that does not
+/// need the graph) or mostly deleted. The indexer decides which of the rest are worth linking
+/// given its graph, and how (O1). Streamed to the indexer as core prepares them, see
+/// [`super::blocks::BlockStream`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BlockPlan {
     pub fields: Vec<FieldBlockPlan>,
@@ -150,20 +157,23 @@ impl BlockPlan {
         memberships
     }
 
-    /// Reject plans pointing outside the segment, so that a corrupted plan does not reach the
-    /// builder. Used by the indexer on what it receives.
-    pub fn validate(&self, point_count: usize) -> OperationResult<()> {
-        for field in &self.fields {
-            for block in &field.blocks {
-                if let Some(&point) = block.points.iter().find(|&&p| p as usize >= point_count) {
-                    return Err(OperationError::validation_error(format!(
-                        "block of field {} has point {point} >= {point_count}",
-                        field.field,
-                    )));
-                }
-            }
+    /// Append `block` to `field`, which is either the last field or a new one. Returns the
+    /// index of the field.
+    pub fn push(&mut self, field: &str, skip_if_connected: bool, block: PlannedBlock) -> usize {
+        match self.fields.last_mut() {
+            Some(last) if last.field == field => last.blocks.push(block),
+            Some(_) | None => self.fields.push(FieldBlockPlan {
+                field: field.to_string(),
+                skip_if_connected,
+                blocks: vec![block],
+            }),
         }
-        Ok(())
+        self.fields.len() - 1
+    }
+
+    /// The blocks of `field`.
+    pub fn field(&self, field: &str) -> Option<&FieldBlockPlan> {
+        self.fields.iter().find(|planned| planned.field == field)
     }
 }
 
@@ -440,6 +450,8 @@ mod tests {
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: VectorSource::Storage,
             quantization: None,
+            has_payload_blocks: false,
+            max_block_wait: Duration::from_secs(1),
         }
     }
 

@@ -1,3 +1,5 @@
+#[cfg(feature = "remote-indexing")]
+use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use common::types::PointOffsetType;
@@ -111,6 +113,7 @@ impl<'a> GraphBuilder<'a> {
             return Ok(Self::Remote(Box::new(RemoteBuilder::new(
                 Self::without_gpu(local, None),
                 remote,
+                has_payload_blocks,
             ))));
         }
 
@@ -173,52 +176,63 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
-    /// Like [`Self::build_field_blocks`], for blocks whose points were read already: those of
-    /// a block plan, on the indexer.
+    /// Like [`Self::build_field_blocks`], for blocks whose points were read already: streamed
+    /// to the indexer, or prepared for a remote build that fell back. `counter` counts the
+    /// points linked, over all calls for a field.
     #[cfg_attr(not(feature = "remote-indexing"), expect(dead_code))]
     pub fn build_loaded_field_blocks(
         &mut self,
-        progress: &common::progress_tracker::ProgressTracker,
+        counter: &AtomicU64,
         skip: BlockSkip,
         blocks: impl IntoIterator<Item = PayloadBlock>,
     ) -> OperationResult<()> {
-        let counter = progress.track_progress(None);
         for block in blocks {
             check_process_stopped(self.local().ctx.stopped)?;
             if !self.local().fits(block.cardinality) {
                 continue;
             }
             if self.local().should_build(&block, skip) {
-                self.build_block(&block.points, &counter)?;
+                self.build_block(&block.points, counter)?;
             }
         }
         Ok(())
     }
 
-    /// Whether the builder takes all payload blocks up front, with [`Self::set_block_plan`],
-    /// instead of block by block. Checked again after `build_main`: still true means the
-    /// blocks are linked already.
-    pub fn takes_block_plan(&self) -> bool {
+    /// For a remote builder: submit the task, and return the stream to append the payload
+    /// blocks to while the indexer builds. Finish the stream, then call `build_main`. `None`
+    /// for local builders, which read the blocks themselves after `build_main`.
+    #[cfg(feature = "remote-indexing")]
+    pub fn start_remote(
+        &mut self,
+    ) -> Option<Arc<crate::index::hnsw_index::remote::blocks::BlockStream>> {
+        match self {
+            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => None,
+            #[cfg(feature = "gpu")]
+            GraphBuilder::Gpu(_) => None,
+            GraphBuilder::Remote(builder) => Some(builder.start()),
+        }
+    }
+
+    /// After `build_main`: whether the payload blocks are linked already, by the indexer.
+    #[cfg(feature = "remote-indexing")]
+    pub fn blocks_linked_remotely(&self) -> bool {
         match self {
             GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => false,
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(_) => false,
-            #[cfg(feature = "remote-indexing")]
-            GraphBuilder::Remote(builder) => builder.takes_block_plan(),
+            GraphBuilder::Remote(builder) => builder.blocks_linked(),
         }
     }
 
-    /// Hand the block plan to a builder that [takes it](Self::takes_block_plan). Call before
-    /// `build_main`.
+    /// After `build_main`: the payload blocks a remote build prepared before it fell back, for
+    /// the local build to link. `None` if there are none to reuse.
     #[cfg(feature = "remote-indexing")]
-    pub fn set_block_plan(&mut self, plan: crate::index::hnsw_index::remote::wire::BlockPlan) {
+    pub fn fallback_blocks(&self) -> Option<crate::index::hnsw_index::remote::wire::BlockPlan> {
         match self {
-            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => {
-                debug_assert!(false, "builder does not take a block plan");
-            }
+            GraphBuilder::Hnsw(_) | GraphBuilder::Healing(_) | GraphBuilder::Pipnn(_) => None,
             #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(_) => debug_assert!(false, "builder does not take a block plan"),
-            GraphBuilder::Remote(builder) => builder.set_block_plan(plan),
+            GraphBuilder::Gpu(_) => None,
+            GraphBuilder::Remote(builder) => builder.fallback_blocks(),
         }
     }
 

@@ -5925,14 +5925,18 @@ pub struct IndexingTaskDescription {
     /// Graph formats core reads. The indexer must upload one of them, or fail the task.
     #[prost(uint32, repeated, tag = "15")]
     pub graph_format_versions: ::prost::alloc::vec::Vec<u32>,
-    /// Payload blocks chosen by core, per field, in build order.
-    #[prost(message, repeated, tag = "16")]
-    pub block_plan: ::prost::alloc::vec::Vec<IndexingFieldBlocks>,
-    #[prost(enumeration = "IndexingVectorSource", tag = "17")]
+    #[prost(enumeration = "IndexingVectorSource", tag = "16")]
     pub vector_source: i32,
     /// Set for vector source QUANTIZED: how the codes were encoded.
-    #[prost(message, optional, tag = "18")]
+    #[prost(message, optional, tag = "17")]
     pub quantization: ::core::option::Option<IndexingQuantization>,
+    /// Whether payload blocks may come: read them with `ReadPayloadBlocks` after the main
+    /// graph, until it answers `finished`.
+    #[prost(bool, tag = "18")]
+    pub has_payload_blocks: bool,
+    /// Fail the task if no payload block comes for this long. Reset by every block.
+    #[prost(uint64, tag = "19")]
+    pub max_block_wait_sec: u64,
 }
 /// Everything needed, besides the codes, to score quantized codes as core does.
 #[allow(clippy::all)]
@@ -6025,24 +6029,69 @@ pub struct IndexingTurboParameters {
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadIndexingPayloadBlocksRequest {
+    /// Sequence number of the first block wanted. Asking again for the same number gives the
+    /// same blocks.
+    #[prost(uint64, tag = "1")]
+    pub next: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IndexingFieldBlocks {
-    #[prost(string, tag = "1")]
-    pub field: ::prost::alloc::string::String,
-    /// Skip blocks the graph built so far already connects well.
-    #[prost(bool, tag = "2")]
-    pub skip_if_connected: bool,
-    #[prost(message, repeated, tag = "3")]
+pub struct IndexingPayloadBlocksBatch {
+    #[prost(oneof = "indexing_payload_blocks_batch::Result", tags = "1, 2, 3")]
+    pub result: ::core::option::Option<indexing_payload_blocks_batch::Result>,
+}
+/// Nested message and enum types in `IndexingPayloadBlocksBatch`.
+pub mod indexing_payload_blocks_batch {
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        /// Blocks from `next`, in build order, about 1 MB at most.
+        #[prost(message, tag = "1")]
+        Blocks(super::IndexingPayloadBlocks),
+        /// No block at `next` yet: ask again.
+        #[prost(message, tag = "2")]
+        NotReady(super::IndexingPayloadBlocksNotReady),
+        /// No block at or after `next`, and none will come.
+        #[prost(message, tag = "3")]
+        Finished(super::IndexingPayloadBlocksFinished),
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexingPayloadBlocks {
+    /// Sequence number of the first block, the `next` asked for.
+    #[prost(uint64, tag = "1")]
+    pub first: u64,
+    #[prost(message, repeated, tag = "2")]
     pub blocks: ::prost::alloc::vec::Vec<IndexingPayloadBlock>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingPayloadBlocksNotReady {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingPayloadBlocksFinished {}
+/// Blocks of a field come together, fields in build order.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingPayloadBlock {
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    /// Skip the block if the graph built so far already connects it well.
+    #[prost(bool, tag = "2")]
+    pub skip_if_connected: bool,
     /// Estimated block size, which the size limit is checked against.
-    #[prost(uint64, tag = "1")]
+    #[prost(uint64, tag = "3")]
     pub cardinality: u64,
-    #[prost(uint32, repeated, tag = "2")]
+    #[prost(uint32, repeated, tag = "4")]
     pub points: ::prost::alloc::vec::Vec<u32>,
 }
 #[allow(clippy::all)]
@@ -6580,7 +6629,7 @@ pub mod indexing_task_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Task parameters and payload block plan.
+        /// Task parameters.
         pub async fn get_task(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIndexingTaskRequest>,
@@ -6631,6 +6680,32 @@ pub mod indexing_task_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadVectors"));
             self.inner.server_streaming(req, path, codec).await
+        }
+        /// Payload blocks from a sequence number, as core prepares them while the indexer builds the
+        /// main graph. Waits a few seconds for the next block before answering that it is not ready.
+        pub async fn read_payload_blocks(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReadIndexingPayloadBlocksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingPayloadBlocksBatch>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/ReadPayloadBlocks",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadPayloadBlocks"));
+            self.inner.unary(req, path, codec).await
         }
         /// Renew the lease and report progress. The reply tells whether to go on.
         pub async fn heartbeat(
@@ -6721,7 +6796,7 @@ pub mod indexing_task_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IndexingTaskServer.
     #[async_trait]
     pub trait IndexingTask: std::marker::Send + std::marker::Sync + 'static {
-        /// Task parameters and payload block plan.
+        /// Task parameters.
         async fn get_task(
             &self,
             request: tonic::Request<super::GetIndexingTaskRequest>,
@@ -6743,6 +6818,15 @@ pub mod indexing_task_server {
             request: tonic::Request<super::ReadIndexingVectorsRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::ReadVectorsStream>,
+            tonic::Status,
+        >;
+        /// Payload blocks from a sequence number, as core prepares them while the indexer builds the
+        /// main graph. Waits a few seconds for the next block before answering that it is not ready.
+        async fn read_payload_blocks(
+            &self,
+            request: tonic::Request<super::ReadIndexingPayloadBlocksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::IndexingPayloadBlocksBatch>,
             tonic::Status,
         >;
         /// Renew the lease and report progress. The reply tells whether to go on.
@@ -6941,6 +7025,55 @@ pub mod indexing_task_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/ReadPayloadBlocks" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadPayloadBlocksSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::UnaryService<
+                        super::ReadIndexingPayloadBlocksRequest,
+                    > for ReadPayloadBlocksSvc<T> {
+                        type Response = super::IndexingPayloadBlocksBatch;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::ReadIndexingPayloadBlocksRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::read_payload_blocks(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadPayloadBlocksSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

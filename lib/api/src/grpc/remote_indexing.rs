@@ -1,26 +1,27 @@
 //! Conversions between the remote indexing protocol and its segment-side types. Used by core
 //! (`IndexingTask` service) and by the indexing service (client).
 
+mod blocks;
 mod quantization;
+
+use std::time::Duration;
 
 use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
 use segment::index::hnsw_index::remote::registry::{
     HeartbeatAction, TaskDescription, TaskProgress,
 };
-use segment::index::hnsw_index::remote::wire::{
-    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteGraphParams, VectorSource, WireGraph,
-};
+use segment::index::hnsw_index::remote::wire::{RemoteGraphParams, VectorSource, WireGraph};
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
 
+pub use self::blocks::{blocks_batch_from_grpc, blocks_batch_to_grpc};
 use self::quantization::{quantization_from_grpc, quantization_to_grpc};
 use super::qdrant::{
-    IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks, IndexingGraphHeader,
-    IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
-    IndexingHeartbeatResponse, IndexingMultiVectorComparator, IndexingPayloadBlock,
-    IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
-    UploadIndexingGraphRequest, upload_indexing_graph_request,
+    IndexingDistance, IndexingEntryPoint, IndexingGraphHeader, IndexingGraphLinks,
+    IndexingHeartbeatAction, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
+    IndexingMultiVectorComparator, IndexingTaskDescription, IndexingVectorDatatype,
+    IndexingVectorSource, UploadIndexingGraphRequest, upload_indexing_graph_request,
 };
 
 /// Metadata header carrying the one-time task token.
@@ -93,11 +94,7 @@ pub fn task_description_to_grpc(
     description: &TaskDescription,
     graph_format_versions: &[u32],
 ) -> Result<IndexingTaskDescription, String> {
-    let TaskDescription {
-        task_id,
-        params,
-        block_plan,
-    } = description;
+    let TaskDescription { task_id, params } = description;
     let RemoteGraphParams {
         vector_name,
         dim,
@@ -114,6 +111,8 @@ pub fn task_description_to_grpc(
         vector_representation,
         vector_source,
         quantization,
+        has_payload_blocks,
+        max_block_wait,
     } = params;
     Ok(IndexingTaskDescription {
         task_id: task_id.to_string(),
@@ -137,22 +136,8 @@ pub fn task_description_to_grpc(
         vector_source: i32::from(source_to_grpc(*vector_source)),
         quantization: quantization.as_ref().map(quantization_to_grpc),
         graph_format_versions: graph_format_versions.to_vec(),
-        block_plan: block_plan
-            .fields
-            .iter()
-            .map(|field| IndexingFieldBlocks {
-                field: field.field.clone(),
-                skip_if_connected: field.skip_if_connected,
-                blocks: field
-                    .blocks
-                    .iter()
-                    .map(|block| IndexingPayloadBlock {
-                        cardinality: block.cardinality as u64,
-                        points: block.points.clone(),
-                    })
-                    .collect(),
-            })
-            .collect(),
+        has_payload_blocks: *has_payload_blocks,
+        max_block_wait_sec: max_block_wait.as_secs().max(1),
     })
 }
 
@@ -176,9 +161,10 @@ pub fn task_description_from_grpc(
         point_count,
         vector_representation,
         graph_format_versions,
-        block_plan,
         vector_source,
         quantization,
+        has_payload_blocks,
+        max_block_wait_sec,
     } = description;
     let vector_source = IndexingVectorSource::try_from(vector_source)
         .map(source_from_grpc)
@@ -217,23 +203,8 @@ pub fn task_description_from_grpc(
             vector_representation,
             vector_source,
             quantization: quantization.map(quantization_from_grpc).transpose()?,
-        },
-        block_plan: BlockPlan {
-            fields: block_plan
-                .into_iter()
-                .map(|field| FieldBlockPlan {
-                    field: field.field,
-                    skip_if_connected: field.skip_if_connected,
-                    blocks: field
-                        .blocks
-                        .into_iter()
-                        .map(|block| PlannedBlock {
-                            cardinality: block.cardinality as usize,
-                            points: block.points,
-                        })
-                        .collect(),
-                })
-                .collect(),
+            has_payload_blocks,
+            max_block_wait: Duration::from_secs(max_block_wait_sec),
         },
         graph_format_versions,
     })

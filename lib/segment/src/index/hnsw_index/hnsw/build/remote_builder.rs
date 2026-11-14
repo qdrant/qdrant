@@ -12,10 +12,11 @@ use super::graph_builder::{GraphBuilder, GraphBuilderMethod};
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::index::hnsw_index::remote::blocks::BlockStream;
 use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
 use crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS;
 use crate::index::hnsw_index::remote::registry::{
-    NewTask, REMOTE_INDEXING_TASKS, SharedQuantizedVectors, TaskOutcome, WaitInterrupt,
+    NewTask, REMOTE_INDEXING_TASKS, SharedQuantizedVectors, TaskHandle, TaskOutcome, WaitInterrupt,
 };
 use crate::index::hnsw_index::remote::wire::{
     BlockPlan, RemoteGraphParams, RemoteQuantization, SUPPORTED_GRAPH_FORMAT_VERSIONS,
@@ -76,7 +77,7 @@ pub(in crate::index::hnsw_index::hnsw) fn worth_remote(
 }
 
 enum RemoteState {
-    /// Waiting for the block plan, then `build_main`.
+    /// Before `build_main`.
     Pending,
     /// The remote graph, blocks included, is in `cpu`'s graph.
     Built,
@@ -84,39 +85,98 @@ enum RemoteState {
     FellBack,
 }
 
+/// What every attempt of a remote build shares, prepared by [`RemoteBuilder::start`].
+struct Prepared {
+    params: RemoteGraphParams,
+    deleted: Arc<BitVec>,
+    /// Points linked by the indexer, from its heartbeats.
+    counter: Arc<AtomicU64>,
+    /// The first attempt, submitted before the payload blocks are prepared. Taken by
+    /// `build_remotely`.
+    first: Option<Result<TaskHandle, SubmitError>>,
+}
+
 /// Has an indexing service build the graph (D1, D2). The service decides how: core sends no
-/// levels, only the parameters, the vectors, the deleted points and the block plan (D4).
-/// What fails remotely is built by `cpu`, which also holds the graph.
+/// levels, only the parameters and the vectors. The payload blocks are streamed while the
+/// indexer builds the main graph. What fails remotely is built by `cpu`, which also holds the
+/// graph.
 pub(in crate::index::hnsw_index::hnsw) struct RemoteBuilder<'a> {
     /// The local method: builds everything if the remote build fails. Never `Remote`.
     pub cpu: GraphBuilder<'a>,
     args: RemoteBuildArgs<'a>,
-    plan: Option<Arc<BlockPlan>>,
+    has_payload_blocks: bool,
+    /// Shared by all attempts, and by the local fallback.
+    blocks: Arc<BlockStream>,
+    prepared: Option<Prepared>,
     state: RemoteState,
 }
 
 impl<'a> RemoteBuilder<'a> {
-    pub fn new(cpu: GraphBuilder<'a>, args: RemoteBuildArgs<'a>) -> Self {
+    pub fn new(cpu: GraphBuilder<'a>, args: RemoteBuildArgs<'a>, has_payload_blocks: bool) -> Self {
         Self {
             cpu,
             args,
-            plan: None,
+            has_payload_blocks,
+            blocks: Arc::new(BlockStream::default()),
+            prepared: None,
             state: RemoteState::Pending,
         }
     }
 
-    pub fn takes_block_plan(&self) -> bool {
+    /// Submit the first attempt, so that the indexer starts on the main graph, and return the
+    /// stream for the payload blocks.
+    pub fn start(&mut self) -> Arc<BlockStream> {
+        self.prepare();
+        self.blocks.clone()
+    }
+
+    /// After `build_main`: whether the indexer linked the payload blocks.
+    pub fn blocks_linked(&self) -> bool {
         match self.state {
-            RemoteState::Pending | RemoteState::Built => true,
-            RemoteState::FellBack => false,
+            RemoteState::Built => true,
+            RemoteState::Pending | RemoteState::FellBack => false,
         }
     }
 
-    pub fn set_block_plan(&mut self, plan: BlockPlan) {
-        self.plan = Some(Arc::new(plan));
+    /// After `build_main`, if the remote build was given up: the blocks prepared for it.
+    pub fn fallback_blocks(&self) -> Option<BlockPlan> {
+        match self.state {
+            RemoteState::FellBack => self.blocks.finished_plan(),
+            RemoteState::Pending | RemoteState::Built => None,
+        }
     }
 
-    fn params(args: &RemoteBuildArgs<'_>, local: &LocalBuilder<'_>) -> RemoteGraphParams {
+    fn prepare(&mut self) {
+        if self.prepared.is_some() {
+            return;
+        }
+        let local = self.cpu.local();
+        let params = Self::params(&self.args, local, self.has_payload_blocks);
+        let mut deleted = BitVec::repeat(true, params.point_count);
+        for &point in &local.points {
+            deleted.set(point as usize, false);
+        }
+        let points_to_index = local.points.len();
+        self.args.progress.start();
+        let counter = self
+            .args
+            .progress
+            .track_progress(Some(points_to_index as u64));
+        let mut prepared = Prepared {
+            params,
+            deleted: Arc::new(deleted),
+            counter,
+            first: None,
+        };
+        prepared.first = Some(submit_attempt(&self.args, &self.blocks, &prepared, 0));
+        self.prepared = Some(prepared);
+    }
+
+    fn params(
+        args: &RemoteBuildArgs<'_>,
+        local: &LocalBuilder<'_>,
+        has_payload_blocks: bool,
+    ) -> RemoteGraphParams {
         let RemoteVectorLayout {
             dim,
             datatype,
@@ -139,22 +199,21 @@ impl<'a> RemoteBuilder<'a> {
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: args.source,
             quantization: args.quantization.clone(),
+            has_payload_blocks,
+            max_block_wait: args.indexer.config().max_block_wait,
         }
     }
 
     /// Submit, wait, and retry per `on_failure`. `Ok(Some(graph))` if a remote graph was
     /// accepted, `Ok(None)` to fall back to the local build.
     fn build_remotely(&mut self) -> OperationResult<Option<GraphLayersBuilder>> {
-        let local = self.cpu.local();
-        let params = Self::params(&self.args, local);
-        let stopped = local.ctx.stopped;
-        let points_to_index = local.points.len();
-        let mut deleted = BitVec::repeat(true, params.point_count);
-        for &point in &local.points {
-            deleted.set(point as usize, false);
-        }
-        let deleted = Arc::new(deleted);
-        let plan = self.plan.take().unwrap_or_default();
+        // Blocks not streamed by the caller: there are none
+        self.blocks.finish();
+        self.prepare();
+        let stopped = self.cpu.local().ctx.stopped;
+        let Some(prepared) = self.prepared.as_mut() else {
+            unreachable!("prepared above");
+        };
 
         let config = self.args.indexer.config().clone();
         let attempts = match config.on_failure {
@@ -162,78 +221,27 @@ impl<'a> RemoteBuilder<'a> {
             OnFailure::Retry => 1 + config.max_retries,
         };
 
-        self.args.progress.start();
-        let counter: Arc<AtomicU64> = self
-            .args
-            .progress
-            .track_progress(Some(points_to_index as u64));
-
         for attempt in 0..attempts {
             check_process_stopped(stopped)?;
-            if attempt > 0 {
-                REMOTE_INDEXING_METRICS
-                    .retries
-                    .fetch_add(1, Ordering::Relaxed);
-                let delay = RETRY_BACKOFF
-                    .saturating_mul(1 << (attempt - 1).min(16))
-                    .min(MAX_RETRY_BACKOFF);
-                backoff(delay, stopped)?;
-            }
-
-            let handle = REMOTE_INDEXING_TASKS.register(NewTask {
-                scope: self.args.scope.clone(),
-                params: params.clone(),
-                block_plan: plan.clone(),
-                vector_storage: self.args.vector_storage.clone(),
-                deleted: deleted.clone(),
-                quantized_vectors: self.args.quantized_vectors.clone(),
-            });
-            handle.set_progress_counter(counter.clone());
-            let submission = TaskSubmission {
-                task_id: handle.task_id(),
-                token: handle.token(),
-                scope: self.args.scope.clone(),
-                vector_bytes: self.args.vector_bytes,
-                point_count: params.point_count as u64,
-                graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
-                attempt,
+            let submitted = match prepared.first.take() {
+                Some(first) => first,
+                None => {
+                    REMOTE_INDEXING_METRICS
+                        .retries
+                        .fetch_add(1, Ordering::Relaxed);
+                    let delay = RETRY_BACKOFF
+                        .saturating_mul(1 << attempt.saturating_sub(1).min(16))
+                        .min(MAX_RETRY_BACKOFF);
+                    backoff(delay, stopped)?;
+                    submit_attempt(&self.args, &self.blocks, prepared, attempt)
+                }
             };
-            log::debug!(
-                "Remote indexing task {} for {:?} (attempt {attempt}): {} points, {} bytes, {} blocks",
-                submission.task_id,
-                submission.scope,
-                submission.point_count,
-                submission.vector_bytes,
-                plan.num_blocks(),
-            );
-
-            match self.args.indexer.submit(&submission) {
-                Ok(()) => {}
-                Err(SubmitError::Transient(reason)) => {
-                    REMOTE_INDEXING_METRICS
-                        .submit_failures
-                        .fetch_add(1, Ordering::Relaxed);
-                    log::warn!(
-                        "Failed to submit remote indexing task {}: {reason}",
-                        submission.task_id,
-                    );
-                    continue;
-                }
-                Err(SubmitError::Permanent(reason)) => {
-                    REMOTE_INDEXING_METRICS
-                        .submit_failures
-                        .fetch_add(1, Ordering::Relaxed);
-                    REMOTE_INDEXING_METRICS
-                        .submit_refused_permanently
-                        .fetch_add(1, Ordering::Relaxed);
-                    // Retrying cannot help: build locally right away
-                    log::info!(
-                        "Remote indexing task {} refused for good, building locally: {reason}",
-                        submission.task_id,
-                    );
-                    break;
-                }
-            }
+            let handle = match submitted {
+                Ok(handle) => handle,
+                Err(SubmitError::Transient(_)) => continue,
+                // Retrying cannot help: build locally right away
+                Err(SubmitError::Permanent(_)) => break,
+            };
 
             // Lend the CPUs while the indexer works. Once lent, they stay lent across retries.
             self.args.permit.suspend_cpu();
@@ -325,6 +333,67 @@ impl<'a> RemoteBuilder<'a> {
     }
 }
 
+/// Register attempt `attempt` of a task and submit it. On failure the handle is dropped,
+/// which revokes the token.
+fn submit_attempt(
+    args: &RemoteBuildArgs<'_>,
+    blocks: &Arc<BlockStream>,
+    prepared: &Prepared,
+    attempt: u32,
+) -> Result<TaskHandle, SubmitError> {
+    let handle = REMOTE_INDEXING_TASKS.register(NewTask {
+        scope: args.scope.clone(),
+        params: prepared.params.clone(),
+        blocks: blocks.clone(),
+        vector_storage: args.vector_storage.clone(),
+        deleted: prepared.deleted.clone(),
+        quantized_vectors: args.quantized_vectors.clone(),
+    });
+    handle.set_progress_counter(prepared.counter.clone());
+    let submission = TaskSubmission {
+        task_id: handle.task_id(),
+        token: handle.token(),
+        scope: args.scope.clone(),
+        vector_bytes: args.vector_bytes,
+        point_count: prepared.params.point_count as u64,
+        graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
+        attempt,
+    };
+    log::debug!(
+        "Remote indexing task {} for {:?} (attempt {attempt}): {} points, {} bytes",
+        submission.task_id,
+        submission.scope,
+        submission.point_count,
+        submission.vector_bytes,
+    );
+    match args.indexer.submit(&submission) {
+        Ok(()) => Ok(handle),
+        Err(SubmitError::Transient(reason)) => {
+            REMOTE_INDEXING_METRICS
+                .submit_failures
+                .fetch_add(1, Ordering::Relaxed);
+            log::warn!(
+                "Failed to submit remote indexing task {}: {reason}",
+                submission.task_id,
+            );
+            Err(SubmitError::Transient(reason))
+        }
+        Err(SubmitError::Permanent(reason)) => {
+            REMOTE_INDEXING_METRICS
+                .submit_failures
+                .fetch_add(1, Ordering::Relaxed);
+            REMOTE_INDEXING_METRICS
+                .submit_refused_permanently
+                .fetch_add(1, Ordering::Relaxed);
+            log::info!(
+                "Remote indexing task {} refused for good, building locally: {reason}",
+                submission.task_id,
+            );
+            Err(SubmitError::Permanent(reason))
+        }
+    }
+}
+
 impl GraphBuilderMethod for RemoteBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
         let result = self.build_remotely();
@@ -365,7 +434,7 @@ impl GraphBuilderMethod for RemoteBuilder<'_> {
         counter: &AtomicU64,
     ) -> OperationResult<()> {
         // Called only after a fallback: remote blocks are linked by the indexer
-        debug_assert!(!self.takes_block_plan());
+        debug_assert!(!self.blocks_linked());
         self.cpu.build_block(points, counter)
     }
 

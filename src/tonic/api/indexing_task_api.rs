@@ -10,13 +10,13 @@ use std::time::Duration;
 use api::grpc::qdrant::indexing_task_server::IndexingTask;
 use api::grpc::qdrant::{
     FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest,
-    IndexingHeartbeatRequest, IndexingHeartbeatResponse, IndexingTaskDescription,
-    IndexingVectorsChunk, ReadIndexingVectorsRequest, UploadIndexingGraphRequest,
-    UploadIndexingGraphResponse,
+    IndexingHeartbeatRequest, IndexingHeartbeatResponse, IndexingPayloadBlocksBatch,
+    IndexingTaskDescription, IndexingVectorsChunk, ReadIndexingPayloadBlocksRequest,
+    ReadIndexingVectorsRequest, UploadIndexingGraphRequest, UploadIndexingGraphResponse,
 };
 use api::grpc::remote_indexing::{
-    GraphAssembler, INDEXING_TOKEN_HEADER, heartbeat_action_to_grpc, heartbeat_from_grpc,
-    task_description_to_grpc,
+    GraphAssembler, INDEXING_TOKEN_HEADER, blocks_batch_to_grpc, heartbeat_action_to_grpc,
+    heartbeat_from_grpc, task_description_to_grpc,
 };
 use futures::Stream;
 use segment::index::hnsw_index::remote::registry::{
@@ -33,16 +33,12 @@ const DEFAULT_UPLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// per-point limits: on every point `m0` on level 0 and `m` above, which upper levels stay
 /// within since they hold a fraction of the points, plus `payload_m0` per planned block a
 /// point is in.
-fn max_upload_links(description: &TaskDescription) -> usize {
+fn max_upload_links(description: &TaskDescription, block_points: usize) -> usize {
     let params = &description.params;
     params
         .point_count
         .saturating_mul(params.m0 + params.m)
-        .saturating_add(
-            params
-                .payload_m0
-                .saturating_mul(description.block_plan.num_points()),
-        )
+        .saturating_add(params.payload_m0.saturating_mul(block_points))
 }
 
 #[derive(Default)]
@@ -61,6 +57,7 @@ fn status(err: RemoteTaskError) -> Status {
     match err {
         RemoteTaskError::PermissionDenied => Status::permission_denied(err.to_string()),
         RemoteTaskError::InvalidArgument(msg) => Status::invalid_argument(msg),
+        RemoteTaskError::FailedPrecondition(msg) => Status::failed_precondition(msg),
         RemoteTaskError::Internal(msg) => Status::internal(msg),
     }
 }
@@ -138,6 +135,18 @@ impl IndexingTask for IndexingTaskService {
         Ok(Response::new(receiver_stream(receiver)))
     }
 
+    async fn read_payload_blocks(
+        &self,
+        request: Request<ReadIndexingPayloadBlocksRequest>,
+    ) -> Result<Response<IndexingPayloadBlocksBatch>, Status> {
+        let token = token(&request)?;
+        let ReadIndexingPayloadBlocksRequest { next } = request.into_inner();
+        // Waits for the next block: off the async runtime
+        let batch =
+            blocking(move || REMOTE_INDEXING_TASKS.read_payload_blocks(&token, next)).await?;
+        Ok(Response::new(blocks_batch_to_grpc(batch)))
+    }
+
     async fn heartbeat(
         &self,
         request: Request<IndexingHeartbeatRequest>,
@@ -157,9 +166,10 @@ impl IndexingTask for IndexingTaskService {
         let token = token(&request)?;
         // Bound the upload by the task, so a token cannot be used to exhaust memory
         let description = REMOTE_INDEXING_TASKS.get_task(&token).map_err(status)?;
+        let block_points = REMOTE_INDEXING_TASKS.start_upload(&token).map_err(status)?;
         let mut assembler = GraphAssembler::new(
             description.params.point_count,
-            max_upload_links(&description),
+            max_upload_links(&description, block_points),
         );
         // A stalled upload must not hold the token and the connection: no message within the
         // heartbeat lease ends it
