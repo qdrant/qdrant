@@ -435,6 +435,105 @@ mod group_by {
             assert_eq!(group.hits.len(), group_by_request.group_size);
         }
     }
+
+    /// Regression test for issue #11369: the filling phase must OR the per-key-type
+    /// `Match::Any` conditions. Mixed string/integer group keys used to be joined under
+    /// `must`, so no point could match and the second members of the best groups vanished.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn fills_groups_with_mixed_key_types() {
+        use segment::data_types::groups::GroupId;
+
+        // More distractors than the collecting phase can fetch (`groups * group_size` per
+        // request, five requests by default), so the second members of the best groups are
+        // only reachable through the filling phase.
+        const DISTRACTORS: u64 = 100;
+
+        let collection_dir = tempfile::Builder::new()
+            .prefix("collection")
+            .tempdir()
+            .unwrap();
+        let collection = simple_collection_fixture(collection_dir.path(), 1).await;
+
+        // Dot product with the query `[1, 1, 1, 1]` equals the scalar below, which keeps the
+        // ranking easy to reason about.
+        let dense = |score: f32| vec![score / 4.0; 4];
+
+        let mut ids: Vec<u64> = vec![1, 2];
+        let mut vectors = vec![dense(100.0), dense(99.0)];
+        let mut payloads = vec![
+            Some(payload_json! { "g": "A" }),
+            Some(payload_json! { "g": 1 }),
+        ];
+
+        for i in 0..DISTRACTORS {
+            ids.push(3 + i);
+            vectors.push(dense(98.0 - i as f32 * 0.1));
+            payloads.push(Some(payload_json! { "g": format!("other-{i}") }));
+        }
+
+        // Second members of the two best groups, ranked below every distractor.
+        ids.extend([1000, 1001]);
+        vectors.extend([dense(1.0), dense(0.5)]);
+        payloads.extend([
+            Some(payload_json! { "g": "A" }),
+            Some(payload_json! { "g": 1 }),
+        ]);
+
+        let batch = BatchPersisted {
+            ids: ids.into_iter().map(u64::into).collect_vec(),
+            vectors: BatchVectorStructPersisted::Single(vectors),
+            payloads: Some(payloads),
+        };
+
+        let insert_points = CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
+        );
+        let insert_result = collection
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(AmbientContext::new())
+            .await
+            .expect("insert failed");
+        assert_eq!(insert_result.status, UpdateStatus::Completed);
+
+        let group_by_request = GroupRequest::with_limit_from_request(
+            SourceRequest::Search(SearchRequestInternal {
+                vector: vec![1.0, 1.0, 1.0, 1.0].into(),
+                filter: None,
+                params: Some(segment::types::SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 2,
+                offset: None,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            }),
+            JsonPath::new("g"),
+            2,
+        );
+
+        let result = GroupBy::new(group_by_request, &collection, |_| async { unreachable!() })
+            .execute()
+            .measured(AmbientContext::new())
+            .await
+            .expect("group by failed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, GroupId::from("A"));
+        assert_eq!(result[1].id, GroupId::try_from(&json!(1)).unwrap());
+
+        for group in &result {
+            assert_eq!(
+                group.hits.len(),
+                2,
+                "both members of a mixed-key group must be filled"
+            );
+        }
+
+        assert_eq!(result[0].hits[1].id, 1000.into());
+        assert_eq!(result[1].hits[1].id, 1001.into());
+    }
 }
 
 /// Tests out the different features working together. The individual features are already tested in other places.

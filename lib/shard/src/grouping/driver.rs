@@ -146,12 +146,17 @@ impl GroupByDriver {
                     let unsatisfied_groups = self.aggregator.keys_of_unfilled_best_groups();
                     let match_any = match_on(&self.group_by, &unsatisfied_groups);
                     if !match_any.is_empty() {
+                        // `match_on` yields one condition per group-key type: a point with a
+                        // string key cannot also carry an integer key, so these conditions are
+                        // alternatives. Nest them under `must` so they are OR-ed with each other
+                        // without being OR-ed with the caller's own `should` clauses.
+                        let group_filter = Filter {
+                            should: Some(match_any),
+                            ..Default::default()
+                        };
                         merge_filter(
                             &mut request.filter,
-                            Filter {
-                                must: Some(match_any),
-                                ..Default::default()
-                            },
+                            Filter::new_must(Condition::Filter(group_filter)),
                         );
                     }
 
@@ -216,7 +221,8 @@ mod tests {
     use common::types::ScoreType;
     use segment::data_types::groups::GroupId;
     use segment::payload_json;
-    use segment::types::{WithPayload, WithPayloadInterface, WithVector};
+    use segment::types::{AnyVariants, Match, WithPayload, WithPayloadInterface, WithVector};
+    use serde_json::{Value, json};
 
     use super::*;
 
@@ -259,6 +265,133 @@ mod tests {
             order_value: None,
             location: None,
         }
+    }
+
+    fn point_with_group(id: u64, score: ScoreType, group: Value) -> ScoredPoint {
+        ScoredPoint {
+            payload: Some(payload_json! { "g": group }),
+            ..point(id, score, "")
+        }
+    }
+
+    /// Regression test for issue #11369: mixed string/integer group keys produce one
+    /// `Match::Any` per key type, and the filling phase must OR them instead of requiring a
+    /// point to match all of them.
+    #[test]
+    fn filling_ors_mixed_group_key_types() {
+        let mut driver = driver(RequestBudget {
+            collect: 1,
+            fill: 1,
+        });
+
+        // Collect one hit per group, one string key and one integer key. Neither group is full.
+        driver.next_request().unwrap();
+        driver.add_points(&[
+            point_with_group(1, 2.0, json!("A")),
+            point_with_group(2, 1.0, json!(1)),
+        ]);
+
+        // The collection budget is spent, so this is the filling request.
+        let fill_request = driver.next_request().unwrap();
+        let filter = fill_request
+            .filter
+            .expect("filling request must be filtered");
+
+        let group_filter = filter
+            .must
+            .as_ref()
+            .and_then(|conditions| {
+                conditions.iter().find_map(|condition| {
+                    if let Condition::Filter(filter) = condition {
+                        Some(filter)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .expect("mixed key types must be OR-ed in a nested filter");
+
+        let should = group_filter
+            .should
+            .as_ref()
+            .expect("nested group filter must use `should`");
+        assert_eq!(should.len(), 2, "one alternative per group key type");
+
+        let mut variants: Vec<_> = should
+            .iter()
+            .map(|condition| {
+                let Condition::Field(field) = condition else {
+                    panic!("expected a field condition, got {condition:?}");
+                };
+                let Some(Match::Any(any)) = field.r#match.as_ref() else {
+                    panic!("expected a match-any condition, got {:?}", field.r#match);
+                };
+                any.any.clone()
+            })
+            .collect();
+        variants.sort_by_key(|variants| match variants {
+            AnyVariants::Integers(_) => 0,
+            AnyVariants::Strings(_) => 1,
+        });
+
+        match &variants[..] {
+            [AnyVariants::Integers(ints), AnyVariants::Strings(strs)] => {
+                assert_eq!(ints.iter().copied().collect::<Vec<_>>(), [1]);
+                assert_eq!(strs.iter().cloned().collect::<Vec<_>>(), ["A"]);
+            }
+            other => panic!("expected integer and string alternatives, got {other:?}"),
+        }
+    }
+
+    /// The group-key alternatives are nested under `must` so they cannot be OR-ed with a
+    /// `should` clause of the caller's own filter.
+    #[test]
+    fn filling_keeps_base_filter_should_separate() {
+        let caller_filter =
+            Filter::new_should(Condition::Field(segment::types::FieldCondition::new_match(
+                "tag".parse().unwrap(),
+                Match::new_value(segment::types::ValueVariants::String("keep".into())),
+            )));
+
+        let mut driver = GroupByDriver::new(
+            ShardQueryRequest {
+                filter: Some(caller_filter),
+                ..base_query()
+            },
+            "g".parse().unwrap(),
+            GROUPS,
+            GROUP_SIZE,
+            Some(Order::LargeBetter),
+            RequestBudget {
+                collect: 1,
+                fill: 1,
+            },
+        );
+
+        driver.next_request().unwrap();
+        driver.add_points(&[
+            point_with_group(1, 2.0, json!("A")),
+            point_with_group(2, 1.0, json!(1)),
+        ]);
+
+        let fill_request = driver.next_request().unwrap();
+        let filter = fill_request
+            .filter
+            .expect("filling request must be filtered");
+
+        // The caller's `should` stays as the only top-level `should` clause.
+        assert_eq!(filter.should.as_ref().map(Vec::len), Some(1));
+
+        // The group key alternatives live in their own nested filter under `must`.
+        assert!(filter.must.as_ref().is_some_and(|conditions| {
+            conditions.iter().any(|condition| {
+                matches!(
+                    condition,
+                    Condition::Filter(filter)
+                        if filter.should.as_ref().is_some_and(|should| should.len() == 2)
+                )
+            })
+        }));
     }
 
     #[test]
