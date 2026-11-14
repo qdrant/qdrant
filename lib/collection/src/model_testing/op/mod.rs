@@ -30,12 +30,13 @@ use segment::data_types::vectors::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
-    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    PointIdType, Slice, SliceCondition, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface,
-    WithVector,
+    Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, IsEmptyCondition,
+    IsNullCondition, Match, MultiVectorConfig, Payload, PayloadField, PayloadFieldSchema,
+    PayloadSchemaParams, PayloadSchemaType, PointIdType, Slice, SliceCondition, VectorNameBuf,
+    VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::turbo::{tq_bits, turbo_storage_roundtrip};
+use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::{
@@ -333,6 +334,13 @@ pub(super) enum ScrollFilter {
         total: NonZeroU32,
         index: u32,
     },
+    /// `is_empty` on a top-level key: the key is missing, `null` or `[]`. The key is the
+    /// never-indexed `e` (payload fallback), `tag` (keyword index toggled on and off) or `num`
+    /// (always indexed, missing only after payload mutations).
+    IsEmpty(String),
+    /// `is_null` on a top-level key: the value is `null` or an array holding a `null`. Same keys
+    /// as [`ScrollFilter::IsEmpty`].
+    IsNull(String),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -962,6 +970,44 @@ pub(super) fn match_slice_filter(total: NonZeroU32, index: u32) -> Filter {
 /// Indexed `num` ∧ id-space `slice` — `num` can be a primary clause; `slice` is per-candidate.
 pub(super) fn match_num_and_slice_filter(num: i64, total: NonZeroU32, index: u32) -> Filter {
     match_num_filter(num).merge(&match_slice_filter(total, index))
+}
+
+pub(super) fn is_empty_filter(key: &str) -> Filter {
+    Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        is_empty: PayloadField {
+            key: key.parse().unwrap(),
+        },
+    }))
+}
+
+pub(super) fn is_null_filter(key: &str) -> Filter {
+    Filter::new_must(Condition::IsNull(IsNullCondition {
+        is_null: PayloadField {
+            key: key.parse().unwrap(),
+        },
+    }))
+}
+
+/// Model of `is_empty` on a top-level key: missing, `null` and `[]` are empty. Any other value is
+/// not, including `[null]` and `{}`.
+pub(super) fn is_empty_matches(payload: &Payload, key: &str) -> bool {
+    match payload.0.get(key) {
+        None | Some(Value::Null) => true,
+        Some(Value::Array(values)) => values.is_empty(),
+        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => false,
+    }
+}
+
+/// Model of `is_null` on a top-level key: `null`, or an array holding a `null`. A missing key is
+/// not null.
+pub(super) fn is_null_matches(payload: &Payload, key: &str) -> bool {
+    match payload.0.get(key) {
+        Some(Value::Null) => true,
+        Some(Value::Array(values)) => values.iter().any(Value::is_null),
+        None | Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
+            false
+        }
+    }
 }
 
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {
