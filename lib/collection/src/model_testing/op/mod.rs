@@ -1,4 +1,5 @@
 mod generators;
+mod nested;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -15,6 +16,7 @@ use generators::{
     random_url_substring_probe, random_vector_name, random_vector_name_subset, random_with_payload,
     random_with_vector, upsert_fallback,
 };
+pub(super) use nested::{NestedFilter, nested_indexes};
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::seq::{IndexedRandom, IteratorRandom};
@@ -278,6 +280,10 @@ pub(super) enum Op {
     CountByUrlSubstring(String),
     /// Verification op: scroll all points whose `url` contains the given substring.
     ScrollFilteredByUrlSubstring(String),
+    /// Verification op: count points matching a `nested` filter over `offers`, see [`nested`].
+    CountByNested(NestedFilter),
+    /// Verification op: scroll all points matching a `nested` filter over `offers`.
+    ScrollFilteredByNested(NestedFilter),
 }
 
 /// `QueryText` limit meaning "every match": above any id pool the tester is normally run with.
@@ -351,7 +357,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 43;
+    const N: usize = 45;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -398,6 +404,8 @@ impl Swarm {
         "QueryText",
         "CountByUrlSubstring",
         "ScrollFilteredByUrlSubstring",
+        "CountByNested",
+        "ScrollFilteredByNested",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -459,6 +467,8 @@ impl Swarm {
         4, // QueryText
         3, // CountByUrlSubstring
         3, // ScrollFilteredByUrlSubstring
+        3, // CountByNested
+        3, // ScrollFilteredByNested
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -583,26 +593,33 @@ impl Op {
                 Op::ClearPayload(ids)
             }
             8 => {
-                // Randomly toggle one of two keyword indices, preserving coverage of both the
-                // plain keyword-equality path (`tag`) and the prefix path (`url`):
+                // Randomly toggle one of the optional indices, preserving coverage of:
                 // - `tag`: plain keyword index, exercised by exact match ops;
                 // - `url`: prefix-enabled keyword index, exercised by prefix and substring match
-                //   ops.
+                //   ops;
+                // - `offers[].price` / `offers[].shop`: per-element indexes, exercised by nested
+                //   ops, which take the per-element path when every field they use is indexed.
                 // When the index is absent, the corresponding filters fall back to full-scan;
                 // when present, the index path is exercised across segment variants.
-                let (field, schema) = if rng.random_bool(0.5) {
-                    (
+                let (field, schema) = match rng.random_range(0..3) {
+                    0 => (
                         "tag".parse().unwrap(),
                         PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-                    )
-                } else {
-                    ("url".parse().unwrap(), url_prefix_index_schema())
+                    ),
+                    1 => ("url".parse().unwrap(), url_prefix_index_schema()),
+                    2 => nested::random_nested_index(rng),
+                    _ => unreachable!(),
                 };
                 Op::CreateIndex(field, schema)
             }
             9 => {
-                let field = if rng.random_bool(0.5) { "tag" } else { "url" };
-                Op::DropIndex(field.parse().unwrap())
+                let field = match rng.random_range(0..3) {
+                    0 => "tag".parse().unwrap(),
+                    1 => "url".parse().unwrap(),
+                    2 => nested::random_nested_index_field(rng),
+                    _ => unreachable!(),
+                };
+                Op::DropIndex(field)
             }
             10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_space)),
             11 => Op::CountByNum(random_num(rng)),
@@ -844,6 +861,8 @@ impl Op {
             }
             41 => Op::CountByUrlSubstring(random_url_substring_probe(rng).to_string()),
             42 => Op::ScrollFilteredByUrlSubstring(random_url_substring_probe(rng).to_string()),
+            43 => Op::CountByNested(NestedFilter::random(rng)),
+            44 => Op::ScrollFilteredByNested(NestedFilter::random(rng)),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -895,6 +914,8 @@ impl Op {
             Op::QueryText { .. } => "QueryText",
             Op::CountByUrlSubstring(_) => "CountByUrlSubstring",
             Op::ScrollFilteredByUrlSubstring(_) => "ScrollFilteredByUrlSubstring",
+            Op::CountByNested(_) => "CountByNested",
+            Op::ScrollFilteredByNested(_) => "ScrollFilteredByNested",
         }
     }
 }
@@ -988,17 +1009,23 @@ pub(super) fn url_prefix_matches(payload: &Payload, prefix: &str) -> bool {
         .is_some_and(|url| url.starts_with(prefix))
 }
 
-/// A string match on `url`, for the count and scroll verifiers: the engine filter and the
-/// model predicate it must agree with.
+/// A filter for the count and scroll verifiers: the engine filter and the model predicate it must
+/// agree with.
+pub(super) trait ModelFilter: std::fmt::Debug {
+    fn filter(&self) -> Filter;
+    fn matches(&self, payload: &Payload) -> bool;
+}
+
+/// A string match on `url`.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum UrlMatch<'a> {
     Prefix(&'a str),
     Substring(&'a str),
 }
 
-impl UrlMatch<'_> {
-    pub(super) fn filter(self) -> Filter {
-        match self {
+impl ModelFilter for UrlMatch<'_> {
+    fn filter(&self) -> Filter {
+        match *self {
             UrlMatch::Prefix(prefix) => match_url_prefix_filter(prefix),
             UrlMatch::Substring(substring) => Filter::new_must(Condition::Field(
                 FieldCondition::new_match("url".parse().unwrap(), Match::new_substring(substring)),
@@ -1006,8 +1033,8 @@ impl UrlMatch<'_> {
         }
     }
 
-    pub(super) fn matches(self, payload: &Payload) -> bool {
-        match self {
+    fn matches(&self, payload: &Payload) -> bool {
+        match *self {
             UrlMatch::Prefix(prefix) => url_prefix_matches(payload, prefix),
             UrlMatch::Substring(substring) => payload
                 .0
