@@ -462,6 +462,12 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut to_score = Vec::with_capacity(capacity);
         let mut to_explore = Vec::with_capacity(capacity);
         let mut tail_bridges = Vec::new();
+        let expand_deleted = !points_scorer.filters().has_payload_filter();
+        let bridge_batch_size = if expand_deleted {
+            links_batch_size
+        } else {
+            usize::MAX
+        };
 
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
@@ -541,11 +547,21 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 }
             }
 
-            // Collect 2-hop neighbors (neighbors of neighbors)
-            if !to_explore.is_empty() {
+            // Keep payload filtering two-hop; bypass chains of tombstones only when unfiltered.
+            let mut explored = 0;
+            while explored < to_explore.len() {
+                check_process_stopped(is_stopped)?;
+                arena.reset();
+                let end = to_explore
+                    .len()
+                    .min(explored.saturating_add(bridge_batch_size));
+                let bridge_count = end - explored;
                 unchecked_links.clear();
-                self.links
-                    .links(arena, &to_explore, level, |position, links_iter| {
+                self.links.links(
+                    arena,
+                    &to_explore[explored..end],
+                    level,
+                    |position, links_iter| {
                         let position = position as u32;
                         for hop2 in links_iter {
                             if !hop1_visited_list.check(hop2)
@@ -554,20 +570,32 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                                 unchecked_links.push(Link { id: hop2, position });
                             }
                         }
-                    })?;
+                    },
+                )?;
 
                 let n = points_scorer.filters().check_batched(
                     &mut unchecked_links,
                     Select::Matches,
-                    Rest::Discard,
+                    if expand_deleted {
+                        Rest::Keep
+                    } else {
+                        Rest::Discard
+                    },
                 )?;
-                let (matches, _) = unchecked_links.split_at(n);
+                let (matches, non_matches) = unchecked_links.split_at(n);
+                if expand_deleted {
+                    for link in non_matches {
+                        hop1_visited_list.check_and_update_visited(link.id);
+                        to_explore.push(link.id);
+                    }
+                }
 
-                let quotas = arena.alloc_slice_fill_with(to_explore.len(), |_| hop2_limit);
+                let quotas = arena.alloc_slice_fill_with(bridge_count, |_| hop2_limit);
                 admit_matches(matches, quotas, &mut hop2_visited_list, |id| {
                     hop1_visited_list.check_and_update_visited(id);
                     to_score.push(id);
                 });
+                explored = end;
             }
 
             points_scorer
