@@ -31,6 +31,33 @@ message IndexingTaskSubmission {
   uint32 attempt = 11;
   // Cluster identifier, if configured, for billing.
   optional string cluster_id = 12;
+  // The index to build and its parameters, so that the entry point can refuse what it does
+  // not build, or not that large, before any data moves. Same as in `GetTask`.
+  IndexingIndexParams index = 13;
+}
+
+// The index a task builds, with the parameters of its kind. A new kind of index, or a version
+// of one with other parameters, is a new case of `index`. Indexers refuse a task whose case
+// they do not know (an unset `index` included), permanently.
+message IndexingIndexParams {
+  oneof index {
+    IndexingHnswParams hnsw = 1;
+  }
+}
+
+// An HNSW graph: the main graph, and the payload block graphs merged into it.
+message IndexingHnswParams {
+  // Links per point of the main graph above level 0, and on level 0. `m` = 0: no main graph,
+  // only payload blocks link points.
+  uint64 m = 1;
+  uint64 m0 = 2;
+  // Candidates searched when inserting a point.
+  uint64 ef_construct = 3;
+  // Number of entry points the main graph keeps.
+  uint64 entry_points_num = 4;
+  // `m` and `m0` of the payload block graphs.
+  uint64 payload_m = 5;
+  uint64 payload_m0 = 6;
 }
 
 message SubmitIndexingTaskResponse {

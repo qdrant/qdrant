@@ -5527,6 +5527,53 @@ pub struct IndexingTaskSubmission {
     /// Cluster identifier, if configured, for billing.
     #[prost(string, optional, tag = "12")]
     pub cluster_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The index to build and its parameters, so that the entry point can refuse what it does
+    /// not build, or not that large, before any data moves. Same as in `GetTask`.
+    #[prost(message, optional, tag = "13")]
+    pub index: ::core::option::Option<IndexingIndexParams>,
+}
+/// The index a task builds, with the parameters of its kind. A new kind of index, or a version
+/// of one with other parameters, is a new case of `index`. Indexers refuse a task whose case
+/// they do not know (an unset `index` included), permanently.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingIndexParams {
+    #[prost(oneof = "indexing_index_params::Index", tags = "1")]
+    pub index: ::core::option::Option<indexing_index_params::Index>,
+}
+/// Nested message and enum types in `IndexingIndexParams`.
+pub mod indexing_index_params {
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Index {
+        #[prost(message, tag = "1")]
+        Hnsw(super::IndexingHnswParams),
+    }
+}
+/// An HNSW graph: the main graph, and the payload block graphs merged into it.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingHnswParams {
+    /// Links per point of the main graph above level 0, and on level 0. `m` = 0: no main graph,
+    /// only payload blocks link points.
+    #[prost(uint64, tag = "1")]
+    pub m: u64,
+    #[prost(uint64, tag = "2")]
+    pub m0: u64,
+    /// Candidates searched when inserting a point.
+    #[prost(uint64, tag = "3")]
+    pub ef_construct: u64,
+    /// Number of entry points the main graph keeps.
+    #[prost(uint64, tag = "4")]
+    pub entry_points_num: u64,
+    /// `m` and `m0` of the payload block graphs.
+    #[prost(uint64, tag = "5")]
+    pub payload_m: u64,
+    #[prost(uint64, tag = "6")]
+    pub payload_m0: u64,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -5903,18 +5950,6 @@ pub struct IndexingTaskDescription {
     /// Set for multivectors: each vector is then a flattened list of `dim`-sized vectors.
     #[prost(enumeration = "IndexingMultiVectorComparator", optional, tag = "6")]
     pub multivector_comparator: ::core::option::Option<i32>,
-    #[prost(uint64, tag = "7")]
-    pub m: u64,
-    #[prost(uint64, tag = "8")]
-    pub m0: u64,
-    #[prost(uint64, tag = "9")]
-    pub ef_construct: u64,
-    #[prost(uint64, tag = "10")]
-    pub entry_points_num: u64,
-    #[prost(uint64, tag = "11")]
-    pub payload_m: u64,
-    #[prost(uint64, tag = "12")]
-    pub payload_m0: u64,
     /// Point offsets are `0..point_count`, deleted included. Which points to index follows
     /// from `ReadVectors`: those with a non-empty entry.
     #[prost(uint64, tag = "13")]
@@ -5937,6 +5972,9 @@ pub struct IndexingTaskDescription {
     /// Fail the task if no payload block comes for this long. Reset by every block.
     #[prost(uint64, tag = "19")]
     pub max_block_wait_sec: u64,
+    /// The index to build and its parameters, as submitted with `SubmitTask`.
+    #[prost(message, optional, tag = "20")]
+    pub index: ::core::option::Option<IndexingIndexParams>,
 }
 /// Everything needed, besides the codes, to score quantized codes as core does.
 #[allow(clippy::all)]

@@ -702,7 +702,7 @@ pub fn default_work_dir() -> std::path::PathBuf {
 mod tests {
     use super::*;
     use crate::index::hnsw_index::remote::wire::{
-        VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+        HnswBuildParams, RemoteIndexParams, VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
     };
     use crate::types::{Distance, VectorStorageDatatype};
 
@@ -747,12 +747,14 @@ mod tests {
             datatype: VectorStorageDatatype::Float32,
             distance: Distance::Dot,
             multivector_config: None,
-            m: 4,
-            m0: 8,
-            ef_construct: 8,
-            entry_points_num: 1,
-            payload_m: 4,
-            payload_m0: 8,
+            index: RemoteIndexParams::Hnsw(HnswBuildParams {
+                m: 4,
+                m0: 8,
+                ef_construct: 8,
+                entry_points_num: 1,
+                payload_m: 4,
+                payload_m0: 8,
+            }),
             point_count: 10,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: VectorSource::Storage,

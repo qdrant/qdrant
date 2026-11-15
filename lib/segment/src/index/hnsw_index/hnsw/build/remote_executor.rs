@@ -17,7 +17,7 @@ use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::remote::blocks::StreamedBlock;
-use crate::index::hnsw_index::remote::wire::RemoteGraphParams;
+use crate::index::hnsw_index::remote::wire::{RemoteGraphParams, RemoteIndexParams};
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -38,19 +38,20 @@ pub(crate) fn build_requested_graph(
     progress: &ProgressTracker,
     next_blocks: &mut dyn FnMut() -> OperationResult<Option<Vec<StreamedBlock>>>,
 ) -> OperationResult<GraphLayersBuilder> {
+    let RemoteIndexParams::Hnsw(hnsw) = &params.index;
     let mut ctx = GraphBuildContext {
         id_tracker,
         vector_storage,
         quantized_vectors,
         progress: None,
         main_params: GraphParams {
-            hnsw_m: params.main_m(),
-            ef_construct: params.ef_construct,
-            entry_points_num: params.entry_points_num,
+            hnsw_m: hnsw.main_m(),
+            ef_construct: hnsw.ef_construct,
+            entry_points_num: hnsw.entry_points_num,
         },
         block_params: GraphParams {
-            hnsw_m: params.block_m(),
-            ef_construct: params.ef_construct,
+            hnsw_m: hnsw.block_m(),
+            ef_construct: hnsw.ef_construct,
             entry_points_num: 1,
         },
         stopped,

@@ -19,8 +19,8 @@ use crate::index::hnsw_index::remote::registry::{
     NewTask, REMOTE_INDEXING_TASKS, SharedQuantizedVectors, TaskHandle, TaskOutcome, WaitInterrupt,
 };
 use crate::index::hnsw_index::remote::wire::{
-    BlockPlan, RemoteGraphParams, RemoteQuantization, SUPPORTED_GRAPH_FORMAT_VERSIONS,
-    VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+    BlockPlan, HnswBuildParams, RemoteGraphParams, RemoteIndexParams, RemoteQuantization,
+    SUPPORTED_GRAPH_FORMAT_VERSIONS, VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
 };
 use crate::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskScope, TaskSubmission,
@@ -189,12 +189,14 @@ impl<'a> RemoteBuilder<'a> {
             datatype,
             distance,
             multivector_config,
-            m: local.ctx.main_params.hnsw_m.m,
-            m0: local.ctx.main_params.hnsw_m.m0,
-            ef_construct: local.ctx.main_params.ef_construct,
-            entry_points_num: local.ctx.main_params.entry_points_num,
-            payload_m: local.ctx.block_params.hnsw_m.m,
-            payload_m0: local.ctx.block_params.hnsw_m.m0,
+            index: RemoteIndexParams::Hnsw(HnswBuildParams {
+                m: local.ctx.main_params.hnsw_m.m,
+                m0: local.ctx.main_params.hnsw_m.m0,
+                ef_construct: local.ctx.main_params.ef_construct,
+                entry_points_num: local.ctx.main_params.entry_points_num,
+                payload_m: local.ctx.block_params.hnsw_m.m,
+                payload_m0: local.ctx.block_params.hnsw_m.m0,
+            }),
             point_count: local.ctx.vector_storage.total_vector_count(),
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: args.source,
@@ -356,6 +358,7 @@ fn submit_attempt(
         scope: args.scope.clone(),
         vector_bytes: args.vector_bytes,
         point_count: prepared.params.point_count as u64,
+        index: prepared.params.index,
         graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
         attempt,
     };
