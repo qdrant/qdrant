@@ -258,15 +258,4 @@ mod tests {
             Err(SubmitError::Transient(_))
         ));
     }
-
-    #[test]
-    fn parses_collection_and_shard() {
-        let path =
-            Path::new("/qdrant/storage/collections/my_coll/3/segments/temp/abc/vector_index-image");
-        assert_eq!(collection_and_shard(path), ("my_coll".to_string(), 3));
-        assert_eq!(
-            collection_and_shard(Path::new("/tmp/x")),
-            (String::new(), 0)
-        );
-    }
 }

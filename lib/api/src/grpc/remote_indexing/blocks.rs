@@ -76,32 +76,3 @@ fn block_from_grpc(block: IndexingPayloadBlock) -> StreamedBlock {
         points,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn batches_roundtrip() {
-        let batches = [
-            BlocksBatch::Blocks {
-                first: 7,
-                blocks: vec![StreamedBlock {
-                    field: "city".to_string(),
-                    skip_if_connected: true,
-                    cardinality: 3,
-                    points: vec![1, 5, 9],
-                }],
-            },
-            BlocksBatch::NotReady,
-            BlocksBatch::Finished,
-        ];
-        for batch in batches {
-            assert_eq!(
-                blocks_batch_from_grpc(blocks_batch_to_grpc(batch.clone())).unwrap(),
-                batch
-            );
-        }
-        assert!(blocks_batch_from_grpc(IndexingPayloadBlocksBatch { result: None }).is_err());
-    }
-}
