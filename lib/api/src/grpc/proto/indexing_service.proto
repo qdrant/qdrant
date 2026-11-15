@@ -58,6 +58,33 @@ message IndexingHnswParams {
   // `m` and `m0` of the payload block graphs.
   uint64 payload_m = 5;
   uint64 payload_m0 = 6;
+  // How the main graph is built. Payload block graphs, and main graphs the algorithm does not
+  // apply to, are built by HNSW insertion with `ef_construct`.
+  IndexingGraphAlgorithm main_graph = 7;
+}
+
+// The algorithm of the main graph, with its parameters, as core resolved them from the
+// collection config and its feature flags: the indexer builds what core would build locally,
+// whatever its own version and flags. A new algorithm, or a version of one with other
+// parameters, is a new case. Indexers refuse a task whose case they do not know (an unset one
+// included), permanently.
+message IndexingGraphAlgorithm {
+  oneof algorithm {
+    IndexingHnswInsertion hnsw = 1;
+    IndexingPipnnParams pipnn = 2;
+  }
+}
+
+// Insert the points one by one. `ef_construct` controls the quality.
+message IndexingHnswInsertion {}
+
+// PiPNN where it applies (large enough segments, vectors with a matrix scorer), HNSW insertion
+// otherwise. The partitioning keeps its defaults, and the indexer draws the seed.
+message IndexingPipnnParams {
+  // Nearest neighbors each point keeps per leaf.
+  uint64 leaf_k = 1;
+  // Reservoir capacity per point, as a multiple of the level's degree limit.
+  uint64 reservoir_factor = 2;
 }
 
 message SubmitIndexingTaskResponse {

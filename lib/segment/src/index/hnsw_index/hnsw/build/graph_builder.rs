@@ -18,6 +18,7 @@ use super::remote_builder::RemoteBuilder;
 use super::remote_steps::{self, RemoteBuildArgs};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
+use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
@@ -67,6 +68,9 @@ pub(super) struct GraphBuildOptions<'a> {
     /// Set if a remote indexer is configured and the vector data is large enough (§4.2).
     /// Never set without the `remote-indexing` feature.
     pub remote: Option<RemoteBuildArgs<'a>>,
+    /// The algorithm of the main graph, where it applies. A remote build sends it to the
+    /// indexer, which builds with it.
+    pub main_graph: MainGraphAlgorithm,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -79,8 +83,7 @@ impl<'a> GraphBuilder<'a> {
     ///    old graph, and what fails on the GPU is built by the method of rules 3 to 5, which
     ///    the GPU method keeps for the whole build: the old graph is healed if the GPU fails.
     /// 3. An old graph worth healing: healing.
-    /// 4. PiPNN, unless the `pipnn_graph_building` feature flag is off, if it applies, see
-    ///    [`PipnnBuilder::new`].
+    /// 4. PiPNN, if `options.main_graph` is PiPNN and it applies, see [`PipnnBuilder::new`].
     /// 5. Otherwise, HNSW.
     ///
     /// With remote indexing, rule 3 comes before rule 2, followed by: a remote indexer, if
@@ -97,6 +100,7 @@ impl<'a> GraphBuilder<'a> {
             gpu_device,
             has_payload_blocks,
             remote,
+            main_graph,
         } = options;
 
         let local = LocalBuilder::new(ctx, pool, rng, old_index)?;
@@ -109,9 +113,10 @@ impl<'a> GraphBuilder<'a> {
                 && local.points.len() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
             {
                 return Ok(remote_steps::remote_builder(
-                    Self::without_gpu(local, None),
+                    Self::without_gpu(local, None, main_graph),
                     remote,
                     has_payload_blocks,
+                    main_graph,
                 ));
             }
         }
@@ -123,29 +128,34 @@ impl<'a> GraphBuilder<'a> {
             && let Some(gpu) = GpuState::new(&local.ctx, gpu_device)?
         {
             return Ok(Self::Gpu(Box::new(GpuBuilder {
-                cpu: Self::without_gpu(local, old_index),
+                cpu: Self::without_gpu(local, old_index, main_graph),
                 gpu,
             })));
         }
         #[cfg(not(feature = "gpu"))]
         let _ = (gpu_device, has_payload_blocks);
 
-        Ok(Self::without_gpu(local, old_index))
+        Ok(Self::without_gpu(local, old_index, main_graph))
     }
 
     /// The method `select` picks without a GPU: healing if there is an old graph worth
-    /// healing, otherwise PiPNN if it is enabled and applies, HNSW if not. `local` has the
-    /// levels of `old_index`.
-    fn without_gpu(local: LocalBuilder<'a>, old_index: Option<&'a OldIndex<'a>>) -> Self {
-        match old_index {
+    /// healing, otherwise PiPNN if `main_graph` asks for it and it applies, HNSW if not.
+    /// `local` has the levels of `old_index`.
+    fn without_gpu(
+        local: LocalBuilder<'a>,
+        old_index: Option<&'a OldIndex<'a>>,
+        main_graph: MainGraphAlgorithm,
+    ) -> Self {
+        match (old_index, main_graph) {
             // Healing wins, also over PiPNN, which can't build incrementally
-            Some(old_index) => Self::Healing(HealingBuilder::from_local(local, old_index)),
-            None if pipnn_builder::enabled() => match PipnnBuilder::new(local) {
-                Ok(builder) => Self::Pipnn(builder),
-                Err(local) => Self::Hnsw(HnswBuilder(*local)),
-            },
-            // PiPNN is switched off
-            None => Self::Hnsw(HnswBuilder(local)),
+            (Some(old_index), _) => Self::Healing(HealingBuilder::from_local(local, old_index)),
+            (None, MainGraphAlgorithm::Pipnn(settings)) => {
+                match PipnnBuilder::new(local, settings) {
+                    Ok(builder) => Self::Pipnn(builder),
+                    Err(local) => Self::Hnsw(HnswBuilder(*local)),
+                }
+            }
+            (None, MainGraphAlgorithm::Hnsw) => Self::Hnsw(HnswBuilder(local)),
         }
     }
 

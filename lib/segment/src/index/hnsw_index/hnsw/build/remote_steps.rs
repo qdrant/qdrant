@@ -19,6 +19,7 @@ pub(super) use super::remote_builder::RemoteBuildArgs;
 use super::remote_builder::{RemoteBuilder, worth_remote};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::hnsw_index::remote::blocks::BlockStream;
 use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
 use crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS;
@@ -92,8 +93,14 @@ pub(super) fn remote_builder<'a>(
     cpu: GraphBuilder<'a>,
     args: RemoteBuildArgs<'a>,
     has_payload_blocks: bool,
+    main_graph: MainGraphAlgorithm,
 ) -> GraphBuilder<'a> {
-    GraphBuilder::Remote(Box::new(RemoteBuilder::new(cpu, args, has_payload_blocks)))
+    GraphBuilder::Remote(Box::new(RemoteBuilder::new(
+        cpu,
+        args,
+        has_payload_blocks,
+        main_graph,
+    )))
 }
 
 /// Before `build_main`, for a remote builder: submit the task, so that the indexer builds the
