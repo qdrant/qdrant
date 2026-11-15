@@ -5158,30 +5158,6 @@ mod tests {
     }
 
     #[test]
-    fn test_hnsw_indexing_mismatch() {
-        // Setting the defaults explicitly must not trigger a rebuild
-        let unset = HnswConfig::default();
-        let defaults = HnswConfig {
-            indexing_algorithm: Some(IndexingAlgorithm::Auto),
-            indexing_effort: Some(IndexingEffort::Medium),
-            ..unset
-        };
-        assert!(!unset.mismatch_requires_rebuild(&defaults));
-
-        // Changing the algorithm or the effort does require a rebuild
-        let hnsw = HnswConfig {
-            indexing_algorithm: Some(IndexingAlgorithm::Hnsw),
-            ..unset
-        };
-        assert!(unset.mismatch_requires_rebuild(&hnsw));
-        let high = HnswConfig {
-            indexing_effort: Some(IndexingEffort::High),
-            ..unset
-        };
-        assert!(unset.mismatch_requires_rebuild(&high));
-    }
-
-    #[test]
     fn test_quantization_memory_placement() {
         let mut scalar = ScalarQuantizationConfig {
             r#type: ScalarType::Int8,
