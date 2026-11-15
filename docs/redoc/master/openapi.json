@@ -12073,8 +12073,8 @@
             "type": "boolean"
           },
           "pipnn_graph_building": {
-            "description": "Build the main HNSW graph of large segments with PiPNN instead of inserting point by point. When disabled, PiPNN is *never* used and graphs are built with HNSW. When enabled, PiPNN is used where it applies: segments that are large enough, have no older graph to build from, and whose vectors support it. Only changes how graphs are built: the resulting graph has the same format either way.\n\nEnabled by default.",
-            "default": true,
+            "description": "Build the main HNSW graph of large segments with PiPNN instead of inserting point by point. When disabled, PiPNN is *never* used and graphs are built with HNSW. When enabled, PiPNN is used where it applies: segments that are large enough, have no older graph to build from, and whose vectors support it. Only changes how graphs are built: the resulting graph has the same format either way.\n\nDisabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large segments can only be tuned through `m`.",
+            "default": false,
             "type": "boolean"
           },
           "serverless_compatible": {
