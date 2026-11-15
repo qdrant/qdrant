@@ -1,18 +1,14 @@
-use common::types::DeferredBehavior;
-
-use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::query_optimization::filter_checks::worth_sharing;
-use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
-use crate::index::query_optimization::resolved_points::ResolvedPoints;
+use crate::index::query_optimization::resolve_filter::resolve_filter;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
-use crate::types::{Condition, Filter};
+use crate::types::Filter;
 
 impl<TIdT, TPI, TPS, TVD> SegmentReadView<'_, TIdT, TPI, TPS, TVD>
 where
@@ -63,22 +59,14 @@ where
             return Ok(None);
         }
 
-        // The visibility vector searches use
-        let is_stopped = query_context.is_stopped_flag();
-        let points = self.payload_index.iter_filtered_points(
+        resolve_filter(
+            self.payload_index,
+            self.id_tracker.total_point_count(),
             filter,
             &cardinality,
-            is_stopped,
-            DeferredBehavior::VisibleOnly,
-        )?;
-        // Whether the set is a bitset or a list depends only on its density in the segment
-        let context = PointSetContext::by_density(self.id_tracker.total_point_count());
-        let points = PointSet::from_points(points, cardinality.exp, context);
-        // A stopped iteration ends early: never hand out a partial set
-        check_stopped(is_stopped)?;
-
-        Ok(Some(Filter::new_must(Condition::ResolvedPoints(
-            ResolvedPoints::new(self.segment_uuid, points, &cardinality),
-        ))))
+            query_context.is_stopped_flag(),
+            self.segment_uuid,
+        )
+        .map(Some)
     }
 }
