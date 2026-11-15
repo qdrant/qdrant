@@ -147,20 +147,33 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
+    async fn apply_config(&self, mut new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
             let mut config = self.collection_config.write().await;
 
-            if config.uuid != new_config.uuid {
-                return Err(CollectionError::service_error(format!(
-                    "collection {} UUID mismatch: \
-                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
-                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
-                    self.id, config.uuid, new_config.uuid,
-                )));
-            }
+            // A missing UUID on either side belongs to a collection created outside of consensus,
+            // so take whichever UUID is known
+            let is_uuid_assigned = match (config.uuid, new_config.uuid) {
+                (Some(existing), Some(snapshot)) => {
+                    if existing != snapshot {
+                        return Err(CollectionError::service_error(format!(
+                            "collection {} UUID mismatch: \
+                             UUID of existing collection is different from UUID of collection in Raft snapshot: \
+                             existing collection UUID: {existing}, Raft snapshot collection UUID: {snapshot}",
+                            self.id,
+                        )));
+                    }
+                    false
+                }
+                (Some(existing), None) => {
+                    new_config.uuid = Some(existing);
+                    false
+                }
+                (None, Some(_)) => true,
+                (None, None) => false,
+            };
 
             if let Err(err) = config.params.check_compatible(&new_config.params) {
                 // Stop consensus with a service error, if new config is incompatible with current one.
@@ -196,7 +209,8 @@ impl Collection {
             let is_wal_config_updated = wal_config != &config.wal_config;
             let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
 
-            let is_config_updated = is_core_config_updated
+            let is_config_updated = is_uuid_assigned
+                || is_core_config_updated
                 || is_wal_config_updated
                 || is_strict_mode_config_updated
                 || is_metadata_updated;
