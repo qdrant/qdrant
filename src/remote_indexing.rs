@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use api::grpc::qdrant::indexing_service_client::IndexingServiceClient;
 use api::grpc::qdrant::{IndexingTaskRefusal, IndexingTaskSubmission, SubmitIndexingTaskResponse};
+use api::grpc::remote_indexing::index_params_to_grpc;
 use segment::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission, set_remote_indexer,
 };
@@ -156,6 +157,7 @@ impl ClientInner {
             point_count: task.point_count,
             attempt: task.attempt,
             cluster_id: self.config.cluster_id.clone(),
+            index: Some(index_params_to_grpc(&task.index)),
         });
         if let Some(api_key) = &self.config.api_key {
             let value = api_key

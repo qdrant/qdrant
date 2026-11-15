@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 pub use self::registry::{TaskScope, TaskToken};
 pub use self::submit_error::SubmitError;
+use self::wire::RemoteIndexParams;
 pub use crate::index::hnsw_index::entry_points::EntryPoint;
 
 /// What to do when the remote build fails: the indexer is unreachable, reports a failure, the
@@ -68,6 +69,9 @@ pub struct TaskSubmission {
     /// Size of the vector data and number of points, for scheduling and billing.
     pub vector_bytes: u64,
     pub point_count: u64,
+    /// The index to build: the entry point refuses what it does not build, or not that large,
+    /// before any data moves.
+    pub index: RemoteIndexParams,
     /// Graph formats core reads (D9).
     pub graph_format_versions: Vec<u32>,
     /// 0 for the first submission, then one more per retry.

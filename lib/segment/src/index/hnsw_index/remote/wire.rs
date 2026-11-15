@@ -70,15 +70,8 @@ pub struct RemoteGraphParams {
     pub distance: Distance,
     /// Set for multivectors: then each vector is a flattened list of `dim`-sized vectors.
     pub multivector_config: Option<MultiVectorConfig>,
-    /// Main graph `m` and `m0`. `m == 0` means no main graph: only payload blocks link points.
-    pub m: usize,
-    pub m0: usize,
-    pub ef_construct: usize,
-    /// Number of entry points the main graph keeps.
-    pub entry_points_num: usize,
-    /// `m` and `m0` of payload block graphs.
-    pub payload_m: usize,
-    pub payload_m0: usize,
+    /// The index to build, and its parameters.
+    pub index: RemoteIndexParams,
     /// Number of point offsets in the segment, deleted included: `0..point_count`. Points
     /// not to be indexed have an empty entry in `ReadVectors`.
     pub point_count: usize,
@@ -92,7 +85,33 @@ pub struct RemoteGraphParams {
     pub max_block_wait: Duration,
 }
 
-impl RemoteGraphParams {
+/// The index a task builds, with the parameters of its kind. Sent with `SubmitTask`, so the
+/// entry point can refuse what it does not build (or not that large) before any data moves,
+/// and with `GetTask`.
+///
+/// A new kind of index, or a version of one with other parameters, is a new variant here and
+/// a new case of the `IndexingIndexParams` oneof. Indexers refuse cases they do not know, and
+/// every `match` on this enum shows what the new variant needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteIndexParams {
+    Hnsw(HnswBuildParams),
+}
+
+/// Parameters of an HNSW graph: the main graph and the payload block graphs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HnswBuildParams {
+    /// Main graph `m` and `m0`. `m == 0` means no main graph: only payload blocks link points.
+    pub m: usize,
+    pub m0: usize,
+    pub ef_construct: usize,
+    /// Number of entry points the main graph keeps.
+    pub entry_points_num: usize,
+    /// `m` and `m0` of payload block graphs.
+    pub payload_m: usize,
+    pub payload_m0: usize,
+}
+
+impl HnswBuildParams {
     pub fn main_m(&self) -> HnswM {
         HnswM::new(self.m, self.m0)
     }
@@ -205,10 +224,11 @@ pub struct GraphLimits<'a> {
 
 impl<'a> GraphLimits<'a> {
     pub fn new(params: &RemoteGraphParams, plan: &BlockPlan, deleted: &'a BitSlice) -> Self {
+        let RemoteIndexParams::Hnsw(hnsw) = &params.index;
         Self {
             point_count: params.point_count,
-            main_m: params.main_m(),
-            block_m: params.block_m(),
+            main_m: hnsw.main_m(),
+            block_m: hnsw.block_m(),
             block_memberships: plan.block_memberships(params.point_count),
             deleted,
         }
@@ -440,12 +460,14 @@ mod tests {
             datatype: VectorStorageDatatype::Float32,
             distance: Distance::Dot,
             multivector_config: None,
-            m: 2,
-            m0: 4,
-            ef_construct: 10,
-            entry_points_num: 1,
-            payload_m: 2,
-            payload_m0: 4,
+            index: RemoteIndexParams::Hnsw(HnswBuildParams {
+                m: 2,
+                m0: 4,
+                ef_construct: 10,
+                entry_points_num: 1,
+                payload_m: 2,
+                payload_m0: 4,
+            }),
             point_count,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
             vector_source: VectorSource::Storage,
