@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomic_refcell::AtomicRefCell;
-use common::budget::ResourcePermit;
 use common::progress_tracker::ProgressTracker;
 use log::debug;
 
@@ -36,15 +35,14 @@ pub(super) type FallbackBlocks = BlockPlan;
 /// What a remote build needs, if a remote indexer is configured, the storage can be built
 /// remotely, and the vector data is large enough (D3, D11). Whether the build actually goes
 /// remote is decided by `GraphBuilder::select`.
-pub(super) fn build_args<'a>(
+pub(super) fn build_args(
     path: &Path,
     vector_storage: &Arc<AtomicRefCell<VectorStorageEnum>>,
     vector_storage_ref: &VectorStorageEnum,
     quantized_vectors: &Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     quantized_vectors_ref: Option<&QuantizedVectors>,
-    permit: &'a ResourcePermit,
     progress: &ProgressTracker,
-) -> Option<RemoteBuildArgs<'a>> {
+) -> Option<RemoteBuildArgs> {
     let indexer = remote_indexer()?;
     let layout = RemoteVectorLayout::of(vector_storage_ref)?;
     // `total_vector_count × dim × element size`, like `indexing_threshold_kb`
@@ -75,7 +73,6 @@ pub(super) fn build_args<'a>(
         source,
         quantization,
         quantized_vectors,
-        permit,
         progress: progress.subtask("remote_build"),
     })
 }
@@ -91,7 +88,7 @@ pub(super) fn kept_local_for_healing() {
 /// The remote method, with `cpu` as its local fallback.
 pub(super) fn remote_builder<'a>(
     cpu: GraphBuilder<'a>,
-    args: RemoteBuildArgs<'a>,
+    args: RemoteBuildArgs,
     has_payload_blocks: bool,
     main_graph: MainGraphAlgorithm,
 ) -> GraphBuilder<'a> {

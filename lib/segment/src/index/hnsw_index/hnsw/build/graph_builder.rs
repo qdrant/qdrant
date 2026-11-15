@@ -67,7 +67,7 @@ pub(super) struct GraphBuildOptions<'a> {
     pub has_payload_blocks: bool,
     /// Set if a remote indexer is configured and the vector data is large enough (§4.2).
     /// Never set without the `remote-indexing` feature.
-    pub remote: Option<RemoteBuildArgs<'a>>,
+    pub remote: Option<RemoteBuildArgs>,
     /// The algorithm of the main graph, where it applies. A remote build sends it to the
     /// indexer, which builds with it.
     pub main_graph: MainGraphAlgorithm,
