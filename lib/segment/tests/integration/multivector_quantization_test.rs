@@ -317,6 +317,8 @@ fn test_multivector_quantization_hnsw(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build

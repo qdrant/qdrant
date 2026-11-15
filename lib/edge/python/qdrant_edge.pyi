@@ -64,6 +64,26 @@ class Memory(Enum):
     Cached = ...
     Pinned = ...
 
+class IndexingAlgorithm(Enum):
+    """Algorithm that builds the HNSW graph.
+
+    ``Auto`` uses PiPNN for the main graph of large segments with vectors it
+    supports, HNSW otherwise. ``Hnsw`` inserts the points one by one into the
+    graph, with the quality controlled by ``ef_construct``.
+    """
+
+    Auto = ...
+    Hnsw = ...
+
+class IndexingEffort(Enum):
+    """How much work the graph build may spend on quality, for graphs built by
+    PiPNN. Graphs built by HNSW are controlled by ``ef_construct``.
+    """
+
+    Low = ...
+    Medium = ...
+    High = ...
+
 class EdgeShard:
     """
     The main class representing a Qdrant Edge shard.
@@ -584,6 +604,8 @@ class HnswIndexConfig:
         payload_m: Optional[int] = None,
         inline_storage: Optional[bool] = None,
         memory: Optional["Memory"] = None,
+        indexing_algorithm: Optional["IndexingAlgorithm"] = None,
+        indexing_effort: Optional["IndexingEffort"] = None,
     ) -> None:
         """
         Create an HnswIndexConfig.
@@ -598,6 +620,8 @@ class HnswIndexConfig:
             inline_storage: Whether to use inline storage.
             memory: Memory placement of the HNSW graph. Overrides the deprecated on_disk
                     flag if both are set.
+            indexing_algorithm: Algorithm that builds the graph. Default: Auto.
+            indexing_effort: Effort of graphs built by PiPNN. Default: Medium.
         """
         ...
 
@@ -639,6 +663,16 @@ class HnswIndexConfig:
     @property
     def memory(self) -> Optional["Memory"]:
         """Memory placement of the HNSW graph, or None if not specified."""
+        ...
+
+    @property
+    def indexing_algorithm(self) -> Optional["IndexingAlgorithm"]:
+        """Algorithm that builds the graph, or None if not specified."""
+        ...
+
+    @property
+    def indexing_effort(self) -> Optional["IndexingEffort"]:
+        """Effort of graphs built by PiPNN, or None if not specified."""
         ...
 
 class MultiVectorConfig:

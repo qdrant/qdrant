@@ -146,6 +146,8 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
@@ -354,6 +356,8 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
         on_disk: Some(false),
         payload_m: Some(M),
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     HNSWIndex::build(

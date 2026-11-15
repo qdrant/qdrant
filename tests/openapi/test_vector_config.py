@@ -305,3 +305,55 @@ def insert_vectors(collection_name='test_collection', count=2000, size=256):
         assert response.ok
 
         start += batch_size
+
+
+def test_indexing_algorithm_and_effort():
+    test_collection = "test_indexing_algorithm_and_effort"
+    drop_collection(collection_name=test_collection)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PUT",
+        path_params={"collection_name": test_collection},
+        body={
+            "vectors": {
+                "image": {"size": 4, "distance": "Dot"},
+                "text": {
+                    "size": 4,
+                    "distance": "Dot",
+                    "hnsw_config": {"indexing_effort": "low"},
+                },
+            },
+            "hnsw_config": {"indexing_algorithm": "hnsw", "indexing_effort": "high"},
+        },
+    )
+    assert response.ok
+
+    def get_config():
+        response = request_with_validation(
+            api="/collections/{collection_name}",
+            method="GET",
+            path_params={"collection_name": test_collection},
+        )
+        assert response.ok
+        return response.json()["result"]["config"]
+
+    config = get_config()
+    assert config["hnsw_config"]["indexing_algorithm"] == "hnsw"
+    assert config["hnsw_config"]["indexing_effort"] == "high"
+    assert config["params"]["vectors"]["text"]["hnsw_config"]["indexing_effort"] == "low"
+
+    # Updating one keeps the other
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PATCH",
+        path_params={"collection_name": test_collection},
+        body={"hnsw_config": {"indexing_algorithm": "auto"}},
+    )
+    assert response.ok
+
+    config = get_config()
+    assert config["hnsw_config"]["indexing_algorithm"] == "auto"
+    assert config["hnsw_config"]["indexing_effort"] == "high"
+
+    drop_collection(collection_name=test_collection)

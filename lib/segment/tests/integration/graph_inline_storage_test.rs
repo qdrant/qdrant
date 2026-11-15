@@ -49,6 +49,8 @@ fn indexed_config(
         memory: None,
         payload_m: None,
         inline_storage: Some(inline_storage),
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     #[expect(
         deprecated,

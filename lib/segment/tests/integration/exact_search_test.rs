@@ -81,6 +81,8 @@ fn exact_search_test() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     payload_index_ptr

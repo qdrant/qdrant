@@ -81,6 +81,8 @@ fn segment_config(optimized: bool) -> SegmentConfig {
             on_disk: Some(false),
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         })
     } else {
         Indexes::Plain {}

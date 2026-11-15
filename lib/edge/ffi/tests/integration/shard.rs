@@ -885,6 +885,8 @@ fn hnsw_config_optimize_and_search() {
                     max_indexing_threads: 1,
                     memory: Some(Memory::Cached),
                     payload_m: None,
+                    indexing_algorithm: None,
+                    indexing_effort: None,
                 }),
             },
         )]),
@@ -984,6 +986,8 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         max_indexing_threads: 1,
         memory: Some(Memory::Cached),
         payload_m: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     // Each oversized field must be rejected as InvalidArgument, not allocated.
@@ -3279,6 +3283,8 @@ fn lifecycle_additions_work() {
             max_indexing_threads: 1,
             memory: Some(Memory::Cached),
             payload_m: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         })
         .expect("set_hnsw_config failed");
 
@@ -3291,6 +3297,8 @@ fn lifecycle_additions_work() {
             max_indexing_threads: 1,
             memory: None,
             payload_m: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         })
         .expect_err("oversized m must be rejected");
     assert!(matches!(err, EdgeError::InvalidArgument { .. }));
@@ -3305,6 +3313,8 @@ fn lifecycle_additions_work() {
                 max_indexing_threads: 1,
                 memory: None,
                 payload_m: None,
+                indexing_algorithm: None,
+                indexing_effort: None,
             },
         )
         .expect("set_vector_hnsw_config failed");

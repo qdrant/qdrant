@@ -1,3 +1,4 @@
+pub mod graph_indexing;
 pub mod optimizers;
 pub mod quantization;
 pub mod sparse_vector_data;
@@ -10,6 +11,7 @@ use edge::EdgeConfig;
 use pyo3::prelude::*;
 use segment::types::{Memory, QuantizationConfig, VectorNameBuf};
 
+pub use self::graph_indexing::*;
 pub use self::optimizers::*;
 pub use self::quantization::*;
 pub use self::sparse_vector_data::*;

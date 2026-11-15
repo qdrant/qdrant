@@ -137,6 +137,8 @@ fn indexed_segment(dir: &std::path::Path) -> Segment {
         memory: None,
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     let temp_dir = Builder::new().prefix("builder").tempdir().unwrap();
     let mut builder = SegmentBuilder::new(

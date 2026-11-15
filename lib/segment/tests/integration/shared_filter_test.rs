@@ -269,6 +269,8 @@ fn test_hnsw_resolved_filter_plans_like_original() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let hnsw_index = build_hnsw(&segment, hnsw_config, hnsw_dir.path(), &mut rng);
@@ -364,6 +366,8 @@ fn test_hnsw_with_resolved_filter() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let hnsw_index = build_hnsw(&segment, hnsw_config, hnsw_dir.path(), &mut rng);

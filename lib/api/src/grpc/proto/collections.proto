@@ -30,6 +30,22 @@ enum Memory {
   Pinned = 3;
 }
 
+enum IndexingAlgorithm {
+  IndexingAlgorithmUnknown = 0;
+  // Pick per segment: PiPNN for the main graph of large segments with vectors it supports,
+  // HNSW otherwise.
+  IndexingAlgorithmAuto = 1;
+  // Insert the points one by one into the graph. `ef_construct` controls the quality.
+  IndexingAlgorithmHnsw = 2;
+}
+
+enum IndexingEffort {
+  IndexingEffortUnknown = 0;
+  IndexingEffortLow = 1;
+  IndexingEffortMedium = 2;
+  IndexingEffortHigh = 3;
+}
+
 // ---------------------------------------------
 // ------------- Collection Config -------------
 // ---------------------------------------------
@@ -263,6 +279,11 @@ message HnswConfigDiff {
   // Memory placement of the HNSW graph.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 8;
+  // Algorithm that builds the graph. Default: `Auto`.
+  optional IndexingAlgorithm indexing_algorithm = 9;
+  // How much work the graph build may spend on quality, for graphs built by PiPNN.
+  // Graphs built by HNSW are controlled by `ef_construct`. Default: `Medium`.
+  optional IndexingEffort indexing_effort = 10;
 }
 
 message SparseIndexConfig {

@@ -145,6 +145,8 @@ fn hnsw_quantized_search_test(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     // Cells where the recall margin sits close to the 40% floor (e.g. TQ Bits2)
@@ -967,6 +969,8 @@ fn build_quantized_hnsw_for_compare(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit = Arc::new(ResourcePermit::dummy(2));
@@ -1127,6 +1131,8 @@ fn test_build_hnsw_using_quantization() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     });
 
     let mut builder = SegmentBuilder::new(

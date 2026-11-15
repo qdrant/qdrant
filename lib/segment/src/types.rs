@@ -35,7 +35,9 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
+mod graph_indexing;
 mod hnsw_config_serde;
+pub use self::graph_indexing::{IndexingAlgorithm, IndexingEffort};
 use self::hnsw_config_serde::HnswConfigDeserialize;
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -890,6 +892,13 @@ pub struct HnswConfig {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Algorithm that builds the graph. Default: `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// How much work the graph build may spend on quality, for graphs built by PiPNN.
+    /// Graphs built by HNSW are controlled by `ef_construct`. Default: `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 impl HnswConfig {
@@ -913,6 +922,9 @@ impl HnswConfig {
             on_disk: _,
             memory: _,
             inline_storage,
+            // Compared resolved, so that setting the default explicitly does not trigger a rebuild
+            indexing_algorithm: _,
+            indexing_effort: _,
         } = *self;
 
         m != other.m
@@ -924,6 +936,18 @@ impl HnswConfig {
             // to flip this flag
             || self.memory_placement() != other.memory_placement()
             || inline_storage != other.inline_storage
+            || self.indexing_algorithm() != other.indexing_algorithm()
+            || self.indexing_effort() != other.indexing_effort()
+    }
+
+    /// Algorithm that builds the graph, [`IndexingAlgorithm::Auto`] if unset.
+    pub fn indexing_algorithm(&self) -> IndexingAlgorithm {
+        self.indexing_algorithm.unwrap_or_default()
+    }
+
+    /// Effort of the graph build, [`IndexingEffort::Medium`] if unset.
+    pub fn indexing_effort(&self) -> IndexingEffort {
+        self.indexing_effort.unwrap_or_default()
     }
 
     /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
@@ -1713,6 +1737,8 @@ impl Default for HnswConfig {
             memory: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         }
     }
 }
@@ -5129,6 +5155,30 @@ mod tests {
             ..legacy
         };
         assert!(legacy.mismatch_requires_rebuild(&cached));
+    }
+
+    #[test]
+    fn test_hnsw_indexing_mismatch() {
+        // Setting the defaults explicitly must not trigger a rebuild
+        let unset = HnswConfig::default();
+        let defaults = HnswConfig {
+            indexing_algorithm: Some(IndexingAlgorithm::Auto),
+            indexing_effort: Some(IndexingEffort::Medium),
+            ..unset
+        };
+        assert!(!unset.mismatch_requires_rebuild(&defaults));
+
+        // Changing the algorithm or the effort does require a rebuild
+        let hnsw = HnswConfig {
+            indexing_algorithm: Some(IndexingAlgorithm::Hnsw),
+            ..unset
+        };
+        assert!(unset.mismatch_requires_rebuild(&hnsw));
+        let high = HnswConfig {
+            indexing_effort: Some(IndexingEffort::High),
+            ..unset
+        };
+        assert!(unset.mismatch_requires_rebuild(&high));
     }
 
     #[test]

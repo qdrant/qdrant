@@ -308,6 +308,8 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         // Optimizers used in test

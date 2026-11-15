@@ -9,7 +9,8 @@ use segment::types::{
     BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding as SegmentBinaryQuantizationQueryEncoding,
     CompressionRatio as SegmentCompressionRatio, Distance as SegmentDistance,
-    HnswConfig as SegmentHnswConfig, Indexes, Memory as SegmentMemory,
+    HnswConfig as SegmentHnswConfig, Indexes, IndexingAlgorithm as SegmentIndexingAlgorithm,
+    IndexingEffort as SegmentIndexingEffort, Memory as SegmentMemory,
     MultiVectorComparator as SegmentMultiVectorComparator,
     MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType, ProductQuantization,
     ProductQuantizationConfig, QuantizationConfig as SegmentQuantizationConfig, ScalarQuantization,
@@ -378,6 +379,64 @@ impl From<SegmentMemory> for Memory {
     }
 }
 
+/// Algorithm that builds the HNSW graph.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum IndexingAlgorithm {
+    /// PiPNN for the main graph of large segments with vectors it supports,
+    /// HNSW otherwise.
+    Auto,
+    /// Insert the points one by one into the graph. `ef_construct` controls
+    /// the quality.
+    Hnsw,
+}
+
+impl From<IndexingAlgorithm> for SegmentIndexingAlgorithm {
+    fn from(algorithm: IndexingAlgorithm) -> Self {
+        match algorithm {
+            IndexingAlgorithm::Auto => SegmentIndexingAlgorithm::Auto,
+            IndexingAlgorithm::Hnsw => SegmentIndexingAlgorithm::Hnsw,
+        }
+    }
+}
+
+impl From<SegmentIndexingAlgorithm> for IndexingAlgorithm {
+    fn from(algorithm: SegmentIndexingAlgorithm) -> Self {
+        match algorithm {
+            SegmentIndexingAlgorithm::Auto => IndexingAlgorithm::Auto,
+            SegmentIndexingAlgorithm::Hnsw => IndexingAlgorithm::Hnsw,
+        }
+    }
+}
+
+/// How much work the graph build may spend on quality, for graphs built by
+/// PiPNN. Graphs built by HNSW are controlled by `ef_construct`.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum IndexingEffort {
+    Low,
+    Medium,
+    High,
+}
+
+impl From<IndexingEffort> for SegmentIndexingEffort {
+    fn from(effort: IndexingEffort) -> Self {
+        match effort {
+            IndexingEffort::Low => SegmentIndexingEffort::Low,
+            IndexingEffort::Medium => SegmentIndexingEffort::Medium,
+            IndexingEffort::High => SegmentIndexingEffort::High,
+        }
+    }
+}
+
+impl From<SegmentIndexingEffort> for IndexingEffort {
+    fn from(effort: SegmentIndexingEffort) -> Self {
+        match effort {
+            SegmentIndexingEffort::Low => IndexingEffort::Low,
+            SegmentIndexingEffort::Medium => IndexingEffort::Medium,
+            SegmentIndexingEffort::High => IndexingEffort::High,
+        }
+    }
+}
+
 // ── Quantization configs ────────────────────────────────────────────────────
 
 /// Parameters for scalar quantization.
@@ -675,6 +734,12 @@ pub struct HnswIndexConfig {
     /// Custom `m` for the payload index graph; defaults to `m` when unset.
     #[uniffi(default = None)]
     pub payload_m: Option<u64>,
+    /// Algorithm that builds the graph. Defaults to `Auto` when unset.
+    #[uniffi(default = None)]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// Effort of graphs built by PiPNN. Defaults to `Medium` when unset.
+    #[uniffi(default = None)]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 // The FFI surface only carries the `memory` placement; the deprecated
@@ -691,6 +756,8 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
             max_indexing_threads,
             memory,
             payload_m,
+            indexing_algorithm,
+            indexing_effort,
         } = c;
         SegmentHnswConfig {
             m: crate::error::clamp_usize(m),
@@ -701,6 +768,8 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
             memory: memory.map(SegmentMemory::from),
             payload_m: payload_m.map(crate::error::clamp_usize),
             inline_storage: None,
+            indexing_algorithm: indexing_algorithm.map(SegmentIndexingAlgorithm::from),
+            indexing_effort: indexing_effort.map(SegmentIndexingEffort::from),
         }
     }
 }
@@ -719,6 +788,8 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
             // Not exposed over FFI; requires quantization and is a
             // server-side disk/speed trade-off tuned at optimizer level.
             inline_storage: _,
+            indexing_algorithm,
+            indexing_effort,
         } = c;
         HnswIndexConfig {
             m: m as u64,
@@ -731,6 +802,8 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
             memory: SegmentMemory::resolve(memory, on_disk.map(SegmentMemory::from_on_disk))
                 .map(Memory::from),
             payload_m: payload_m.map(|v| v as u64),
+            indexing_algorithm: indexing_algorithm.map(IndexingAlgorithm::from),
+            indexing_effort: indexing_effort.map(IndexingEffort::from),
         }
     }
 }

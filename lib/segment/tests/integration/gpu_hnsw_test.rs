@@ -191,6 +191,8 @@ fn test_gpu_filterable_hnsw() {
         memory: None,
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     // Pre-generate queries
@@ -373,6 +375,8 @@ fn test_gpu_before_pipnn() {
         memory: None,
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let gpu_instance = gpu::GPU_TEST_INSTANCE.clone();

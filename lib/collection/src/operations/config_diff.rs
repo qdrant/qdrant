@@ -7,8 +7,8 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, Memory, ProductQuantization, ScalarQuantization,
-    StrictModeConfig, TurboQuantization,
+    BinaryQuantization, HnswConfig, IndexingAlgorithm, IndexingEffort, Memory, ProductQuantization,
+    ScalarQuantization, StrictModeConfig, TurboQuantization,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -85,6 +85,13 @@ pub struct HnswConfigDiff {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Algorithm that builds the graph. Default: `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// How much work the graph build may spend on quality, for graphs built by PiPNN.
+    /// Graphs built by HNSW are controlled by `ef_construct`. Default: `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -236,6 +243,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = diff;
 
         HnswConfig {
@@ -247,6 +256,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            indexing_algorithm: indexing_algorithm.or(self.indexing_algorithm),
+            indexing_effort: indexing_effort.or(self.indexing_effort),
         }
     }
 }
@@ -262,6 +273,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = diff;
 
         HnswConfigDiff {
@@ -273,6 +286,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            indexing_algorithm: indexing_algorithm.or(self.indexing_algorithm),
+            indexing_effort: indexing_effort.or(self.indexing_effort),
         }
     }
 }
@@ -434,6 +449,8 @@ impl From<HnswConfig> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = config;
 
         HnswConfigDiff {
@@ -445,6 +462,8 @@ impl From<HnswConfig> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         }
     }
 }

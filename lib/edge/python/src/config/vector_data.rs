@@ -11,6 +11,7 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 
+use super::graph_indexing::{PyIndexingAlgorithm, PyIndexingEffort};
 use super::quantization::*;
 use crate::repr::*;
 
@@ -198,7 +199,7 @@ pub struct PyHnswIndexConfig(pub HnswConfig);
 impl PyHnswIndexConfig {
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None, memory=None))]
+    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None, memory=None, indexing_algorithm=None, indexing_effort=None))]
     pub fn new(
         m: usize,
         ef_construct: usize,
@@ -208,6 +209,8 @@ impl PyHnswIndexConfig {
         payload_m: Option<usize>,
         inline_storage: Option<bool>,
         memory: Option<PyMemory>,
+        indexing_algorithm: Option<PyIndexingAlgorithm>,
+        indexing_effort: Option<PyIndexingEffort>,
     ) -> Self {
         Self(HnswConfig {
             m,
@@ -218,6 +221,8 @@ impl PyHnswIndexConfig {
             memory: memory.map(Memory::from),
             payload_m,
             inline_storage,
+            indexing_algorithm: indexing_algorithm.map(IndexingAlgorithm::from),
+            indexing_effort: indexing_effort.map(IndexingEffort::from),
         })
     }
 
@@ -264,6 +269,16 @@ impl PyHnswIndexConfig {
         self.0.inline_storage
     }
 
+    #[getter]
+    pub fn indexing_algorithm(&self) -> Option<PyIndexingAlgorithm> {
+        self.0.indexing_algorithm.map(PyIndexingAlgorithm::from)
+    }
+
+    #[getter]
+    pub fn indexing_effort(&self) -> Option<PyIndexingEffort> {
+        self.0.indexing_effort.map(PyIndexingEffort::from)
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -281,6 +296,8 @@ impl PyHnswIndexConfig {
             memory: _,
             payload_m: _,
             inline_storage: _,
+            indexing_algorithm: _,
+            indexing_effort: _,
         } = self.0;
     }
 }

@@ -143,6 +143,8 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         let mut dense_overrides = HashMap::new();
@@ -294,6 +296,8 @@ mod tests {
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         let mut hnsw_config_vector1 = hnsw_config_collection;

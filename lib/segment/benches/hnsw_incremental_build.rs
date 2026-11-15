@@ -372,6 +372,8 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let open_args = HnswIndexOpenArgs {

@@ -9,7 +9,10 @@
 
 use serde::Deserialize;
 
-use super::{DEFAULT_HNSW_EF_CONSTRUCT, HnswConfig, Memory, default_max_indexing_threads};
+use super::{
+    DEFAULT_HNSW_EF_CONSTRUCT, HnswConfig, IndexingAlgorithm, IndexingEffort, Memory,
+    default_max_indexing_threads,
+};
 
 /// Mirror of [`HnswConfig`] for deserialization, see the module docs.
 ///
@@ -32,6 +35,10 @@ pub(super) struct HnswConfigDeserialize {
     payload_m: Option<usize>,
     #[serde(default)]
     inline_storage: Option<bool>,
+    #[serde(default)]
+    indexing_algorithm: Option<IndexingAlgorithm>,
+    #[serde(default)]
+    indexing_effort: Option<IndexingEffort>,
 }
 
 const fn default_ef_construct() -> usize {
@@ -49,6 +56,8 @@ impl From<HnswConfigDeserialize> for HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = config;
 
         #[expect(deprecated)]
@@ -61,6 +70,8 @@ impl From<HnswConfigDeserialize> for HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         }
     }
 }
@@ -82,15 +93,15 @@ mod tests {
             ef_construct: 123,
             payload_m: Some(8),
             memory: Some(Memory::Cold),
+            indexing_algorithm: Some(IndexingAlgorithm::Hnsw),
+            indexing_effort: Some(IndexingEffort::High),
             ..HnswConfig::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         assert_eq!(serde_json::from_str::<HnswConfig>(&json).unwrap(), config);
-        // Still reads the alias and the newer fields, which it ignores
-        let config: HnswConfig = serde_json::from_str(
-            r#"{"m": 16, "full_scan_threshold_kb": 5, "indexing_effort": "high"}"#,
-        )
-        .unwrap();
+        // Still reads the alias
+        let config: HnswConfig =
+            serde_json::from_str(r#"{"m": 16, "full_scan_threshold_kb": 5}"#).unwrap();
         assert_eq!(config.full_scan_threshold, 5);
     }
 }

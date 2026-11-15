@@ -117,6 +117,8 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     // single threaded mode to guarantee equivalency between single and multi hnsw

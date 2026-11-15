@@ -93,6 +93,8 @@ fn test_tenant_graph_with_second_condition(#[case] acorn: bool) {
                 on_disk: Some(false),
                 payload_m: Some(8),
                 inline_storage: None,
+                indexing_algorithm: None,
+                indexing_effort: None,
             },
         },
         VectorIndexBuildArgs {

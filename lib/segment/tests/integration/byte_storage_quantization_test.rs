@@ -448,6 +448,8 @@ fn test_quantization_over_typed_storage_hnsw(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build

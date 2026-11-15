@@ -101,6 +101,8 @@ fn _test_filterable_hnsw(
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
@@ -284,6 +286,8 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
@@ -409,6 +413,8 @@ fn acorn_searches_are_counted_separately() {
                 on_disk: Some(false),
                 payload_m: None,
                 inline_storage: None,
+                indexing_algorithm: None,
+                indexing_effort: None,
             },
         },
         VectorIndexBuildArgs {
