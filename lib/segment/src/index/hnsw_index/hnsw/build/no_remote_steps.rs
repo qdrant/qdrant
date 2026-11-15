@@ -2,13 +2,11 @@
 //! which do nothing. No remote build is ever possible, so the arguments of one can't be made.
 
 use std::convert::Infallible;
-use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::budget::ResourcePermit;
 use common::progress_tracker::ProgressTracker;
 
 use super::block_filter::BlockSkip;
@@ -22,9 +20,8 @@ use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// Can't be constructed.
-pub(super) struct RemoteBuildArgs<'a> {
+pub(super) struct RemoteBuildArgs {
     never: Infallible,
-    _permit: PhantomData<&'a ResourcePermit>,
 }
 
 /// Can't be constructed.
@@ -32,15 +29,14 @@ pub(super) struct FallbackBlocks {
     never: Infallible,
 }
 
-pub(super) fn build_args<'a>(
+pub(super) fn build_args(
     _path: &Path,
     _vector_storage: &Arc<AtomicRefCell<VectorStorageEnum>>,
     _vector_storage_ref: &VectorStorageEnum,
     _quantized_vectors: &Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     _quantized_vectors_ref: Option<&QuantizedVectors>,
-    _permit: &'a ResourcePermit,
     _progress: &ProgressTracker,
-) -> Option<RemoteBuildArgs<'a>> {
+) -> Option<RemoteBuildArgs> {
     None
 }
 
@@ -48,7 +44,7 @@ pub(super) fn kept_local_for_healing() {}
 
 pub(super) fn remote_builder<'a>(
     _cpu: GraphBuilder<'a>,
-    args: RemoteBuildArgs<'a>,
+    args: RemoteBuildArgs,
     _has_payload_blocks: bool,
     _main_graph: MainGraphAlgorithm,
 ) -> GraphBuilder<'a> {

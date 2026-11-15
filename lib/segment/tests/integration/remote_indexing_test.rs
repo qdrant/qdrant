@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use atomic_refcell::AtomicRefCell;
 use common::ambient;
-use common::budget::{ResourceBudget, ResourcePermit};
+use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use ordered_float::OrderedFloat;
@@ -528,48 +528,6 @@ fn small_segments_stay_local() {
     let indexer = Arc::new(LoopbackIndexer::new(config, vec![LoopbackBehavior::Build]));
     build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
     assert_eq!(indexer.submissions.load(Ordering::SeqCst), 0);
-}
-
-#[test]
-fn cpu_permit_is_lent_while_waiting() {
-    let _scope = ambient::test_guard();
-    let mut rng = StdRng::seed_from_u64(9);
-    let (_dir, segment) = segment(&mut rng);
-    let stopped = Arc::new(AtomicBool::new(false));
-    let budget = ResourceBudget::new(4, 4);
-    let permit = Arc::new(budget.try_acquire(4, 0).unwrap());
-    assert!(!budget.has_budget_exact(1, 0));
-
-    let indexer = Arc::new(LoopbackIndexer::new(
-        config(OnFailure::Local, Duration::from_secs(10)),
-        vec![LoopbackBehavior::Stall],
-    ));
-    let watcher = {
-        let budget = budget.clone();
-        let stopped = stopped.clone();
-        std::thread::spawn(move || {
-            // The stalled task holds no CPU: all 4 are available to other optimizations
-            let deadline = std::time::Instant::now() + Duration::from_secs(10);
-            let mut lent = false;
-            while std::time::Instant::now() < deadline {
-                if budget.has_budget_exact(4, 0) {
-                    lent = true;
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            stopped.store(true, Ordering::Relaxed);
-            lent
-        })
-    };
-    let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
-    let result = with_thread_remote_indexer(dyn_indexer, || {
-        build(&segment, permit.clone(), &stopped, &mut rng)
-    });
-    assert!(watcher.join().unwrap(), "CPUs were not lent");
-    assert!(result.is_err());
-    drop(permit);
-    assert!(budget.has_budget_exact(4, 0), "budget accounting broken");
 }
 
 /// Local and remote build of the same segment: the remote one must be as good, and must

@@ -146,7 +146,6 @@ impl HNSWIndex {
             &vector_storage_ref,
             &quantized_vectors,
             quantized_vectors_ref.as_ref(),
-            &permit,
             &progress,
         );
         let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
