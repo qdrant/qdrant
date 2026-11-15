@@ -11,6 +11,18 @@ fn fadvise(f: &impl std::os::unix::io::AsFd, advise: PosixFadviseAdvice) -> io::
     Ok(posix_fadvise(f, 0, 0, advise)?)
 }
 
+/// Like [`fadvise`], but never fails: the advice is only a hint for the kernel.
+///
+/// Some filesystems reject hints that others accept. For example, `POSIX_FADV_NOREUSE` with
+/// zero length fails with `ENOENT` on F2FS with a kernel that supports memory donation
+/// ranges. A rejected hint must not prevent us from reading the file.
+#[cfg(posix_fadvise_supported)]
+fn fadvise_hint(f: &impl std::os::unix::io::AsFd, advise: PosixFadviseAdvice) {
+    if let Err(err) = fadvise(f, advise) {
+        log::debug!("Ignoring failed posix_fadvise({advise:?}): {err}");
+    }
+}
+
 /// For given file path, clear disk cache with `posix_fadvise`
 ///
 /// Does nothing if:
@@ -47,8 +59,8 @@ impl OneshotFile {
         let file = File::open(path.as_ref().to_path_buf())?;
         #[cfg(posix_fadvise_supported)]
         {
-            fadvise(&file, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)?;
-            fadvise(&file, PosixFadviseAdvice::POSIX_FADV_NOREUSE)?;
+            fadvise_hint(&file, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL);
+            fadvise_hint(&file, PosixFadviseAdvice::POSIX_FADV_NOREUSE);
         }
         Ok(Self { file: Some(file) })
     }
@@ -105,5 +117,33 @@ impl Drop for OneshotFile {
             let _ = fadvise(&file, PosixFadviseAdvice::POSIX_FADV_DONTNEED);
             let _ = file;
         }
+    }
+}
+
+#[cfg(all(test, posix_fadvise_supported))]
+mod tests {
+    use std::io::Write;
+
+    use super::*;
+
+    #[test]
+    fn test_oneshot_file_read() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.write_all(b"hello").unwrap();
+
+        let mut contents = String::new();
+        OneshotFile::open(tmp.path())
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+        assert_eq!(contents, "hello");
+    }
+
+    /// `posix_fadvise` fails with `ESPIPE` on pipes. Advisory hints must not propagate it.
+    #[test]
+    fn test_fadvise_hint_ignores_errors() {
+        let (read_end, _write_end) = nix::unistd::pipe().unwrap();
+        assert!(fadvise(&read_end, PosixFadviseAdvice::POSIX_FADV_NOREUSE).is_err());
+        fadvise_hint(&read_end, PosixFadviseAdvice::POSIX_FADV_NOREUSE);
     }
 }
