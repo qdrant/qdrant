@@ -15,6 +15,7 @@ use super::block_filter::BlockSkip;
 use super::graph_builder::GraphBuilder;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::{PayloadFieldSchema, PayloadKeyType};
 use crate::vector_storage::VectorStorageEnum;
@@ -49,6 +50,7 @@ pub(super) fn remote_builder<'a>(
     _cpu: GraphBuilder<'a>,
     args: RemoteBuildArgs<'a>,
     _has_payload_blocks: bool,
+    _main_graph: MainGraphAlgorithm,
 ) -> GraphBuilder<'a> {
     match args.never {}
 }

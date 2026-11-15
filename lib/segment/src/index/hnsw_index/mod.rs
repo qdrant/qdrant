@@ -6,6 +6,7 @@ use crate::vector_storage::query_scorer::QueryScorerBytes;
 mod config;
 mod entry_points;
 mod graph;
+pub mod graph_algorithm;
 pub use graph::{HnswGraph, HnswLinksStorage};
 pub mod graph_layers;
 mod graph_layers_batched;

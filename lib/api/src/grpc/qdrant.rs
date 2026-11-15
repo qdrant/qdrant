@@ -5448,6 +5448,52 @@ pub struct IndexingHnswParams {
     pub payload_m: u64,
     #[prost(uint64, tag = "6")]
     pub payload_m0: u64,
+    /// How the main graph is built. Payload block graphs, and main graphs the algorithm does not
+    /// apply to, are built by HNSW insertion with `ef_construct`.
+    #[prost(message, optional, tag = "7")]
+    pub main_graph: ::core::option::Option<IndexingGraphAlgorithm>,
+}
+/// The algorithm of the main graph, with its parameters, as core resolved them from the
+/// collection config and its feature flags: the indexer builds what core would build locally,
+/// whatever its own version and flags. A new algorithm, or a version of one with other
+/// parameters, is a new case. Indexers refuse a task whose case they do not know (an unset one
+/// included), permanently.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingGraphAlgorithm {
+    #[prost(oneof = "indexing_graph_algorithm::Algorithm", tags = "1, 2")]
+    pub algorithm: ::core::option::Option<indexing_graph_algorithm::Algorithm>,
+}
+/// Nested message and enum types in `IndexingGraphAlgorithm`.
+pub mod indexing_graph_algorithm {
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Algorithm {
+        #[prost(message, tag = "1")]
+        Hnsw(super::IndexingHnswInsertion),
+        #[prost(message, tag = "2")]
+        Pipnn(super::IndexingPipnnParams),
+    }
+}
+/// Insert the points one by one. `ef_construct` controls the quality.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingHnswInsertion {}
+/// PiPNN where it applies (large enough segments, vectors with a matrix scorer), HNSW insertion
+/// otherwise. The partitioning keeps its defaults, and the indexer draws the seed.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingPipnnParams {
+    /// Nearest neighbors each point keeps per leaf.
+    #[prost(uint64, tag = "1")]
+    pub leaf_k: u64,
+    /// Reservoir capacity per point, as a multiple of the level's degree limit.
+    #[prost(uint64, tag = "2")]
+    pub reservoir_factor: u64,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

@@ -72,6 +72,8 @@ pub(crate) fn build_requested_graph(
             has_payload_blocks: params.has_payload_blocks,
             // Never forward the task again
             remote: None,
+            // As core resolved it, whatever this process's feature flags
+            main_graph: hnsw.main_graph,
         },
     )?;
 

@@ -6,6 +6,7 @@ mod quantization;
 
 use std::time::Duration;
 
+use segment::index::hnsw_index::graph_algorithm::{MainGraphAlgorithm, PipnnSettings};
 use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
 use segment::index::hnsw_index::remote::registry::{
@@ -20,11 +21,12 @@ use uuid::Uuid;
 pub use self::blocks::{blocks_batch_from_grpc, blocks_batch_to_grpc};
 use self::quantization::{quantization_from_grpc, quantization_to_grpc};
 use super::qdrant::{
-    IndexingDistance, IndexingEntryPoint, IndexingGraphHeader, IndexingGraphLinks,
-    IndexingHeartbeatAction, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
-    IndexingHnswParams, IndexingIndexParams, IndexingMultiVectorComparator,
-    IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
-    UploadIndexingGraphRequest, indexing_index_params, upload_indexing_graph_request,
+    IndexingDistance, IndexingEntryPoint, IndexingGraphAlgorithm, IndexingGraphHeader,
+    IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
+    IndexingHeartbeatResponse, IndexingHnswInsertion, IndexingHnswParams, IndexingIndexParams,
+    IndexingMultiVectorComparator, IndexingPipnnParams, IndexingTaskDescription,
+    IndexingVectorDatatype, IndexingVectorSource, UploadIndexingGraphRequest,
+    indexing_graph_algorithm, indexing_index_params, upload_indexing_graph_request,
 };
 
 /// Metadata header carrying the one-time task token.
@@ -92,6 +94,56 @@ fn distance_from_grpc(distance: IndexingDistance) -> Result<Distance, String> {
     }
 }
 
+fn size(value: u64) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| format!("index parameter too large: {value}"))
+}
+
+fn main_graph_to_grpc(main_graph: MainGraphAlgorithm) -> IndexingGraphAlgorithm {
+    let algorithm = match main_graph {
+        MainGraphAlgorithm::Hnsw => {
+            indexing_graph_algorithm::Algorithm::Hnsw(IndexingHnswInsertion {})
+        }
+        MainGraphAlgorithm::Pipnn(settings) => {
+            let PipnnSettings {
+                leaf_k,
+                reservoir_factor,
+            } = settings;
+            indexing_graph_algorithm::Algorithm::Pipnn(IndexingPipnnParams {
+                leaf_k: leaf_k as u64,
+                reservoir_factor: reservoir_factor as u64,
+            })
+        }
+    };
+    IndexingGraphAlgorithm {
+        algorithm: Some(algorithm),
+    }
+}
+
+/// Fails if unset, or of an algorithm this build does not know (a newer sender).
+fn main_graph_from_grpc(
+    main_graph: Option<IndexingGraphAlgorithm>,
+) -> Result<MainGraphAlgorithm, String> {
+    let Some(IndexingGraphAlgorithm { algorithm }) = main_graph else {
+        return Err("no main graph algorithm".to_string());
+    };
+    match algorithm {
+        Some(indexing_graph_algorithm::Algorithm::Hnsw(IndexingHnswInsertion {})) => {
+            Ok(MainGraphAlgorithm::Hnsw)
+        }
+        Some(indexing_graph_algorithm::Algorithm::Pipnn(pipnn)) => {
+            let IndexingPipnnParams {
+                leaf_k,
+                reservoir_factor,
+            } = pipnn;
+            Ok(MainGraphAlgorithm::Pipnn(PipnnSettings {
+                leaf_k: size(leaf_k)?,
+                reservoir_factor: size(reservoir_factor)?,
+            }))
+        }
+        None => Err("unknown main graph algorithm".to_string()),
+    }
+}
+
 /// The index of a task, as sent with `SubmitTask` and `GetTask`.
 pub fn index_params_to_grpc(index: &RemoteIndexParams) -> IndexingIndexParams {
     let index = match index {
@@ -103,6 +155,7 @@ pub fn index_params_to_grpc(index: &RemoteIndexParams) -> IndexingIndexParams {
                 entry_points_num,
                 payload_m,
                 payload_m0,
+                main_graph,
             } = *hnsw;
             indexing_index_params::Index::Hnsw(IndexingHnswParams {
                 m: m as u64,
@@ -111,6 +164,7 @@ pub fn index_params_to_grpc(index: &RemoteIndexParams) -> IndexingIndexParams {
                 entry_points_num: entry_points_num as u64,
                 payload_m: payload_m as u64,
                 payload_m0: payload_m0 as u64,
+                main_graph: Some(main_graph_to_grpc(main_graph)),
             })
         }
     };
@@ -134,10 +188,8 @@ pub fn index_params_from_grpc(
                 entry_points_num,
                 payload_m,
                 payload_m0,
+                main_graph,
             } = hnsw;
-            let size = |value: u64| {
-                usize::try_from(value).map_err(|_| format!("HNSW parameter too large: {value}"))
-            };
             Ok(RemoteIndexParams::Hnsw(HnswBuildParams {
                 m: size(m)?,
                 m0: size(m0)?,
@@ -145,6 +197,7 @@ pub fn index_params_from_grpc(
                 entry_points_num: size(entry_points_num)?,
                 payload_m: size(payload_m)?,
                 payload_m0: size(payload_m0)?,
+                main_graph: main_graph_from_grpc(main_graph)?,
             }))
         }
         None => Err("unknown kind of index".to_string()),
@@ -448,19 +501,50 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn index_params_roundtrip() {
-        let index = RemoteIndexParams::Hnsw(HnswBuildParams {
+    fn hnsw(main_graph: MainGraphAlgorithm) -> RemoteIndexParams {
+        RemoteIndexParams::Hnsw(HnswBuildParams {
             m: 16,
             m0: 32,
             ef_construct: 100,
             entry_points_num: 10,
             payload_m: 8,
             payload_m0: 16,
+            main_graph,
+        })
+    }
+
+    #[test]
+    fn index_params_roundtrip() {
+        let pipnn = MainGraphAlgorithm::Pipnn(PipnnSettings {
+            leaf_k: 8,
+            reservoir_factor: 4,
         });
+        for index in [hnsw(MainGraphAlgorithm::Hnsw), hnsw(pipnn)] {
+            assert_eq!(
+                index_params_from_grpc(Some(index_params_to_grpc(&index))),
+                Ok(index)
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_main_graph_algorithm_is_refused() {
+        let with_main_graph = |main_graph| {
+            let mut grpc = index_params_to_grpc(&hnsw(MainGraphAlgorithm::Hnsw));
+            let Some(indexing_index_params::Index::Hnsw(params)) = &mut grpc.index else {
+                unreachable!("built above");
+            };
+            params.main_graph = main_graph;
+            index_params_from_grpc(Some(grpc))
+        };
         assert_eq!(
-            index_params_from_grpc(Some(index_params_to_grpc(&index))),
-            Ok(index)
+            with_main_graph(None),
+            Err("no main graph algorithm".to_string())
+        );
+        // A case added by a newer sender decodes as no case at all
+        assert_eq!(
+            with_main_graph(Some(IndexingGraphAlgorithm { algorithm: None })),
+            Err("unknown main graph algorithm".to_string())
         );
     }
 
