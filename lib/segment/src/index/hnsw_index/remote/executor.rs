@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::progress_tracker::{ProgressTree, new_progress_tracker};
 use common::types::PointOffsetType;
 use uuid::Uuid;
@@ -347,9 +347,9 @@ fn build(
         .map_err(|err| SourceError::Other(format!("temp dir: {err}")))?;
 
     let mut bytes_read = 0u64;
-    let (storage, quantized) = match params.vector_source {
+    let (storage, quantized, deleted) = match params.vector_source {
         VectorSource::Storage => {
-            let storage = read_storage(
+            let (storage, deleted) = read_storage(
                 source,
                 params,
                 &layout,
@@ -358,7 +358,7 @@ fn build(
                 stopped,
                 &mut bytes_read,
             )?;
-            (storage, None)
+            (storage, None, deleted)
         }
         VectorSource::Quantized => {
             let (quantized, deleted) = read_quantized(
@@ -370,10 +370,9 @@ fn build(
                 &mut bytes_read,
             )?;
             // Scalar and binary: the quantized vectors are all the build reads, the storage
-            // only carries the point count, the deleted flags and the vector parameters
-            let placeholder = layout.placeholder_storage(&deleted);
+            // only carries the point count and the vector parameters
             let storage = if quantized.builds_without_originals() {
-                placeholder
+                layout.placeholder_storage(params.point_count)
             } else {
                 // TurboQuant: queries are encoded from vectors, which are reconstructed from
                 // the codes, as a TurboQuant vector storage does. Built here, not sent.
@@ -386,7 +385,7 @@ fn build(
                     stopped,
                 )?
             };
-            (storage, Some(quantized))
+            (storage, Some(quantized), deleted)
         }
     };
     if storage.total_vector_count() != params.point_count {
@@ -421,6 +420,7 @@ fn build(
     let graph = build_requested_graph(
         params,
         &storage,
+        &deleted,
         quantized.as_ref(),
         &id_tracker,
         options.num_threads,
@@ -561,7 +561,7 @@ fn read_entries(
 }
 
 /// Read the vectors core serves into a new storage of `layout` in `dir`, with the points not
-/// to be indexed deleted.
+/// to be indexed deleted. Also returns which points those are.
 fn read_storage(
     source: &dyn TaskSource,
     params: &RemoteGraphParams,
@@ -570,7 +570,7 @@ fn read_storage(
     options: &RunOptions,
     stopped: &AtomicBool,
     bytes_read: &mut u64,
-) -> SourceResult<VectorStorageEnum> {
+) -> SourceResult<(VectorStorageEnum, BitVec)> {
     let other =
         |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
     let mut storage = layout.create_storage(dir).map_err(other)?;
@@ -601,7 +601,7 @@ fn read_storage(
             .delete_vector(point as PointOffsetType)
             .map_err(other)?;
     }
-    Ok(storage)
+    Ok((storage, deleted))
 }
 
 /// A storage of `layout` in `dir` with the vectors reconstructed from `quantized`, and the

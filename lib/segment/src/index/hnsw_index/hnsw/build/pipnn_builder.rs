@@ -11,13 +11,11 @@ use super::context::MainGraphProgress;
 use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_algorithm::PipnnSettings;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::pipnn::vectors::IndexBuildVectors;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
-use crate::vector_storage::VectorStorageRead as _;
 use crate::vector_storage::matrix_scorer::MatrixScorer;
 
 /// Fewest points for a PiPNN main graph. At 5,000 points PiPNN built slower than HNSW, and
@@ -139,9 +137,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         // Parts of the builder, so that the build does not borrow the rng, which is not `Sync`
         let local = &self.local;
         let (ctx, points, graph) = (&local.ctx, &local.points, &local.graph);
-        let not_deleted = ctx
-            .vector_storage
-            .not_deleted_checker(ctx.id_tracker.deleted_point_bitslice());
+        let not_deleted = ctx.not_deleted();
         let links = local.pool.install(|| {
             pipnn::build_links(
                 self.source,

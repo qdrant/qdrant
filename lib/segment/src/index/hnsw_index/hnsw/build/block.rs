@@ -1,20 +1,19 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::ambient::ThreadPoolExt;
-use common::bitvec::{BitSliceExt as _, BitVec};
+use common::bitvec::BitVec;
+use common::condition_checker::ConditionChecker as _;
 use common::types::PointOffsetType;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
 use super::context::{GraphBuildContext, GraphParams};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::{
     HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::VectorStorageRead;
 
 /// One payload block being built, linking its points only to each other.
 ///
@@ -32,14 +31,10 @@ pub(super) struct Block<'a> {
 
 impl<'a> Block<'a> {
     pub fn new(ctx: &'a GraphBuildContext<'a>, points: &'a [PointOffsetType]) -> Self {
-        let vector_deleted = ctx.vector_storage.deleted_vector_bitslice();
-        let point_deleted = ctx.id_tracker.deleted_point_bitslice();
+        let not_deleted = ctx.not_deleted();
         let deleted = points
             .iter()
-            .map(|&point_id| {
-                vector_deleted.get_bit(point_id as usize).unwrap_or(false)
-                    || point_deleted.get_bit(point_id as usize).unwrap_or(true)
-            })
+            .map(|&point_id| !not_deleted.check_infallible(point_id))
             .collect();
 
         let GraphParams {

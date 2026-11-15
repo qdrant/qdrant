@@ -244,7 +244,7 @@ mod tests {
                 &self.storage,
                 self.quantized.as_ref(),
                 None,
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
             )
             .unwrap()
         }
@@ -256,7 +256,7 @@ mod tests {
                 &self.storage,
                 None::<&QuantizedVectors>,
                 None,
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
             )
             .unwrap()
         }

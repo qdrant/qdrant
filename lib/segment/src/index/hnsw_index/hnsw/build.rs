@@ -113,6 +113,7 @@ impl HNSWIndex {
         let mut ctx = GraphBuildContext {
             id_tracker: &id_tracker_ref,
             vector_storage: &vector_storage_ref,
+            vector_deleted: vector_storage_ref.deleted_vector_bitslice(),
             quantized_vectors: quantized_vectors_ref.as_ref(),
             progress: None,
             main_params: GraphParams {
