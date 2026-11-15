@@ -11,7 +11,9 @@ use segment::index::hnsw_index::remote::executor::FetchedTask;
 use segment::index::hnsw_index::remote::registry::{
     HeartbeatAction, TaskDescription, TaskProgress,
 };
-use segment::index::hnsw_index::remote::wire::{RemoteGraphParams, VectorSource, WireGraph};
+use segment::index::hnsw_index::remote::wire::{
+    HnswBuildParams, RemoteGraphParams, RemoteIndexParams, VectorSource, WireGraph,
+};
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
 
@@ -20,8 +22,9 @@ use self::quantization::{quantization_from_grpc, quantization_to_grpc};
 use super::qdrant::{
     IndexingDistance, IndexingEntryPoint, IndexingGraphHeader, IndexingGraphLinks,
     IndexingHeartbeatAction, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
-    IndexingMultiVectorComparator, IndexingTaskDescription, IndexingVectorDatatype,
-    IndexingVectorSource, UploadIndexingGraphRequest, upload_indexing_graph_request,
+    IndexingHnswParams, IndexingIndexParams, IndexingMultiVectorComparator,
+    IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
+    UploadIndexingGraphRequest, indexing_index_params, upload_indexing_graph_request,
 };
 
 /// Metadata header carrying the one-time task token.
@@ -89,6 +92,65 @@ fn distance_from_grpc(distance: IndexingDistance) -> Result<Distance, String> {
     }
 }
 
+/// The index of a task, as sent with `SubmitTask` and `GetTask`.
+pub fn index_params_to_grpc(index: &RemoteIndexParams) -> IndexingIndexParams {
+    let index = match index {
+        RemoteIndexParams::Hnsw(hnsw) => {
+            let HnswBuildParams {
+                m,
+                m0,
+                ef_construct,
+                entry_points_num,
+                payload_m,
+                payload_m0,
+            } = *hnsw;
+            indexing_index_params::Index::Hnsw(IndexingHnswParams {
+                m: m as u64,
+                m0: m0 as u64,
+                ef_construct: ef_construct as u64,
+                entry_points_num: entry_points_num as u64,
+                payload_m: payload_m as u64,
+                payload_m0: payload_m0 as u64,
+            })
+        }
+    };
+    IndexingIndexParams { index: Some(index) }
+}
+
+/// The index of a task. Fails if it is unset, or of a kind this build does not know (a newer
+/// sender): the task cannot be built here.
+pub fn index_params_from_grpc(
+    index: Option<IndexingIndexParams>,
+) -> Result<RemoteIndexParams, String> {
+    let Some(IndexingIndexParams { index }) = index else {
+        return Err("no index parameters".to_string());
+    };
+    match index {
+        Some(indexing_index_params::Index::Hnsw(hnsw)) => {
+            let IndexingHnswParams {
+                m,
+                m0,
+                ef_construct,
+                entry_points_num,
+                payload_m,
+                payload_m0,
+            } = hnsw;
+            let size = |value: u64| {
+                usize::try_from(value).map_err(|_| format!("HNSW parameter too large: {value}"))
+            };
+            Ok(RemoteIndexParams::Hnsw(HnswBuildParams {
+                m: size(m)?,
+                m0: size(m0)?,
+                ef_construct: size(ef_construct)?,
+                entry_points_num: size(entry_points_num)?,
+                payload_m: size(payload_m)?,
+                payload_m0: size(payload_m0)?,
+            }))
+        }
+        None => Err("unknown kind of index".to_string()),
+    }
+}
+
 /// `GetTask` response for `description`.
 pub fn task_description_to_grpc(
     description: &TaskDescription,
@@ -101,12 +163,7 @@ pub fn task_description_to_grpc(
         datatype,
         distance,
         multivector_config,
-        m,
-        m0,
-        ef_construct,
-        entry_points_num,
-        payload_m,
-        payload_m0,
+        index,
         point_count,
         vector_representation,
         vector_source,
@@ -125,12 +182,6 @@ pub fn task_description_to_grpc(
                 MultiVectorComparator::MaxSim => IndexingMultiVectorComparator::IndexingMaxSim,
             })
         }),
-        m: *m as u64,
-        m0: *m0 as u64,
-        ef_construct: *ef_construct as u64,
-        entry_points_num: *entry_points_num as u64,
-        payload_m: *payload_m as u64,
-        payload_m0: *payload_m0 as u64,
         point_count: *point_count as u64,
         vector_representation: vector_representation.clone(),
         vector_source: i32::from(source_to_grpc(*vector_source)),
@@ -138,6 +189,7 @@ pub fn task_description_to_grpc(
         graph_format_versions: graph_format_versions.to_vec(),
         has_payload_blocks: *has_payload_blocks,
         max_block_wait_sec: max_block_wait.as_secs().max(1),
+        index: Some(index_params_to_grpc(index)),
     })
 }
 
@@ -152,12 +204,6 @@ pub fn task_description_from_grpc(
         datatype,
         distance,
         multivector_comparator,
-        m,
-        m0,
-        ef_construct,
-        entry_points_num,
-        payload_m,
-        payload_m0,
         point_count,
         vector_representation,
         graph_format_versions,
@@ -165,6 +211,7 @@ pub fn task_description_from_grpc(
         quantization,
         has_payload_blocks,
         max_block_wait_sec,
+        index,
     } = description;
     let vector_source = IndexingVectorSource::try_from(vector_source)
         .map(source_from_grpc)
@@ -193,12 +240,7 @@ pub fn task_description_from_grpc(
             datatype: datatype_from_grpc(datatype),
             distance,
             multivector_config,
-            m: m as usize,
-            m0: m0 as usize,
-            ef_construct: ef_construct as usize,
-            entry_points_num: entry_points_num as usize,
-            payload_m: payload_m as usize,
-            payload_m0: payload_m0 as usize,
+            index: index_params_from_grpc(index)?,
             point_count: point_count as usize,
             vector_representation,
             vector_source,
@@ -405,6 +447,35 @@ mod tests {
     use segment::index::hnsw_index::remote::wire::GRAPH_FORMAT_VERSION_V1;
 
     use super::*;
+
+    #[test]
+    fn index_params_roundtrip() {
+        let index = RemoteIndexParams::Hnsw(HnswBuildParams {
+            m: 16,
+            m0: 32,
+            ef_construct: 100,
+            entry_points_num: 10,
+            payload_m: 8,
+            payload_m0: 16,
+        });
+        assert_eq!(
+            index_params_from_grpc(Some(index_params_to_grpc(&index))),
+            Ok(index)
+        );
+    }
+
+    #[test]
+    fn index_params_of_unknown_kind_are_refused() {
+        assert_eq!(
+            index_params_from_grpc(None),
+            Err("no index parameters".to_string())
+        );
+        // A case added by a newer sender decodes as no case at all
+        assert_eq!(
+            index_params_from_grpc(Some(IndexingIndexParams { index: None })),
+            Err("unknown kind of index".to_string())
+        );
+    }
 
     #[test]
     fn graph_roundtrip_through_chunks() {

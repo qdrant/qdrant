@@ -4,6 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "collections.proto";
+import "indexing_service.proto";
 
 // Remote indexing (core side). Served by core on the internal gRPC port, called by an
 // indexing service that builds the HNSW graph of one vector of a segment under construction.
@@ -71,12 +72,8 @@ message IndexingTaskDescription {
   IndexingDistance distance = 5;
   // Set for multivectors: each vector is then a flattened list of `dim`-sized vectors.
   optional IndexingMultiVectorComparator multivector_comparator = 6;
-  uint64 m = 7;
-  uint64 m0 = 8;
-  uint64 ef_construct = 9;
-  uint64 entry_points_num = 10;
-  uint64 payload_m = 11;
-  uint64 payload_m0 = 12;
+  // Formerly the HNSW parameters, now in `index`.
+  reserved 7 to 12;
   // Point offsets are `0..point_count`, deleted included. Which points to index follows
   // from `ReadVectors`: those with a non-empty entry.
   uint64 point_count = 13;
@@ -92,6 +89,8 @@ message IndexingTaskDescription {
   bool has_payload_blocks = 18;
   // Fail the task if no payload block comes for this long. Reset by every block.
   uint64 max_block_wait_sec = 19;
+  // The index to build and its parameters, as submitted with `SubmitTask`.
+  IndexingIndexParams index = 20;
 }
 
 // Everything needed, besides the codes, to score quantized codes as core does.

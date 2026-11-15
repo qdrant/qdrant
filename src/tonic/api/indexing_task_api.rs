@@ -23,7 +23,9 @@ use segment::index::hnsw_index::remote::registry::{
     REMOTE_INDEXING_TASKS, RemoteTaskError, TaskDescription, TaskToken,
 };
 use segment::index::hnsw_index::remote::remote_indexer;
-use segment::index::hnsw_index::remote::wire::SUPPORTED_GRAPH_FORMAT_VERSIONS;
+use segment::index::hnsw_index::remote::wire::{
+    RemoteIndexParams, SUPPORTED_GRAPH_FORMAT_VERSIONS,
+};
 use tonic::{Request, Response, Status, Streaming, async_trait};
 
 /// How long an upload may go without a message, if no remote indexer is configured to say.
@@ -35,10 +37,11 @@ const DEFAULT_UPLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// point is in.
 fn max_upload_links(description: &TaskDescription, block_points: usize) -> usize {
     let params = &description.params;
+    let RemoteIndexParams::Hnsw(hnsw) = &params.index;
     params
         .point_count
-        .saturating_mul(params.m0 + params.m)
-        .saturating_add(params.payload_m0.saturating_mul(block_points))
+        .saturating_mul(hnsw.m0 + hnsw.m)
+        .saturating_add(hnsw.payload_m0.saturating_mul(block_points))
 }
 
 #[derive(Default)]
