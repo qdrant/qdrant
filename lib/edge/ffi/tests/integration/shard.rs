@@ -880,7 +880,7 @@ fn hnsw_config_optimize_and_search() {
                 datatype: None,
                 hnsw_config: Some(HnswIndexConfig {
                     m: 16,
-                    ef_construct: 100,
+                    ef_construct: Some(100),
                     full_scan_threshold: 10_000,
                     max_indexing_threads: 1,
                     memory: Some(Memory::Cached),
@@ -941,7 +941,8 @@ fn hnsw_config_optimize_and_search() {
         .expect("HNSW config should round-trip through config()");
     assert_eq!(hnsw.m, 16, "round-tripped HNSW m should match what was set");
     assert_eq!(
-        hnsw.ef_construct, 100,
+        hnsw.ef_construct,
+        Some(100),
         "round-tripped HNSW ef_construct should match what was set"
     );
 }
@@ -981,7 +982,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
     };
     let sane = HnswIndexConfig {
         m: 16,
-        ef_construct: 100,
+        ef_construct: Some(100),
         full_scan_threshold: 10_000,
         max_indexing_threads: 1,
         memory: Some(Memory::Cached),
@@ -1009,14 +1010,14 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         (
             "ef_construct too small",
             HnswIndexConfig {
-                ef_construct: 0,
+                ef_construct: Some(0),
                 ..sane.clone()
             },
         ),
         (
             "huge ef_construct",
             HnswIndexConfig {
-                ef_construct: u64::MAX,
+                ef_construct: Some(u64::MAX),
                 ..sane.clone()
             },
         ),
@@ -3278,7 +3279,7 @@ fn lifecycle_additions_work() {
     shard
         .set_hnsw_config(HnswIndexConfig {
             m: 16,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10_000,
             max_indexing_threads: 1,
             memory: Some(Memory::Cached),
@@ -3292,7 +3293,7 @@ fn lifecycle_additions_work() {
     let err = shard
         .set_hnsw_config(HnswIndexConfig {
             m: u64::MAX,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10_000,
             max_indexing_threads: 1,
             memory: None,
@@ -3308,7 +3309,7 @@ fn lifecycle_additions_work() {
             "vec".to_string(),
             HnswIndexConfig {
                 m: 8,
-                ef_construct: 64,
+                ef_construct: Some(64),
                 full_scan_threshold: 10_000,
                 max_indexing_threads: 1,
                 memory: None,

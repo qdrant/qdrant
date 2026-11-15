@@ -578,7 +578,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
-                    ef_construct: Some(ef_construct as u64),
+                    ef_construct: ef_construct.map(|v| v as u64),
                     full_scan_threshold: Some(full_scan_threshold as u64),
                     max_indexing_threads: Some(max_indexing_threads as u64),
                     on_disk,

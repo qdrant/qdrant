@@ -43,6 +43,7 @@ pub struct HnswConfigDiff {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
+    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.
     #[validate(range(min = 4))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
@@ -88,8 +89,8 @@ pub struct HnswConfigDiff {
     /// Algorithm that builds the graph. Default: `auto`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub indexing_algorithm: Option<IndexingAlgorithm>,
-    /// How much work the graph build may spend on quality, for graphs built by PiPNN.
-    /// Graphs built by HNSW are controlled by `ef_construct`. Default: `medium`.
+    /// How much work the graph build may spend on quality. Sets the parameters of graphs built
+    /// by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub indexing_effort: Option<IndexingEffort>,
 }
@@ -249,7 +250,7 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
 
         HnswConfig {
             m: m.unwrap_or(self.m),
-            ef_construct: ef_construct.unwrap_or(self.ef_construct),
+            ef_construct: ef_construct.or(self.ef_construct),
             full_scan_threshold: full_scan_threshold.unwrap_or(self.full_scan_threshold),
             max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
@@ -455,7 +456,7 @@ impl From<HnswConfig> for HnswConfigDiff {
 
         HnswConfigDiff {
             m: Some(m),
-            ef_construct: Some(ef_construct),
+            ef_construct,
             full_scan_threshold: Some(full_scan_threshold),
             max_indexing_threads: Some(max_indexing_threads),
             on_disk,

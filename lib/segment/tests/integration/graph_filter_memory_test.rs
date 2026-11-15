@@ -130,7 +130,7 @@ fn indexed_segment(dir: &std::path::Path) -> Segment {
     #[expect(deprecated, reason = "HnswConfig still carries the on_disk flag")]
     let hnsw = HnswConfig {
         m: 16,
-        ef_construct: 32,
+        ef_construct: Some(32),
         full_scan_threshold: 1,
         max_indexing_threads: 2,
         on_disk: None,

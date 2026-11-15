@@ -302,7 +302,7 @@ mod tests {
         let hnsw_config = HnswConfig {
             memory: None,
             m: 16,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10, // Force to build HNSW links for payload
             max_indexing_threads: 0,
             on_disk: None,

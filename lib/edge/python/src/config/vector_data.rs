@@ -202,7 +202,7 @@ impl PyHnswIndexConfig {
     #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None, memory=None, indexing_algorithm=None, indexing_effort=None))]
     pub fn new(
         m: usize,
-        ef_construct: usize,
+        ef_construct: Option<usize>,
         full_scan_threshold: usize,
         max_indexing_threads: usize,
         on_disk: Option<bool>,
@@ -231,8 +231,9 @@ impl PyHnswIndexConfig {
         self.0.m
     }
 
+    /// `None` if unset: derived from `indexing_effort` then.
     #[getter]
-    pub fn ef_construct(&self) -> usize {
+    pub fn ef_construct(&self) -> Option<usize> {
         self.0.ef_construct
     }
 

@@ -6882,7 +6882,7 @@
             "nullable": true
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
             "type": "integer",
             "format": "uint",
             "minimum": 4,
@@ -6943,7 +6943,7 @@
             ]
           },
           "indexing_effort": {
-            "description": "How much work the graph build may spend on quality, for graphs built by PiPNN. Graphs built by HNSW are controlled by `ef_construct`. Default: `medium`.",
+            "description": "How much work the graph build may spend on quality. Sets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IndexingEffort"
@@ -6973,7 +6973,7 @@
         ]
       },
       "IndexingEffort": {
-        "description": "How much work the graph build may spend on quality. Higher efforts take longer to build and give more accurate searches.\n\nApplies to graphs built by PiPNN. Graphs built by HNSW are controlled by `ef_construct`.",
+        "description": "How much work the graph build may spend on quality. Higher efforts take longer to build and give more accurate searches.\n\nSets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. An `ef_construct` set explicitly takes precedence.",
         "type": "string",
         "enum": [
           "low",
@@ -7373,7 +7373,6 @@
         "description": "Config of HNSW index",
         "type": "object",
         "required": [
-          "ef_construct",
           "full_scan_threshold",
           "m"
         ],
@@ -7385,10 +7384,11 @@
             "minimum": 0
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
             "type": "integer",
             "format": "uint",
-            "minimum": 4
+            "minimum": 4,
+            "nullable": true
           },
           "full_scan_threshold": {
             "description": "Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search. This measures the total size of vectors being queried against. When the maximum estimated amount of points that a condition satisfies is smaller than `full_scan_threshold_kb`, the query planner will use full-scan search instead of HNSW index traversal for better performance. Note: 1Kb = 1 vector of size 256",
@@ -7444,7 +7444,7 @@
             ]
           },
           "indexing_effort": {
-            "description": "How much work the graph build may spend on quality, for graphs built by PiPNN. Graphs built by HNSW are controlled by `ef_construct`. Default: `medium`.",
+            "description": "How much work the graph build may spend on quality. Sets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/IndexingEffort"

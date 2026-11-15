@@ -263,7 +263,7 @@ fn test_hnsw_resolved_filter_plans_like_original() {
     let hnsw_config = HnswConfig {
         memory: None,
         m: 16,
-        ef_construct: 100,
+        ef_construct: Some(100),
         full_scan_threshold: 16,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -360,7 +360,7 @@ fn test_hnsw_with_resolved_filter() {
     let hnsw_config = HnswConfig {
         memory: None,
         m: 8,
-        ef_construct: 64,
+        ef_construct: Some(64),
         full_scan_threshold: 10,
         max_indexing_threads: 2,
         on_disk: Some(false),

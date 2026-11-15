@@ -250,7 +250,9 @@ storage:
     m: 16
 
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-    ef_construct: 100
+    # If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium` (the default), 200 for `high`.
+    # Setting it here makes it explicit for every new collection, so that `indexing_effort` no longer changes it.
+    # ef_construct: 100
 
     # Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
     # This measures the total size of vectors being queried against.

@@ -95,7 +95,7 @@ fn _test_filterable_hnsw(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -280,7 +280,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -407,7 +407,7 @@ fn acorn_searches_are_counted_separately() {
             hnsw_config: HnswConfig {
                 memory: None,
                 m: 8,
-                ef_construct: 16,
+                ef_construct: Some(16),
                 full_scan_threshold,
                 max_indexing_threads: 2,
                 on_disk: Some(false),

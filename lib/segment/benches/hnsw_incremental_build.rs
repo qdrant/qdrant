@@ -366,7 +366,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: 1,
         max_indexing_threads: 0,
         on_disk: Some(false),

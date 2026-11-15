@@ -76,8 +76,9 @@ class IndexingAlgorithm(Enum):
     Hnsw = ...
 
 class IndexingEffort(Enum):
-    """How much work the graph build may spend on quality, for graphs built by
-    PiPNN. Graphs built by HNSW are controlled by ``ef_construct``.
+    """How much work the graph build may spend on quality. Sets the parameters
+    of graphs built by PiPNN, and the default ``ef_construct`` of graphs built by
+    HNSW: 64 for ``Low``, 100 for ``Medium``, 200 for ``High``.
     """
 
     Low = ...
@@ -597,7 +598,7 @@ class HnswIndexConfig:
     def __init__(
         self,
         m: int,
-        ef_construct: int,
+        ef_construct: int | None,
         full_scan_threshold: int,
         max_indexing_threads: int = 0,
         on_disk: Optional[bool] = None,
@@ -613,6 +614,7 @@ class HnswIndexConfig:
         Args:
             m: Number of edges per node.
             ef_construct: Number of candidates during index construction.
+                ``None`` derives it from ``indexing_effort``.
             full_scan_threshold: Threshold for full scan.
             max_indexing_threads: Max threads for HNSW indexing (0 = auto).
             on_disk: Deprecated, use memory instead. Whether to store on disk.
@@ -631,8 +633,8 @@ class HnswIndexConfig:
         ...
 
     @property
-    def ef_construct(self) -> int:
-        """ef_construct value."""
+    def ef_construct(self) -> int | None:
+        """ef_construct value, ``None`` if derived from ``indexing_effort``."""
         ...
 
     @property

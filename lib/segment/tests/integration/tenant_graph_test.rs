@@ -87,7 +87,7 @@ fn test_tenant_graph_with_second_condition(#[case] acorn: bool) {
             hnsw_config: HnswConfig {
                 memory: None,
                 m: 0,
-                ef_construct: 32,
+                ef_construct: Some(32),
                 full_scan_threshold: 0,
                 max_indexing_threads: 1,
                 on_disk: Some(false),

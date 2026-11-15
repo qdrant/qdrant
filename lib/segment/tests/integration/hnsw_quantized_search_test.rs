@@ -139,7 +139,7 @@ fn hnsw_quantized_search_test(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: 2 * payloads_count as usize,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -963,7 +963,7 @@ fn build_quantized_hnsw_for_compare(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: 2 * payloads_count as usize,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -1125,7 +1125,7 @@ fn test_build_hnsw_using_quantization() {
     vector_data_config.index = Indexes::Hnsw(HnswConfig {
         memory: None,
         m: 16,
-        ef_construct: 64,
+        ef_construct: Some(64),
         full_scan_threshold: 16,
         max_indexing_threads: 2,
         on_disk: Some(false),

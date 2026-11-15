@@ -119,7 +119,7 @@ fn build_index_with(
     let hnsw_config = HnswConfig {
         memory: None,
         m: M,
-        ef_construct: 100,
+        ef_construct: Some(100),
         // In KB: about 160 vectors of dimension 16, so that searches use the graph
         full_scan_threshold: 10,
         max_indexing_threads: threads as usize,

@@ -24,7 +24,8 @@ pub enum IndexingAlgorithm {
 /// How much work the graph build may spend on quality. Higher efforts take longer to build and
 /// give more accurate searches.
 ///
-/// Applies to graphs built by PiPNN. Graphs built by HNSW are controlled by `ef_construct`.
+/// Sets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built
+/// by HNSW. An `ef_construct` set explicitly takes precedence.
 #[derive(
     Debug, Default, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
@@ -35,4 +36,17 @@ pub enum IndexingEffort {
     #[default]
     Medium,
     High,
+}
+
+impl IndexingEffort {
+    /// `ef_construct` of graphs built by HNSW if it is not set explicitly.
+    ///
+    /// `Medium` keeps the long-standing default. `Low` and `High` are not calibrated yet.
+    pub fn default_ef_construct(self) -> usize {
+        match self {
+            IndexingEffort::Low => 64,
+            IndexingEffort::Medium => super::DEFAULT_HNSW_EF_CONSTRUCT,
+            IndexingEffort::High => 200,
+        }
+    }
 }

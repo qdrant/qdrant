@@ -120,7 +120,7 @@ fn test_on_disk_segment_snapshot(
                 index: Indexes::Hnsw(HnswConfig {
                     memory: None,
                     m: 4,
-                    ef_construct: 16,
+                    ef_construct: Some(16),
                     full_scan_threshold: 8,
                     max_indexing_threads: 2,
                     on_disk: Some(true), // mmap index

@@ -140,7 +140,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     let hnsw_config = HnswConfig {
         memory: None,
         m: M,
-        ef_construct: EF_CONSTRUCT,
+        ef_construct: Some(EF_CONSTRUCT),
         full_scan_threshold: 1,
         max_indexing_threads: 0,
         on_disk: Some(false),
@@ -350,7 +350,7 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct: EF_CONSTRUCT,
+        ef_construct: Some(EF_CONSTRUCT),
         full_scan_threshold: full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),

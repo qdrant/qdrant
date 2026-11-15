@@ -90,7 +90,7 @@ fn build_pipnn_index(segment: &Segment, path: &Path, seed: u64) -> HNSWIndex {
     let hnsw_config = HnswConfig {
         memory: None,
         m: 16,
-        ef_construct: 100,
+        ef_construct: Some(100),
         full_scan_threshold: 10,
         max_indexing_threads: 4,
         on_disk: Some(false),

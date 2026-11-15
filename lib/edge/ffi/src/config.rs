@@ -408,8 +408,9 @@ impl From<SegmentIndexingAlgorithm> for IndexingAlgorithm {
     }
 }
 
-/// How much work the graph build may spend on quality, for graphs built by
-/// PiPNN. Graphs built by HNSW are controlled by `ef_construct`.
+/// How much work the graph build may spend on quality. Sets the parameters of
+/// graphs built by PiPNN, and the default `ef_construct` of graphs built by
+/// HNSW. An `ef_construct` set explicitly takes precedence.
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum IndexingEffort {
     Low,
@@ -720,8 +721,10 @@ pub struct HnswIndexConfig {
     #[uniffi(default = 16)]
     pub m: u64,
     /// Neighbours considered while building. Higher = better index, slower build.
-    #[uniffi(default = 100)]
-    pub ef_construct: u64,
+    /// Derived from `indexing_effort` when unset: 64 for `Low`, 100 for
+    /// `Medium`, 200 for `High`.
+    #[uniffi(default = None)]
+    pub ef_construct: Option<u64>,
     /// Below this size (KB) a full scan is preferred over HNSW traversal.
     #[uniffi(default = 10000)]
     pub full_scan_threshold: u64,
@@ -737,7 +740,8 @@ pub struct HnswIndexConfig {
     /// Algorithm that builds the graph. Defaults to `Auto` when unset.
     #[uniffi(default = None)]
     pub indexing_algorithm: Option<IndexingAlgorithm>,
-    /// Effort of graphs built by PiPNN. Defaults to `Medium` when unset.
+    /// Effort of the graph build: the parameters of PiPNN and the default
+    /// `ef_construct`. Defaults to `Medium` when unset.
     #[uniffi(default = None)]
     pub indexing_effort: Option<IndexingEffort>,
 }
@@ -761,7 +765,7 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
         } = c;
         SegmentHnswConfig {
             m: crate::error::clamp_usize(m),
-            ef_construct: crate::error::clamp_usize(ef_construct),
+            ef_construct: ef_construct.map(crate::error::clamp_usize),
             full_scan_threshold: crate::error::clamp_usize(full_scan_threshold),
             max_indexing_threads: crate::error::clamp_usize(max_indexing_threads),
             on_disk: None,
@@ -793,7 +797,7 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
         } = c;
         HnswIndexConfig {
             m: m as u64,
-            ef_construct: ef_construct as u64,
+            ef_construct: ef_construct.map(|v| v as u64),
             full_scan_threshold: full_scan_threshold as u64,
             max_indexing_threads: max_indexing_threads as u64,
             // None-preserving legacy resolution: unlike `memory_placement()`,
@@ -1143,11 +1147,13 @@ pub(crate) fn validate_hnsw(scope: &str, hnsw: &HnswIndexConfig) -> crate::error
             "{scope}: hnsw payload_m ({payload_m}) exceeds the maximum of {MAX_HNSW_M}"
         )));
     }
-    if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT {
+    // Unset is fine: derived from `indexing_effort`, always in range
+    if let Some(ef_construct) = hnsw.ef_construct
+        && !(MIN_HNSW_EF_CONSTRUCT..=MAX_HNSW_EF_CONSTRUCT).contains(&ef_construct)
+    {
         return Err(crate::error::EdgeError::invalid_argument(format!(
-            "{scope}: hnsw ef_construct ({}) is out of range \
-             {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}",
-            hnsw.ef_construct
+            "{scope}: hnsw ef_construct ({ef_construct}) is out of range \
+             {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}"
         )));
     }
     if hnsw.max_indexing_threads > MAX_HNSW_INDEXING_THREADS {

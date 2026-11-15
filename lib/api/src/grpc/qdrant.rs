@@ -772,6 +772,7 @@ pub struct HnswConfigDiff {
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building.
     /// Larger the value - more accurate the search, more time required to build the index.
+    /// If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
@@ -812,8 +813,8 @@ pub struct HnswConfigDiff {
     /// Algorithm that builds the graph. Default: `Auto`.
     #[prost(enumeration = "IndexingAlgorithm", optional, tag = "9")]
     pub indexing_algorithm: ::core::option::Option<i32>,
-    /// How much work the graph build may spend on quality, for graphs built by PiPNN.
-    /// Graphs built by HNSW are controlled by `ef_construct`. Default: `Medium`.
+    /// How much work the graph build may spend on quality. Sets the parameters of graphs built
+    /// by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `Medium`.
     #[prost(enumeration = "IndexingEffort", optional, tag = "10")]
     pub indexing_effort: ::core::option::Option<i32>,
 }

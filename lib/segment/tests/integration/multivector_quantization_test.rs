@@ -311,7 +311,7 @@ fn test_multivector_quantization_hnsw(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold,
         max_indexing_threads: 2,
         on_disk: Some(false),

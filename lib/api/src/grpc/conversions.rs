@@ -2630,7 +2630,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
         } = hnsw_config;
         Self {
             m: m.unwrap_or_default() as usize,
-            ef_construct: ef_construct.unwrap_or_default() as usize,
+            ef_construct: ef_construct.map(|v| v as usize),
             full_scan_threshold: full_scan_threshold.unwrap_or_default() as usize,
             max_indexing_threads: max_indexing_threads.unwrap_or_default() as usize,
             on_disk,
