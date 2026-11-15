@@ -139,3 +139,20 @@ pub fn check_resolved_points(filter: &Filter, segment_uuid: Uuid) -> OperationRe
             | Condition::CustomIdChecker(_) => Ok(()),
         })
 }
+
+/// Whether `filter` holds a [`Condition::ResolvedPoints`] anywhere.
+pub fn contains_resolved_points(filter: &Filter) -> bool {
+    filter.iter_conditions().any(|condition| match condition {
+        Condition::ResolvedPoints(_) => true,
+        Condition::Filter(filter) => contains_resolved_points(filter),
+        // A nested filter checks array elements, which have no offsets: never resolved
+        Condition::Nested(_)
+        | Condition::Field(_)
+        | Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Slice(_)
+        | Condition::CustomIdChecker(_) => false,
+    })
+}

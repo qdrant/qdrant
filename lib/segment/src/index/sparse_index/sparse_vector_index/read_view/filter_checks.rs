@@ -31,17 +31,21 @@ where
 
         // Queries other than nearest are scored against every point matching the filter.
         // A search call holds a single search type, so they don't mix with nearest queries
-        for query_vector in query_vectors {
-            match query_vector {
-                QueryVector::Nearest(_) => {}
-                QueryVector::RecommendBestScore(_)
-                | QueryVector::RecommendSumScores(_)
-                | QueryVector::Discover(_)
-                | QueryVector::Context(_)
-                | QueryVector::FeedbackNaive(_) => return FilterChecks::Full,
-            }
+        if !query_vectors.iter().all(is_nearest) {
+            return FilterChecks::Full;
         }
 
+        self.nearest_filter_checks(query_vectors.len(), cardinality, top)
+    }
+
+    /// How [`Self::search`] would use a filter that matches about `cardinality` points, for
+    /// `query_vectors` nearest queries.
+    pub(crate) fn nearest_filter_checks(
+        &self,
+        query_vectors: usize,
+        cardinality: &CardinalityEstimation,
+        top: usize,
+    ) -> FilterChecks {
         let available_vectors = self.vector_storage.available_vector_count();
         let CardinalityEstimation {
             primary_clauses: _,
@@ -76,7 +80,20 @@ where
             .unwrap_or(available_vectors)
             .min(available_vectors);
         FilterChecks::Lazy {
-            expected_checks: per_query.saturating_mul(query_vectors.len()),
+            expected_checks: per_query.saturating_mul(query_vectors),
         }
+    }
+}
+
+/// Whether `query_vector` is a nearest query, which the inverted index can search. Other
+/// queries are scored against every point matching the filter.
+pub(super) fn is_nearest(query_vector: &QueryVector) -> bool {
+    match query_vector {
+        QueryVector::Nearest(_) => true,
+        QueryVector::RecommendBestScore(_)
+        | QueryVector::RecommendSumScores(_)
+        | QueryVector::Discover(_)
+        | QueryVector::Context(_)
+        | QueryVector::FeedbackNaive(_) => false,
     }
 }

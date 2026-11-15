@@ -4,4 +4,5 @@ pub mod optimized_filter;
 pub mod payload_provider;
 pub mod point_set;
 pub mod rescore_formula;
+pub mod resolve_filter;
 pub mod resolved_points;
