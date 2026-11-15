@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::vec::BitVec;
-use common::budget::ResourcePermit;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 
@@ -49,7 +48,7 @@ fn backoff(duration: Duration, stopped: &std::sync::atomic::AtomicBool) -> Opera
 
 /// What a remote build needs besides the build context. Created by `HNSWIndex::build` when
 /// the build is eligible (§4.2).
-pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs<'a> {
+pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs {
     pub indexer: Arc<dyn RemoteIndexer>,
     /// Served to the indexer: the registry needs `'static` access, the builder only borrows.
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -63,8 +62,6 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs<'a> {
     pub quantization: Option<RemoteQuantization>,
     /// For [`VectorSource::Quantized`]: served to the indexer, like `vector_storage`.
     pub quantized_vectors: Option<SharedQuantizedVectors>,
-    /// Its CPUs are lent back to the budget while the indexer works (§4.6).
-    pub permit: &'a ResourcePermit,
     /// Shows the indexer's progress in the optimizations view.
     pub progress: ProgressTracker,
 }
@@ -104,7 +101,7 @@ struct Prepared {
 pub(in crate::index::hnsw_index::hnsw) struct RemoteBuilder<'a> {
     /// The local method: builds everything if the remote build fails. Never `Remote`.
     pub cpu: GraphBuilder<'a>,
-    args: RemoteBuildArgs<'a>,
+    args: RemoteBuildArgs,
     has_payload_blocks: bool,
     /// What the local build would build the main graph with: sent to the indexer.
     main_graph: MainGraphAlgorithm,
@@ -117,7 +114,7 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuilder<'a> {
 impl<'a> RemoteBuilder<'a> {
     pub fn new(
         cpu: GraphBuilder<'a>,
-        args: RemoteBuildArgs<'a>,
+        args: RemoteBuildArgs,
         has_payload_blocks: bool,
         main_graph: MainGraphAlgorithm,
     ) -> Self {
@@ -182,7 +179,7 @@ impl<'a> RemoteBuilder<'a> {
     }
 
     fn params(
-        args: &RemoteBuildArgs<'_>,
+        args: &RemoteBuildArgs,
         local: &LocalBuilder<'_>,
         has_payload_blocks: bool,
         main_graph: MainGraphAlgorithm,
@@ -256,9 +253,6 @@ impl<'a> RemoteBuilder<'a> {
                 Err(SubmitError::Permanent(_)) => break,
             };
 
-            // Lend the CPUs while the indexer works. Once lent, they stay lent across retries.
-            self.args.permit.suspend_cpu();
-
             let outcome = handle.wait(
                 config.queue_timeout,
                 config.heartbeat_timeout,
@@ -269,12 +263,6 @@ impl<'a> RemoteBuilder<'a> {
                 Ok(TaskOutcome::Graph(graph)) => {
                     let task_id = handle.task_id();
                     drop(handle);
-                    // Converting and saving the graph takes CPU again
-                    if !self.args.permit.resume_cpu(stopped) {
-                        return Err(OperationError::cancelled(
-                            "optimization cancelled while waiting for budget",
-                        ));
-                    }
                     let timer = Instant::now();
                     let local = self.cpu.local();
                     let builder = graph.into_graph_layers_builder(
@@ -349,7 +337,7 @@ impl<'a> RemoteBuilder<'a> {
 /// Register attempt `attempt` of a task and submit it. On failure the handle is dropped,
 /// which revokes the token.
 fn submit_attempt(
-    args: &RemoteBuildArgs<'_>,
+    args: &RemoteBuildArgs,
     blocks: &Arc<BlockStream>,
     prepared: &Prepared,
     attempt: u32,
@@ -410,16 +398,7 @@ fn submit_attempt(
 
 impl GraphBuilderMethod for RemoteBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
-        let result = self.build_remotely();
-        // Make sure the CPUs are back for whatever comes next, also on error
-        let resumed = self.args.permit.resume_cpu(self.cpu.local().ctx.stopped);
-        let graph = result?;
-        if !resumed {
-            return Err(OperationError::cancelled(
-                "optimization cancelled while waiting for budget",
-            ));
-        }
-        match graph {
+        match self.build_remotely()? {
             Some(graph) => {
                 let local = self.cpu.local();
                 local.graph = graph;
