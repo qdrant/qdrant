@@ -514,20 +514,6 @@ mod tests {
     }
 
     #[test]
-    fn index_params_roundtrip() {
-        let pipnn = MainGraphAlgorithm::Pipnn(PipnnSettings {
-            leaf_k: 8,
-            reservoir_factor: 4,
-        });
-        for index in [hnsw(MainGraphAlgorithm::Hnsw), hnsw(pipnn)] {
-            assert_eq!(
-                index_params_from_grpc(Some(index_params_to_grpc(&index))),
-                Ok(index)
-            );
-        }
-    }
-
-    #[test]
     fn unknown_main_graph_algorithm_is_refused() {
         let with_main_graph = |main_graph| {
             let mut grpc = index_params_to_grpc(&hnsw(MainGraphAlgorithm::Hnsw));

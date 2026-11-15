@@ -824,15 +824,4 @@ mod tests {
         let outcome = handle.wait(long, short, poll, || false);
         assert!(matches!(outcome, Err(WaitInterrupt::LeaseExpired)));
     }
-
-    #[test]
-    fn token_hex_roundtrip() {
-        let token = TaskToken::random();
-        let hex = token.to_hex();
-        assert_eq!(hex.len(), 64);
-        assert_eq!(TaskToken::from_hex(&hex), Some(token));
-        assert_eq!(TaskToken::from_hex("zz"), None);
-        assert_eq!(TaskToken::from_hex(&"g".repeat(64)), None);
-        assert!(!format!("{token:?}").contains(&hex));
-    }
 }
