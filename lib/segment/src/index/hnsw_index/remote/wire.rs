@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::entry_points::{EntryPoint, EntryPoints};
+use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC;
 use crate::types::{Distance, MultiVectorConfig, QuantizationConfig, VectorStorageDatatype};
@@ -109,6 +110,9 @@ pub struct HnswBuildParams {
     /// `m` and `m0` of payload block graphs.
     pub payload_m: usize,
     pub payload_m0: usize,
+    /// How the main graph is built, as the local build would. Payload block graphs, and main
+    /// graphs the algorithm does not apply to, are built by HNSW insertion with `ef_construct`.
+    pub main_graph: MainGraphAlgorithm,
 }
 
 impl HnswBuildParams {
@@ -467,6 +471,7 @@ mod tests {
                 entry_points_num: 1,
                 payload_m: 2,
                 payload_m0: 4,
+                main_graph: MainGraphAlgorithm::Hnsw,
             }),
             point_count,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),

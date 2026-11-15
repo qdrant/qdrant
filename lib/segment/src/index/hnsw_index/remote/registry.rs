@@ -633,6 +633,7 @@ impl Drop for TaskHandle {
 mod tests {
     use super::*;
     use crate::data_types::vectors::VectorRef;
+    use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
     use crate::index::hnsw_index::remote::wire::{
         HnswBuildParams, PlannedBlock, RemoteIndexParams, VECTOR_REPRESENTATION_STORAGE_NATIVE,
         VectorSource,
@@ -676,6 +677,7 @@ mod tests {
                     entry_points_num: 1,
                     payload_m: 4,
                     payload_m0: 8,
+                    main_graph: MainGraphAlgorithm::Hnsw,
                 }),
                 point_count,
                 vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),

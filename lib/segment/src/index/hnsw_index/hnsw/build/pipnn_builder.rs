@@ -12,6 +12,7 @@ use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::hnsw_index::graph_algorithm::PipnnSettings;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::pipnn::vectors::IndexBuildVectors;
@@ -76,6 +77,7 @@ pub(super) struct PipnnBuilder<'a> {
     source: IndexBuildVectors<'a>,
     /// Scores `source`.
     scorer: MatrixScorer<'a>,
+    settings: PipnnSettings,
 }
 
 impl<'a> PipnnBuilder<'a> {
@@ -84,7 +86,10 @@ impl<'a> PipnnBuilder<'a> {
     /// Otherwise `local` comes back.
     ///
     /// Boxed: `LocalBuilder` is large enough to trip `clippy::result_large_err`.
-    pub fn new(local: LocalBuilder<'a>) -> Result<Self, Box<LocalBuilder<'a>>> {
+    pub fn new(
+        local: LocalBuilder<'a>,
+        settings: PipnnSettings,
+    ) -> Result<Self, Box<LocalBuilder<'a>>> {
         // No main graph (`m == 0`): blocks are HNSW either way
         if !local.ctx.has_main_graph() {
             return Err(Box::new(local));
@@ -106,6 +111,7 @@ impl<'a> PipnnBuilder<'a> {
             local,
             source,
             scorer,
+            settings,
         })
     }
 }
@@ -127,7 +133,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         drop(migrate);
 
         // The first draw after the levels, which `LocalBuilder::new` drew from the same rng
-        let params = PipnnParams::new(self.local.rng.random());
+        let params = PipnnParams::new(self.settings, self.local.rng.random());
 
         let timer = Instant::now();
         // Parts of the builder, so that the build does not borrow the rng, which is not `Sync`

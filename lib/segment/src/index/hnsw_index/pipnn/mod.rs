@@ -109,6 +109,7 @@ use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
 use self::vectors::IndexBuildVectors;
 use super::HnswM;
+use super::graph_algorithm::PipnnSettings;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::vector_storage::NotDeletedChecker;
 use crate::vector_storage::matrix_scorer::MatrixScorer;
@@ -133,26 +134,20 @@ pub(super) struct PipnnParams {
     pub seed: u64,
 }
 
-/// Default [`PipnnParams::leaf_k`]. The paper's default is 2, and it finds that "3 or 4 would
-/// also suffice" (appendix A.3).
-const DEFAULT_LEAF_K: usize = 4;
-
-/// Default [`PipnnParams::reservoir_factor`]: reservoirs of twice the degree limit. The paper found
-/// reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final prune
-/// (appendix A.5).
-const DEFAULT_RESERVOIR_FACTOR: usize = 2;
-
 impl PipnnParams {
-    /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
-    /// limit, the default partitioning, and `seed`.
+    /// The leaf k and reservoir factor of `settings`, the default partitioning, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
-    pub fn new(seed: u64) -> Self {
+    pub fn new(settings: PipnnSettings, seed: u64) -> Self {
+        let PipnnSettings {
+            leaf_k,
+            reservoir_factor,
+        } = settings;
         Self {
             partition: PartitionParams::default(),
-            leaf_k: DEFAULT_LEAF_K,
-            reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
+            leaf_k,
+            reservoir_factor,
             seed,
         }
     }
@@ -681,7 +676,7 @@ mod orchestration_tests {
                 fanout: vec![10, 3],
                 max_depth: 16,
             },
-            ..PipnnParams::new(1)
+            ..PipnnParams::new(PipnnSettings::default(), 1)
         }
     }
 

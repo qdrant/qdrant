@@ -11,6 +11,7 @@ use common::types::PointOffsetType;
 use super::graph_builder::{GraphBuilder, GraphBuilderMethod};
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::remote::blocks::BlockStream;
 use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
@@ -105,6 +106,8 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuilder<'a> {
     pub cpu: GraphBuilder<'a>,
     args: RemoteBuildArgs<'a>,
     has_payload_blocks: bool,
+    /// What the local build would build the main graph with: sent to the indexer.
+    main_graph: MainGraphAlgorithm,
     /// Shared by all attempts, and by the local fallback.
     blocks: Arc<BlockStream>,
     prepared: Option<Prepared>,
@@ -112,11 +115,17 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuilder<'a> {
 }
 
 impl<'a> RemoteBuilder<'a> {
-    pub fn new(cpu: GraphBuilder<'a>, args: RemoteBuildArgs<'a>, has_payload_blocks: bool) -> Self {
+    pub fn new(
+        cpu: GraphBuilder<'a>,
+        args: RemoteBuildArgs<'a>,
+        has_payload_blocks: bool,
+        main_graph: MainGraphAlgorithm,
+    ) -> Self {
         Self {
             cpu,
             args,
             has_payload_blocks,
+            main_graph,
             blocks: Arc::new(BlockStream::default()),
             prepared: None,
             state: RemoteState::Pending,
@@ -151,7 +160,7 @@ impl<'a> RemoteBuilder<'a> {
             return;
         }
         let local = self.cpu.local();
-        let params = Self::params(&self.args, local, self.has_payload_blocks);
+        let params = Self::params(&self.args, local, self.has_payload_blocks, self.main_graph);
         let mut deleted = BitVec::repeat(true, params.point_count);
         for &point in &local.points {
             deleted.set(point as usize, false);
@@ -176,6 +185,7 @@ impl<'a> RemoteBuilder<'a> {
         args: &RemoteBuildArgs<'_>,
         local: &LocalBuilder<'_>,
         has_payload_blocks: bool,
+        main_graph: MainGraphAlgorithm,
     ) -> RemoteGraphParams {
         let RemoteVectorLayout {
             dim,
@@ -196,6 +206,7 @@ impl<'a> RemoteBuilder<'a> {
                 entry_points_num: local.ctx.main_params.entry_points_num,
                 payload_m: local.ctx.block_params.hnsw_m.m,
                 payload_m0: local.ctx.block_params.hnsw_m.m0,
+                main_graph,
             }),
             point_count: local.ctx.vector_storage.total_vector_count(),
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),

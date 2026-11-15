@@ -701,6 +701,7 @@ pub fn default_work_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
     use crate::index::hnsw_index::remote::wire::{
         HnswBuildParams, RemoteIndexParams, VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
     };
@@ -754,6 +755,7 @@ mod tests {
                 entry_points_num: 1,
                 payload_m: 4,
                 payload_m0: 8,
+                main_graph: MainGraphAlgorithm::Hnsw,
             }),
             point_count: 10,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
