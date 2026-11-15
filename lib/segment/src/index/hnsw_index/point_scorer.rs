@@ -218,12 +218,14 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
+    /// Scorer against stored point `point_id`, for graph building. `not_deleted` tells which
+    /// points it may return: a build passes its own flags, not necessarily those of `vectors`.
     pub fn new_internal<V, Q>(
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
         filter_context: Option<OptimizedFilter<'a>>,
-        point_deleted: &'a BitSlice,
+        not_deleted: NotDeletedChecker<'a>,
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
@@ -247,7 +249,7 @@ impl<'a> FilteredScorer<'a> {
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted)),
+            filters: ScorerFilters::new(filter_context, not_deleted),
             scores_buffer: Vec::new(),
         })
     }
@@ -266,19 +268,23 @@ impl<'a> FilteredScorer<'a> {
         V: VectorStorageRead + RawScorerBuilder,
         Q: QuantizedVectorsRead,
     {
-        let scorer = Self::new_internal(point_id, vectors, quantized_vectors, None, block_deleted)?;
+        let block_not_deleted = NotDeletedChecker {
+            point_deleted: block_deleted,
+            vec_deleted: block_deleted,
+        };
+        let scorer = Self::new_internal(
+            point_id,
+            vectors,
+            quantized_vectors,
+            None,
+            block_not_deleted,
+        )?;
         Ok(FilteredScorer {
             raw_scorer: Box::new(RemappedRawScorer {
                 inner: scorer.raw_scorer,
                 to_global,
             }),
-            filters: ScorerFilters::new(
-                None,
-                NotDeletedChecker {
-                    point_deleted: block_deleted,
-                    vec_deleted: block_deleted,
-                },
-            ),
+            filters: ScorerFilters::new(None, block_not_deleted),
             scores_buffer: Vec::new(),
         })
     }

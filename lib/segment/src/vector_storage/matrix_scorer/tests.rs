@@ -115,9 +115,14 @@ impl Fixture {
     /// The best `K` columns of each row by brute force, as `(column position, score)`.
     fn expected(&self, rows: &[PointOffsetType], cols: MatrixCols) -> Vec<Vec<(u32, f32)>> {
         let deleted = BitVec::repeat(false, POINTS);
-        let scorer =
-            FilteredScorer::new_internal(0, &self.storage, self.quantized.as_ref(), None, &deleted)
-                .unwrap();
+        let scorer = FilteredScorer::new_internal(
+            0,
+            &self.storage,
+            self.quantized.as_ref(),
+            None,
+            self.storage.not_deleted_checker(&deleted),
+        )
+        .unwrap();
         let col_ids = match cols {
             MatrixCols::Rows => rows,
             MatrixCols::Other(cols) => cols,

@@ -12,7 +12,6 @@ use super::context::{GraphBuildContext, MainGraphProgress};
 use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::{
     FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_BUILD_MAX_PAR_LEN, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
@@ -36,9 +35,11 @@ impl HnswBuilder<'_> {
         let local = &self.0;
         let pool = local.pool;
         let graph = &local.graph;
+        let not_deleted = local.ctx.not_deleted();
         let GraphBuildContext {
-            id_tracker,
+            id_tracker: _,
             vector_storage,
+            vector_deleted: _,
             quantized_vectors,
             progress: _,
             main_params: _,
@@ -58,7 +59,7 @@ impl HnswBuilder<'_> {
                 vector_storage,
                 quantized_vectors,
                 None,
-                id_tracker.deleted_point_bitslice(),
+                not_deleted,
             )?;
 
             graph.link_new_point(vector_id, points_scorer);

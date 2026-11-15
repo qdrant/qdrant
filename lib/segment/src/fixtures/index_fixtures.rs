@@ -16,7 +16,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_de
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead as _};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
@@ -104,7 +104,7 @@ impl TestRawScorerProducer {
             &self.storage,
             self.quantized_vectors.as_ref(),
             None,
-            &self.deleted_points,
+            self.storage.not_deleted_checker(&self.deleted_points),
         )
         .unwrap()
     }

@@ -1,16 +1,22 @@
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitSlice;
 use common::progress_tracker::ProgressTracker;
 
-use crate::id_tracker::IdTrackerEnum;
+use crate::id_tracker::{IdTrackerEnum, IdTrackerRead as _};
 use crate::index::hnsw_index::HnswM;
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum};
 
 /// Inputs to a graph build and ownership of its main-graph progress phases.
 pub(super) struct GraphBuildContext<'a> {
     pub id_tracker: &'a IdTrackerEnum,
+    /// Vectors to score. The build reads its deleted flags from `vector_deleted`, not from
+    /// here, so a storage without vectors can stand in when scoring is quantized only.
     pub vector_storage: &'a VectorStorageEnum,
+    /// One flag per vector not to link: the storage's deleted flags on core, the flags core
+    /// sent on a remote indexer. Missing flags count as not deleted, as in a storage.
+    pub vector_deleted: &'a BitSlice,
     /// Main-graph phases, created before building starts. `take()` transfers ownership to
     /// the CPU method, which explicitly drops each tracker when its phase ends. GPU success
     /// takes and drops them unstarted; GPU failure leaves them here for the CPU fallback.
@@ -27,10 +33,18 @@ pub(super) struct GraphBuildContext<'a> {
     pub stopped: &'a AtomicBool,
 }
 
-impl GraphBuildContext<'_> {
+impl<'a> GraphBuildContext<'a> {
     /// Whether the main graph gets built. Without it (`m == 0`), only payload blocks link points.
     pub fn has_main_graph(&self) -> bool {
         self.main_params.hnsw_m.m > 0
+    }
+
+    /// Which points the build may link and score: neither the point nor its vector deleted.
+    pub fn not_deleted(&self) -> NotDeletedChecker<'a> {
+        NotDeletedChecker {
+            point_deleted: self.id_tracker.deleted_point_bitslice(),
+            vec_deleted: self.vector_deleted,
+        }
     }
 }
 

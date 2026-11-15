@@ -8,7 +8,6 @@ use common::types::PointOffsetType;
 use super::context::{GraphBuildContext, GraphParams};
 use super::graph_builder::{GraphBuilder, GraphBuilderMethod};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::{
@@ -235,7 +234,7 @@ fn scorer<'a>(
         ctx.vector_storage,
         ctx.quantized_vectors,
         None,
-        ctx.id_tracker.deleted_point_bitslice(),
+        ctx.not_deleted(),
     )
 }
 
