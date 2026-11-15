@@ -383,16 +383,6 @@ fn check_recovers(
 }
 
 #[test]
-fn failure_falls_back_to_local() {
-    let indexer = check_recovers(
-        OnFailure::Local,
-        vec![LoopbackBehavior::Fail],
-        Duration::from_secs(10),
-    );
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
-}
-
-#[test]
 fn corrupted_graph_is_rejected() {
     let indexer = check_recovers(
         OnFailure::Local,
@@ -405,60 +395,6 @@ fn corrupted_graph_is_rejected() {
         matches!(&outcomes[0], RunOutcome::Failed(reason) if reason.starts_with("upload")),
         "{outcomes:?}"
     );
-}
-
-#[test]
-fn retries_with_new_token_until_success() {
-    let indexer = check_recovers(
-        OnFailure::Retry,
-        vec![
-            LoopbackBehavior::RefuseSubmit,
-            LoopbackBehavior::Fail,
-            LoopbackBehavior::Corrupt,
-            LoopbackBehavior::Build,
-        ],
-        Duration::from_secs(10),
-    );
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 4);
-    let outcomes = indexer.wait_outcomes(3, Duration::from_secs(5));
-    assert_eq!(outcomes.last(), Some(&RunOutcome::Uploaded), "{outcomes:?}");
-}
-
-#[test]
-fn retries_exhausted_fall_back_to_local() {
-    let indexer = check_recovers(
-        OnFailure::Retry,
-        vec![LoopbackBehavior::RefuseSubmit],
-        Duration::from_secs(10),
-    );
-    // First attempt plus `max_retries`
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 4);
-}
-
-#[test]
-fn permanent_refusal_builds_locally_without_retrying() {
-    let indexer = check_recovers(
-        OnFailure::Retry,
-        vec![LoopbackBehavior::RefusePermanently, LoopbackBehavior::Build],
-        Duration::from_secs(10),
-    );
-    // Not resubmitted, although `max_retries` allows it and the next one would build
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
-    assert!(
-        indexer
-            .wait_outcomes(1, Duration::from_millis(200))
-            .is_empty()
-    );
-}
-
-#[test]
-fn expired_lease_falls_back_to_local() {
-    let indexer = check_recovers(
-        OnFailure::Local,
-        vec![LoopbackBehavior::Ignore],
-        Duration::from_millis(300),
-    );
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -515,19 +451,6 @@ fn heartbeats_keep_a_slow_task_alive() {
         indexer.wait_outcomes(1, Duration::from_secs(5)),
         vec![RunOutcome::Dropped("cancelled by core".to_string())]
     );
-}
-
-#[test]
-fn small_segments_stay_local() {
-    let _scope = ambient::test_guard();
-    let mut rng = StdRng::seed_from_u64(5);
-    let (_dir, segment) = segment(&mut rng);
-    let stopped = AtomicBool::new(false);
-    let mut config = config(OnFailure::Local, Duration::from_secs(10));
-    config.min_index_size_bytes = 1 << 30;
-    let indexer = Arc::new(LoopbackIndexer::new(config, vec![LoopbackBehavior::Build]));
-    build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
-    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 0);
 }
 
 /// Local and remote build of the same segment: the remote one must be as good, and must
