@@ -35,6 +35,8 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
+mod hnsw_config_serde;
+use self::hnsw_config_serde::HnswConfigDeserialize;
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
@@ -841,7 +843,8 @@ impl Indexes {
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
 )]
-#[serde(rename_all = "snake_case")]
+// Reads a missing `ef_construct` as the default, without making it optional in the JSON schema
+#[serde(rename_all = "snake_case", from = "HnswConfigDeserialize")]
 #[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -850,6 +853,7 @@ pub struct HnswConfig {
     /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    // Read as `DEFAULT_HNSW_EF_CONSTRUCT` if missing, see `HnswConfigDeserialize`
     #[validate(range(min = 4))]
     pub ef_construct: usize,
     /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
