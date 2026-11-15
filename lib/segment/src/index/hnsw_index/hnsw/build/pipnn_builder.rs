@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use log::debug;
 use rand::RngExt as _;
@@ -27,6 +28,16 @@ thread_local! {
     static MIN_POINTS_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
+/// Whether PiPNN may build on this thread: the `pipnn_graph_building` feature flag, or
+/// always within [`with_pipnn_min_points`].
+pub(super) fn enabled() -> bool {
+    #[cfg(feature = "testing")]
+    if MIN_POINTS_OVERRIDE.get().is_some() {
+        return true;
+    }
+    feature_flags().pipnn_graph_building
+}
+
 /// Fewest points for a PiPNN main graph on this thread.
 fn min_points() -> usize {
     #[cfg(feature = "testing")]
@@ -36,8 +47,9 @@ fn min_points() -> usize {
     PIPNN_MIN_POINTS
 }
 
-/// Run `f` with PiPNN's minimum segment size lowered to `min_points` on this thread, so that
-/// tests can build small segments with PiPNN. `usize::MAX` keeps every build on HNSW.
+/// Run `f` with PiPNN enabled and its minimum segment size lowered to `min_points` on this
+/// thread, so that tests can build small segments with PiPNN, whatever the feature flag says.
+/// `usize::MAX` keeps every build on HNSW.
 #[cfg(feature = "testing")]
 pub fn with_pipnn_min_points<R>(min_points: usize, f: impl FnOnce() -> R) -> R {
     /// Restores the previous value, also when `f` panics.

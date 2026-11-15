@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicU64;
 
-use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
@@ -12,7 +11,7 @@ use super::healing_builder::HealingBuilder;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
 use super::payload_blocks::FieldBlocks;
-use super::pipnn_builder::PipnnBuilder;
+use super::pipnn_builder::{self, PipnnBuilder};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -113,7 +112,7 @@ impl<'a> GraphBuilder<'a> {
         match old_index {
             // Healing wins, also over PiPNN, which can't build incrementally
             Some(old_index) => Self::Healing(HealingBuilder::from_local(local, old_index)),
-            None if feature_flags().pipnn_graph_building => match PipnnBuilder::new(local) {
+            None if pipnn_builder::enabled() => match PipnnBuilder::new(local) {
                 Ok(builder) => Self::Pipnn(builder),
                 Err(local) => Self::Hnsw(HnswBuilder(*local)),
             },

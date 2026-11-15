@@ -106,7 +106,8 @@ pub struct FeatureFlags {
     /// no older graph to build from, and whose vectors support it. Only changes how graphs
     /// are built: the resulting graph has the same format either way.
     ///
-    /// Enabled by default.
+    /// Disabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large
+    /// segments can only be tuned through `m`.
     pub pipnn_graph_building: bool,
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
@@ -137,7 +138,7 @@ impl Default for FeatureFlags {
             persist_proxy_segments: false,
             combined_vector_storage: true,
             versioned_deletes: false,
-            pipnn_graph_building: true,
+            pipnn_graph_building: false,
             serverless_compatible: false,
         }
     }
