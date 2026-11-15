@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
+use common::bitvec::BitSlice;
 use common::progress_tracker::ProgressTracker;
 use rand::Rng;
 
@@ -21,14 +22,16 @@ use crate::index::hnsw_index::remote::wire::{RemoteGraphParams, RemoteIndexParam
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
-/// Build the graph `params` asks for, over `vector_storage`, whose deleted vectors are the
-/// points not to link, scoring with `quantized_vectors` if given, as a local build does.
+/// Build the graph `params` asks for, over `vector_storage`, scoring with `quantized_vectors`
+/// if given, as a local build does. `vector_deleted` flags the points not to link: the build
+/// reads them from it, not from the storage, which may be a placeholder without vectors.
 /// `id_tracker` maps every offset of the storage. After the main graph, links the payload
 /// blocks `next_blocks` returns, batch by batch, in order, until it returns `None`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_requested_graph(
     params: &RemoteGraphParams,
     vector_storage: &VectorStorageEnum,
+    vector_deleted: &BitSlice,
     quantized_vectors: Option<&QuantizedVectors>,
     id_tracker: &IdTrackerEnum,
     num_threads: usize,
@@ -42,6 +45,7 @@ pub(crate) fn build_requested_graph(
     let mut ctx = GraphBuildContext {
         id_tracker,
         vector_storage,
+        vector_deleted,
         quantized_vectors,
         progress: None,
         main_params: GraphParams {

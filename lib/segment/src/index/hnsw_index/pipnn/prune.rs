@@ -41,7 +41,6 @@
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
-use common::bitvec::BitSlice;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::prelude::*;
@@ -51,8 +50,8 @@ use super::progress::Counter;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::links_container::LinksContainer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum};
 
 /// Points pruned per job, with one scorer, and between checks of the stop flag.
 ///
@@ -66,8 +65,8 @@ const POINTS_PER_JOB: usize = 64;
 /// each, chosen from their reservoirs by the HNSW heuristic. In the order of `points`.
 ///
 /// Scores with [`FilteredScorer::new_internal`] over `vector_storage` and `quantized_vectors`, as
-/// HNSW insertion does, and skips candidates that `point_deleted` or the storage mark as deleted.
-/// As for HNSW, `point_deleted` must have a flag for every point: missing flags count as deleted.
+/// HNSW insertion does, and skips candidates that `not_deleted` rejects, as HNSW's scorers do.
+/// As for HNSW, its point flags must have one for every point: missing flags count as deleted.
 ///
 /// Runs in parallel on the current rayon pool, and checks `stopped` before every
 /// [`POINTS_PER_JOB`] points. Adds all of `points` to `progress` by the time it returns, each job
@@ -82,7 +81,7 @@ pub(super) fn prune(
     level_m: usize,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
-    point_deleted: &BitSlice,
+    not_deleted: NotDeletedChecker<'_>,
     stopped: &AtomicBool,
     progress: Counter<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
@@ -119,7 +118,7 @@ pub(super) fn prune(
                 vector_storage,
                 quantized_vectors,
                 None,
-                point_deleted,
+                not_deleted,
             )?;
             // Reused, so each point's links are allocated once, at their size
             let mut container = LinksContainer::with_capacity(level_m);
@@ -248,7 +247,7 @@ mod tests {
                 &self.storage,
                 self.quantized.as_ref(),
                 None,
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
             )
             .unwrap()
         }
@@ -260,7 +259,7 @@ mod tests {
                 &self.storage,
                 None::<&QuantizedVectors>,
                 None,
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
             )
             .unwrap()
         }
@@ -332,7 +331,7 @@ mod tests {
                 level_m,
                 &self.storage,
                 self.quantized.as_ref(),
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
                 stopped,
                 counter.counter(),
             );
@@ -721,7 +720,7 @@ mod tests {
             LEVEL_M,
             &fixture.storage,
             None,
-            &fixture.deleted,
+            fixture.storage.not_deleted_checker(&fixture.deleted),
             &AtomicBool::new(false),
             counter.counter(),
         )
@@ -742,7 +741,7 @@ mod tests {
             LEVEL_M,
             &fixture.storage,
             None,
-            &fixture.deleted,
+            fixture.storage.not_deleted_checker(&fixture.deleted),
             &AtomicBool::new(false),
             counter.counter(),
         )

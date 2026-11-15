@@ -509,6 +509,7 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
 }
 
 /// A [`ConditionChecker`] matching points that not deleted.
+#[derive(Clone, Copy)]
 pub struct NotDeletedChecker<'a> {
     /// [`BitSlice`] defining flags for deleted points (and thus their vectors).
     ///

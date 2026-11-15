@@ -135,7 +135,7 @@ mod tests {
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
     };
-    use crate::vector_storage::{VectorStorage as _, VectorStorageEnum};
+    use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorageRead as _};
 
     const POINTS: usize = 300;
     const DIM: usize = 100;
@@ -222,7 +222,7 @@ mod tests {
                 &self.storage,
                 self.quantized.as_ref(),
                 None,
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
             )
             .unwrap()
         }

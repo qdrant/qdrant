@@ -2,15 +2,13 @@
 
 use std::path::Path;
 
-use common::bitvec::BitVec;
-
 use crate::common::operation_error::OperationResult;
 use crate::segment_constructor::open_vector_storage_for_remote_build;
 use crate::types::{
     Distance, Indexes, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
     VectorStorageType,
 };
-use crate::vector_storage::dense::empty_dense_vector_storage::EmptyDenseVectorStorage;
+use crate::vector_storage::dense::empty_dense_vector_storage::new_empty_dense_vector_storage;
 use crate::vector_storage::{
     DenseTQVectorStorageRead, DenseVectorStorageRead, MultiTQVectorStorageRead,
     MultiVectorStorageRead, VectorStorageEnum, VectorStorageRead,
@@ -129,21 +127,22 @@ impl RemoteVectorLayout {
     }
 
     /// A storage without vectors, for builds that score from quantized vectors only: it
-    /// carries the point count, the deleted flags and the vector parameters.
-    pub fn placeholder_storage(&self, deleted: &bitvec::slice::BitSlice) -> VectorStorageEnum {
+    /// carries the point count and the vector parameters. Every vector of it is deleted, so
+    /// the build takes the points to link from its own deleted flags, not from this storage.
+    pub fn placeholder_storage(&self, point_count: usize) -> VectorStorageEnum {
         let Self {
             dim,
             datatype,
             distance,
             multivector_config,
         } = *self;
-        VectorStorageEnum::EmptyDense(EmptyDenseVectorStorage::with_deleted(
+        new_empty_dense_vector_storage(
             dim,
             distance,
             datatype,
             false,
             multivector_config,
-            deleted.iter().by_vals().collect::<BitVec>(),
-        ))
+            point_count,
+        )
     }
 }

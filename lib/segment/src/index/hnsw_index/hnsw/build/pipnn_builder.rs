@@ -11,7 +11,6 @@ use super::context::MainGraphProgress;
 use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_algorithm::PipnnSettings;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
@@ -135,7 +134,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
             pipnn::build_links(
                 ctx.vector_storage,
                 ctx.quantized_vectors,
-                ctx.id_tracker.deleted_point_bitslice(),
+                ctx.not_deleted(),
                 &self.scorer,
                 points,
                 |point| graph.get_point_level(point),
