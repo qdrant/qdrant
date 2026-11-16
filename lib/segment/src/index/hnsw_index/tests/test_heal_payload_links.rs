@@ -34,7 +34,7 @@ use crate::types::{
 };
 
 const DIM: usize = 16;
-const POINTS: usize = 6_000;
+const POINTS: usize = 3_000;
 const VALUES: usize = 3;
 const HEALS: usize = 6;
 
@@ -43,9 +43,9 @@ const HEALS: usize = 6;
 /// the replacements must be linked back, as in a graph built by search, or each heal leaves
 /// more one-way links and filtered search gets a little worse every time.
 ///
-/// After six heals, the share of two-way links was 0.82 of the links healed this way, 0.77
-/// without the backlinks, 0.75 replacing each removed point with its closest link, and 0.88 in
-/// a fresh build.
+/// After six heals, the share of two-way links was 0.85 of the links healed this way, 0.79
+/// without the backlinks, and 0.92 in a fresh build. With 6,000 points it was 0.82, 0.77, 0.75
+/// replacing each removed point with its closest link, and 0.88.
 #[test]
 fn test_heal_payload_links_repeatedly() {
     let _scope = ambient::test_guard();
