@@ -109,7 +109,8 @@ jobs:
     - name: Put test temp files on tmpfs
       if: matrix.os == 'ubuntu-latest'
       run: |
-        findmnt -o TARGET,FSTYPE,SIZE,OPTIONS /dev/shm /tmp || true
+        findmnt -o TARGET,FSTYPE,SIZE,OPTIONS --target /dev/shm || true
+        findmnt -n -o TARGET,FSTYPE,SIZE,OPTIONS --target /tmp || true
         sudo mkdir -p /mnt/test-tmp
         sudo mount -t tmpfs -o size=50%,mode=1777 tmpfs /mnt/test-tmp
         echo "TMPDIR=/mnt/test-tmp" >> "$GITHUB_ENV"
