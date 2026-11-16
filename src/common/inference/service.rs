@@ -411,15 +411,16 @@ mod test {
     use std::assert_matches;
     use std::collections::HashMap;
 
-    use api::rest::Bm25Config;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
     use rand::{RngExt, SeedableRng};
+    use segment::index::field_index::full_text_index::bm25_embedder::{
+        Bm25Embedder, Bm25EmbedderConfig,
+    };
     use serde_json::{Value, json};
 
     use super::*;
     use crate::common::inference::api_keys::InferenceApiKeys;
-    use crate::common::inference::bm25_inference::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
     const BM25_LOCAL_MODEL_NAME: &str = "bm25";
@@ -497,7 +498,7 @@ mod test {
     }
 
     fn make_bm25_inference_input(input: &str) -> InferenceInput {
-        let bm25_config = Bm25Config::default();
+        let bm25_config = Bm25EmbedderConfig::default();
 
         let options: HashMap<String, Value> =
             serde_json::from_str(&serde_json::to_string(&bm25_config).unwrap()).unwrap();
@@ -521,10 +522,10 @@ mod test {
                 let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
 
                 // Re-run bm25 and check that response is correct.
-                let bm25 = Bm25::new(bm25_config)
+                let bm25 = Bm25Embedder::new(bm25_config)
                     .unwrap()
-                    .doc_embed(input.data.as_str().unwrap());
-                assert_eq!(response, bm25);
+                    .embed_document(input.data.as_str().unwrap());
+                assert_eq!(response, VectorPersisted::Sparse(bm25));
             } else {
                 let expected_vector = VectorPersisted::Dense(vec![0.0; idx]);
                 assert_eq!(response, expected_vector);
