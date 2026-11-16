@@ -13,6 +13,7 @@ mod filtrable_hnsw_test;
 mod fixtures;
 #[cfg(feature = "gpu")]
 mod gpu_hnsw_test;
+mod graph_filter_memory_test;
 mod graph_inline_storage_test;
 mod hnsw_discover_test;
 mod hnsw_incremental_build;

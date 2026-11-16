@@ -7,8 +7,6 @@
 
 use std::sync::Arc;
 
-use common::types::PointOffsetType;
-
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_optimization::expected_checks::ExpectedChecks;
@@ -41,10 +39,10 @@ impl MaterializationHint<'_> {
 }
 
 /// A condition converted for one clause: either a per-point checker or a posting list
-/// read up front, which the clause merges with its other posting lists.
+/// read up front into a set, which the clause merges with its other posting lists.
 pub(super) enum ConvertedCondition<'b> {
     Checker(ConditionCheckerEnum<'b>),
-    Posting(Vec<PointOffsetType>),
+    Posting(PointSet),
 }
 
 /// How a clause combines its posting lists.
@@ -76,8 +74,8 @@ pub(super) fn merge_postings<'b>(
         && !postings.is_empty()
     {
         let set = match merge {
-            PostingMerge::Intersection => PointSet::intersection(postings, context),
-            PostingMerge::Union => PointSet::union(postings, context),
+            PostingMerge::Intersection => PointSet::intersection_sets(postings, context),
+            PostingMerge::Union => PointSet::union_sets(postings, context),
         };
         checkers[0] = Some(ConditionCheckerEnum::Points(Arc::new(set)));
     }

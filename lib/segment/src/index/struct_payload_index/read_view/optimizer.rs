@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::sync::Arc;
 
-use common::types::{DeferredBehavior, PointOffsetType};
+use common::types::DeferredBehavior;
 use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
@@ -16,7 +16,6 @@ use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
 };
-use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
@@ -151,7 +150,7 @@ where
                     ConvertedCondition::Posting(posting) => {
                         // A posting is only read when there is a hint, so a context too.
                         let context = context.expect("posting read without a hint");
-                        ConditionCheckerEnum::Points(Arc::new(PointSet::union(
+                        ConditionCheckerEnum::Points(Arc::new(PointSet::union_sets(
                             vec![posting],
                             context,
                         )))
@@ -203,7 +202,7 @@ where
                         && let Condition::Field(field_condition) = condition
                         && !hint.is_primary(condition)
                         && let Some(posting) =
-                            self.read_posting(field_condition, &estimation, hint.expected_checks)?
+                            self.read_posting(field_condition, &estimation, hint)?
                     {
                         return Ok((ConvertedCondition::Posting(posting), estimation));
                     }
@@ -357,12 +356,15 @@ where
     /// Read the posting list of `condition`, if that is cheaper than checking the
     /// expected points through the index one by one
     /// (see [`ExpectedChecks::reads_posting`]).
+    ///
+    /// [`ExpectedChecks::reads_posting`]: crate::index::query_optimization::expected_checks::ExpectedChecks::reads_posting
     fn read_posting(
         &self,
         condition: &FieldCondition,
         estimation: &CardinalityEstimation,
-        expected_checks: ExpectedChecks,
-    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
+        hint: MaterializationHint<'_>,
+    ) -> OperationResult<Option<PointSet>> {
+        let expected_checks = hint.expected_checks;
         if !reads_posting_list(condition) {
             return Ok(None);
         }
@@ -374,7 +376,12 @@ where
                 continue;
             }
             if let Some(points) = index.filter(condition)? {
-                return Ok(Some(points.collect()));
+                let context = hint.point_set_context(self.id_tracker.total_point_count());
+                return Ok(Some(PointSet::from_posting(
+                    points,
+                    estimation.exp,
+                    context,
+                )));
             }
         }
         Ok(None)
