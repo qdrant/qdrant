@@ -23,7 +23,8 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
-use crate::rbac::{Access, AccessRequirements};
+use crate::dispatcher::Dispatcher;
+use crate::rbac::{Access, AccessRequirements, Auth};
 use crate::types::{PerformanceConfig, StorageConfig};
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -318,6 +319,30 @@ fn snapshot_assigns_missing_uuid_without_recreating_collection() {
         "collection must not be recreated"
     );
     assert_eq!(toc.general_runtime.block_on(after.uuid()), Some(uuid));
+}
+
+#[test]
+fn standalone_dispatcher_assigns_uuid_to_new_collection() {
+    let (_storage_dir, toc) = new_toc();
+    let dispatcher = Dispatcher::new(toc.clone());
+
+    let config: CreateCollection = serde_json::from_value(serde_json::json!({
+        "vectors": {"size": 4, "distance": "Dot"},
+    }))
+    .unwrap();
+    assert_eq!(config.uuid, None);
+    let operation = CreateCollectionOperation::new("standalone".to_string(), config).unwrap();
+
+    toc.general_runtime
+        .block_on(dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::CreateCollection(operation),
+            Auth::new_internal(Access::full("standalone uuid test")),
+            None,
+        ))
+        .unwrap();
+
+    let collection = get_collection(&toc, "standalone");
+    assert!(toc.general_runtime.block_on(collection.uuid()).is_some());
 }
 
 #[test]

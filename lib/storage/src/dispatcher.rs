@@ -283,6 +283,16 @@ impl Dispatcher {
 
             Ok(res)
         } else {
+            if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+                // Assign the UUID before the operation is applied, not when the collection is
+                // created: consensus applies the same operation, and there a missing UUID must
+                // stay missing on every peer. With a UUID, migrating this standalone deployment
+                // to a cluster doesn't have to make one up.
+                op.create_collection
+                    .uuid
+                    .get_or_insert_with(uuid::Uuid::new_v4);
+            }
+
             let toc = self.toc.clone();
             tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
                 .await?
