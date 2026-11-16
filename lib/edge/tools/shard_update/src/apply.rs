@@ -70,6 +70,7 @@ fn log_apply_record(record: &PointApplyRecord) {
         tombstoned,
         superseded,
         shadowed,
+        usage: _,
     } = record;
 
     let slot = |(segment, internal_id): &(Uuid, _)| format!("segment {segment} slot {internal_id}");

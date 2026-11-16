@@ -3,6 +3,7 @@
 //! points it touches, not the operations in it.
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 use ahash::AHashMap;
 use common::ambient::{self, ThreadPoolExt as _};
@@ -70,6 +71,28 @@ pub struct PointApplyRecord {
     /// invisible until a rebuild indexes it, so these keep serving readers
     /// until the rebuild's deduplication retires them.
     pub shadowed: Vec<(Uuid, PointOffsetType)>,
+    /// `None` unless the point was stored by a metered apply.
+    pub usage: Option<PointUsage>,
+}
+
+/// `version` is the highest operation number folded into the point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointUsage {
+    pub version: SeqNumberType,
+    pub bytes: UpdateBytes,
+}
+
+impl UpdateBatchOutcome {
+    /// Usage of the points stored at a version within `versions`.
+    pub fn usage_in(&self, versions: RangeInclusive<SeqNumberType>) -> UpdateBytes {
+        let mut total = UpdateBytes::default();
+        for usage in self.points.iter().filter_map(|record| record.usage) {
+            if versions.contains(&usage.version) {
+                total += usage.bytes;
+            }
+        }
+        total
+    }
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -191,6 +214,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 action,
             } = point;
 
+            let mut usage = None;
             let kind = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
@@ -206,7 +230,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 }
                 PointAction::Store(point) => {
                     if let Some(metering) = metering {
-                        outcome.usage += metering.measure(&point)?;
+                        let bytes = metering.measure(&point)?;
+                        outcome.usage += bytes;
+                        usage = Some(PointUsage {
+                            version: point.version,
+                            bytes,
+                        });
                     }
                     to_store.push(*point);
                     stored_records.push(outcome.points.len());
@@ -225,6 +254,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 tombstoned: Vec::new(),
                 superseded: None,
                 shadowed: Vec::new(),
+                usage,
             };
 
             if kind.retires_slots() {

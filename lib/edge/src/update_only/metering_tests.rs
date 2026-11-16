@@ -377,3 +377,45 @@ fn retained_vector_without_a_meter_is_rejected_before_decoding() {
         "unknown name must not be decoded as sparse: {err}"
     );
 }
+
+#[test]
+fn usage_in_splits_a_batch_by_point_version() {
+    let config = test_config();
+    let metering = UpdateMetering::new(&config, []);
+    let (_dir, writer) = writer(config);
+
+    let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+        payload: payload_json! { "a": 1 },
+        points: Some(vec![PointId::NumId(2)]),
+        filter: None,
+        key: None,
+    }));
+    let operations = [
+        (1, PointOperation(UpsertPoints(PointsList(vec![point(1)])))),
+        (2, PointOperation(UpsertPoints(PointsList(vec![point(2)])))),
+        (3, set_payload),
+        (4, PointOperation(UpsertPoints(PointsList(vec![point(3)])))),
+    ];
+    let (_, outcome) = writer.apply_batch_metered(operations, &metering).unwrap();
+
+    // Point 2 is folded into operation 3, so 1..=2 only pays for point 1.
+    let first = outcome.usage_in(1..=2);
+    let second = outcome.usage_in(3..=4);
+    assert_eq!(
+        first,
+        UpdateBytes {
+            updated_bytes: 6,
+            indexed_bytes: 4
+        }
+    );
+    assert_eq!(
+        second,
+        UpdateBytes {
+            updated_bytes: 6 + r#"{"a":1}"#.len() as u64 + 4,
+            indexed_bytes: 8
+        }
+    );
+    let mut sum = first;
+    sum += second;
+    assert_eq!(sum, outcome.usage);
+}
