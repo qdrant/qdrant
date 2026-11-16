@@ -271,7 +271,8 @@ fn collect_filter_keys(
             Condition::HasId(_)
             | Condition::HasVector(_)
             | Condition::Slice(_)
-            | Condition::CustomIdChecker(_) => {
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => {
                 continue;
             }
         };

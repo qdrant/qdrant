@@ -174,6 +174,9 @@ where
 
                 ConditionCheckerEnum::Ids(IdsConditionChecker(segment_ids))
             }
+            Condition::ResolvedPoints(resolved) => {
+                ConditionCheckerEnum::Points(Arc::clone(resolved.points()))
+            }
             Condition::Filter(_) => unreachable!(),
         })
     }

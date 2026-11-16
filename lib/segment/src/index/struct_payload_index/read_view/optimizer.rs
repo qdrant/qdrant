@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
+use std::sync::Arc;
 
-use common::types::{DeferredBehavior, PointOffsetType};
+use common::types::DeferredBehavior;
 use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
 use super::materialization::{
-    ConvertedCondition, DISK_POSTING_TO_CHECKS_RATIO, MaterializationHint, PostingMerge,
-    RAM_POSTING_TO_CHECKS_RATIO, merge_postings, reads_posting_list,
+    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, reads_posting_list,
 };
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
@@ -150,7 +150,10 @@ where
                     ConvertedCondition::Posting(posting) => {
                         // A posting is only read when there is a hint, so a context too.
                         let context = context.expect("posting read without a hint");
-                        ConditionCheckerEnum::Points(PointSet::union(vec![posting], context))
+                        ConditionCheckerEnum::Points(Arc::new(PointSet::union_sets(
+                            vec![posting],
+                            context,
+                        )))
                     }
                 };
                 (checker, estimation)
@@ -191,14 +194,15 @@ where
                 | Condition::HasVector(_)
                 | Condition::Slice(_)
                 | Condition::Nested(_)
-                | Condition::CustomIdChecker(_) => {
+                | Condition::CustomIdChecker(_)
+                | Condition::ResolvedPoints(_) => {
                     let estimation =
                         self.condition_cardinality(condition, None, deferred_behavior)?;
                     if let Some(hint) = materialization
                         && let Condition::Field(field_condition) = condition
                         && !hint.is_primary(condition)
                         && let Some(posting) =
-                            self.read_posting(field_condition, &estimation, hint.expected_checks)?
+                            self.read_posting(field_condition, &estimation, hint)?
                     {
                         return Ok((ConvertedCondition::Posting(posting), estimation));
                     }
@@ -349,19 +353,18 @@ where
         materialization.map(|hint| hint.point_set_context(self.id_tracker.total_point_count()))
     }
 
-    /// Read the posting list of `condition`, if that is cheaper than checking
-    /// `expected_checks` points through the index one by one.
+    /// Read the posting list of `condition`, if that is cheaper than checking the
+    /// expected points through the index one by one
+    /// (see [`ExpectedChecks::reads_posting`]).
     ///
-    /// A posting entry is 4 sequential bytes, while a per-point check is a lookup that,
-    /// on a cold index (`memory: cold`), is a random disk read. So reading a posting
-    /// list pays off up to [`DISK_POSTING_TO_CHECKS_RATIO`] times the number of checks for
-    /// a cold index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for a cached or pinned one.
+    /// [`ExpectedChecks::reads_posting`]: crate::index::query_optimization::expected_checks::ExpectedChecks::reads_posting
     fn read_posting(
         &self,
         condition: &FieldCondition,
         estimation: &CardinalityEstimation,
-        expected_checks: usize,
-    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
+        hint: MaterializationHint<'_>,
+    ) -> OperationResult<Option<PointSet>> {
+        let expected_checks = hint.expected_checks;
         if !reads_posting_list(condition) {
             return Ok(None);
         }
@@ -369,16 +372,16 @@ where
             return Ok(None);
         };
         for index in indexes {
-            let ratio = if index.is_cold() {
-                DISK_POSTING_TO_CHECKS_RATIO
-            } else {
-                RAM_POSTING_TO_CHECKS_RATIO
-            };
-            if estimation.exp > expected_checks.saturating_mul(ratio) {
+            if !expected_checks.reads_posting(estimation.exp, index.is_cold()) {
                 continue;
             }
             if let Some(points) = index.filter(condition)? {
-                return Ok(Some(points.collect()));
+                let context = hint.point_set_context(self.id_tracker.total_point_count());
+                return Ok(Some(PointSet::from_posting(
+                    points,
+                    estimation.exp,
+                    context,
+                )));
             }
         }
         Ok(None)

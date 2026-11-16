@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::io::Write as _;
 use std::sync::Arc;
 
+use common::ambient;
 use common::fs::atomic_save;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
@@ -335,6 +336,7 @@ fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
 #[case::preopen(true)]
 #[case::plain_open(false)]
 fn test_preopen_prefetches_offsets(#[case] preopen: bool) {
+    let _scope = ambient::test_guard();
     let format = GraphLinksFormat::Compressed;
     let residency = GraphLinksResidency::Cold;
     let hnsw_m = HnswM::new2(8);

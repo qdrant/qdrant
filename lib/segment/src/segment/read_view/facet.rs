@@ -116,15 +116,22 @@ where
         // Sampling pays off when there are many more unique values than requested,
         // and the filter (if any) is broad enough for random draws to be cheap.
         let unique_values_count = facet_index.unique_values_count();
+
+        // Both the sampling decision and the full facet need it, estimate it once.
+        let filter_cardinality = match &request.filter {
+            Some(filter) => Some((filter, self.payload_index.estimate_cardinality(filter)?)),
+            None => None,
+        };
+
         let use_sampling = if unique_values_count > sample_target {
-            match &request.filter {
+            match &filter_cardinality {
                 // Random sampling is too expensive with a restrictive filter,
                 // check if we should abort sampling
-                Some(filter) => {
+                Some((_, cardinality)) => {
                     // Expected number of draws from random id stream to reach `sample_target` values
                     let expected_draws =
                         sample_target.saturating_mul(available_points / unique_values_count.max(1));
-                    !self.should_pre_filter(filter, Some(expected_draws))?
+                    !self.should_pre_filter(cardinality, Some(expected_draws))
                 }
                 None => true,
             }
@@ -135,7 +142,7 @@ where
         if use_sampling {
             self.sampled_approximate_facet(&facet_index, request, sample_target, is_stopped)
         } else {
-            self.full_approximate_facet(&facet_index, request, is_stopped)
+            self.full_approximate_facet(&facet_index, filter_cardinality, is_stopped)
         }
     }
 
@@ -143,15 +150,13 @@ where
     fn full_approximate_facet(
         &self,
         facet_index: &impl FacetIndex,
-        request: &FacetParams,
+        filter_cardinality: Option<(&Filter, CardinalityEstimation)>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let Some(filter) = &request.filter else {
+        let Some((filter, cardinality)) = filter_cardinality else {
             // No filter: count how many visible points each value has.
             return self.get_facet_counts(facet_index, None);
         };
-
-        let cardinality = self.payload_index.estimate_cardinality(filter)?;
 
         let available_points = self.id_tracker.available_point_count();
 

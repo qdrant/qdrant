@@ -44,6 +44,27 @@ impl Collection {
         Ok(())
     }
 
+    /// Persist `uuid` as the collection's identity, if the collection has none yet.
+    ///
+    /// Collections created outside of consensus (in a standalone deployment) have no UUID.
+    /// They receive one when consensus first registers them.
+    ///
+    /// Returns `false` and changes nothing if the collection already has a UUID.
+    #[must_use = "the UUID is not assigned if the collection already has one"]
+    pub async fn assign_missing_uuid(&self, uuid: uuid::Uuid) -> CollectionResult<bool> {
+        let mut config = self.collection_config.write().await;
+        if config.uuid.is_some() {
+            return Ok(false);
+        }
+
+        let mut new_config = config.clone();
+        new_config.uuid = Some(uuid);
+        new_config.save(&self.path)?;
+        *config = new_config;
+
+        Ok(true)
+    }
+
     /// Updates collection params:
     /// Saves new params on disk
     ///
@@ -450,12 +471,13 @@ impl Collection {
         &self,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CollectionInfo> {
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(shard_selection)?;
+        let shards = self
+            .select_shards(shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
         let mut requests: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
+            .iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| shard.info(shard_selection.is_shard_id()))
+            .map(|shard| shard.info(shard_selection.is_shard_id()))
             .collect();
 
         let mut info = match requests.try_next().await? {

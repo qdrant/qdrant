@@ -47,6 +47,26 @@ pub struct ReadOnlyEdgeShardPools {
     pub load: Option<Arc<rayon::ThreadPool>>,
 }
 
+/// Optional arguments of the [`open`](ReadOnlyEdgeShard::open) family.
+#[derive(Default)]
+pub struct ReadOnlyOpenOptions {
+    /// Overrides tunables of the config derived from the segments (see
+    /// [`EdgeConfig::from_segment_config`]); `vectors`/`sparse_vectors` are ignored.
+    /// Open-only: a [`live_reload`](ReadOnlyEdgeShard::live_reload) re-derives it from segments.
+    pub config: Option<EdgeConfig>,
+    /// Parks segment components the request won't touch cold (see [`LoadProfile`]), cutting the
+    /// cold-start cost. Also applies to segments found by later reloads.
+    pub load_profile: Option<LoadProfile>,
+    /// Caller-owned pools, reused for the shard's lifetime and shareable across shards. Each
+    /// omitted pool is created from `config`; supplied pools retain their own size and affinity.
+    /// Use distinct pools to keep loading off search workers.
+    pub pools: ReadOnlyEdgeShardPools,
+    /// The serverless updater's committed cursor: the newest version whose writes are all durable
+    /// and listed in the manifest. Deletes up to it apply once every listed segment loads; newer
+    /// ones are held. `None` applies every delete as soon as it is read.
+    pub waterline: Option<SeqNumberType>,
+}
+
 /// Read-only follower view over an edge shard's on-disk directory.
 ///
 /// Generic over the read backend `S` (e.g. `MmapFile` for local memory-mapped files; the same

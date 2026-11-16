@@ -278,7 +278,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 
     fn vectors_count(&self) -> usize {
-        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
+        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size
     }
 
     fn heap_size_bytes(&self) -> usize {
@@ -562,6 +562,7 @@ mod tests {
     /// platform, so this covers the branch io_uring takes on Linux.
     #[test]
     fn disk_cache_runs_match_per_point_reads() {
+        let _scope = common::ambient::test_guard();
         let dir = TempDir::with_prefix("quantized_storage_disk_cache").unwrap();
         let remote_dir = dir.path().join("remote");
         let local_dir = dir.path().join("local");

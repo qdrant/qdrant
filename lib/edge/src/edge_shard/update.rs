@@ -19,6 +19,7 @@ use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
 impl EdgeShard {
     pub fn update(&self, mut operation: CollectionUpdateOperations) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Reject a conflicting vector-name re-create before it reaches the WAL:
         // the segment-level create is idempotent, so re-creating an existing
         // name with different params silently no-ops storage. Failing loudly up
@@ -118,7 +119,6 @@ impl EdgeShard {
         operation_id: SeqNumberType,
         operation: CollectionUpdateOperations,
     ) -> OperationResult<()> {
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let _update_guard = self.segments.acquire_updates_lock();
 
         let segments_guard = self.segments.read();

@@ -1596,6 +1596,7 @@ fn validate_facet_result(
 }
 
 fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
+    let _scope = ambient::test_guard();
     let request = keyword_facet_request();
 
     // Plain segment should fail, as it does not have a keyword index
@@ -1616,6 +1617,7 @@ fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
 }
 
 fn test_mmap_keyword_facet(test_segments: &TestSegments) -> Result<()> {
+    let _scope = ambient::test_guard();
     let request = keyword_facet_request();
 
     let facet_hits = test_segments

@@ -6,7 +6,7 @@ use ahash::{AHashMap, AHashSet};
 use futures::future;
 use itertools::{Either, Itertools};
 use segment::types::{
-    ExtendedPointId, Filter, Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -156,19 +156,11 @@ impl Collection {
 
         let instant = Instant::now();
 
-        // Snapshot the targeted shards under the read guard, then drop it
-        // before awaiting the per-shard searches. Holding the guard across
-        // the searches would block writers (e.g. shard creation) for the
-        // entire search duration; cloning `Arc<ShardReplicaSet>` lets each
-        // search keep the shard alive on its own.
-        let targets: Vec<(Arc<_>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        let targets = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         // query all shards concurrently
         let all_searches = targets.into_iter().map(|(shard, shard_key)| {

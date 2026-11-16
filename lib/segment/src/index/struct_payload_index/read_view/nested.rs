@@ -174,7 +174,8 @@ where
                 Condition::HasId(_)
                 | Condition::HasVector(_)
                 | Condition::Slice(_)
-                | Condition::CustomIdChecker(_) => {
+                | Condition::CustomIdChecker(_)
+                | Condition::ResolvedPoints(_) => {
                     converted.push(ConditionCheckerEnum::Constant(
                         ConstantConditionChecker::MATCH_NONE,
                     ));

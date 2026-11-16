@@ -60,6 +60,7 @@ impl EdgeShard {
     /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
@@ -130,6 +131,7 @@ impl EdgeShard {
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "cannot load edge shard: directory {} does not exist",
@@ -238,6 +240,7 @@ impl EdgeShard {
 
     /// Update global HNSW config and persist. Does not change per-vector HNSW.
     pub fn set_hnsw_config(&self, hnsw_config: segment::types::HnswConfig) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.config
             .write(|cfg| cfg.set_hnsw_config(hnsw_config))
             .map_err(|e| OperationError::service_error(e.to_string()))
@@ -250,6 +253,7 @@ impl EdgeShard {
         vector_name: &str,
         hnsw_config: segment::types::HnswConfig,
     ) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Run the fallible mutation on a clone *inside* the config lock via
         // write_optional, rather than read()-clone-mutate-then-write(). The
         // latter releases the read lock before writing, so a concurrent config
@@ -273,6 +277,7 @@ impl EdgeShard {
 
     /// Update optimizer config and persist.
     pub fn set_optimizers_config(&self, optimizers: EdgeOptimizersConfig) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.config
             .write(|cfg| cfg.set_optimizers_config(optimizers))
             .map_err(|e| OperationError::service_error(e.to_string()))
@@ -291,6 +296,7 @@ impl EdgeShard {
     /// self-deadlock. No current caller does (the FFI boundary, `Drop`, the
     /// Python bindings, and tests all invoke it without holding those locks).
     pub fn flush(&self) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.update_log.lock().flush()?;
 
         let persisted_version = self.segments.read().flush_all(FlushMode::Sync, true)?;
@@ -595,7 +601,6 @@ fn ensure_appendable_segment(
 
     let (mut segment, token) =
         build_segment(segments_path, &config.plain_segment_config(), None, true)?;
-    let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
     for (key, schema) in &indexed_fields {
         segment.create_field_index(0, key, Some(schema))?;
     }

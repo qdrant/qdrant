@@ -7,6 +7,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
@@ -467,19 +468,29 @@ impl SegmentHolder {
             .collect()
     }
 
-    /// Whether at least one appendable segment is smaller than `max_segment_size_bytes`.
-    /// Also `false` when there is no appendable segment at all.
+    /// Whether at least one appendable segment is smaller than `max_segment_size_bytes` and
+    /// has no pending outgoing copy-on-write move. Also `false` when there is no appendable
+    /// segment at all.
+    ///
+    /// A segment with an outgoing move (left from a time it was proxied) may close a flush
+    /// cycle as a destination, see [`Self::acyclic_cow_destinations`]. Requiring one without
+    /// makes the caller provision a fresh segment, so moves can avoid the cycle.
     pub fn has_appendable_segment_with_capacity(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> bool {
-        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
-            return !self.appendable_segments.is_empty();
-        };
-
+        let flush_dependency = self.flush_dependency.lock();
         self.appendable_segments
-            .values()
-            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes))
+            .iter()
+            .any(|(segment_id, segment)| {
+                let has_capacity = max_segment_size_bytes
+                    .is_none_or(|max| Self::segment_has_capacity(segment, max));
+                has_capacity
+                    && flush_dependency
+                        .dependencies_of(segment_id)
+                        .next()
+                        .is_none()
+            })
     }
 
     /// Candidate destinations for copy-on-write moves, computed lazily on the first move and
@@ -500,6 +511,47 @@ impl SegmentHolder {
                 eligible
             }
         })
+    }
+
+    /// Drop the `candidates` a copy-on-write move out of `source` must not target.
+    ///
+    /// The move makes `source` depend on its destination in the flush topology. A
+    /// destination that already depends on `source`, directly or transitively, would close a
+    /// cycle that no flush order can honor (#11184). This happens when an appendable segment
+    /// is restored by unproxying while it still has unflushed outgoing moves: it is a
+    /// destination again before those moves are persisted.
+    ///
+    /// Such candidates are skipped until a flush retires their edges. Normally none qualify: a
+    /// segment only gets outgoing edges while proxied, and before each update
+    /// [`Self::has_appendable_segment_with_capacity`] makes the update worker provision a fresh
+    /// segment if every appendable one has outgoing edges. If every candidate would still
+    /// close a cycle (the fresh segment got proxied in between), the full list is returned,
+    /// keeping the previous behavior rather than failing the update.
+    fn acyclic_cow_destinations<'a>(
+        &self,
+        source: SegmentId,
+        candidates: &'a [SegmentId],
+    ) -> Cow<'a, [SegmentId]> {
+        let flush_dependency = self.flush_dependency.lock();
+        if !candidates
+            .iter()
+            .any(|candidate| flush_dependency.reaches(candidate, &source))
+        {
+            return Cow::Borrowed(candidates);
+        }
+        let acyclic: Vec<SegmentId> = candidates
+            .iter()
+            .copied()
+            .filter(|candidate| !flush_dependency.reaches(candidate, &source))
+            .collect();
+        if acyclic.is_empty() {
+            log::warn!(
+                "Every copy-on-write destination of segment {source} would form a flush cycle, \
+                 moving anyway",
+            );
+            return Cow::Borrowed(candidates);
+        }
+        Cow::Owned(acyclic)
     }
 
     /// Return non-appendable segment IDs sorted by IDs
@@ -1101,11 +1153,10 @@ impl SegmentHolder {
             let is_applied = if can_apply_operation {
                 point_operation(point_id, write_segment)?
             } else {
+                let candidates =
+                    self.cow_destination_candidates(&mut destination_cache, max_segment_size_bytes);
                 self.aloha_random_write(
-                    self.cow_destination_candidates(
-                        &mut destination_cache,
-                        max_segment_size_bytes,
-                    ),
+                    &self.acyclic_cow_destinations(idx, candidates),
                     |appendable_idx, appendable_write_segment| {
                         // If we are moving point from one segment to another,
                         // we must guarantee, that data in new segment will be persisted before

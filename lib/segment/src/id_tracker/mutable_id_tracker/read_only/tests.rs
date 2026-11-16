@@ -865,6 +865,7 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
 
 #[test]
 fn test_probe_committed_over_disk_cache() {
+    let _scope = common::ambient::test_guard();
     use std::sync::Arc;
 
     use common::universal_io::{

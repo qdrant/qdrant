@@ -374,6 +374,7 @@ fn deletion_and_live_reload() {
 /// actually reproduces (mmap readers are read-through and can't catch it).
 #[test]
 fn deletion_and_live_reload_disk_cache() {
+    let _scope = common::ambient::test_guard();
     use std::sync::Arc;
 
     use common::universal_io::{

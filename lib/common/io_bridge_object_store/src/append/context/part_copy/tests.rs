@@ -90,6 +90,18 @@ fn multipart_rewrite_copies_the_prefix_and_completes() {
 
     assert_eq!(complete.method, "POST");
     assert_eq!(complete.path, "/bucket/dir/append.dat?uploadId=upload-1");
+
+    // GCS's S3 interop answers 411 Length Required to a bodiless request
+    // without it.
+    for request in [initiate, copy, upload, complete] {
+        assert_eq!(
+            request.headers[http::header::CONTENT_LENGTH],
+            request.body.len().to_string(),
+            "{} {}",
+            request.method,
+            request.path,
+        );
+    }
     assert_eq!(
         String::from_utf8_lossy(&complete.body),
         "<CompleteMultipartUpload>\

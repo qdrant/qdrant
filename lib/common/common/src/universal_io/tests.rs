@@ -5,6 +5,7 @@ use std::path::Path;
 
 use super::conformance::{open_options, run_append_conformance};
 use super::*;
+use crate::ambient;
 
 /// Appending grows the underlying regular file itself, preserving existing
 /// content — verified with plain fs reads, on both local backends.
@@ -201,6 +202,7 @@ async fn cached_fs_select_files_async() {
 /// discarded; a probe for an unlisted file is not a failure.
 #[tokio::test]
 async fn cached_fs_prefetch_error() {
+    let _scope = ambient::async_test_guard();
     let dir = tempfile::tempdir().unwrap();
     let listed = dir.path().join("listed.dat");
     let unlisted = dir.path().join("unlisted.dat");

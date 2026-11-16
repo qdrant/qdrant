@@ -4,8 +4,9 @@
 //! A set is either a dense bitset over all point offsets of the segment or a sorted list of
 //! offsets. The bitset costs `total_points / 8` bytes to allocate and zero no matter how
 //! few points it holds, so it only pays off when the set is large or checked many times.
-//! [`PointSet::union`] and [`PointSet::intersection`] merge the posting lists of one clause
-//! into a single set, so a clause pays for at most one bitset.
+//! [`PointSet::from_posting`] reads a dense posting list straight into a bitset, without
+//! collecting it first. [`PointSet::union_sets`] and [`PointSet::intersection_sets`] merge
+//! the posting lists of one clause into a single set, reusing one of their bitsets.
 
 use common::bitvec::BitVec;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
@@ -37,6 +38,15 @@ pub struct PointSetContext {
 }
 
 impl PointSetContext {
+    /// A context for a set whose use is unknown: the representation is chosen by its
+    /// density in the segment alone, as if it will never be checked point by point.
+    pub fn by_density(total_points: usize) -> Self {
+        Self {
+            total_points,
+            expected_checks: 0,
+        }
+    }
+
     /// Whether a bitset is cheaper than a sorted list for a set of `len` points.
     /// `sorted` tells whether the points are already sorted, so the list needs no sort.
     fn prefer_bits(&self, len: usize, sorted: bool) -> bool {
@@ -69,6 +79,121 @@ impl PointSet {
         match self {
             PointSet::Bits(bits) => bits.get(point_id as usize).is_some_and(|bit| *bit),
             PointSet::Sorted(points) => points.binary_search(&point_id).is_ok(),
+        }
+    }
+
+    /// Number of points in the set.
+    pub fn len(&self) -> usize {
+        match self {
+            PointSet::Bits(bits) => bits.count_ones(),
+            PointSet::Sorted(points) => points.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The points of the set, in ascending order.
+    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        match self {
+            PointSet::Bits(bits) => {
+                itertools::Either::Left(bits.iter_ones().map(|point| point as PointOffsetType))
+            }
+            PointSet::Sorted(points) => itertools::Either::Right(points.iter().copied()),
+        }
+    }
+
+    /// A set of `points`, in any order and possibly repeated, written straight into the
+    /// representation `context` prefers for about `expected_len` points.
+    pub fn from_points(
+        points: impl IntoIterator<Item = PointOffsetType>,
+        expected_len: usize,
+        context: PointSetContext,
+    ) -> Self {
+        if context.prefer_bits(expected_len, false) {
+            let mut bits = BitVec::repeat(false, context.total_points);
+            for point in points {
+                set_bit(&mut bits, point);
+            }
+            return PointSet::Bits(bits);
+        }
+        let mut points: Vec<PointOffsetType> = points.into_iter().collect();
+        sort_unique(&mut points);
+        PointSet::Sorted(points)
+    }
+
+    /// A set read straight from a posting list of about `expected_len` points.
+    ///
+    /// A bitset is filled from the iterator, without collecting the points first, when the
+    /// merged set prefers one and the bitset is no larger than the list would be. A dense
+    /// posting then never holds a list of 4 bytes per point, which `collect` grows by
+    /// doubling: up to 12 bytes per point while it reallocates. A sparse posting is
+    /// collected into a sorted list, so a clause with several of them holds small lists
+    /// rather than one bitset each.
+    pub fn from_posting(
+        points: impl IntoIterator<Item = PointOffsetType>,
+        expected_len: usize,
+        context: PointSetContext,
+    ) -> Self {
+        let list_bytes = expected_len.saturating_mul(size_of::<PointOffsetType>());
+        let bits_bytes = context.total_points.div_ceil(8);
+        if list_bytes >= bits_bytes && context.prefer_bits(expected_len, false) {
+            let mut bits = BitVec::repeat(false, context.total_points);
+            for point in points {
+                set_bit(&mut bits, point);
+            }
+            return PointSet::Bits(bits);
+        }
+        let mut points: Vec<PointOffsetType> = points.into_iter().collect();
+        sort_unique(&mut points);
+        PointSet::Sorted(points)
+    }
+
+    /// Points that match any of `sets`. Reuses one of the bitsets, if any, for the result.
+    pub fn union_sets(sets: Vec<PointSet>, context: PointSetContext) -> Self {
+        let (mut bitsets, lists) = split_sets(sets);
+        let Some(mut bits) = bitsets.pop() else {
+            return Self::union(lists, context);
+        };
+        for other in &bitsets {
+            or_bits(&mut bits, other);
+        }
+        for point in lists.into_iter().flatten() {
+            set_bit(&mut bits, point);
+        }
+        PointSet::Bits(bits)
+    }
+
+    /// Points that match every one of `sets`. Allocates at most one new bitset.
+    pub fn intersection_sets(sets: Vec<PointSet>, context: PointSetContext) -> Self {
+        let (bitsets, lists) = split_sets(sets);
+        let mut bitsets = bitsets.into_iter();
+        let mut result = if !lists.is_empty() {
+            Self::intersection(lists, context)
+        } else if let Some(first) = bitsets.next() {
+            PointSet::Bits(first)
+        } else {
+            // See `intersection`: callers never build an intersection of nothing.
+            return PointSet::Sorted(Vec::new());
+        };
+        for bits in bitsets {
+            result = result.retain_in(&bits);
+        }
+        result
+    }
+
+    /// Keep only the points that are also in `bits`.
+    fn retain_in(self, bits: &BitVec) -> Self {
+        match self {
+            PointSet::Bits(mut own) => {
+                and_bits(&mut own, bits);
+                PointSet::Bits(own)
+            }
+            PointSet::Sorted(mut points) => {
+                points.retain(|&point| bits.get(point as usize).is_some_and(|bit| *bit));
+                PointSet::Sorted(points)
+            }
         }
     }
 
@@ -140,6 +265,35 @@ impl PointSet {
                 }
             }
         }
+    }
+}
+
+/// Bitsets and sorted lists of `sets`, apart.
+fn split_sets(sets: Vec<PointSet>) -> (Vec<BitVec>, Vec<Vec<PointOffsetType>>) {
+    let mut bitsets = Vec::new();
+    let mut lists = Vec::new();
+    for set in sets {
+        match set {
+            PointSet::Bits(bits) => bitsets.push(bits),
+            PointSet::Sorted(points) => lists.push(points),
+        }
+    }
+    (bitsets, lists)
+}
+
+/// `bits |= other`, word by word. Both are sized for the same segment.
+fn or_bits(bits: &mut BitVec, other: &BitVec) {
+    debug_assert_eq!(bits.len(), other.len());
+    for (word, other) in bits.as_raw_mut_slice().iter_mut().zip(other.as_raw_slice()) {
+        *word |= *other;
+    }
+}
+
+/// `bits &= other`, word by word. Both are sized for the same segment.
+fn and_bits(bits: &mut BitVec, other: &BitVec) {
+    debug_assert_eq!(bits.len(), other.len());
+    for (word, other) in bits.as_raw_mut_slice().iter_mut().zip(other.as_raw_slice()) {
+        *word &= *other;
     }
 }
 
@@ -241,5 +395,68 @@ mod tests {
         let inter = PointSet::intersection(vec![a, b.clone()], ctx);
         assert!(matches!(inter, PointSet::Bits(_)));
         assert_eq!(members(&inter, total as u32), b);
+    }
+
+    #[test]
+    fn from_posting_fills_a_bitset_only_when_it_is_no_larger_than_the_list() {
+        let total = 64_000;
+        let ctx = context(total, total);
+        // 2000 points * 4 B = 8000 B = the bitset size: bitset.
+        let dense = PointSet::from_posting((0..2000).rev(), 2000, ctx);
+        assert!(matches!(dense, PointSet::Bits(_)));
+        assert_eq!(
+            dense.iter().collect::<Vec<_>>(),
+            (0..2000).collect::<Vec<_>>()
+        );
+        // 1000 points: a list is smaller than the bitset.
+        let sparse = PointSet::from_posting((0..1000).rev(), 1000, ctx);
+        assert!(matches!(sparse, PointSet::Sorted(_)));
+        assert_eq!(
+            sparse.iter().collect::<Vec<_>>(),
+            (0..1000).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn set_merges_match_set_semantics_for_mixed_representations() {
+        let total = 50;
+        let bits = |points: &[PointOffsetType]| {
+            let mut bits = BitVec::repeat(false, total);
+            for &point in points {
+                set_bit(&mut bits, point);
+            }
+            PointSet::Bits(bits)
+        };
+        let sorted = |points: &[PointOffsetType]| PointSet::Sorted(points.to_vec());
+        let a = [1, 3, 7, 9, 42];
+        let b = [3, 4, 7, 8];
+        let c = [3, 7, 49];
+        for ctx in [context(total, 1), context(total, 1_000_000)] {
+            for (x, y, z) in [
+                (bits(&a), bits(&b), bits(&c)),
+                (bits(&a), sorted(&b), bits(&c)),
+                (sorted(&a), sorted(&b), bits(&c)),
+                (sorted(&a), sorted(&b), sorted(&c)),
+            ] {
+                let union = PointSet::union_sets(vec![x, y], ctx);
+                assert_eq!(members(&union, total as u32), vec![1, 3, 4, 7, 8, 9, 42]);
+                let inter = PointSet::intersection_sets(vec![union, bits(&b), z], ctx);
+                assert_eq!(members(&inter, total as u32), vec![3, 7]);
+            }
+        }
+    }
+
+    #[test]
+    fn from_points_drops_order_and_repeats_in_both_representations() {
+        let points: Vec<PointOffsetType> = vec![9, 1, 3, 3, 42, 7, 1];
+        // Few points in a large segment: list. Checked many times: bitset.
+        let list = PointSet::from_points(points.clone(), points.len(), context(10_000_000, 0));
+        assert!(matches!(list, PointSet::Sorted(_)));
+        let bits = PointSet::from_points(points, 7, context(50, 1_000_000));
+        assert!(matches!(bits, PointSet::Bits(_)));
+        for set in [list, bits] {
+            assert_eq!(set.iter().collect::<Vec<_>>(), vec![1, 3, 7, 9, 42]);
+            assert_eq!(set.len(), 5);
+        }
     }
 }

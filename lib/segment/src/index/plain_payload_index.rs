@@ -97,6 +97,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
         })
     }
 
+    fn materialization_cost(&self, _estimation: &CardinalityEstimation) -> OperationResult<usize> {
+        // No primary clauses: every point is a candidate
+        Ok(self.id_tracker.borrow().available_point_count())
+    }
+
     /// Forward to non nested implementation.
     fn estimate_nested_cardinality(
         &self,
@@ -132,6 +137,14 @@ impl PayloadIndexRead for PlainPayloadIndex {
                 condition_checker: self.condition_checker.clone(),
             },
         )))
+    }
+
+    fn filter_context_for_serial_checks<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<OptimizedFilter<'a>> {
+        // No field indexes, so no posting lists to read up front.
+        self.filter_context(filter)
     }
 
     fn for_each_payload_block(

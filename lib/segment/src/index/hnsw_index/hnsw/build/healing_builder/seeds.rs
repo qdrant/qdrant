@@ -1,8 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::bitvec::BitVec;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -124,13 +123,13 @@ impl<'a> BlockSeeds<'a> {
 
         self.enter_block(block.points);
         let block_seeds = &*self;
-        let seeded = pool.install(|| {
+        let seeded = pool.ambient_install(|handoff| {
             (0..num_points)
                 .into_par_iter()
                 .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .map(|local_id| {
                     check_process_stopped(stopped)?;
-                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                    let _scope = handoff.enter_guard();
                     let replacements = block_seeds.seed_point(local_id, block, final_graph)?;
                     if replacements.is_some() {
                         counter.fetch_add(1, Ordering::Relaxed);
@@ -146,13 +145,13 @@ impl<'a> BlockSeeds<'a> {
         // their links when they are inserted.
         let payload_m0 = self.payload_m0;
         let is_seeded: BitVec = seeded.iter().map(|(_, r)| r.is_some()).collect();
-        pool.install(|| {
+        pool.ambient_install(|handoff| {
             seeded.par_iter().try_for_each(|(local_id, replacements)| {
                 let Some(replacements) = replacements.as_ref().filter(|r| !r.is_empty()) else {
                     return Ok(());
                 };
                 check_process_stopped(stopped)?;
-                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                let _scope = handoff.enter_guard();
                 let scorer = block.scorer(block.points[*local_id as usize])?;
                 let mut items = ItemsBuffer::default();
                 for &other in replacements {

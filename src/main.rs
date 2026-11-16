@@ -17,6 +17,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ::common::ambient;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
@@ -25,6 +26,7 @@ use ::common::low_memory::init_low_memory_mode;
 use ::common::memory_usage::set_resident_bytes_reader;
 use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use ::common::mmap::advice::set_global;
+use ::common::reason::reason;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -547,13 +549,15 @@ fn main() -> anyhow::Result<()> {
     // Table of content (main entry point for storage)
     //
 
-    let toc = TableOfContent::new(
-        &settings.storage,
-        optimizer_resource_budget,
-        channel_service.clone(),
-        persistent_consensus_state.this_peer_id(),
-        propose_operation_sender.clone(),
-    )?;
+    let toc = ambient::unmeasured(reason("Loading collections on startup"), || {
+        TableOfContent::new(
+            &settings.storage,
+            optimizer_resource_budget,
+            channel_service.clone(),
+            persistent_consensus_state.this_peer_id(),
+            propose_operation_sender.clone(),
+        )
+    })?;
     let runtime_handle = toc.general_runtime_handle().clone();
 
     // Here we load all stored collections.

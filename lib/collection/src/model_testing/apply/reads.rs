@@ -24,11 +24,11 @@ use shard::scroll::ScrollRequestInternal;
 use shard::segment_holder::SegmentId;
 
 use super::super::op::{
-    FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, canonical_sparse, dense_diff,
-    dense_matches, has_num, match_has_id_filter, match_has_vector_filter,
-    match_num_and_slice_filter, match_num_filter, match_slice_filter, match_tag_filter,
-    match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
-    url_prefix_matches,
+    FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, UrlMatch, canonical_sparse,
+    dense_diff, dense_matches, has_num, is_empty_filter, is_empty_matches, is_null_filter,
+    is_null_matches, match_has_id_filter, match_has_vector_filter, match_num_and_slice_filter,
+    match_num_filter, match_slice_filter, match_tag_filter, match_url_prefix_filter, num_matches,
+    optional_read_filter, passes_read_filters, tag_matches, url_prefix_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -999,15 +999,15 @@ pub(super) async fn apply_scroll_filtered_by_tag(
     assert_id_sets_eq(&returned, &expected, &format!("scroll(tag=={tag:?})"));
 }
 
-pub(super) async fn apply_count_by_url_prefix(
+pub(super) async fn apply_count_by_url(
     collection: &Collection,
     model: &Model,
-    prefix: &str,
+    url_match: UrlMatch<'_>,
 ) {
     let actual = collection
         .count(
             CountRequestInternal {
-                filter: Some(match_url_prefix_filter(prefix)),
+                filter: Some(url_match.filter()),
                 exact: true,
             },
             None,
@@ -1017,26 +1017,26 @@ pub(super) async fn apply_count_by_url_prefix(
         )
         .measured(AmbientContext::new())
         .await
-        .expect("count by url prefix failed")
+        .unwrap_or_else(|e| panic!("count(url {url_match:?}) failed: {e:?}"))
         .count;
     let expected = model
         .values()
-        .filter(|entry| url_prefix_matches(&entry.payload, prefix))
+        .filter(|entry| url_match.matches(&entry.payload))
         .count();
-    assert_eq!(actual, expected, "count(url prefix={prefix:?}) mismatch");
+    assert_eq!(actual, expected, "count(url {url_match:?}) mismatch");
 }
 
-pub(super) async fn apply_scroll_filtered_by_url_prefix(
+pub(super) async fn apply_scroll_filtered_by_url(
     collection: &Collection,
     model: &Model,
-    prefix: &str,
+    url_match: UrlMatch<'_>,
 ) {
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
                 offset: None,
                 limit: Some(usize::MAX),
-                filter: Some(match_url_prefix_filter(prefix)),
+                filter: Some(url_match.filter()),
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Bool(false),
                 order_by: None,
@@ -1048,18 +1048,14 @@ pub(super) async fn apply_scroll_filtered_by_url_prefix(
         )
         .measured(AmbientContext::new())
         .await
-        .expect("scroll(filtered by url prefix) failed");
+        .unwrap_or_else(|e| panic!("scroll(url {url_match:?}) failed: {e:?}"));
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
     let expected: AHashSet<PointIdType> = model
         .iter()
-        .filter(|(_, entry)| url_prefix_matches(&entry.payload, prefix))
+        .filter(|(_, entry)| url_match.matches(&entry.payload))
         .map(|(id, _)| *id)
         .collect();
-    assert_id_sets_eq(
-        &returned,
-        &expected,
-        &format!("scroll(url prefix={prefix:?})"),
-    );
+    assert_id_sets_eq(&returned, &expected, &format!("scroll(url {url_match:?})"));
 }
 
 pub(super) async fn apply_scroll_paged(
@@ -1079,6 +1075,8 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::NumAndSlice { num, total, index } => {
             Some(match_num_and_slice_filter(*num, *total, *index))
         }
+        ScrollFilter::IsEmpty(key) => Some(is_empty_filter(key)),
+        ScrollFilter::IsNull(key) => Some(is_null_filter(key)),
     };
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
@@ -1089,7 +1087,9 @@ pub(super) async fn apply_scroll_paged(
         | ScrollFilter::UrlPrefix(_)
         | ScrollFilter::HasVector(_)
         | ScrollFilter::Slice { .. }
-        | ScrollFilter::NumAndSlice { .. } => AHashSet::new(),
+        | ScrollFilter::NumAndSlice { .. }
+        | ScrollFilter::IsEmpty(_)
+        | ScrollFilter::IsNull(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()
@@ -1113,6 +1113,8 @@ pub(super) async fn apply_scroll_paged(
                     }
                     .check(**id)
             }
+            ScrollFilter::IsEmpty(key) => is_empty_matches(&entry.payload, key),
+            ScrollFilter::IsNull(key) => is_null_matches(&entry.payload, key),
         })
         .map(|(id, _)| *id)
         .collect();

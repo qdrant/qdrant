@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
@@ -51,16 +52,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
             None,
         )?;
         let listed: Vec<(Uuid, ListedSegment)> = enumerator.list_segments()?.into_iter().collect();
-        let segments = ambient::parallel(|handoff| {
-            pool.install(|| {
-                listed
-                    .into_par_iter()
-                    .map(|(uuid, ListedSegment { path, writable: _ })| {
-                        let _scope = handoff.enter_guard();
-                        Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
-                    })
-                    .collect::<OperationResult<HashMap<_, _>>>()
-            })
+        let segments = pool.ambient_install(|handoff| {
+            listed
+                .into_par_iter()
+                .map(|(uuid, ListedSegment { path, writable: _ })| {
+                    let _scope = handoff.enter_guard();
+                    Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
+                })
+                .collect::<OperationResult<HashMap<_, _>>>()
         })?;
         Ok(Self {
             fs,
@@ -81,12 +80,10 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// or reload.
     pub fn live_reload(&mut self) -> OperationResult<()> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        ambient::parallel(|handoff| {
-            self.pool.install(|| {
-                self.segments.par_iter_mut().try_for_each(|(_, segment)| {
-                    let _scope = handoff.enter_guard();
-                    segment.live_reload()
-                })
+        self.pool.ambient_install(|handoff| {
+            self.segments.par_iter_mut().try_for_each(|(_, segment)| {
+                let _scope = handoff.enter_guard();
+                segment.live_reload()
             })
         })
     }
@@ -166,16 +163,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         &self,
         ids: &[PointIdType],
     ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
-        let per_segment = ambient::parallel(|handoff| {
-            self.pool.install(|| {
-                self.segments
-                    .par_iter()
-                    .map(|(uuid, segment)| {
-                        let _scope = handoff.enter_guard();
-                        locate_in(*uuid, segment, ids)
-                    })
-                    .collect::<OperationResult<Vec<_>>>()
-            })
+        let per_segment = self.pool.ambient_install(|handoff| {
+            self.segments
+                .par_iter()
+                .map(|(uuid, segment)| {
+                    let _scope = handoff.enter_guard();
+                    locate_in(*uuid, segment, ids)
+                })
+                .collect::<OperationResult<Vec<_>>>()
         })?;
         Ok(merge_locations(per_segment))
     }

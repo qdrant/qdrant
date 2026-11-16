@@ -833,5 +833,7 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
         // Not exposed: runtime-internal resharding hook, `#[serde(skip)]`-ed
         // out of every serialized surface; never host-constructed.
         SegmentCondition::CustomIdChecker(_) => {}
+        // Not exposed: offsets of one segment, built and used inside a single search batch.
+        SegmentCondition::ResolvedPoints(_) => {}
     }
 }

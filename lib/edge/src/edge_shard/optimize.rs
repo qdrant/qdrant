@@ -2,8 +2,10 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
+use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::HnswGlobalConfig;
 use shard::files::SEGMENTS_PATH;
@@ -41,6 +43,7 @@ impl EdgeShard {
     /// Blocks until `budget` has a permit available, so a clone of one budget shared between
     /// concurrent calls (e.g. across shards) caps their combined resource usage.
     pub fn optimize_with_budget(&self, budget: ResourceBudget) -> OperationResult<bool> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let optimizers = self.build_blocking_optimizers();
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;

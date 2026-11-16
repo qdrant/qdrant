@@ -267,7 +267,6 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
                 OperationResult::Ok(())
             })?;
 
-        // Billed as the length and header reads of the same index are.
         bytes_read += spans
             .iter()
             .flatten()

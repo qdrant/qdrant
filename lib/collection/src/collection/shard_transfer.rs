@@ -711,19 +711,21 @@ impl Collection {
             .await
     }
 
-    /// Initiate local partial shard
+    /// Wait until the shard transfer is started through consensus, and initialize the local shard
+    /// to receive the transfer.
+    ///
+    /// If `from_peer_id` is given, only a transfer from that peer is accepted.
     ///
     /// # Cancel safety
     ///
-    /// This is cancel safe. If the future is dropped, initialization is aborted.
+    /// This method is cancel safe.
     ///
-    /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
-    /// partial state. In that case it will remain a dummy shard, signaled by the initialization
-    /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    /// If the future is dropped, initialization is cancelled. If the local shard was a dummy,
+    /// it stays a dummy, which should be recovered on transfer retry.
     ///
-    /// If `from_peer_id` is given, only a transfer from that peer is accepted. A sender that
-    /// drives a transfer consensus has since aborted must not be able to piggyback on another
-    /// transfer into this shard.
+    /// See [`ShardReplicaSet::init_empty_local_shard`].
+    ///
+    /// [`ShardReplicaSet::init_empty_local_shard`]: crate::shards::replica_set::ShardReplicaSet::init_empty_local_shard
     pub fn initiate_shard_transfer(
         &self,
         shard_id: ShardId,

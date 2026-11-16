@@ -9,6 +9,7 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
@@ -34,14 +35,14 @@ where
         &self,
         limit: usize,
         condition: &Filter,
+        cardinality_estimation: &CardinalityEstimation,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointIdType>> {
-        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
         let ids_iterator = self
             .payload_index
             .iter_filtered_points(
                 condition,
-                &cardinality_estimation,
+                cardinality_estimation,
                 is_stopped,
                 DeferredBehavior::VisibleOnly,
             )?
@@ -79,8 +80,14 @@ where
         match filter {
             None => Ok(self.read_by_random_id(limit)),
             Some(condition) => {
-                if self.should_pre_filter(condition, Some(limit))? {
-                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped)
+                let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
+                if self.should_pre_filter(&cardinality_estimation, Some(limit)) {
+                    self.filtered_read_by_index_shuffled(
+                        limit,
+                        condition,
+                        &cardinality_estimation,
+                        is_stopped,
+                    )
                 } else {
                     self.filtered_read_by_random_stream(limit, condition, is_stopped)
                 }

@@ -35,7 +35,10 @@ jobs:
       run: cargo build --workspace --tests --features "gpu" --locked
     # See the same step in rust.yml; this job is Linux-only so it needs no condition.
     - name: Put test temp files on tmpfs
-      run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
+      run: |
+        sudo mkdir -p /mnt/test-tmp
+        sudo mount -t tmpfs -o size=50%,mode=1777 tmpfs /mnt/test-tmp
+        echo "TMPDIR=/mnt/test-tmp" >> "$GITHUB_ENV"
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --features "gpu" --profile ci --locked

@@ -582,3 +582,120 @@ def test_shard_transfer_blocking_shard_holder(tmp_path: pathlib.Path):
         assert pending == 0, (
             f"Peer {peer_ids[i]} at {uri} has {pending} pending operations, expected 0"
         )
+
+
+# Must be top-level: Python 3.14 defaults to the forkserver start method, which
+# pickles Process targets (nested locals are not picklable).
+def overwrite_points_in_loop(peer_url, num_points):
+    # Setting payload on a deleted point fails, only pick points that exist
+    existing = list(range(num_points))
+    counter = 0
+    while True:
+        counter += 1
+
+        # Overwrite payload of existing points across the whole ID range
+        r = requests.post(
+            f"{peer_url}/collections/{COLLECTION_NAME}/points/payload?wait=true",
+            json={
+                "points": random.sample(existing, 10),
+                "payload": {"counter": counter},
+            },
+        )
+        assert_http_ok(r)
+
+        # Delete a point, and reinsert it every other time
+        point_id = random.choice(existing)
+        r = requests.post(
+            f"{peer_url}/collections/{COLLECTION_NAME}/points/delete?wait=true",
+            json={"points": [point_id]},
+        )
+        assert_http_ok(r)
+        if counter % 2 == 0:
+            upsert_random_points(peer_url, 1, COLLECTION_NAME, offset=point_id)
+        else:
+            existing.remove(point_id)
+
+        sleep(0.05)
+
+
+# Transfer a shard while existing points are overwritten, deleted and reinserted
+#
+# Stream records reads a batch of points, and sends it to the receiver later.
+# Batches are read ahead and sent in parallel. An update must never reach the
+# receiver between reading and sending a batch containing its points, because
+# the stale batch would then overwrite it on the receiver. Nothing repairs that
+# afterwards.
+#
+# Each batch is artificially delayed between reading and sending to widen that
+# window.
+#
+# Test that point data, not just the point count, is consistent on both sides
+def test_shard_stream_transfer_no_stale_batches(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    N_POINTS = 2000
+
+    env = {
+        # Delay each batch between reading and sending
+        "QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC": "0.1",
+    }
+
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 2, extra_env=env)
+
+    # Staging feature must be enabled
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=1)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    upsert_random_points(peer_api_uris[0], N_POINTS, batch_size=500)
+
+    # Find the peer holding the shard, it is the source of the transfer
+    cluster_infos = [get_collection_cluster_info(uri, COLLECTION_NAME) for uri in peer_api_uris]
+    source = next(i for i, info in enumerate(cluster_infos) if len(info["local_shards"]) == 1)
+    target = 1 - source
+    shard_id = cluster_infos[source]["local_shards"][0]["shard_id"]
+
+    # Keep changing existing points during the transfer
+    update_process = multiprocessing.Process(
+        target=overwrite_points_in_loop,
+        args=(peer_api_uris[source], N_POINTS),
+    )
+    update_process.start()
+
+    replicate_shard(
+        peer_api_uris[source],
+        COLLECTION_NAME,
+        shard_id,
+        cluster_infos[source]["peer_id"],
+        cluster_infos[target]["peer_id"],
+        method="stream_records",
+    )
+    wait_for_collection_shard_transfers_count(peer_api_uris[source], COLLECTION_NAME, 0)
+
+    updater_running = update_process.is_alive()
+    update_process.kill()
+    update_process.join()
+    assert updater_running, "Updater process stopped before the transfer ended"
+    sleep(1)
+
+    # The target must now hold an active replica
+    wait_for_all_replicas_active(peer_api_uris[source], COLLECTION_NAME)
+    assert len(get_collection_cluster_info(peer_api_uris[target], COLLECTION_NAME)["local_shards"]) == 1
+
+    # Point data must be identical on both replicas
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)

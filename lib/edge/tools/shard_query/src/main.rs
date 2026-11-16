@@ -111,7 +111,7 @@ use clap::Parser as _;
 use common::ambient::{self, AmbientContext, trace};
 use common::reason::Reason;
 use common::universal_io::DiskCache;
-use edge::{EdgeConfig, ReadOnlyEdgeShard};
+use edge::{EdgeConfig, EdgeScope, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, ReadOnlyOpenOptions};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
 use io_bridge_uio_grpc::UioGrpcSource;
 use object_store::aws::AmazonS3;
@@ -160,28 +160,32 @@ where
 
     log::info!("Load profile: {load_profile:?}");
 
+    let scope = EdgeScope::new();
+    let options = ReadOnlyOpenOptions {
+        config,
+        load_profile,
+        pools: ReadOnlyEdgeShardPools::default(),
+        waterline: None,
+    };
+
     let before_open = stats.snapshot();
     let shard = trace::span!("open")
         .enter(|| {
-            ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(
-                cached_fs,
-                prefix,
-                config,
-                load_profile,
-            )
+            ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(cached_fs, prefix, options, &scope)
         })
         .context("failed to open read-only edge shard over object storage");
     print_io_stats("open", &stats.snapshot().delta_since(&before_open));
     let shard = shard?;
+    let scoped = shard.with(&scope);
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let before_prepare = stats.snapshot();
-    let result = trace::span!("prepare").enter(|| request.fill_random_vector(&shard));
+    let result = trace::span!("prepare").enter(|| request.fill_random_vector(&scoped));
     print_io_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
     result?;
 
     let before_query = stats.snapshot();
-    let result = trace::span!("query").enter(|| request.run(&shard));
+    let result = trace::span!("query").enter(|| request.run(&scoped));
     print_io_stats("query", &stats.snapshot().delta_since(&before_query));
     let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
@@ -202,7 +206,7 @@ where
         }
 
         let before_reload = stats.snapshot();
-        let result = trace::span!("reload").enter(|| shard.live_reload());
+        let result = trace::span!("reload").enter(|| scoped.live_reload());
         print_io_stats("reload", &stats.snapshot().delta_since(&before_reload));
         if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
@@ -215,7 +219,7 @@ where
         );
 
         let before_query = stats.snapshot();
-        let result = trace::span!("query").enter(|| request.run(&shard));
+        let result = trace::span!("query").enter(|| request.run(&scoped));
         print_io_stats("query", &stats.snapshot().delta_since(&before_query));
         let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");

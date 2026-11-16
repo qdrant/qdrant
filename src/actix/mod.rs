@@ -28,6 +28,7 @@ use storage::rbac::{Access, Auth};
 use crate::actix::api::audit_api::config_audit_api;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
+use crate::actix::api::consensus_state_api::config_consensus_state_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::debug_api::config_debugger_api;
 use crate::actix::api::discover_api::config_discover_api;
@@ -162,6 +163,7 @@ pub fn init(
                 .configure(config_shards_api)
                 .configure(config_issues_api)
                 .configure(config_debugger_api)
+                .configure(config_consensus_state_api)
                 .configure(config_profiler_api)
                 .configure(config_local_shard_api)
                 .configure(config_audit_api)

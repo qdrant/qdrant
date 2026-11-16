@@ -892,6 +892,7 @@ fn test_compacted_flusher_skips_later_puts() {
 /// `test_preopen_schedules_files_for_open`.
 #[tokio::test]
 async fn test_preopen_schedules_compacted_tracker() {
+    let _scope = ambient::async_test_guard();
     use common::universal_io::{CachedFs, CachedReadFs, ReadOnly, UniversalRead, UniversalReadFs};
 
     let (dir, mut storage) = empty_byte_storage(Compression::None);
@@ -932,6 +933,7 @@ async fn test_preopen_schedules_compacted_tracker() {
 /// is done, opening through a disk cache no longer needs the remote tracker file.
 #[tokio::test]
 async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
+    let _scope = ambient::async_test_guard();
     use std::sync::Arc;
 
     use common::universal_io::{

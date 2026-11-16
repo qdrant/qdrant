@@ -227,6 +227,10 @@ impl TableOfContent {
         if recreate_optimizers {
             collection.recreate_optimizers_background();
         }
+
+        // Wake up the optimizers, as any update does. Re-sending an unchanged config is how
+        // users start optimizations that wait for a trigger, e.g. after a restart.
+        collection.trigger_optimizers().await;
         Ok(true)
     }
 

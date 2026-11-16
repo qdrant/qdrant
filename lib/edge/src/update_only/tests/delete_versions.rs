@@ -8,27 +8,26 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::Mutex;
-use segment::common::operation_error::OperationResult;
 use segment::id_tracker::delete_versions::DeleteVersioning;
-use segment::types::{ExtendedPointId, SeqNumberType, WithPayloadInterface, WithVector};
+use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::CollectionUpdateOperations::PointOperation;
-use shard::operations::point_ops::PointOperations::DeletePoints;
-use shard::operations::point_ops::PointStructPersisted;
 use uuid::Uuid;
 
 use super::store::{recreate_payload_storages_append_only, store_batch};
 use super::vacuumed_leader;
+use crate::PointOperations::DeletePoints;
 use crate::read_only::tests::{exact_count, open_follower, point};
-use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator};
-use crate::read_view::EdgeShardRead as _;
-use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
-use crate::{CountRequest, ReadOnlyEdgeShard, RetrieveRequestBuilder};
+use crate::{
+    CountRequest, EdgeScope, EdgeShardRead as _, ListedSegment, LocalSegmentEnumerator,
+    OperationResult, PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
+    RetrieveRequestBuilder, SegmentEnumerator, UpdateOnlyEdgeShard, WithPayloadInterface,
+    WithVector,
+};
 
 /// The point the fixture moves; it lives in an immutable segment after the vacuum.
 const MOVED: u64 = 500;
@@ -101,15 +100,17 @@ fn open_gated_with(
     enumerator: impl SegmentEnumerator + 'static,
     waterline: SeqNumberType,
 ) -> ReadOnlyEdgeShard<MmapFile> {
-    ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator_and_waterline(
+    ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         shard,
         enumerator,
-        None,
-        None,
-        Default::default(),
-        &AtomicBool::new(false),
-        Some(waterline),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: None,
+            pools: Default::default(),
+            waterline: Some(waterline),
+        },
+        &EdgeScope::new(),
     )
     .unwrap()
 }

@@ -15,7 +15,7 @@ pub mod trace;
 
 pub use context::AmbientContext;
 pub use future::{AmbientFuture, AmbientFutureExt};
-pub use handoff::{Handoff, current, parallel, unmeasured, unmeasured_guard};
+pub use handoff::{Handoff, ThreadPoolExt, current, parallel, unmeasured, unmeasured_guard};
 pub use slot::Scope;
 #[cfg(any(test, feature = "testing"))]
 pub use testing::{AsyncTestScope, async_test_guard, test, test_guard};

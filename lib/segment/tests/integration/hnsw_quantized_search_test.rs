@@ -1100,6 +1100,7 @@ fn hnsw_turbo_quantization_manhattan_bits1_5_test() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn test_build_hnsw_using_quantization() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 

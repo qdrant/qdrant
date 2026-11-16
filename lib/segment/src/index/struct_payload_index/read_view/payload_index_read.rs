@@ -20,6 +20,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
 };
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
@@ -49,6 +50,14 @@ where
             self.condition_cardinality(condition, None, DeferredBehavior::VisibleOnly)
         };
         estimate_filter(&estimator, query, available_points)
+    }
+
+    fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize> {
+        if estimation.primary_clauses.is_empty() {
+            // A full scan: every point is checked against the filter
+            return Ok(self.available_point_count());
+        }
+        self.count_primary_candidates(estimation)
     }
 
     fn estimate_nested_cardinality(
@@ -200,7 +209,9 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: self.available_point_count(),
+                    expected_checks: ExpectedChecks::Batched {
+                        count: self.available_point_count(),
+                    },
                     primary: None,
                 }),
             )?;
@@ -222,13 +233,24 @@ where
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators? {
+                // Whether the primary clauses yield exactly the points matching the filter, so
+                // that no candidate needs checking against it.
+                //
                 // Primary clauses only come from positive conditions, so they never cover a
                 // `must_not` condition, even one equal to a primary clause. E.g. a proxy segment
                 // reads `HasId` of its deleted points as `must: HasId(ids), must_not: HasId(ids)`.
-                let all_conditions_are_primary = filter
+                //
+                // With `min_count > 1`, the primary clauses of `min_should` are the smallest
+                // condition of each combination: candidates, not the matching points. E.g.
+                // `min_should: [A, B, A], min_count: 2` makes both A and B primary, but means A.
+                let primary_clauses_match_filter = filter
                     .must_not
                     .as_ref()
                     .is_none_or(|conditions| conditions.is_empty())
+                    && filter
+                        .min_should
+                        .as_ref()
+                        .is_none_or(|min_should| min_should.min_count <= 1)
                     && filter
                         .iter_conditions()
                         .all(|condition| query_cardinality.is_primary(condition));
@@ -244,9 +266,8 @@ where
                     )
                     .stop_if(is_stopped);
 
-                return Ok(if all_conditions_are_primary {
-                    // All conditions are primary clauses,
-                    // We can avoid post-filtering
+                return Ok(if primary_clauses_match_filter {
+                    // The primary clauses are the result: no post-filtering
                     let iter = joined_primary_iterator
                         .filter(move |&id| !visited_list.check_and_update_visited(id));
                     EitherVariant::B(iter.take(first_n))
@@ -255,7 +276,9 @@ where
                     // Every candidate of the primary clauses is checked once. The primary
                     // conditions themselves are not read up front again.
                     let materialization = MaterializationHint {
-                        expected_checks: self.primary_candidates(query_cardinality)?,
+                        expected_checks: ExpectedChecks::Batched {
+                            count: self.count_primary_candidates(query_cardinality)?,
+                        },
                         primary: Some(query_cardinality),
                     };
                     let optimized_filter =
@@ -275,7 +298,9 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: self.available_point_count(),
+                    expected_checks: ExpectedChecks::Batched {
+                        count: self.available_point_count(),
+                    },
                     primary: None,
                 }),
             )?;
@@ -312,6 +337,20 @@ where
 
     fn filter_context<'b>(&'b self, filter: &'b Filter) -> OperationResult<OptimizedFilter<'b>> {
         self.optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+    }
+
+    fn filter_context_for_serial_checks<'b>(
+        &'b self,
+        filter: &'b Filter,
+    ) -> OperationResult<OptimizedFilter<'b>> {
+        self.optimized_filter(
+            filter,
+            DeferredBehavior::VisibleOnly,
+            Some(MaterializationHint {
+                expected_checks: ExpectedChecks::Serial,
+                primary: None,
+            }),
+        )
     }
 
     fn for_each_payload_block(

@@ -248,6 +248,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyHNSWIndex<S> {
 mod tests {
     use GraphLinksFormat::{Compressed, CompressedWithVectors, Plain};
     use GraphLinksResidency::{Cached, Cold, Pinned};
+    use common::ambient;
     use common::universal_io::{MmapFs, UniversalKind as Kind};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -260,6 +261,7 @@ mod tests {
 
     #[test]
     fn test_open_matrix() {
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         for format in [

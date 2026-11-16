@@ -1,9 +1,8 @@
 use std::ops::Deref as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::progress_tracker::ProgressTracker;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use log::debug;
 use rayon::prelude::*;
@@ -47,17 +46,12 @@ impl HnswBuilder<'_> {
             stopped,
         } = local.ctx;
 
-        let timer = std::time::Instant::now();
-
         progress.start();
         let counter = progress.track_progress(Some(points.len() as u64));
         let counter = counter.deref();
 
         let insert_point = |&vector_id: &PointOffsetType| {
             check_process_stopped(stopped)?;
-            let _scope = ambient::unmeasured_guard(reason(
-                "No need to accumulate hardware, since this is an internal operation",
-            ));
 
             let points_scorer = FilteredScorer::new_internal(
                 vector_id,
@@ -78,15 +72,17 @@ impl HnswBuilder<'_> {
             points.split_at(points.len().min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
         first_few.iter().try_for_each(insert_point)?;
         if !rest.is_empty() {
-            pool.install(|| {
+            pool.ambient_install(|handoff| {
                 rest.par_iter()
                     .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                    .try_for_each(insert_point)
+                    .try_for_each(|vector_id| {
+                        let _scope = handoff.enter_guard();
+                        insert_point(vector_id)
+                    })
             })?;
         }
 
         drop(progress);
-        debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
         Ok(())
     }
 }
@@ -116,7 +112,13 @@ impl GraphBuilderMethod for HnswBuilder<'_> {
         } = progress;
         // Nothing to heal
         drop(migrate);
-        self.insert(&self.0.points, main_graph)
+        let timer = std::time::Instant::now();
+        self.insert(&self.0.points, main_graph)?;
+        debug!(
+            "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} with HNSW",
+            timer.elapsed()
+        );
+        Ok(())
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {

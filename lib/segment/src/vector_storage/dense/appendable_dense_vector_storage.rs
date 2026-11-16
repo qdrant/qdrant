@@ -3,11 +3,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
@@ -129,9 +127,6 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
-        let _scope = ambient::unmeasured_guard(reason(
-            "This function is only used for internal operations.",
-        ));
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.vectors.push(other_vector.as_ref())?;
@@ -348,6 +343,7 @@ pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<
 mod tests {
     use std::collections::HashSet;
 
+    use common::ambient;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;

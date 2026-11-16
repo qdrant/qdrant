@@ -605,15 +605,16 @@ impl TableOfContent {
 
     /// Initiate receiving shard.
     ///
-    /// Fails if the collection does not exist
+    /// Fails if the collection does not exist.
     ///
     /// # Cancel safety
     ///
-    /// This is cancel safe. If the future is dropped, initialization is aborted.
+    /// This method is cancel safe.
     ///
-    /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
-    /// partial state. In that case it will remain a dummy shard, signaled by the initialization
-    /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    /// If the future is dropped, initialization is cancelled. If the local shard was a dummy,
+    /// it stays a dummy, which should be recovered on transfer retry.
+    ///
+    /// See [`Collection::initiate_shard_transfer`].
     pub async fn initiate_receiving_shard(
         &self,
         collection_name: String,
@@ -622,11 +623,11 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
-        let initiate_shard_transfer_future = self
-            .get_collection_unchecked(&collection_name)
+        self.get_collection_unchecked(&collection_name)
             .await?
-            .initiate_shard_transfer(shard_id, from_peer_id);
-        initiate_shard_transfer_future.await?;
+            .initiate_shard_transfer(shard_id, from_peer_id)
+            .await?;
+
         Ok(())
     }
 
@@ -884,7 +885,7 @@ impl TableOfContent {
             .map(|i| {
                 let key = i.key().clone();
                 let data = i.load();
-                let m = |metric: HwMetric| data[metric];
+                let m = |metric: HwMetric| Some(data[metric]);
                 let hw_usage = HardwareUsage {
                     cpu: m(HwMetric::Cpu),
                     payload_io_read: m(HwMetric::PayloadIoRead),
@@ -893,6 +894,10 @@ impl TableOfContent {
                     payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
                     vector_io_read: m(HwMetric::VectorIoRead),
                     vector_io_write: m(HwMetric::VectorIoWrite),
+                    remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
+                    remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
+                    updated_bytes: None,
+                    updated_indexed_bytes: None,
                 };
                 (key, hw_usage)
             })

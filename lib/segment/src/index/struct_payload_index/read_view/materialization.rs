@@ -5,25 +5,19 @@
 //! All such posting lists of one clause are then merged into a single [`PointSet`], so a
 //! clause pays for at most one set, and that set is a sorted list unless a bitset is cheaper.
 
-use common::types::PointOffsetType;
+use std::sync::Arc;
 
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::types::{Condition, FieldCondition};
-
-/// Largest posting list, relative to the expected number of checks, worth reading up front
-/// for a cold index (`memory: cold`, a check is a random read when the page cache is cold).
-pub(super) const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
-
-/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM (cached or pinned).
-pub(super) const RAM_POSTING_TO_CHECKS_RATIO: usize = 4;
 
 /// What the caller of `optimize_filter` knows about how the filter will be used.
 #[derive(Debug, Clone, Copy)]
 pub struct MaterializationHint<'h> {
-    /// How many points the caller will check against the filter.
-    pub expected_checks: usize,
+    /// How many points the caller will check against the filter, and how.
+    pub expected_checks: ExpectedChecks,
     /// Estimation whose primary clauses produce the checked points, if any. Its primary
     /// conditions are never read up front: that would read their posting lists a second
     /// time just to confirm what the primary iterator already yielded.
@@ -39,16 +33,16 @@ impl MaterializationHint<'_> {
     pub(super) fn point_set_context(&self, total_points: usize) -> PointSetContext {
         PointSetContext {
             total_points,
-            expected_checks: self.expected_checks,
+            expected_checks: self.expected_checks.point_set_checks(total_points),
         }
     }
 }
 
 /// A condition converted for one clause: either a per-point checker or a posting list
-/// read up front, which the clause merges with its other posting lists.
+/// read up front into a set, which the clause merges with its other posting lists.
 pub(super) enum ConvertedCondition<'b> {
     Checker(ConditionCheckerEnum<'b>),
-    Posting(Vec<PointOffsetType>),
+    Posting(PointSet),
 }
 
 /// How a clause combines its posting lists.
@@ -80,10 +74,10 @@ pub(super) fn merge_postings<'b>(
         && !postings.is_empty()
     {
         let set = match merge {
-            PostingMerge::Intersection => PointSet::intersection(postings, context),
-            PostingMerge::Union => PointSet::union(postings, context),
+            PostingMerge::Intersection => PointSet::intersection_sets(postings, context),
+            PostingMerge::Union => PointSet::union_sets(postings, context),
         };
-        checkers[0] = Some(ConditionCheckerEnum::Points(set));
+        checkers[0] = Some(ConditionCheckerEnum::Points(Arc::new(set)));
     }
     checkers.into_iter().flatten().collect()
 }

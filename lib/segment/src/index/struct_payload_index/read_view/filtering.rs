@@ -60,12 +60,13 @@ where
                 Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
             PrimaryCondition::HasVector(_) => Ok(None),
+            PrimaryCondition::Points(resolved) => Ok(Some(Box::new(resolved.points().iter()))),
         }
     }
 
     /// Estimated number of points the primary clauses of `estimation` yield, which is
     /// how many points get checked against the rest of the filter.
-    pub(super) fn primary_candidates(
+    pub(super) fn count_primary_candidates(
         &self,
         estimation: &CardinalityEstimation,
     ) -> OperationResult<usize> {
@@ -80,6 +81,7 @@ where
                         .map_or(available, |estimation| estimation.exp),
                     PrimaryCondition::Ids(ids) => ids.resolved_point_offsets.len(),
                     PrimaryCondition::HasVector(_) => available,
+                    PrimaryCondition::Points(resolved) => resolved.len(),
                 })
             })
             .sum::<OperationResult<usize>>()?;
@@ -141,6 +143,10 @@ where
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
                 )?;
+                // Iterate in offset order, not in the hash order of `point_ids`: it keeps
+                // the order of equally scored points deterministic, and reads storage
+                // sequentially
+                resolved_point_offsets.sort_unstable();
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
@@ -180,6 +186,11 @@ where
             Condition::CustomIdChecker(cond) => {
                 cond.0.estimate_cardinality(self.available_point_count())
             }
+
+            // The original filter's estimate, so searches plan as they would with it
+            Condition::ResolvedPoints(resolved) => resolved
+                .estimation()
+                .with_primary_clause(PrimaryCondition::Points(resolved.clone())),
         })
     }
 }

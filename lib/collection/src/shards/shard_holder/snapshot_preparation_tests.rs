@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use fs_err as fs;
 use rstest::rstest;
@@ -56,6 +56,7 @@ async fn snapshot_preparation_releases_shard_holder(
     #[case] change: ShardChange,
     #[case] unpacked: bool,
 ) {
+    let _scope = ambient::async_test_guard();
     let collection_dir = tempfile::tempdir().unwrap();
     let snapshots_dir = tempfile::tempdir().unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
@@ -259,6 +260,7 @@ pub(super) fn pause_extraction(snapshot_temp_dir: &Path) {
 #[case::cancel_token(true)]
 #[tokio::test(flavor = "multi_thread")]
 async fn snapshot_preparation_keeps_temp_dir_until_extraction_finishes(#[case] cancel_token: bool) {
+    let _scope = ambient::async_test_guard();
     let temp_dir = tempfile::tempdir().unwrap();
     let snapshot_dir = tempfile::tempdir().unwrap();
     fs::write(snapshot_dir.path().join("data"), b"snapshot").unwrap();
@@ -273,19 +275,22 @@ async fn snapshot_preparation_keeps_temp_dir_until_extraction_finishes(#[case] c
         .unwrap()
         .insert(temp_path.clone(), (reached_tx, release_rx));
 
-    let preparation = tokio::spawn(async move {
-        super::ShardHolder::prepare_shard_snapshot(
-            SnapshotData::Unpacked(snapshot_dir),
-            "test",
-            0,
-            1,
-            true,
-            &temp_path,
-            None,
-            task_cancel,
-        )
-        .await
-    });
+    let preparation = tokio::spawn(
+        async move {
+            super::ShardHolder::prepare_shard_snapshot(
+                SnapshotData::Unpacked(snapshot_dir),
+                "test",
+                0,
+                1,
+                true,
+                &temp_path,
+                None,
+                task_cancel,
+            )
+            .await
+        }
+        .in_current_ambient(),
+    );
     let prepared_path = timeout(Duration::from_secs(10), reached_rx)
         .await
         .unwrap()

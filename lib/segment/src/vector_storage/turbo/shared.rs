@@ -111,7 +111,7 @@ pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance, bits: TQBits)
 /// Whether scores must be negated to follow qdrant's "higher = better"
 /// convention: TurboQuant returns a distance (lower = better) for the
 /// Euclid/Manhattan metrics, mirroring `VectorParameters::invert`.
-pub(super) fn invert_score(distance: Distance) -> bool {
+pub(crate) fn invert_score(distance: Distance) -> bool {
     matches!(distance, Distance::Euclid | Distance::Manhattan)
 }
 

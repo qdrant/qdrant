@@ -45,6 +45,10 @@ pub trait PayloadIndexRead {
     /// A best estimation of the number of available points should be given.
     fn estimate_cardinality(&self, query: &Filter) -> OperationResult<CardinalityEstimation>;
 
+    /// Cost of materializing the filter of `estimation`, in filter checks of one point: the
+    /// points its primary clauses yield, or every point without primary clauses.
+    fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize>;
+
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
         &self,
@@ -71,6 +75,17 @@ pub trait PayloadIndexRead {
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize>;
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
+
+    /// [`Self::filter_context`] for a consumer that checks points one at a time, waiting
+    /// for each check (graph walk, cardinality sampling), so conditions on cold indexes
+    /// can be read into point sets up front (see [`ExpectedChecks::Serial`]). Indexes that
+    /// can't materialize conditions return the plain filter context.
+    ///
+    /// [`ExpectedChecks::Serial`]: crate::index::query_optimization::expected_checks::ExpectedChecks::Serial
+    fn filter_context_for_serial_checks<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<OptimizedFilter<'a>>;
 
     /// Look up a numeric index for the given payload key, if one exists.
     ///

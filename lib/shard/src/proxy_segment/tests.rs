@@ -1580,3 +1580,207 @@ fn test_retrieve_at_skips_pending_deletes() {
     assert!(!by_offset.contains(&2.into()));
     assert_eq!(by_offset, by_id);
 }
+
+/// Two named vectors with plain indexes, and an indexed `tenth` in `0..10`.
+fn two_vector_segment(path: &std::path::Path) -> segment::segment::Segment {
+    use rand::SeedableRng;
+    use segment::fixtures::index_fixtures::random_vector;
+    use segment::segment_constructor::simple_segment_constructor::{
+        VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs,
+    };
+    use segment::types::Distance;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut segment = build_segment_with_two_named_vecs(path, 4, 6, Distance::Dot).unwrap();
+    segment
+        .create_field_index(
+            0,
+            &"tenth".parse().unwrap(),
+            Some(&PayloadSchemaType::Integer.into()),
+        )
+        .unwrap();
+    for n in 0..200u64 {
+        let mut vectors = NamedVectors::default();
+        vectors.insert(VECTOR1_NAME.to_owned(), random_vector(&mut rng, 4).into());
+        vectors.insert(VECTOR2_NAME.to_owned(), random_vector(&mut rng, 6).into());
+        segment.upsert_point(n, n.into(), vectors).unwrap();
+        let payload = segment::payload_json! {"tenth": n % 10};
+        segment.set_full_payload(n, n.into(), &payload).unwrap();
+    }
+    segment
+}
+
+/// Searching a proxy with the filter it shares must return what searching with the original
+/// filter does, with the proxy's deletions still excluded: on both deletion paths, the deleted
+/// mask of a proxy over a segment and the `must_not` ids of a proxy over another proxy.
+#[test]
+fn test_share_filter_hides_proxy_deletions() {
+    use segment::data_types::filter_user::FilterUser;
+    use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
+
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(two_vector_segment(dir.path()));
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "tenth".parse().unwrap(),
+        3.into(),
+    )));
+    let query1 = [QueryVector::from(vec![1.0, 0.5, 0.25, 0.1])];
+    let query2 = [QueryVector::from(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6])];
+    let users = [
+        FilterUser {
+            vector_name: VECTOR1_NAME,
+            query_vectors: &query1,
+            top: 10,
+            params: None,
+        },
+        FilterUser {
+            vector_name: VECTOR2_NAME,
+            query_vectors: &query2,
+            top: 10,
+            params: None,
+        },
+    ];
+
+    let check = |proxy: &ProxySegment, deleted: &[PointIdType]| {
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+        let shared = proxy
+            .share_filter(&filter, &users, &segment_query_context)
+            .unwrap()
+            .expect("two plain searches share their filter");
+        for user in &users {
+            let search = |filter: &Filter| {
+                proxy
+                    .search_batch(
+                        user.vector_name,
+                        &[&user.query_vectors[0]],
+                        &WithPayload::default(),
+                        &false.into(),
+                        Some(filter),
+                        user.top,
+                        None,
+                        &segment_query_context,
+                    )
+                    .unwrap()
+            };
+            let expected = search(&filter);
+            assert!(!expected[0].is_empty());
+            assert!(expected[0].iter().all(|point| !deleted.contains(&point.id)));
+            assert_eq!(search(&shared), expected);
+        }
+    };
+
+    let mut proxy_segment = ProxySegment::new(original_segment);
+    let deleted: Vec<PointIdType> = [3u64, 13, 23, 33].map(PointIdType::from).to_vec();
+    for (op, &id) in deleted.iter().enumerate() {
+        proxy_segment.delete_point(1000 + op as u64, id).unwrap();
+    }
+    assert!(proxy_segment.deleted_mask.is_some());
+    check(&proxy_segment, &deleted);
+
+    let mut double_proxy = ProxySegment::new(LockedSegment::from(proxy_segment));
+    assert!(double_proxy.deleted_mask.is_none());
+    double_proxy.delete_point(2000, 43.into()).unwrap();
+    let mut deleted = deleted;
+    deleted.push(43.into());
+    check(&double_proxy, &deleted);
+}
+
+/// A proxy that queues a vector for deletion shares a filter in the view its searches use:
+/// the stale vector's searches don't count as users, and a `has_vector` on it matches nothing.
+#[test]
+fn test_share_filter_redacts_stale_vectors() {
+    use segment::data_types::filter_user::FilterUser;
+    use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
+
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(two_vector_segment(dir.path()));
+
+    let mut proxy_segment = ProxySegment::new(original_segment.clone());
+    proxy_segment
+        .delete_vector_name(1000, VECTOR2_NAME)
+        .unwrap();
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+
+    let query1 = [QueryVector::from(vec![1.0, 0.5, 0.25, 0.1])];
+    let query2 = [QueryVector::from(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6])];
+    let user = |vector_name, query_vectors, top| FilterUser {
+        vector_name,
+        query_vectors,
+        top,
+        params: None,
+    };
+    let fresh = user(VECTOR1_NAME, &query1, 10);
+    let fresh_other_top = user(VECTOR1_NAME, &query1, 5);
+    let stale = user(VECTOR2_NAME, &query2, 10);
+
+    let filter = Filter {
+        should: None,
+        min_should: None,
+        must: Some(vec![
+            Condition::Field(FieldCondition::new_match(
+                "tenth".parse().unwrap(),
+                3.into(),
+            )),
+            Condition::HasVector(VECTOR2_NAME.to_owned().into()),
+        ]),
+        must_not: None,
+    };
+
+    // Only one search evaluates the filter: nothing to share
+    let shared = proxy_segment
+        .share_filter(&filter, &[fresh, stale], &segment_query_context)
+        .unwrap();
+    assert!(shared.is_none());
+
+    let shared = proxy_segment
+        .share_filter(
+            &filter,
+            &[fresh, fresh_other_top, stale],
+            &segment_query_context,
+        )
+        .unwrap()
+        .expect("two plain searches share their filter");
+
+    // The wrapped segment itself still has the vector, so it matches there
+    let wrapped_matches = original_segment
+        .get()
+        .read()
+        .search_batch(
+            VECTOR1_NAME,
+            &[&query1[0]],
+            &WithPayload::default(),
+            &false.into(),
+            Some(&filter),
+            10,
+            None,
+            &segment_query_context,
+        )
+        .unwrap();
+    assert!(!wrapped_matches[0].is_empty());
+
+    for top in [10, 5] {
+        let search = |filter: &Filter| {
+            proxy_segment
+                .search_batch(
+                    VECTOR1_NAME,
+                    &[&query1[0]],
+                    &WithPayload::default(),
+                    &false.into(),
+                    Some(filter),
+                    top,
+                    None,
+                    &segment_query_context,
+                )
+                .unwrap()
+        };
+        let expected = search(&filter);
+        assert!(expected[0].is_empty());
+        assert_eq!(search(&shared), expected);
+    }
+}

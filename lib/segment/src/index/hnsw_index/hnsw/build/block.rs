@@ -1,8 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::reason::reason;
 use common::types::PointOffsetType;
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -87,7 +86,6 @@ impl<'a> Block<'a> {
         let stopped = self.ctx.stopped;
         let insert_point = |&local_id: &PointOffsetType| {
             check_process_stopped(stopped)?;
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             let points_scorer = self.scorer(self.points[local_id as usize])?;
             self.graph.link_new_point(local_id, points_scorer);
             counter.fetch_add(1, Ordering::Relaxed);
@@ -104,10 +102,13 @@ impl<'a> Block<'a> {
         let (first, rest) = local_ids.split_at(first_points);
         first.iter().try_for_each(insert_point)?;
         if !rest.is_empty() {
-            pool.install(|| {
+            pool.ambient_install(|handoff| {
                 rest.par_iter()
                     .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                    .try_for_each(insert_point)
+                    .try_for_each(|local_id| {
+                        let _scope = handoff.enter_guard();
+                        insert_point(local_id)
+                    })
             })?;
         }
         Ok(())

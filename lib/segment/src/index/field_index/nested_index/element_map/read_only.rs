@@ -9,12 +9,10 @@ use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
 use blobstore::error::BlobstoreError;
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::{BitSlice, BitVec};
 use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
-use common::reason::reason;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -277,7 +275,6 @@ impl<S: UniversalRead> ReadOnlyMutableElementMap<S> {
         };
 
         let mut lists = ElementLists::default();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?.min(max_point_offset),
             |point, elements: StoredElements| {

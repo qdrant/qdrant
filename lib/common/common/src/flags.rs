@@ -100,6 +100,16 @@ pub struct FeatureFlags {
     /// union of its mask and its log.
     pub versioned_deletes: bool,
 
+    /// Build the main HNSW graph of large segments with PiPNN instead of inserting point by
+    /// point. When disabled, PiPNN is *never* used and graphs are built with HNSW.
+    /// When enabled, PiPNN is used where it applies: segments that are large enough, have
+    /// no older graph to build from, and whose vectors support it. Only changes how graphs
+    /// are built: the resulting graph has the same format either way.
+    ///
+    /// Disabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large
+    /// segments can only be tuned through `m`.
+    pub pipnn_graph_building: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
@@ -128,6 +138,7 @@ impl Default for FeatureFlags {
             persist_proxy_segments: false,
             combined_vector_storage: true,
             versioned_deletes: false,
+            pipnn_graph_building: false,
             serverless_compatible: false,
         }
     }
@@ -143,6 +154,12 @@ impl FeatureFlags {
     /// the disk-resident id-tracker format). See the field docs for implications.
     pub fn serverless_compatible(self) -> bool {
         self.serverless_compatible
+    }
+
+    /// Turn on serverless-compatible mode. The implied sub-flags are applied
+    /// when the flags are passed to [`init_feature_flags`].
+    pub fn enable_serverless_compatible(&mut self) {
+        self.serverless_compatible = true;
     }
 
     fn all() -> Self {
@@ -166,6 +183,7 @@ impl FeatureFlags {
             combined_vector_storage: true,
             // Deliberately not enabled by `all`: it changes the persisted storage format.
             versioned_deletes: false,
+            pipnn_graph_building: true,
             serverless_compatible: false,
         }
     }

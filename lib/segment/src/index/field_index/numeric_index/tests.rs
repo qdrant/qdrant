@@ -1107,6 +1107,7 @@ fn test_block_index_fallback_equivalence() {
 /// must not fail `preopen` and must open in fallback mode.
 #[test]
 fn test_block_index_preopen() {
+    let _scope = ambient::test_guard();
     use common::universal_io::{CachedFs, CachedReadFs as _, MmapFile, Populate, ReadOnly};
 
     use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;

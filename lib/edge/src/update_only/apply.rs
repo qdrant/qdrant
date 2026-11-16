@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use common::ambient;
+use common::ambient::{self, ThreadPoolExt as _};
 use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
@@ -130,6 +130,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.apply_batch_inner(operations, None)
     }
 
@@ -138,6 +139,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
         metering: &UpdateMetering,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.apply_batch_inner(operations, Some(metering))
     }
 
@@ -154,7 +156,6 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             return Ok((self, UpdateBatchOutcome::default()));
         }
 
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let version = plan.version();
         let segments = self.segments.read();
 
@@ -337,9 +338,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// reloaded lookup and its held writer describe the same log.
     fn reload_lookups(&self, written: &[Uuid]) -> OperationResult<()> {
         let segments = self.segments.read();
-        self.pool.install(|| {
+        self.pool.ambient_install(|handoff| {
             written.par_iter().try_for_each(|&uuid| {
-                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                let _scope = handoff.enter_guard();
                 segments.get(uuid)?.write().live_reload()
             })
         })
@@ -366,12 +367,15 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-    let per_segment = pool.install(|| {
+    let per_segment = pool.ambient_install(|handoff| {
         segments
             .iter()
             .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|(uuid, segment)| locate_in(uuid, &*segment.read(), &ids))
+            .map(|(uuid, segment)| {
+                let _scope = handoff.enter_guard();
+                locate_in(uuid, &*segment.read(), &ids)
+            })
             .collect::<OperationResult<Vec<_>>>()
     })?;
     Ok(merge_locations(per_segment))
@@ -398,19 +402,19 @@ pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
         }
     }
 
-    let per_segment: Vec<Vec<(PointIdType, StoredPoint)>> = pool.install(|| {
+    let per_segment: Vec<Vec<(PointIdType, StoredPoint)>> = pool.ambient_install(|handoff| {
         by_segment
             .into_iter()
             .collect::<Vec<_>>()
             .into_par_iter()
             .map(|(uuid, entries)| {
+                let _scope = handoff.enter_guard();
                 let segment = segments.get(uuid)?.read();
 
                 let internal_ids: Vec<PointOffsetType> = entries
                     .iter()
                     .map(|(_, internal_id)| *internal_id)
                     .collect();
-                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
                 let points = segment.read_stored_points(&internal_ids)?;
 
                 Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())

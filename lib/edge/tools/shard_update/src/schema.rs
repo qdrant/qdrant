@@ -3,6 +3,8 @@
 use std::path::Path;
 
 use anyhow::{Result, anyhow};
+use common::ambient;
+use common::reason::reason;
 use common::universal_io::{OkNotFound as _, UniversalAppendFs, UniversalReadFs, read_json_via};
 use edge::{
     PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig, PayloadFieldSchema, PayloadSchemaParams,
@@ -54,27 +56,30 @@ pub fn read_schema<Fs: UniversalAppendFs, F: UniversalReadFs>(
 
     let segment_path = shard_path.join("segments").join(uuid.to_string());
     let payload_config_path = get_payload_index_path(&segment_path).join(PAYLOAD_INDEX_CONFIG_FILE);
-    let payload_config: Option<PayloadConfig> =
-        match read_json_via(fs, &payload_config_path).ok_not_found() {
-            Ok(Some(payload_config)) => Some(payload_config),
-            Ok(None) => {
-                log::info!(
-                    "no payload index config at {} — generating without payload",
-                    payload_config_path.display(),
-                );
-                None
-            }
-            // A dry-run generator should not die on an unreadable auxiliary
-            // file, but the reason must stay visible — it may be a
-            // credentials problem.
-            Err(err) => {
-                log::warn!(
-                    "could not read payload index config at {}: {err} — generating without payload",
-                    payload_config_path.display(),
-                );
-                None
-            }
-        };
+    let read = ambient::unmeasured(
+        reason("debug tool"), // TODO: decide whether to expose public API for this use-case?
+        || read_json_via(fs, &payload_config_path),
+    );
+    let payload_config: Option<PayloadConfig> = match read.ok_not_found() {
+        Ok(Some(payload_config)) => Some(payload_config),
+        Ok(None) => {
+            log::info!(
+                "no payload index config at {} — generating without payload",
+                payload_config_path.display(),
+            );
+            None
+        }
+        // A dry-run generator should not die on an unreadable auxiliary
+        // file, but the reason must stay visible — it may be a
+        // credentials problem.
+        Err(err) => {
+            log::warn!(
+                "could not read payload index config at {}: {err} — generating without payload",
+                payload_config_path.display(),
+            );
+            None
+        }
+    };
     let payload_fields = match payload_config {
         Some(payload_config) => {
             let mut fields: Vec<(String, PayloadSchemaType)> = payload_config

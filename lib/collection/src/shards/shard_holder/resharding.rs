@@ -15,7 +15,7 @@ use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOperations};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, ReshardingInfo};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::{PeerId, ShardId};
@@ -37,6 +37,28 @@ pub enum ReshardingCheck {
 impl ShardHolder {
     pub fn resharding_state(&self) -> Option<ReshardState> {
         self.resharding_state.read().clone()
+    }
+
+    pub fn get_resharding_operations_info(&self) -> Option<Vec<ReshardingInfo>> {
+        let mut resharding_operations = vec![];
+
+        // We eventually expect to extend this to multiple concurrent operations, which is why
+        // we're using a list here
+        let Some(resharding_state) = &*self.resharding_state.read() else {
+            return None;
+        };
+
+        resharding_operations.push(ReshardingInfo {
+            uuid: resharding_state.uuid,
+            shard_id: resharding_state.shard_id,
+            peer_id: resharding_state.peer_id,
+            direction: resharding_state.direction,
+            shard_key: resharding_state.shard_key.clone(),
+            stage: resharding_state.stage,
+        });
+
+        resharding_operations.sort_by_key(|k| k.shard_id);
+        Some(resharding_operations)
     }
 
     /// Apply resolved resharding state without operation validation

@@ -320,6 +320,7 @@ impl ProxyVectorNameChanges {
                 Condition::HasId(_) => {}
                 Condition::Slice(_) => {}
                 Condition::CustomIdChecker(_) => {}
+                Condition::ResolvedPoints(_) => {}
             }
         }
         false
@@ -369,6 +370,7 @@ impl ProxyVectorNameChanges {
                 Condition::HasId(_) => {}
                 Condition::Slice(_) => {}
                 Condition::CustomIdChecker(_) => {}
+                Condition::ResolvedPoints(_) => {}
             }
         }
     }

@@ -17,7 +17,7 @@ use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 use common::defaults;
 use futures::future::join_all;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, ReentrantMutex, RwLock};
 use raft::eraftpb::{ConfChange, ConfChangeType, ConfChangeV2, Entry as RaftEntry, EntryType};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,7 @@ use crate::types::{
 };
 
 mod action_applier;
+pub mod local_patch;
 pub mod state_machine;
 mod validation;
 
@@ -118,6 +119,11 @@ pub struct ConsensusManager<C: CollectionContainer> {
     applied_log: AppliedEntryRing,
     /// Consensus state machine used to plan application and check applied state
     state_machine: Mutex<CachedStateMachine>,
+    /// Serializes changes to applied state (entries, Raft snapshots, local state patches)
+    /// with each other and with reads of the whole applied state.
+    ///
+    /// Reentrant, because Raft can call `Storage::snapshot` while entries are applied.
+    apply_lock: ReentrantMutex<()>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -165,6 +171,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
             applied_log: Default::default(),
             state_machine: Mutex::new(state_machine),
+            apply_lock: ReentrantMutex::new(()),
         })
     }
 
@@ -378,6 +385,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Return `true` if consensus should be stopped (peer removed)
     /// Return `false` if everything is ok.
     pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+        let _apply_guard = self.apply_lock.lock();
+
         let result = self.apply_entries_impl(raw_node);
 
         // Consensus reapplies a failed entry after restart.
@@ -688,6 +697,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         &self,
         snapshot: &raft::eraftpb::Snapshot,
     ) -> Result<Result<(), StorageError>, StorageError> {
+        let _apply_guard = self.apply_lock.lock();
+
         let meta = snapshot.get_metadata();
 
         // Snapshot recovery replaces applied state without updating consensus state machine.
@@ -813,6 +824,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
+        // Bootstrap adds peers outside of entry application
+        let _apply_guard = self.apply_lock.lock();
+
         let mut persistent = self.persistent.write();
         let result = persistent.insert_peer(peer_id, uri);
         // Peer discovery updates addresses without going through consensus.
@@ -979,6 +993,29 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Ok(res)
     }
 
+    /// Current applied consensus state, in the same form a Raft snapshot carries it
+    pub fn consensus_state_data(&self) -> SnapshotData {
+        let _apply_guard = self.apply_lock.lock();
+
+        let collections_data = self.toc.collections_snapshot();
+        let persistent = self.persistent.read();
+        self.snapshot_data(collections_data, &persistent)
+    }
+
+    fn snapshot_data(
+        &self,
+        collections_data: CollectionsSnapshot,
+        persistent: &Persistent,
+    ) -> SnapshotData {
+        SnapshotData {
+            collections_data,
+            address_by_id: persistent.peer_address_by_id(),
+            metadata_by_id: persistent.peer_metadata_by_id(),
+            cluster_metadata: persistent.cluster_metadata.clone(),
+            quota_config: Some(self.toc.quota_config()),
+        }
+    }
+
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.persistent.read().peer_address_by_id()
     }
@@ -1005,6 +1042,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn sync_local_state(&self) -> Result<(), StorageError> {
+        let _apply_guard = self.apply_lock.lock();
+
         self.try_update_peer_metadata();
         self.toc.sync_local_state()
     }
@@ -1340,6 +1379,9 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
     }
 
     fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
+        // Don't send a partially applied state patch to other peers
+        let _apply_guard = self.apply_lock.lock();
+
         let collections_data = self.toc.collections_snapshot();
 
         // Lock first WAL and then persistent to avoid deadlock
@@ -1354,13 +1396,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
             ));
         }
 
-        let data = SnapshotData {
-            collections_data,
-            address_by_id: persistent.peer_address_by_id(),
-            metadata_by_id: persistent.peer_metadata_by_id(),
-            cluster_metadata: persistent.cluster_metadata.clone(),
-            quota_config: Some(self.toc.quota_config()),
-        };
+        let data = self.snapshot_data(collections_data, &persistent);
 
         let raft_state = persistent.state();
 

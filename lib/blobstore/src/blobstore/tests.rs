@@ -1896,6 +1896,7 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
 async fn test_preopen_schedules_files_for_open(
     #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
 ) {
+    let _scope = ambient::async_test_guard();
     use common::universal_io::{
         CachedFs, CachedReadFs, Populate, ReadOnly, UniversalRead, UniversalReadFs,
     };

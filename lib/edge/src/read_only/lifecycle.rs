@@ -2,26 +2,22 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::Reason;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::{Mutex, RwLock};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
-use segment::data_types::load_profile::LoadProfile;
+use segment::common::operation_error::check_process_stopped;
 use segment::index::UniversalReadExt;
-use segment::types::SeqNumberType;
 
-use crate::EdgeConfig;
+use crate::read_only::Waterline;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::read_only::{ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, Waterline};
+use crate::{EdgeConfig, EdgeScope, OperationResult, ReadOnlyEdgeShard, ReadOnlyOpenOptions};
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
     /// leader's segment manifest. Requires the leader to write a manifest (the
     /// `write_segment_manifest` feature flag).
-    pub fn open_mmap(path: &Path) -> OperationResult<Self> {
-        Self::open(MmapFs, path, None, None)
+    pub fn open_mmap(path: &Path, scope: &EdgeScope) -> OperationResult<Self> {
+        Self::open(MmapFs, path, ReadOnlyOpenOptions::default(), scope)
     }
 }
 
@@ -47,127 +43,18 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Segments are discovered through the leader's segment manifest (read via `fs`) — a read-only
     /// follower always uses the manifest, so there is no discovery to configure.
     ///
-    /// A follower has no `edge_config.json` — the segments are the source of truth, so the config is
-    /// derived from the segments themselves (see [`EdgeConfig::from_segment_config`]), mirroring the
-    /// read-write [`EdgeShard`](crate::EdgeShard)'s fallback. A provided `config` overrides tunable
-    /// parameters at open (its `Some` values win over the derived ones; `vectors`/`sparse_vectors`
-    /// are ignored); a [`live_reload`](Self::live_reload) re-derives the config from the segments alone.
-    /// An empty shard (no segments yet) starts from the provided config (or a default one).
-    ///
-    /// A `load_profile` — derived from the request this shard is being opened to serve (see
-    /// [`LoadProfile`]) — parks the segment components that request won't touch cold instead of
-    /// warming them per the persisted segment configs, cutting the cold-start cost. Without one,
-    /// loading follows the segment configs alone. The profile also applies to segments a later
-    /// [`live_reload`](Self::live_reload) discovers: the shard was opened for that one request, so new
-    /// segments shouldn't load any warmer.
-    ///
-    /// Not cancellable; see [`open_with_cancellation`](Self::open_with_cancellation).
+    /// Never returns a partially loaded shard.
     pub fn open(
         fs: S::Fs,
         path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        Self::open_with_cancellation(
-            fs,
-            path,
-            config,
-            load_profile,
-            Arc::new(AtomicBool::new(false)),
-        )
-    }
-
-    /// Cancellation-aware [`open`](Self::open). Set the shared flag to `true` to cancel.
-    ///
-    /// Cancellation is cooperative, as in
-    /// [`EdgeShardReadWithCancellation`](crate::EdgeShardReadWithCancellation): the flag is checked
-    /// between the stages of the initial load and between segments within a stage. Blocking IO and
-    /// a single segment's load are indivisible and can delay the observation. Once observed, the
-    /// call returns [`OperationError::Cancelled`](segment::common::operation_error::OperationError::Cancelled)
-    /// and never a partially loaded shard. The call never sets or resets the caller's flag.
-    pub fn open_with_cancellation(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        is_stopped: Arc<AtomicBool>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        Self::open_with_pools(
-            fs,
-            path,
-            config,
-            load_profile,
-            Default::default(),
-            is_stopped,
-        )
-    }
-
-    /// Cancellation-aware open with optional caller-owned search and load pools.
-    ///
-    /// Supplied pools are reused for the shard's lifetime, including live reload, and can be
-    /// shared across shards. Each omitted pool is created from `config`; supplied pools retain
-    /// their own size and affinity. Use distinct pools to keep loading off search workers.
-    /// Other behavior matches [`open_with_cancellation`](Self::open_with_cancellation).
-    pub fn open_with_pools(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: Arc<AtomicBool>,
+        options: ReadOnlyOpenOptions,
+        scope: &EdgeScope,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(
-            fs,
-            path,
-            enumerator,
-            config,
-            load_profile,
-            pools,
-            &is_stopped,
-        )
-    }
-
-    /// [`open_with_pools`](Self::open_with_pools) for a follower that gates versioned deletes, see
-    /// [`delete_versions`](segment::id_tracker::delete_versions).
-    ///
-    /// `waterline` is the newest version whose writes are all durable and stored in segments the
-    /// manifest lists: the serverless updater's committed cursor. The open applies the deletes up
-    /// to it, if it loads every listed segment, and holds newer ones. Later reloads take their
-    /// waterline through [`live_reload_up_to`](Self::live_reload_up_to).
-    #[allow(clippy::too_many_arguments)]
-    pub fn open_with_waterline(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: Arc<AtomicBool>,
-        waterline: SeqNumberType,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator_and_waterline(
-            fs,
-            path,
-            enumerator,
-            config,
-            load_profile,
-            pools,
-            &is_stopped,
-            Some(waterline),
-        )
+        Self::open_with_enumerator(fs, path, enumerator, options, scope)
     }
 
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
@@ -183,43 +70,20 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         fs: S::Fs,
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: &AtomicBool,
+        options: ReadOnlyOpenOptions,
+        scope: &EdgeScope,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        Self::open_with_enumerator_and_waterline(
-            fs,
-            path,
-            enumerator,
+        let ReadOnlyOpenOptions {
             config,
             load_profile,
             pools,
-            is_stopped,
-            None,
-        )
-    }
-
-    /// [`open_with_enumerator`](Self::open_with_enumerator), gating versioned deletes when given a
-    /// `waterline`, see [`open_with_waterline`](Self::open_with_waterline).
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn open_with_enumerator_and_waterline(
-        fs: S::Fs,
-        path: &Path,
-        enumerator: impl SegmentEnumerator + 'static,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: &AtomicBool,
-        waterline: Option<SeqNumberType>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+            waterline,
+        } = options;
+        let is_stopped: &AtomicBool = scope.is_stopped();
+        let _scope = scope.handoff().into_scope();
         check_process_stopped(is_stopped)?;
         let provided_config = config.unwrap_or_default();
 
@@ -253,7 +117,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             live_reload_lock: Default::default(),
             waterline: waterline.map(|highest| Mutex::new(Waterline { highest, gate: 0 })),
         };
-        shard.live_reload_cancellable(is_stopped, waterline)?;
+        shard.live_reload_impl(is_stopped, waterline)?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
         // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an

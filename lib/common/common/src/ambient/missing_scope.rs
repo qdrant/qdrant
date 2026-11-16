@@ -32,7 +32,7 @@ use std::panic::Location;
 ///    }
 ///    ```
 ///
-/// 3) In internal operation that shouldn't be billed to any request
+/// 3) In internal operation that shouldn't be counted toward any request
 ///    (e.g., loading, optimization, …). Opt out explicitly, stating why:
 ///
 ///    ```ignore

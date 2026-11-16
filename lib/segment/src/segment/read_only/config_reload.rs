@@ -8,6 +8,7 @@ use common::universal_io::{UniversalReadFs, UniversalReadFsAsync, read_json_via}
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::UniversalReadExt;
+use crate::index::field_index::ReadOnlyFieldIndex;
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::read_only::PayloadIndexReloadDiff;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
@@ -243,7 +244,16 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// Cheap, `&mut self`: no loading happens here — components were loaded while
     /// computing the diff. Removals run before insertions so a reloaded vector
     /// (present in both lists) ends up with its fresh component.
-    pub fn apply_config_reload(&mut self, diff: SegmentConfigReloadDiff<S>) {
+    ///
+    /// Returns the vectors and field indexes it swapped out instead of dropping
+    /// them: freeing them can be slow (large in-RAM indexes, unmapping files,
+    /// removing disk-cache mirror files), so the caller should drop them after
+    /// releasing its exclusive lock.
+    #[must_use = "drop the swapped-out components after releasing the exclusive lock"]
+    pub fn apply_config_reload(
+        &mut self,
+        diff: SegmentConfigReloadDiff<S>,
+    ) -> (Vec<ReadOnlyVectorData<S>>, Vec<ReadOnlyFieldIndex<S>>) {
         let Self {
             uuid: _,
             segment_path: _,
@@ -266,7 +276,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // Keep the payload index's `has_vector` map and field indexes in sync
         // under a single exclusive borrow.
-        {
+        let retired_field_indexes = {
             let mut payload_index = payload_index.borrow_mut();
             for vector_name in &removed_vectors {
                 payload_index.unregister_vector_storage(vector_name);
@@ -275,14 +285,15 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 payload_index
                     .register_vector_storage(vector_name.clone(), data.vector_storage.clone());
             }
-            payload_index.apply_config_reload(payload);
-        }
+            payload_index.apply_config_reload(payload)
+        };
 
+        let mut retired_vectors = Vec::with_capacity(removed_vectors.len());
         for vector_name in &removed_vectors {
-            vector_data.remove(vector_name);
+            retired_vectors.extend(vector_data.remove(vector_name));
         }
         for (vector_name, data) in added_vectors {
-            vector_data.insert(vector_name, data);
+            retired_vectors.extend(vector_data.insert(vector_name, data));
         }
 
         *segment_type = if new_config.is_any_vector_indexed() {
@@ -291,5 +302,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             SegmentType::Plain
         };
         *segment_config = new_config;
+
+        (retired_vectors, retired_field_indexes)
     }
 }

@@ -102,6 +102,30 @@ fn create_named_vector_reject_existing(config: VectorNameConfig) {
 }
 
 #[test]
+fn create_named_vector_reject_invalid_name_dense() {
+    create_named_vector_reject_invalid_name(dense(4, Distance::Cosine));
+}
+
+#[test]
+fn create_named_vector_reject_invalid_name_sparse() {
+    create_named_vector_reject_invalid_name(sparse());
+}
+
+fn create_named_vector_reject_invalid_name(config: VectorNameConfig) {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&create_named_vector_op("..", config));
+
+    assert!(
+        matches!(outcome, Err(StorageError::BadInput { .. })),
+        "invalid vector name should be rejected as bad input, got {outcome:?}",
+    );
+
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn delete_named_vector_dense() {
     delete_named_vector_impl(dense(4, Distance::Cosine));
 }

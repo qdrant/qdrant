@@ -126,9 +126,14 @@ pub fn score_1bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
 /// the final rounding.
 #[inline]
 pub(crate) fn popcount_to_score(byte_len: usize, popcnt: u64) -> f32 {
-    let total_bits = (byte_len as i64) * 8;
-    let sign_sum = total_bits - 2 * (popcnt as i64);
-    CENTROID_SQ * sign_sum as f32
+    differing_to_score((byte_len * 8) as f32, popcnt as f32)
+}
+
+/// [`popcount_to_score`] of `differing` out of `bits` sign bits, in f32, as the matrix kernels
+/// count them. Exact, as both are integers below 2²⁴.
+#[inline(always)]
+pub(crate) fn differing_to_score(bits: f32, differing: f32) -> f32 {
+    CENTROID_SQ * (bits - 2.0 * differing)
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]

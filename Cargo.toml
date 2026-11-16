@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.20.1-dev"
+version = "1.20.3-dev"
 description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -19,7 +19,7 @@ workspace = true
 
 [features]
 default = []
-service_debug = ["parking_lot/deadlock_detection", "collection/testing"]
+service_debug = ["parking_lot/deadlock_detection", "collection/testing", "dep:ctrlc"]
 tracing = [
     "api/tracing",
     "collection/tracing",
@@ -38,6 +38,8 @@ data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 staging = ["collection/staging", "storage/staging", "shard/staging"]
+# Edge-follower verification in the model_testing binary (see lib/collection model_testing).
+edge-verify = ["collection/edge-verify"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
@@ -68,7 +70,7 @@ anyhow = "1.0.98"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true }
-ctrlc = "3.5.2"
+ctrlc = { version = "3.5.2", optional = true }
 env_logger = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }

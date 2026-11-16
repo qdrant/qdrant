@@ -3,10 +3,8 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
 use common::generic_consts::AccessPattern;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
@@ -251,10 +249,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            ambient::unmeasured(
-                reason("This function is only used by internal operations"),
-                || self.insert_multi_native(new_id, other_vector.as_ref(), other_deleted),
-            )?;
+            self.insert_multi_native(new_id, other_vector.as_ref(), other_deleted)?;
         }
         let end_index = self.vectors_metadata.len() as PointOffsetType;
         Ok(start_index..end_index)

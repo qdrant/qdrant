@@ -708,6 +708,7 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
 fn deleted_placeholders_load_and_score_without_panic(
     #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
+    let _scope = ambient::test_guard();
     const COUNT: usize = 4;
     let stopped = AtomicBool::new(false);
 

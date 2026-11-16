@@ -13,6 +13,7 @@ mod filtrable_hnsw_test;
 mod fixtures;
 #[cfg(feature = "gpu")]
 mod gpu_hnsw_test;
+mod graph_filter_memory_test;
 mod graph_inline_storage_test;
 mod hnsw_discover_test;
 mod hnsw_incremental_build;
@@ -26,6 +27,7 @@ mod scroll_filtering_test;
 mod segment_builder_test;
 mod segment_on_disk_snapshot;
 mod segment_tests;
+mod shared_filter_test;
 mod sparse_discover_test;
 mod sparse_idf_corpus_test;
 mod sparse_vector_index_search_tests;

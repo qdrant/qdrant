@@ -1,6 +1,8 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Barrier;
 use std::task::{Context, Waker};
 
+use rayon::ThreadPoolBuilder;
 use serde_json::json;
 
 use super::hw::{self, HwMetric};
@@ -207,14 +209,53 @@ async fn async_test_guard_in_a_task_panics() {
 }
 
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    should_panic(expected = "outside of any ambient scope")
-)]
-fn parallel_masks_the_scope() {
-    let ctx = AmbientContext::new();
-    ctx.measure(|| parallel(|_handoff| HwMetric::Cpu.bump(1)));
-    assert_eq!(ctx.hw_data()[HwMetric::Cpu], 0);
+pub fn masked_context_prevents_misattributing() {
+    assert_eq!(run(|f| parallel(f)), 1); // Good impl
+    assert_eq!(run(bad_parallel), 1001); // Bad impl
+
+    fn bad_parallel(f: &dyn Fn(&super::Handoff)) {
+        let handoff = current();
+        // Bad impl: no `Scope::masked()` guard.
+        f(&handoff)
+    }
+
+    type ParallelImpl = fn(&dyn Fn(&super::Handoff));
+    fn run(parallel_impl: ParallelImpl) -> usize {
+        let outer_pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+        let barrier = Barrier::new(2);
+
+        outer_pool.scope(|s| {
+            s.spawn(|_| {
+                // Unrelated job that started from the same `outer_pool`.
+                //
+                // With good `parallel_impl`, the `.bump()` below would result
+                // in a panic because this job did not enter any scope.
+                // This panic is intentional: it would help us catch jobs with
+                // missing context.
+                //
+                // With bad `parallel_impl`, the `.bump()` would be incorrectly
+                // attributed to the `context`/`scope` below. We do not want
+                // such bumps to be silently misattributed.
+                _ = catch_unwind(|| HwMetric::Cpu.bump(1000));
+                barrier.wait();
+            });
+
+            let inner_pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+            let context = AmbientContext::new();
+            let scope = context.measure_guard();
+            parallel_impl(&|handoff| {
+                inner_pool.install(|| {
+                    let _scope = handoff.enter_guard();
+                    // This is the only bump that should be counted.
+                    HwMetric::Cpu.bump(1);
+                    barrier.wait();
+                })
+            });
+            drop(scope);
+
+            context.hw_data()[HwMetric::Cpu]
+        })
+    }
 }
 
 #[test]

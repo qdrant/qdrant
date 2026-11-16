@@ -12,7 +12,6 @@ mod async_io;
 
 use crate::ambient::AmbientFutureExt as _;
 use crate::mmap::AdviceSetting;
-use crate::reason::reason;
 use crate::universal_io::{
     CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
     UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
@@ -366,7 +365,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
                 let file = fs.open_async(path_owned, open_options, open_extra).await?;
                 then(file).await
             }
-            .unmeasured(reason("Prefetching is an internal operation")),
+            .in_current_ambient(),
         );
 
         // Poll once, so that real async work begins right away

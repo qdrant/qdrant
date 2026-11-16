@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use blink_alloc::Blink;
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::ext::aligned_vec::ACow;
 use common::fs::atomic_save_json;
@@ -15,7 +14,6 @@ use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
-use common::reason::reason;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -108,7 +106,6 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         if index.file_header.total_sparse_size.is_none() {
             // legacy header: compute in memory, never write back
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
         }
 
@@ -144,8 +141,6 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             cold: AtomicBool::new(true),
             _phantom: PhantomData,
         };
-
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         if index.file_header.total_sparse_size.is_none() {
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
@@ -401,6 +396,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // Phase 2: read each posting's data via batched reads.
         for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((id, header), data) = record?;
+            HwMetric::VectorIoRead.bump(data.len());
             let view = CompressedPostingListView::new(header, &data).ok_or_else(corrupted_index)?;
             callback(id, view)?;
         }
@@ -498,8 +494,6 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<Self> {
         let total_posting_headers_size =
             index.postings.as_slice().len() * size_of::<PostingListFileHeader<W>>();
-
-        let _scope = ambient::unmeasured_guard(reason("Ignore HW on load"));
 
         let file_length = total_posting_headers_size
             + index
@@ -603,6 +597,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::universal_io::MmapFile;
     use tempfile::Builder;
 
@@ -754,6 +749,7 @@ mod tests {
     /// the pool stay readable, while any fallback open hits `NotFound`.
     #[tokio::test]
     async fn preopen_then_open_ro_through_cached_fs() {
+        let _scope = ambient::async_test_guard();
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let mut builder = InvertedIndexBuilder::new();

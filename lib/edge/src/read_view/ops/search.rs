@@ -1,7 +1,5 @@
 use std::cmp;
 
-use common::ambient;
-use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
@@ -11,6 +9,7 @@ use shard::query::query_context::init_query_context_with_stopping_flag;
 use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
 use shard::search_result_aggregator::BatchResultAggregator;
+use shard::search_shared_filter::share_group_filters;
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
@@ -45,7 +44,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if searches.is_empty() {
             return Ok(Vec::new());
         }
@@ -80,10 +78,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         // per-segment query context from the shared `context`.
         let points_by_segment = self.par_map_segments(|segment| {
             let segment_query_context = context.get_segment_query_context();
+            // Held for the whole batch: shared filters are resolved to this segment's points
             let segment = segment.read_segment();
+            let shared_filters = share_group_filters(&groups, &*segment, &segment_query_context)?;
 
             let mut points_by_request = Vec::with_capacity(searches.len());
-            for group in &groups {
+            for (group, shared_filter) in groups.iter().zip(&shared_filters) {
                 self.check_stopped()?;
                 let query_vectors: Vec<_> = group.query_vectors.iter().collect();
                 let batched_points = segment.search_batch(
@@ -91,7 +91,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     &query_vectors,
                     &group.params.with_payload,
                     &group.params.with_vector,
-                    group.params.filter,
+                    shared_filter.as_ref().or(group.params.filter),
                     group.params.top,
                     group.params.params,
                     &segment_query_context,

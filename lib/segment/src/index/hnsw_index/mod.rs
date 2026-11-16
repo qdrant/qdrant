@@ -14,6 +14,7 @@ mod graph_layers_healer;
 pub mod graph_links;
 pub mod hnsw;
 mod links_container;
+mod pipnn;
 pub mod point_scorer;
 mod search_context;
 

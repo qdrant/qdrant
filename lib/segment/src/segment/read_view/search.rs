@@ -16,6 +16,7 @@ use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::query_optimization::resolved_points::check_resolved_points;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -422,6 +423,9 @@ where
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let _scope = query_context.handoff().enter_guard();
         check_query_vectors(vector_name, query_vectors, self.segment_config)?;
+        if let Some(filter) = filter {
+            check_resolved_points(filter, self.segment_uuid)?;
+        }
         let vector_data = self
             .vector_data
             .get(vector_name)

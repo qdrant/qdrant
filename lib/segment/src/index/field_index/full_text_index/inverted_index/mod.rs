@@ -1004,7 +1004,7 @@ mod tests {
             .sum();
 
         // The on-disk backend holds its lengths in RAM too, so answering
-        // reads nothing and bills nothing.
+        // reads nothing from disk.
         let mmap_acc = AmbientContext::new();
         mmap_acc.measure(|| doc_lens(&mmap, &shuffled));
         assert_eq!(mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead], 0);

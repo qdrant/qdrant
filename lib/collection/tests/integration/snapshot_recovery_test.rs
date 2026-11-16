@@ -15,7 +15,7 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -199,10 +199,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_and_recover_collection_normal() {
+    let _scope = ambient::async_test_guard();
     _test_snapshot_and_recover_collection(NodeType::Normal).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_and_recover_collection_listener() {
+    let _scope = ambient::async_test_guard();
     _test_snapshot_and_recover_collection(NodeType::Listener).await;
 }

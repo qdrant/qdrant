@@ -80,13 +80,28 @@ fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
 #[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HardwareUsage {
-    pub cpu: usize,
-    pub payload_io_read: usize,
-    pub payload_io_write: usize,
-    pub payload_index_io_read: usize,
-    pub payload_index_io_write: usize,
-    pub vector_io_read: usize,
-    pub vector_io_write: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_io_write: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_index_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_index_io_write: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_io_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_io_write: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_io_cached_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_io_non_cached_read: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_indexed_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -272,6 +272,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn live_reload_over_disk_cache_sees_replaced_file() {
+        let _scope = common::ambient::test_guard();
         let tmp = Builder::new().prefix("compact_reload").tempdir().unwrap();
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
@@ -328,6 +329,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn live_reload_before_materialization_reads_fresh_state() {
+        let _scope = common::ambient::test_guard();
         let tmp = Builder::new().prefix("compact_reload").tempdir().unwrap();
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");

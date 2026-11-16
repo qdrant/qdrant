@@ -19,7 +19,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
@@ -70,6 +70,7 @@ fn dummy_abort_shard_transfer() -> AbortShardTransfer {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn delete_named_vector_then_reload_loses_points() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_repro_coll").tempdir().unwrap();
@@ -293,6 +294,7 @@ async fn delete_named_vector_then_reload_loses_points() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn delete_named_vector_after_flush_survives_reload() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_flushed_coll").tempdir().unwrap();
@@ -461,6 +463,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_cycle_coll").tempdir().unwrap();
