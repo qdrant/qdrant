@@ -114,6 +114,41 @@ pub struct MmapFile {
     ptr: SendSyncPtr,
     /// Points to [`Self::mmap_seq`] (if present) or fallbacks to [`Self::mmap`].
     ptr_seq: SendSyncPtr,
+
+    /// Identity of the file [`Self::mmap`] maps. The path may later name a different file (the
+    /// writer deleted and recreated it), which [`UniversalRead::live_reload`] must not mistake for
+    /// growth of the mapped one.
+    file_id: FileId,
+}
+
+/// Identity of a file on disk, telling it apart from a different file that later took its path.
+///
+/// Device and inode number on Unix. Elsewhere every file compares equal, so nothing is detected
+/// there: Windows does not let a mapped file be deleted to begin with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileId {
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    ino: u64,
+}
+
+impl FileId {
+    fn of(metadata: &fs::Metadata) -> Self {
+        cfg_select! {
+            unix => {
+                use std::os::unix::fs::MetadataExt as _;
+                Self {
+                    dev: metadata.dev(),
+                    ino: metadata.ino(),
+                }
+            }
+            _ => {
+                let _ = metadata;
+                Self {}
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -139,11 +174,11 @@ impl MmapFile {
             Populate::Blocking => true,
         };
 
-        let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
+        let (mmap, file_id) = open_mmap(path.as_ref(), writeable, populate, advice)?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
         let (mmap_seq, len, ptr_seq) = if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
-            let mmap_seq = open_mmap(
+            let (mmap_seq, _) = open_mmap(
                 path.as_ref(),
                 false,
                 false,
@@ -168,6 +203,7 @@ impl MmapFile {
             len,
             ptr,
             ptr_seq,
+            file_id,
         };
 
         Ok(mmap)
@@ -185,10 +221,19 @@ impl UniversalRead for MmapFile {
 
     fn live_reload(&mut self) -> UioResult<()> {
         let old_len = self.len as u64;
-        let new_len = fs_err::File::open(self.path())
+        let metadata = fs_err::File::open(self.path())
             .map_err(|err| UniversalIoError::extract_not_found(err, self.path()))?
-            .metadata()?
-            .len();
+            .metadata()?;
+        // The length below is the new file's, while the mapping stays on the old one: growing the
+        // mapping to it would fault (SIGBUS) on reads past the old file's end, and serve the old
+        // file's contents before that. The caller has to open the new file instead.
+        if FileId::of(&metadata) != self.file_id {
+            return Err(UniversalIoError::Io(io::Error::other(format!(
+                "{} was replaced by a different file since it was mapped, it must be reopened",
+                self.path.display(),
+            ))));
+        }
+        let new_len = metadata.len();
         if new_len < old_len {
             return Err(UniversalIoError::Io(io::Error::new(
                 ErrorKind::UnexpectedEof,
@@ -450,14 +495,17 @@ impl MmapFile {
             // otherwise, let's open again
             _ => {
                 let _ = new_len; // suppress unused variable lint.
-                *mmap = open_mmap(self.path.as_ref(), self.writeable, populate, self.advice)?;
+                let file_id;
+                (*mmap, file_id) =
+                    open_mmap(self.path.as_ref(), self.writeable, populate, self.advice)?;
+                self.file_id = file_id;
                 let resident = populate;
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
                 let ptr_seq;
                 let len;
                 if let Some(mmap_seq) = mmap_seq.as_mut() {
-                    let mmap_seq_ = open_mmap(
+                    let (mmap_seq_, _) = open_mmap(
                         self.path(),
                         false,
                         false,
@@ -530,7 +578,7 @@ fn open_mmap(
     write: bool,
     populate: bool,
     advice: AdviceSetting,
-) -> UioResult<MmapRaw> {
+) -> UioResult<(MmapRaw, FileId)> {
     // TODO: `fs_err` can cause panic when run on a single-threaded Tokio runtime
     #[expect(clippy::disallowed_types)]
     let file = fs::OpenOptions::new()
@@ -551,7 +599,11 @@ fn open_mmap(
 
     mmap.madvise(advice.resolve())?;
 
-    Ok(mmap)
+    // Same `std` handle as above, see the `fs_err` TODO
+    #[expect(clippy::disallowed_methods)]
+    let metadata = file.metadata()?;
+
+    Ok((mmap, FileId::of(&metadata)))
 }
 
 impl MmapFile {
@@ -714,6 +766,42 @@ mod tests {
         io::Write::write_all(&mut file, &[1u8; 64 * 1024]).unwrap();
         mmap.live_reload().unwrap();
         assert!(!mmap.resident.load(Ordering::Relaxed));
+    }
+
+    /// A file deleted and recreated at the same path is a different file, not a grown one:
+    /// growing the old mapping to the new length would fault past the old file's end.
+    #[cfg(unix)]
+    #[test]
+    fn live_reload_rejects_a_replaced_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("replaced.dat");
+        fs_err::write(&path, [1u8; 16]).unwrap();
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mut mmap = MmapFs.open(&path, options, ()).unwrap();
+
+        // Growth of the mapped file itself still reloads.
+        let mut file = fs_err::OpenOptions::new().append(true).open(&path).unwrap();
+        io::Write::write_all(&mut file, &[2u8; 16]).unwrap();
+        mmap.live_reload().unwrap();
+        assert_eq!(mmap.len::<u8>().unwrap(), 32);
+
+        fs_err::remove_file(&path).unwrap();
+        fs_err::write(&path, vec![3u8; 64 * 1024]).unwrap();
+        let err = mmap.live_reload().unwrap_err();
+        assert!(
+            err.to_string().contains("replaced"),
+            "unexpected error: {err}",
+        );
+        // The handle keeps serving the file it maps.
+        assert_eq!(mmap.len::<u8>().unwrap(), 32);
+        let bytes = mmap.read_bytes(0..32, Random, 1).unwrap();
+        assert_eq!(&bytes[16..], &[2u8; 16]);
     }
 
     /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages

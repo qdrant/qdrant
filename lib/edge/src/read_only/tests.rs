@@ -828,3 +828,59 @@ fn live_reload_follows_create_and_drop_of_a_loaded_index() {
     }
     assert_follower_vectors(&follower, &[1, 25, 50]);
 }
+
+/// Total number of points the follower's `tag` index reports, through an exact facet (served
+/// from the field index, not from payload).
+fn tag_facet_total(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
+    let mut request = crate::FacetRequest::new("tag".parse().unwrap());
+    request.exact = true;
+    follower
+        .facet(request)
+        .unwrap()
+        .hits
+        .iter()
+        .map(|hit| hit.count)
+        .sum()
+}
+
+/// DropIndex + CreateIndex of the same field with the same schema, with no follower reload in
+/// between (e.g. both replayed from the WAL when the leader restarts), recreates the index files
+/// at the same path. The follower's config diff sees an unchanged index, so it must notice the
+/// replaced files on its own: reading them through the mapping of the old, deleted file would
+/// fault past that file's end (SIGBUS) or serve its stale contents.
+#[test]
+fn live_reload_follows_an_index_recreated_with_the_same_schema() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-recreated-index")
+        .tempdir()
+        .unwrap();
+
+    // The index is created before any point carries the field: its value files are empty.
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    leader
+        .update(PointOperation(UpsertPoints(PointsList(
+            (1..=10).map(point).collect(),
+        ))))
+        .unwrap();
+    leader.update(tag_index_operation(true)).unwrap();
+    leader.flush().unwrap();
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+    assert_eq!(tag_facet_total(&follower), 0);
+
+    // Drop and recreate the index around a write, and flush once: the follower only ever sees
+    // the same index config, backed by new files.
+    leader.update(tag_index_operation(false)).unwrap();
+    leader
+        .update(PointOperation(UpsertPoints(PointsList(tagged_points(
+            11..=40,
+        )))))
+        .unwrap();
+    leader.update(tag_index_operation(true)).unwrap();
+    leader.flush().unwrap();
+
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 40);
+    assert_eq!(tag_facet_total(&follower), 30);
+}
