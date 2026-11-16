@@ -1,9 +1,11 @@
 //! Heap used by one filtered HNSW search on a cold payload index.
-//! Own test target: it installs a peak-tracking global allocator.
+//! Installs a global allocator for the integration test binary that only counts the
+//! allocations of a thread while it is tracked.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::flags::FeatureFlags;
@@ -27,29 +29,48 @@ use segment::types::{
 };
 use tempfile::Builder;
 
-struct PeakAlloc;
+/// Counts the heap of the current thread only, and only while it is tracked, so tests
+/// running in parallel in the same binary don't disturb the measurement.
+struct ThreadPeakAlloc;
 
-static CURRENT: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static TRACKED: Cell<bool> = const { Cell::new(false) };
+    static CURRENT: Cell<isize> = const { Cell::new(0) };
+    static PEAK: Cell<isize> = const { Cell::new(0) };
+}
 
-unsafe impl GlobalAlloc for PeakAlloc {
+unsafe impl GlobalAlloc for ThreadPeakAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { System.alloc(layout) };
-        if !ptr.is_null() {
-            let now = CURRENT.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
-            PEAK.fetch_max(now, Ordering::Relaxed);
+        if !ptr.is_null() && TRACKED.get() {
+            let now = CURRENT.get() + layout.size() as isize;
+            CURRENT.set(now);
+            PEAK.set(PEAK.get().max(now));
         }
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { System.dealloc(ptr, layout) };
-        CURRENT.fetch_sub(layout.size(), Ordering::Relaxed);
+        if TRACKED.get() {
+            CURRENT.set(CURRENT.get() - layout.size() as isize);
+        }
     }
 }
 
 #[global_allocator]
-static GLOBAL: PeakAlloc = PeakAlloc;
+static GLOBAL: ThreadPeakAlloc = ThreadPeakAlloc;
+
+/// Peak heap allocated by `f` on this thread above what was live when it started.
+/// `realloc` falls back to alloc + copy + dealloc, so growing a buffer counts both.
+fn peak_heap(f: impl FnOnce()) -> usize {
+    CURRENT.set(0);
+    PEAK.set(0);
+    TRACKED.set(true);
+    f();
+    TRACKED.set(false);
+    PEAK.get() as usize
+}
 
 const DIM: usize = 8;
 const NUM_POINTS: usize = 20_000;
@@ -168,10 +189,7 @@ fn wide_filter_graph_search_heap_does_not_scale_with_matches() {
     // Warm pools and lazily opened files.
     search(&segment, &filter);
 
-    let base = CURRENT.load(Ordering::Relaxed);
-    PEAK.store(base, Ordering::Relaxed);
-    search(&segment, &filter);
-    let extra = PEAK.load(Ordering::Relaxed) - base;
+    let extra = peak_heap(|| search(&segment, &filter));
 
     eprintln!("peak extra heap per search: {extra} bytes, {NUM_POINTS} points");
     assert!(
