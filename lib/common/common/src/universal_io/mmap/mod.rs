@@ -735,7 +735,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     use super::*;
 
     /// `populate` marks the file resident until its RAM cache is cleared or it grows.
