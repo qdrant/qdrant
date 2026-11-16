@@ -64,7 +64,14 @@ impl SignedObjectClient<'_> {
         let mut url = self.url.clone();
         url.set_query(Some(query));
 
-        let mut builder = http::Request::builder().method(method).uri(url.as_str());
+        // Explicit even when zero: HTTP clients omit `Content-Length` on an
+        // empty body, and GCS's S3 interop rejects such a `POST ?uploads` or
+        // `UploadPartCopy` with 411 Length Required. `object_store` sets it on
+        // its own `CreateMultipartUpload` for the same reason.
+        let mut builder = http::Request::builder()
+            .method(method)
+            .uri(url.as_str())
+            .header(http::header::CONTENT_LENGTH, body.content_length());
         for (name, value) in headers {
             builder = builder.header(*name, *value);
         }
