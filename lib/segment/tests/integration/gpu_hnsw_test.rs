@@ -184,7 +184,7 @@ fn test_gpu_filterable_hnsw() {
 
     let hnsw_config = HnswConfig {
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold,
         max_indexing_threads: 2,
         on_disk: Some(false),
@@ -368,7 +368,7 @@ fn test_gpu_before_pipnn() {
     let int_key = "int";
     let hnsw_config = HnswConfig {
         m: 8,
-        ef_construct: 16,
+        ef_construct: Some(16),
         full_scan_threshold: 32, // KB
         max_indexing_threads: 2,
         on_disk: Some(false),
