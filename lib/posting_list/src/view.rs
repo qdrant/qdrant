@@ -208,6 +208,27 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
             .binary_search_by(|elem| elem.id.get().cmp(&id))
     }
 
+    /// Call `f` with the ids of the posting list in ascending order, one decompressed
+    /// chunk of [`CHUNK_LEN`] ids at a time, then the remainder.
+    ///
+    /// Cheaper than iterating the ids one by one when the caller only needs the ids.
+    pub fn for_each_id_chunk(&self, mut f: impl FnMut(&[PointOffsetType])) {
+        let mut ids = [0; CHUNK_LEN];
+        for chunk_index in 0..self.chunks.len() {
+            self.decompress_chunk(chunk_index, &mut ids);
+            f(&ids);
+        }
+        // The remainder holds fewer than `CHUNK_LEN` elements.
+        debug_assert!(self.remainders.len() < CHUNK_LEN);
+        let remainder = &mut ids[..self.remainders.len()];
+        for (id, element) in remainder.iter_mut().zip(self.remainders) {
+            *id = element.id.get();
+        }
+        if !remainder.is_empty() {
+            f(remainder);
+        }
+    }
+
     /// The total number of elements in the posting list.
     pub fn len(&self) -> usize {
         self.chunks.len() * CHUNK_LEN + self.remainders.len()

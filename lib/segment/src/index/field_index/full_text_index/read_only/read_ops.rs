@@ -16,6 +16,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Dispatcher impl: forwards every [`FullTextIndexRead`] method to the active
@@ -150,6 +151,18 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.filter_query_into(query, sink),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.filter_query_into(query, sink),
+            ReadOnlyFullTextIndex::Immutable(index) => index.filter_query_into(query, sink),
+        }
+    }
+
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
@@ -247,6 +260,14 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<bool> {
+        read_ops::filter_into(self, condition, sink)
     }
 
     fn estimate_cardinality(

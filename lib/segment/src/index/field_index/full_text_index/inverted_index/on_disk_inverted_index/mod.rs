@@ -14,7 +14,7 @@ use common::universal_io::{
     TypedStorage, UioResult, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 use on_disk_postings::{OnDiskPostings, preopen_postings};
-use posting_list::{PostingListView, PostingValue};
+use posting_list::{CHUNK_LEN, PostingListView, PostingValue};
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
@@ -39,6 +39,7 @@ use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
 };
+use crate::index::query_optimization::point_sink::PointSink;
 
 mod create_postings;
 pub(super) mod doc_len_sidecar;
@@ -380,37 +381,105 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.deleted_points.is_active(point_id)
     }
 
-    /// Iterate over point ids whose documents contain all given tokens.
+    /// Point ids whose documents contain all given tokens, ascending.
     ///
-    /// Pre-collected upfront because [`UniversalPostings`] exposes posting
-    /// views via a `FnOnce` callback. Acceptable since this index lives
-    /// on disk.
+    /// Collected up front because [`OnDiskPostings`] exposes posting views via a `FnOnce`
+    /// callback. [`Self::filter_into`] reads the points without collecting them.
     pub fn filter_has_all(&self, tokens: TokenSet) -> OperationResult<Vec<PointOffsetType>> {
-        // in case of mmap immutable index, deleted points are still in the postings
-        let filter = move |idx| self.is_active(idx);
+        let mut points = Vec::new();
+        self.filter_has_all_into(tokens, &mut points)?;
+        Ok(points)
+    }
 
+    /// Push the ids of points whose documents contain all given tokens into `sink`, in
+    /// ascending order.
+    fn filter_has_all_into(
+        &self,
+        tokens: TokenSet,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
         fn intersection<V: ZerocopyPostingValue, S: UniversalRead>(
+            index: &OnDiskInvertedIndex<S>,
             postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
-            filter: impl Fn(PointOffsetType) -> bool,
-        ) -> OperationResult<Vec<PointOffsetType>> {
+            sink: &mut dyn PointSink,
+        ) -> OperationResult<()> {
             postings.with_all_or_none_postings(tokens.tokens(), |posting_readers| {
                 // Empty query, or a missing token -> no matches
                 let Some(posting_readers) = posting_readers.filter(|r| !r.is_empty()) else {
-                    return Ok(Vec::new());
+                    return Ok(());
                 };
+                if let [(_token_id, posting)] = posting_readers.as_slice() {
+                    // A single token: no intersection, read the posting chunk by chunk.
+                    index.push_active_chunks(posting, sink);
+                    return Ok(());
+                }
                 let posting_readers = posting_readers
                     .into_iter()
                     .map(|(_token_id, posting_list_view)| posting_list_view)
                     .collect();
-                Ok(intersect_compressed_postings_iterator(posting_readers, filter).collect())
+                // in case of mmap immutable index, deleted points are still in the postings
+                let is_active = |idx| index.is_active(idx);
+                intersect_compressed_postings_iterator(posting_readers, is_active)
+                    .for_each(|point| sink.push(point));
+                Ok(())
             })
         }
 
         match &self.storage.postings {
-            OnDiskPostingsEnum::Ids(postings) => intersection(postings, tokens, filter),
-            OnDiskPostingsEnum::WithPositions(postings) => intersection(postings, tokens, filter),
+            OnDiskPostingsEnum::Ids(postings) => intersection(self, postings, tokens, sink),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                intersection(self, postings, tokens, sink)
+            }
         }
+    }
+
+    /// Push the ids of points whose documents contain at least one of the given tokens
+    /// into `sink`. Reads the postings one after another, chunk by chunk, so the ids are
+    /// only ascending within one posting and repeat across postings.
+    fn filter_has_any_into(
+        &self,
+        tokens: TokenSet,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
+        fn each_posting<V: ZerocopyPostingValue, S: UniversalRead>(
+            index: &OnDiskInvertedIndex<S>,
+            postings: &OnDiskPostings<V, S>,
+            tokens: TokenSet,
+            sink: &mut dyn PointSink,
+        ) -> OperationResult<()> {
+            postings.with_existing_postings(tokens.tokens(), |posting_readers| {
+                for (_token_id, posting) in &posting_readers {
+                    index.push_active_chunks(posting, sink);
+                }
+                Ok(())
+            })
+        }
+
+        match &self.storage.postings {
+            OnDiskPostingsEnum::Ids(postings) => each_posting(self, postings, tokens, sink),
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                each_posting(self, postings, tokens, sink)
+            }
+        }
+    }
+
+    /// Push the active ids of `posting` into `sink`, one decompressed chunk at a time.
+    fn push_active_chunks<V: PostingValue>(
+        &self,
+        posting: &PostingListView<'_, V>,
+        sink: &mut dyn PointSink,
+    ) {
+        let mut active = [0; CHUNK_LEN];
+        posting.for_each_id_chunk(|ids| {
+            // in case of mmap immutable index, deleted points are still in the postings
+            let mut len = 0;
+            for &id in ids {
+                active[len] = id;
+                len += usize::from(self.is_active(id));
+            }
+            sink.extend_from_slice(&active[..len]);
+        });
     }
 
     /// Iterate over point ids whose documents contain at least one of the given tokens
@@ -507,8 +576,20 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         }
     }
 
-    /// Iterate over point ids whose documents contain all given tokens in the same order they are provided
+    /// Point ids whose documents contain all given tokens in the same order they are
+    /// provided, ascending.
     pub fn filter_has_phrase(&self, phrase: Document) -> OperationResult<Vec<PointOffsetType>> {
+        let mut points = Vec::new();
+        self.filter_has_phrase_into(phrase, &mut points)?;
+        Ok(points)
+    }
+
+    /// Push the ids of points whose documents contain the phrase into `sink`, ascending.
+    fn filter_has_phrase_into(
+        &self,
+        phrase: Document,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
         // in case of mmap immutable index, deleted points are still in the postings
         let is_active = move |idx| self.is_active(idx);
 
@@ -520,19 +601,30 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 let unique_tokens = phrase.to_token_set();
                 postings.with_all_or_none_postings(unique_tokens.tokens(), |selected_postings| {
                     // Some token has no posting list -> no matches
-                    let Some(selected_postings) = selected_postings else {
-                        return Ok(Vec::new());
-                    };
-                    Ok(intersect_compressed_postings_phrase_iterator(
-                        phrase,
-                        selected_postings,
-                        is_active,
-                    )
-                    .collect())
+                    if let Some(selected_postings) = selected_postings {
+                        intersect_compressed_postings_phrase_iterator(
+                            phrase,
+                            selected_postings,
+                            is_active,
+                        )
+                        .for_each(|point| sink.push(point));
+                    }
+                    Ok(())
                 })
             }
             // cannot do phrase matching if there's no positional information
-            OnDiskPostingsEnum::Ids(_postings) => Ok(Vec::new()),
+            OnDiskPostingsEnum::Ids(_postings) => Ok(()),
+        }
+    }
+
+    /// Push the points matching `query` into `sink` while the posting lists are open,
+    /// instead of collecting them first as [`InvertedIndex::filter`] does. The points may
+    /// come in any order and repeat.
+    pub fn filter_into(&self, query: ParsedQuery, sink: &mut dyn PointSink) -> OperationResult<()> {
+        match query {
+            ParsedQuery::AllTokens(tokens) => self.filter_has_all_into(tokens, sink),
+            ParsedQuery::Phrase(phrase) => self.filter_has_phrase_into(phrase, sink),
+            ParsedQuery::AnyTokens(tokens) => self.filter_has_any_into(tokens, sink),
         }
     }
 

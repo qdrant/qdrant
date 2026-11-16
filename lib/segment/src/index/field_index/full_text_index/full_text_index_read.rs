@@ -15,6 +15,7 @@ use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -298,6 +299,19 @@ pub trait FullTextIndexRead {
         &'a self,
         query: ParsedQuery,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
+
+    /// Push the points matching `query` into `sink`: those of [`Self::filter_query`], in
+    /// any order and possibly repeated.
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
+        for point in self.filter_query(query)? {
+            sink.push(point);
+        }
+        Ok(())
+    }
 
     fn estimate_query_cardinality(
         &self,
