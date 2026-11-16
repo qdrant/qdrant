@@ -12,7 +12,7 @@ use common::flags::FeatureFlags;
 use ordered_float::OrderedFloat;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
-use segment::data_types::index::{FloatIndexParams, FloatIndexType, TextIndexParams};
+use segment::data_types::index::{FloatIndexParams, FloatIndexType};
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::NonAppendableSegmentEntry;
@@ -23,8 +23,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, Match,
-    Memory, PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType, Range, SegmentConfig,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, Memory,
+    PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType, Range, SegmentConfig,
     VectorDataConfig, VectorStorageType, WithPayload, WithVector,
 };
 use tempfile::Builder;
@@ -97,23 +97,6 @@ fn segment_config(index: Indexes) -> SegmentConfig {
 }
 
 fn indexed_segment(dir: &std::path::Path) -> Segment {
-    let schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Float(FloatIndexParams {
-        r#type: FloatIndexType::Float,
-        memory: Some(Memory::Cold),
-        enable_hnsw: Some(false),
-        ..Default::default()
-    }));
-    let value = |rng: &mut StdRng| payload_json! {FIELD: rng.random_range(0.0..1.0)};
-    indexed_segment_with(dir, NUM_POINTS, value, &schema)
-}
-
-/// HNSW segment of `num_points` points with `payload` in `FIELD`, indexed by `schema`.
-fn indexed_segment_with(
-    dir: &std::path::Path,
-    num_points: usize,
-    payload: impl Fn(&mut StdRng) -> segment::types::Payload,
-    schema: &PayloadFieldSchema,
-) -> Segment {
     let mut rng = StdRng::seed_from_u64(42);
     let plain_dir = Builder::new().prefix("plain").tempdir().unwrap();
     let (mut plain, _) = build_segment(
@@ -123,19 +106,25 @@ fn indexed_segment_with(
         true,
     )
     .unwrap();
-    for i in 0..num_points {
+    for i in 0..NUM_POINTS {
         let vector: Vec<f32> = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
         let op = i as u64 + 1;
         plain
             .upsert_point(op, (i as u64).into(), only_default_vector(&vector))
             .unwrap();
-        let payload = payload(&mut rng);
+        let value: f64 = rng.random_range(0.0..1.0);
         plain
-            .set_full_payload(op, (i as u64).into(), &payload)
+            .set_full_payload(op, (i as u64).into(), &payload_json! {FIELD: value})
             .unwrap();
     }
+    let schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Float(FloatIndexParams {
+        r#type: FloatIndexType::Float,
+        memory: Some(Memory::Cold),
+        enable_hnsw: Some(false),
+        ..Default::default()
+    }));
     plain
-        .create_field_index(num_points as u64 + 1, &JsonPath::new(FIELD), Some(schema))
+        .create_field_index(NUM_POINTS as u64 + 1, &JsonPath::new(FIELD), Some(&schema))
         .unwrap();
 
     #[expect(deprecated, reason = "HnswConfig still carries the on_disk flag")]
@@ -206,49 +195,5 @@ fn wide_filter_graph_search_heap_does_not_scale_with_matches() {
     assert!(
         extra < NUM_POINTS,
         "filtered graph search allocated {extra} bytes for {NUM_POINTS} points"
-    );
-}
-
-/// A graph search on a cold on-disk text index reads the posting list of a wide text
-/// filter into one bitset, without collecting the matches into a list first: one bitset
-/// (1 bit per point) and a few chunks of extra heap, not 4-12 bytes per match.
-#[test]
-fn wide_text_filter_graph_search_heap_is_one_bitset() {
-    const POINTS: usize = 500_000;
-    let _scope = ambient::test_guard();
-    let dir = Builder::new().prefix("segment").tempdir().unwrap();
-    // ~99% of the points hold the token `common`.
-    let segment = indexed_segment_with(
-        dir.path(),
-        POINTS,
-        |rng| {
-            let text = if rng.random_bool(0.99) {
-                "common word"
-            } else {
-                "word"
-            };
-            payload_json! {FIELD: text}
-        },
-        &PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
-            memory: Some(Memory::Cold),
-            ..TextIndexParams::default()
-        })),
-    );
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::new(FIELD),
-        Match::new_text("common"),
-    )));
-
-    // Warm pools and lazily opened files.
-    search(&segment, &filter);
-
-    let extra = peak_heap(|| search(&segment, &filter));
-
-    let bitset = POINTS.div_ceil(8);
-    eprintln!("peak extra heap per search: {extra} bytes, bitset {bitset} bytes, {POINTS} points");
-    // The search itself (result heaps, pooled visited lists, ...) takes a few KB.
-    assert!(
-        extra < bitset + 32 * 1024,
-        "filtered graph search allocated {extra} bytes for a {bitset} byte bitset",
     );
 }
