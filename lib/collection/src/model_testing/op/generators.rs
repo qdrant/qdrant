@@ -11,7 +11,7 @@ use segment::types::{
     Payload, PayloadSelector, PayloadSelectorExclude, PayloadSelectorInclude, PointIdType,
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::super::{IdSpace, Model, VectorKind, VectorValue, candidate_of};
@@ -26,6 +26,9 @@ use crate::operations::types::Datatype;
 // point boundary flakes between the engine and the model.
 
 const TAGS: [&str; 3] = ["a", "b", "c"];
+/// Keys the `is_empty` / `is_null` scroll filters probe: `e` is never indexed (payload fallback),
+/// `tag` has its keyword index toggled, `num` is always indexed.
+const EMPTINESS_KEYS: [&str; 3] = ["e", "tag", "num"];
 const FLOATS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 const DATETIMES: [&str; 5] = [
     "2023-01-15T00:00:00Z",
@@ -109,6 +112,29 @@ pub(super) fn random_tag(rng: &mut impl Rng) -> &'static str {
 
 pub(super) fn random_url(rng: &mut impl Rng) -> &'static str {
     URLS.choose(rng).unwrap()
+}
+
+/// Key for an `is_empty` / `is_null` scroll filter, see [`ScrollFilter::IsEmpty`].
+pub(super) fn random_emptiness_key(rng: &mut impl Rng) -> &'static str {
+    EMPTINESS_KEYS.choose(rng).unwrap()
+}
+
+/// A value for the never-indexed `e` field, or `None` to leave it out. The pool holds every shape
+/// `is_empty` and `is_null` tell apart: missing, `[]`, arrays with and without a `null`, scalars
+/// and an empty object. No top-level `null`: writing one removes the key (`merge_map`), so it
+/// would only duplicate the missing case.
+fn random_emptiness_value(rng: &mut impl Rng) -> Option<Value> {
+    match rng.random_range(0..8) {
+        0 => None,
+        1 => Some(json!([])),
+        2 => Some(json!([null])),
+        3 => Some(json!([1, null])),
+        4 => Some(json!([1, 2])),
+        5 => Some(json!(1)),
+        6 => Some(json!("x")),
+        7 => Some(json!({})),
+        _ => unreachable!(),
+    }
 }
 
 pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
@@ -256,7 +282,7 @@ pub(super) fn upsert_fallback(
 }
 
 pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
-    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t"];
+    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t", "e"];
     let mut keys: Vec<JsonPath> = all_keys
         .iter()
         .filter(|_| rng.random_bool(0.4))
@@ -275,7 +301,7 @@ pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
 /// (which assigns the source payload as the value at this path) maps to a simple field overwrite
 /// the model can mirror via `Payload::merge_by_key`.
 pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
-    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t"];
+    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t", "e"];
     all_keys.choose(rng).unwrap().parse().unwrap()
 }
 
@@ -285,7 +311,7 @@ pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
 pub(super) fn random_with_payload(rng: &mut impl Rng) -> WithPayloadInterface {
     // 1-3 distinct top-level keys for the field/selector variants.
     let n = rng.random_range(1..=3);
-    let keys: Vec<JsonPath> = ["num", "tag", "url", "f", "b", "d", "g", "t"]
+    let keys: Vec<JsonPath> = ["num", "tag", "url", "f", "b", "d", "g", "t", "e"]
         .iter()
         .copied()
         .sample(rng, n)
@@ -341,13 +367,14 @@ pub(super) fn random_flush_interval_sec(rng: &mut impl Rng) -> u64 {
 
 /// A filter selector for paginated scroll: no filter, `num == X`, `tag == X`, a `has_id`
 /// matcher, a `has_vector` matcher over a currently-active vector name, a `url` prefix
-/// matcher, a deterministic `slice` of the id space, or composed `num` ∧ `slice`.
+/// matcher, a deterministic `slice` of the id space, composed `num` ∧ `slice`, or
+/// `is_empty` / `is_null` on a key.
 pub(super) fn random_scroll_filter(
     rng: &mut impl Rng,
     active: &BTreeSet<VectorNameBuf>,
     id_space: &IdSpace,
 ) -> ScrollFilter {
-    match rng.random_range(0..8) {
+    match rng.random_range(0..10) {
         0 => ScrollFilter::None,
         1 => ScrollFilter::Num(random_num(rng)),
         2 => ScrollFilter::Tag(random_tag(rng).to_string()),
@@ -377,6 +404,8 @@ pub(super) fn random_scroll_filter(
                 index,
             }
         }
+        8 => ScrollFilter::IsEmpty(random_emptiness_key(rng).to_string()),
+        9 => ScrollFilter::IsNull(random_emptiness_key(rng).to_string()),
         _ => unreachable!(),
     }
 }
@@ -513,6 +542,9 @@ pub(super) fn random_payload(rng: &mut impl Rng) -> Payload {
     map.insert("g".to_string(), Value::Object(geo));
     map.insert("t".to_string(), random_text(rng));
     map.insert("url".to_string(), Value::from(random_url(rng)));
+    if let Some(value) = random_emptiness_value(rng) {
+        map.insert("e".to_string(), value);
+    }
     Payload(map)
 }
 
