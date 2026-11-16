@@ -148,7 +148,9 @@ fn test_len_iter_matches_values() {
                 loop {
                     end += window;
                     let more = cursor.for_each_below(end, |elem| out.push(elem));
-                    let first_past = lens.iter().find(|elem| elem.id >= end).copied();
+                    let first_past = lens
+                        .get(lens.partition_point(|elem| elem.id < end))
+                        .copied();
                     assert_eq!(cursor.current(), first_past, "window {window}, end {end}");
                     assert_eq!(more, first_past.is_some());
                     if !more {
