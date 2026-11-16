@@ -15,11 +15,18 @@ def collection_uuid(peer_dir: pathlib.Path):
     return json.loads(config_path.read_text()).get("uuid")
 
 
+def remove_collection_uuid(peer_dir: pathlib.Path):
+    config_path = peer_dir / "storage" / "collections" / COLLECTION_NAME / "config.json"
+    config = json.loads(config_path.read_text())
+    del config["uuid"]
+    config_path.write_text(json.dumps(config))
+
+
 def test_collection_uuid_migrated_from_single_node(tmp_path: pathlib.Path):
     """
-    A collection created in standalone mode has no UUID. After migrating to a cluster,
-    the original peer must persist the same UUID as the peers that replay its creation.
-    Otherwise, applying a Raft snapshot recreates the collection and loses its data.
+    A collection created in standalone mode by an older version has no UUID. After migrating
+    to a cluster, the original peer must persist the same UUID as the peers that replay its
+    creation. Otherwise, applying a Raft snapshot recreates the collection and loses its data.
     """
     peer_dirs = make_peer_folders(tmp_path, 2)
 
@@ -44,9 +51,14 @@ def test_collection_uuid_migrated_from_single_node(tmp_path: pathlib.Path):
     )
     assert_http_ok(response)
 
-    assert collection_uuid(peer_dirs[0]) is None
+    # Standalone mode assigns a UUID now
+    assert collection_uuid(peer_dirs[0]) is not None
 
     processes.pop().kill()
+
+    # Simulate a collection created in standalone mode by an older version, without UUID
+    remove_collection_uuid(peer_dirs[0])
+    assert collection_uuid(peer_dirs[0]) is None
 
     bootstrap_api_uri, bootstrap_uri = start_first_peer(peer_dirs[0], "cluster.log")
     leader = wait_peer_added(bootstrap_api_uri)
