@@ -37,22 +37,15 @@ pub trait PayloadFieldIndexRead {
     /// Returns `false`, pushing nothing, if the condition does not match the index type.
     ///
     /// The points are those of [`Self::filter`], but may come in any order and repeat. An
-    /// index that can only read its posting lists inside a callback overrides this to push
-    /// from there, instead of collecting every point to return an iterator.
+    /// index that can only read its posting lists inside a callback pushes from there,
+    /// instead of collecting every point to return an iterator. Others push the points of
+    /// [`Self::filter`] with [`push_filtered`](crate::index::query_optimization::point_sink::push_filtered).
     #[must_use = "`false` means the index did not handle the condition"]
     fn filter_into(
         &self,
         condition: &FieldCondition,
         sink: &mut dyn PointSink,
-    ) -> OperationResult<bool> {
-        let Some(points) = self.filter(condition)? else {
-            return Ok(false);
-        };
-        for point in points {
-            sink.push(point);
-        }
-        Ok(true)
-    }
+    ) -> OperationResult<bool>;
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `Ok(None)` if the condition does not match the index type

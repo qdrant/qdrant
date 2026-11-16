@@ -306,12 +306,7 @@ pub trait FullTextIndexRead {
         &self,
         query: ParsedQuery,
         sink: &mut dyn PointSink,
-    ) -> OperationResult<()> {
-        for point in self.filter_query(query)? {
-            sink.push(point);
-        }
-        Ok(())
-    }
+    ) -> OperationResult<()>;
 
     fn estimate_query_cardinality(
         &self,

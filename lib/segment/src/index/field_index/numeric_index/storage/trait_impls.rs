@@ -27,6 +27,7 @@ use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
 };
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{FieldCondition, PayloadKeyType, RangeInterface};
 
 impl<T: NumericIndexValue> PayloadFieldIndex for NumericIndexInner<T>
@@ -67,6 +68,14 @@ where
         condition: &FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         query::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

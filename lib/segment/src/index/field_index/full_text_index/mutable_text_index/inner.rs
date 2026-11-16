@@ -12,6 +12,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::{PointSink, push_all};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// In-memory state shared by [`MutableFullTextIndex`] and
@@ -100,6 +101,15 @@ impl FullTextIndexRead for MutableFullTextIndexInner {
         query: ParsedQuery,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         self.inverted_index.filter(query)
+    }
+
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<()> {
+        push_all(self.filter_query(query)?, sink);
+        Ok(())
     }
 
     fn estimate_query_cardinality(

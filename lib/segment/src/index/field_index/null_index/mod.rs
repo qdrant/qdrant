@@ -16,6 +16,7 @@ use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::payload_config::IndexMutability;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::FieldCondition;
 
 pub enum NullIndex {
@@ -109,6 +110,14 @@ impl PayloadFieldIndexRead for NullIndex {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut dyn PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

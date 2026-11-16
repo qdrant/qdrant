@@ -13,11 +13,29 @@ pub trait PointSink {
     fn push(&mut self, point: PointOffsetType);
 
     /// Push a run of points, e.g. one decompressed chunk of a posting list.
-    fn extend_from_slice(&mut self, points: &[PointOffsetType]) {
-        for &point in points {
-            self.push(point);
-        }
+    fn extend_from_slice(&mut self, points: &[PointOffsetType]);
+}
+
+/// Push every point of `points` into `sink`.
+pub fn push_all(points: impl IntoIterator<Item = PointOffsetType>, sink: &mut dyn PointSink) {
+    for point in points {
+        sink.push(point);
     }
+}
+
+/// Push the points of an index `filter` result into `sink`.
+/// Returns `false`, pushing nothing, if there is no result: the condition does not match
+/// the index type.
+#[must_use = "`false` means the index did not handle the condition"]
+pub fn push_filtered(
+    points: Option<impl IntoIterator<Item = PointOffsetType>>,
+    sink: &mut dyn PointSink,
+) -> bool {
+    let Some(points) = points else {
+        return false;
+    };
+    push_all(points, sink);
+    true
 }
 
 impl PointSink for Vec<PointOffsetType> {
