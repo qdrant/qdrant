@@ -101,12 +101,18 @@ jobs:
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
       run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
-    # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
-    # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
-    # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
+    # Test temp files go on tmpfs: the `model_testing` harness gates preallocate 32 MB gridstore
+    # pages per storage per segment and are dominated by IO on a disk-backed temp dir. On
+    # ubuntu-26.04 `/dev/shm` (and `/tmp`) carry a per-user quota that the gates exceed (os error
+    # 122), so mount a dedicated tmpfs without one, sized like the pre-26.04 `/dev/shm`.
+    # Linux only: macOS and Windows have no tmpfs.
     - name: Put test temp files on tmpfs
       if: matrix.os == 'ubuntu-latest'
-      run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
+      run: |
+        findmnt -o TARGET,FSTYPE,SIZE,OPTIONS /dev/shm /tmp || true
+        sudo mkdir -p /mnt/test-tmp
+        sudo mount -t tmpfs -o size=50%,mode=1777 tmpfs /mnt/test-tmp
+        echo "TMPDIR=/mnt/test-tmp" >> "$GITHUB_ENV"
       shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.
