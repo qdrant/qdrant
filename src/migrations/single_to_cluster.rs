@@ -13,6 +13,8 @@ use storage::content_manager::collection_meta_ops::{
     CreateCollectionOperation, CreateShardKey, SetShardReplicaState,
 };
 use storage::content_manager::consensus_manager::ConsensusStateRef;
+use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -79,6 +81,18 @@ pub async fn handle_existing_collections(
             created_at,
         } = config;
 
+        // A collection created in standalone mode has no UUID. Assign it before proposing the
+        // creation, so peers that replay the proposal get the same identity as this one.
+        // Otherwise, a Raft snapshot from a peer recreates the collection, and its data is lost.
+        let uuid = uuid.unwrap_or_else(uuid::Uuid::new_v4);
+        match collection_obj.assign_missing_uuid(uuid).await {
+            Ok(_) => toc_arc.mark_collection_dirty(&collection_name),
+            Err(err) => {
+                log::error!("Failed to assign UUID to collection {collection_name}: {err}");
+                continue;
+            }
+        }
+
         let shards_number = params.shard_number.get();
         let sharding_method = params.sharding_method;
 
@@ -99,7 +113,7 @@ pub async fn handle_existing_collections(
                 optimizers_config: Some(optimizer_config.into()),
                 quantization_config,
                 strict_mode_config,
-                uuid,
+                uuid: Some(uuid),
                 metadata,
                 created_at,
             },
@@ -122,17 +136,10 @@ pub async fn handle_existing_collections(
                         })
                         .collect(),
                 });
-
-                consensus_operations.push(CollectionMetaOperations::CreateCollection(
-                    collection_create_operation,
-                ));
             }
             ShardingMethod::Custom => {
                 // We should create additional consensus operations here to set the shard distribution
                 collection_create_operation.set_distribution(ShardDistributionProposal::empty());
-                consensus_operations.push(CollectionMetaOperations::CreateCollection(
-                    collection_create_operation,
-                ));
 
                 for (shard_key, shard_ids) in shards_key_mapping.iter() {
                     let mut placement = Vec::new();
@@ -153,6 +160,25 @@ pub async fn handle_existing_collections(
                         },
                     ))
                 }
+            }
+        }
+
+        // Proposed directly, because the dispatcher replaces the UUID with a random one
+        let create_result = consensus_state
+            .propose_consensus_op_with_await(
+                ConsensusOperations::CollectionMeta(Box::new(
+                    CollectionMetaOperations::CreateCollection(collection_create_operation),
+                )),
+                None,
+            )
+            .await;
+
+        match create_result {
+            Ok(_) => {}
+            // The collection already exists on this peer, only other peers create it
+            Err(StorageError::AlreadyExists { .. }) => {}
+            Err(err) => {
+                log::error!("Failed to register collection {collection_name} in consensus: {err}");
             }
         }
 

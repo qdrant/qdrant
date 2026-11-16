@@ -209,7 +209,15 @@ impl TableOfContent {
                 if let Some(collection) = &existing_collection {
                     let collection_uuid = collection.uuid().await;
 
-                    let recreate_collection = if collection_uuid != state.config.uuid {
+                    // A missing UUID means the collection was created outside of consensus and
+                    // has not been assigned an identity yet. It doesn't mean it's a different
+                    // collection, so only two different UUIDs require recreation.
+                    let is_different_collection = match (collection_uuid, state.config.uuid) {
+                        (Some(existing), Some(snapshot)) => existing != snapshot,
+                        (None, _) | (_, None) => false,
+                    };
+
+                    let recreate_collection = if is_different_collection {
                         log::warn!(
                             "Recreating collection {id}, because collection UUID is different: \
                              existing collection UUID: {collection_uuid:?}, \
