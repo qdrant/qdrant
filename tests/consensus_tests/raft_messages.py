@@ -1,15 +1,16 @@
-"""Decode the Raft fields used by consensus proxy matchers.
+"""Decode the Raft fields used by consensus proxy matchers, and encode test messages.
 
 These descriptors project the wire schemas in lib/api/src/grpc/proto/raft_service.proto
 and raft-rs proto/proto/eraftpb.proto at Qdrant's pinned revision aafb07c.
-Unlisted fields are handled as unknown fields by protobuf. No bytes are rewritten.
+Unlisted fields are handled as unknown fields by protobuf. Proxy matchers only decode;
+they never rewrite bytes.
 """
 
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
-
 MSG_APPEND = 3
 MSG_APPEND_RESPONSE = 4
+MSG_HEARTBEAT = 8
 ENTRY_CONF_CHANGE_V2 = 2
 REMOVE_NODE = 1
 
@@ -43,6 +44,7 @@ _message("Message", [
     (1, "msg_type", _field.TYPE_UINT32, False),
     (2, "to", _field.TYPE_UINT64, False),
     (3, "from_peer", _field.TYPE_UINT64, False),
+    (4, "term", _field.TYPE_UINT64, False),
     (6, "index", _field.TYPE_UINT64, False),
     (7, "entries", "Entry", True),
     (8, "commit", _field.TYPE_UINT64, False),
@@ -61,6 +63,11 @@ _ConfChangeV2 = message_factory.GetMessageClass(_descriptor.message_types_by_nam
 
 def decode_raft_message(request):
     return _Message.FromString(_Envelope.FromString(request).message)
+
+
+def encode_raft_message(**fields):
+    """Build a `/qdrant.Raft/Send` request body from Raft message fields."""
+    return _Envelope(message=_Message(**fields).SerializeToString()).SerializeToString()
 
 
 def removal_entry_index(message, peer_id):
