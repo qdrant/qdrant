@@ -1657,7 +1657,18 @@ impl ClusterState {
                     continue;
                 }
 
-                let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
+                // The transfer abort must leave this replica untouched, because the final
+                // `SetReplicaState` below writes `Dead` anyway. Otherwise a non-sync transfer
+                // abort removes the replica, and a replay after a crash right after the removal
+                // is rejected if the peer has left the cluster, because the replica is missing.
+                let abort = planned.plan_abort_transfer_scoped(
+                    context,
+                    collection.clone(),
+                    key,
+                    AbortTransferScope {
+                        skip_replica: Some((shard_id, peer_id)),
+                    },
+                )?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
             }
