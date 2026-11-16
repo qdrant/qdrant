@@ -49,7 +49,7 @@ impl PayloadFieldIndexRead for ImmutableNullIndex {
     fn filter_into(
         &self,
         condition: &FieldCondition,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<bool> {
         Ok(push_filtered(self.filter(condition)?, sink))
     }

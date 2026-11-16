@@ -87,7 +87,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
     fn filter_query_into(
         &self,
         query: ParsedQuery,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         push_all(self.filter_query(query)?, sink);
         Ok(())

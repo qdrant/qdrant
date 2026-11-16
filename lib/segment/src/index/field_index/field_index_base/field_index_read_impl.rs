@@ -67,7 +67,7 @@ impl PayloadFieldIndexRead for FieldIndex {
     fn filter_into(
         &self,
         condition: &FieldCondition,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(idx) => idx.filter_into(condition, sink),

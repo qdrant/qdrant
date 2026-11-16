@@ -44,8 +44,11 @@ pub trait PayloadFieldIndexRead {
     fn filter_into(
         &self,
         condition: &FieldCondition,
-        sink: &mut dyn PointSink,
-    ) -> OperationResult<bool>;
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool>
+    where
+        // Generic over the sink, so not callable through `dyn PayloadFieldIndex`.
+        Self: Sized;
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `Ok(None)` if the condition does not match the index type

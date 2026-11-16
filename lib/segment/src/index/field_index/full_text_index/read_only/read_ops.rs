@@ -154,7 +154,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
     fn filter_query_into(
         &self,
         query: ParsedQuery,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.filter_query_into(query, sink),
@@ -265,7 +265,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
     fn filter_into(
         &self,
         condition: &FieldCondition,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<bool> {
         read_ops::filter_into(self, condition, sink)
     }

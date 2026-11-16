@@ -17,7 +17,7 @@ pub trait PointSink {
 }
 
 /// Push every point of `points` into `sink`.
-pub fn push_all(points: impl IntoIterator<Item = PointOffsetType>, sink: &mut dyn PointSink) {
+pub fn push_all(points: impl IntoIterator<Item = PointOffsetType>, sink: &mut impl PointSink) {
     for point in points {
         sink.push(point);
     }
@@ -29,7 +29,7 @@ pub fn push_all(points: impl IntoIterator<Item = PointOffsetType>, sink: &mut dy
 #[must_use = "`false` means the index did not handle the condition"]
 pub fn push_filtered(
     points: Option<impl IntoIterator<Item = PointOffsetType>>,
-    sink: &mut dyn PointSink,
+    sink: &mut impl PointSink,
 ) -> bool {
     let Some(points) = points else {
         return false;

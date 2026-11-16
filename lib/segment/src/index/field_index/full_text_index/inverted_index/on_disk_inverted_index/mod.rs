@@ -396,13 +396,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     fn filter_has_all_into(
         &self,
         tokens: TokenSet,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         fn intersection<V: ZerocopyPostingValue, S: UniversalRead>(
             index: &OnDiskInvertedIndex<S>,
             postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
-            sink: &mut dyn PointSink,
+            sink: &mut impl PointSink,
         ) -> OperationResult<()> {
             postings.with_all_or_none_postings(tokens.tokens(), |posting_readers| {
                 // Empty query, or a missing token -> no matches
@@ -440,13 +440,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     fn filter_has_any_into(
         &self,
         tokens: TokenSet,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         fn each_posting<V: ZerocopyPostingValue, S: UniversalRead>(
             index: &OnDiskInvertedIndex<S>,
             postings: &OnDiskPostings<V, S>,
             tokens: TokenSet,
-            sink: &mut dyn PointSink,
+            sink: &mut impl PointSink,
         ) -> OperationResult<()> {
             postings.with_existing_postings(tokens.tokens(), |posting_readers| {
                 for (_token_id, posting) in &posting_readers {
@@ -468,7 +468,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     fn push_active_chunks<V: PostingValue>(
         &self,
         posting: &PostingListView<'_, V>,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) {
         let mut active = [0; CHUNK_LEN];
         posting.for_each_id_chunk(|ids| {
@@ -588,7 +588,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     fn filter_has_phrase_into(
         &self,
         phrase: Document,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         // in case of mmap immutable index, deleted points are still in the postings
         let is_active = move |idx| self.is_active(idx);
@@ -620,7 +620,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     /// Push the points matching `query` into `sink` while the posting lists are open,
     /// instead of collecting them first as [`InvertedIndex::filter`] does. The points may
     /// come in any order and repeat.
-    pub fn filter_into(&self, query: ParsedQuery, sink: &mut dyn PointSink) -> OperationResult<()> {
+    pub fn filter_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<()> {
         match query {
             ParsedQuery::AllTokens(tokens) => self.filter_has_all_into(tokens, sink),
             ParsedQuery::Phrase(phrase) => self.filter_has_phrase_into(phrase, sink),

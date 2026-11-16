@@ -88,7 +88,7 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     fn filter_query_into(
         &self,
         query: ParsedQuery,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         self.inverted_index.filter_into(query, sink)
     }

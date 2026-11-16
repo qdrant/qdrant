@@ -149,7 +149,7 @@ impl FullTextIndexRead for FullTextIndex {
     fn filter_query_into(
         &self,
         query: ParsedQuery,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.filter_query_into(query, sink),
@@ -244,7 +244,7 @@ impl PayloadFieldIndexRead for FullTextIndex {
     fn filter_into(
         &self,
         condition: &FieldCondition,
-        sink: &mut dyn PointSink,
+        sink: &mut impl PointSink,
     ) -> OperationResult<bool> {
         filter_into(self, condition, sink)
     }
@@ -342,7 +342,7 @@ pub fn filter<'a, T: FullTextIndexRead>(
 pub fn filter_into<T: FullTextIndexRead>(
     index: &T,
     condition: &FieldCondition,
-    sink: &mut dyn PointSink,
+    sink: &mut impl PointSink,
 ) -> OperationResult<bool> {
     let Some(parsed_query_opt) = parse_condition_query(index, condition)? else {
         return Ok(false);
