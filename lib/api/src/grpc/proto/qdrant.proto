@@ -6,6 +6,7 @@ import "health_check.proto";
 import "points_service.proto";
 import "points_internal_service.proto";
 import "qdrant_internal_service.proto";
+import "quota_service.proto";
 import "raft_service.proto";
 import "shard_snapshots_service.proto";
 import "snapshots_service.proto";
