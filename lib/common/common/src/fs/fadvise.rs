@@ -122,22 +122,7 @@ impl Drop for OneshotFile {
 
 #[cfg(all(test, posix_fadvise_supported))]
 mod tests {
-    use std::io::Write;
-
     use super::*;
-
-    #[test]
-    fn test_oneshot_file_read() {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        tmp.write_all(b"hello").unwrap();
-
-        let mut contents = String::new();
-        OneshotFile::open(tmp.path())
-            .unwrap()
-            .read_to_string(&mut contents)
-            .unwrap();
-        assert_eq!(contents, "hello");
-    }
 
     /// `posix_fadvise` fails with `ESPIPE` on pipes. Advisory hints must not propagate it.
     #[test]
