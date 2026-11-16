@@ -282,7 +282,7 @@ pub(super) fn upsert_fallback(
 }
 
 pub(super) fn random_payload_keys(rng: &mut impl Rng) -> Vec<JsonPath> {
-    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t", "e"];
+    let all_keys = ["num", "tag", "url", "f", "b", "d", "g", "t", "e", "offers"];
     let mut keys: Vec<JsonPath> = all_keys
         .iter()
         .filter(|_| rng.random_bool(0.4))
@@ -311,7 +311,7 @@ pub(super) fn random_payload_key(rng: &mut impl Rng) -> JsonPath {
 pub(super) fn random_with_payload(rng: &mut impl Rng) -> WithPayloadInterface {
     // 1-3 distinct top-level keys for the field/selector variants.
     let n = rng.random_range(1..=3);
-    let keys: Vec<JsonPath> = ["num", "tag", "url", "f", "b", "d", "g", "t", "e"]
+    let keys: Vec<JsonPath> = ["num", "tag", "url", "f", "b", "d", "g", "t", "e", "offers"]
         .iter()
         .copied()
         .sample(rng, n)
@@ -544,6 +544,9 @@ pub(super) fn random_payload(rng: &mut impl Rng) -> Payload {
     map.insert("url".to_string(), Value::from(random_url(rng)));
     if let Some(value) = random_emptiness_value(rng) {
         map.insert("e".to_string(), value);
+    }
+    if rng.random_bool(0.5) {
+        map.insert("offers".to_string(), super::nested::random_offers(rng));
     }
     Payload(map)
 }

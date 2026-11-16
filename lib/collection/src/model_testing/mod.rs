@@ -591,6 +591,8 @@ pub async fn run(
         text_params.stemmer,
         text_params.ascii_folding,
     );
+    let nested_index_setup = fixture::nested_index_setup(seed);
+    println!("model_testing: offers per-element indexes {nested_index_setup:?}");
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -599,6 +601,7 @@ pub async fn run(
         indexing_threshold_kb,
         on_disk,
         text_params,
+        nested_index_setup,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
