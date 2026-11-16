@@ -22,10 +22,13 @@ const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// Timeout for receiving response headers. A server that accepts the connection but never
 /// responds (e.g. a handler blocked on a lock) would otherwise stall the download forever,
 /// as `STREAM_READ_TIMEOUT` only covers the response body.
+///
+/// Tests use a shorter value so the no-response timeout test stays fast, but not so short
+/// that happy-path mockito tests flake under CI load (Windows).
 #[cfg(not(test))]
 const RESPONSE_TIMEOUT: Duration = STREAM_READ_TIMEOUT;
 #[cfg(test)]
-const RESPONSE_TIMEOUT: Duration = Duration::from_millis(100);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Read buffer between the HTTP body and the tar unpacker, so the unpacker
 /// doesn't block on the async runtime for every small read.
