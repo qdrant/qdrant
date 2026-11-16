@@ -19,6 +19,7 @@ use segment::types::{
     NestedCondition, Payload, PayloadField, PayloadFieldSchema, PayloadSchemaParams, Range,
     ValuesCount,
 };
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::ModelFilter;
@@ -128,7 +129,8 @@ enum SubFilters {
 }
 
 /// A condition on one element of `offers`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum ElementCondition {
     PriceEq(i64),
     PriceRange {
@@ -266,14 +268,25 @@ impl ElementCondition {
     }
 }
 
-/// A filter on one element of `offers`. An empty list is left out of the engine filter.
-#[derive(Debug, Clone)]
+/// A filter on one element of `offers`. An empty list is left out of the engine filter, and of
+/// the trace.
+#[derive(Debug, Clone, Serialize)]
 pub(super) struct ElementFilter {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     must: Vec<ElementCondition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     must_not: Vec<ElementCondition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     should: Vec<ElementCondition>,
-    /// Conditions and how many of them have to match.
-    min_should: Option<(Vec<ElementCondition>, usize)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_should: Option<ElementMinShould>,
+}
+
+/// `min_should` of an [`ElementFilter`]: at least `min_count` of `conditions` have to match.
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ElementMinShould {
+    conditions: Vec<ElementCondition>,
+    min_count: usize,
 }
 
 impl ElementFilter {
@@ -297,7 +310,10 @@ impl ElementFilter {
         let should = conditions(rng, should_len);
         let min_should = (min_should_len > 0).then(|| {
             let min_count = rng.random_range(1..=min_should_len);
-            (conditions(rng, min_should_len), min_count)
+            ElementMinShould {
+                conditions: conditions(rng, min_should_len),
+                min_count,
+            }
         });
         ElementFilter {
             must,
@@ -320,10 +336,15 @@ impl ElementFilter {
         let non_empty = |list: &[ElementCondition]| (!list.is_empty()).then(|| conditions(list));
         Filter {
             should: non_empty(should),
-            min_should: min_should.as_ref().map(|(list, min_count)| MinShould {
-                conditions: conditions(list),
-                min_count: *min_count,
-            }),
+            min_should: min_should.as_ref().map(
+                |ElementMinShould {
+                     conditions: list,
+                     min_count,
+                 }| MinShould {
+                    conditions: conditions(list),
+                    min_count: *min_count,
+                },
+            ),
             must: non_empty(must),
             must_not: non_empty(must_not),
         }
@@ -339,17 +360,25 @@ impl ElementFilter {
         must.iter().all(|condition| condition.matches(element))
             && !must_not.iter().any(|condition| condition.matches(element))
             && (should.is_empty() || should.iter().any(|condition| condition.matches(element)))
-            && min_should.as_ref().is_none_or(|(list, min_count)| {
-                list.iter()
-                    .filter(|condition| condition.matches(element))
-                    .count()
-                    >= *min_count
-            })
+            && min_should.as_ref().is_none_or(
+                |ElementMinShould {
+                     conditions,
+                     min_count,
+                 }| {
+                    conditions
+                        .iter()
+                        .filter(|condition| condition.matches(element))
+                        .count()
+                        >= *min_count
+                },
+            )
     }
 }
 
 /// A `nested` filter over `offers`, whose element filter may hold one level of sub-filters.
-#[derive(Debug, Clone)]
+/// Traced as its element filter.
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent)]
 pub(in crate::model_testing) struct NestedFilter(ElementFilter);
 
 impl NestedFilter {
