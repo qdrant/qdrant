@@ -333,7 +333,7 @@ mod tests {
     use crate::index::hnsw_index::config::HnswGraphConfig;
     use crate::index::hnsw_index::entry_points::EntryPoints;
     use crate::index::hnsw_index::graph::{GraphSearchArgs, HnswGraph, SearchScorers};
-    use crate::index::hnsw_index::graph_layers::{GraphLayerData, GraphLayers};
+    use crate::index::hnsw_index::graph_layers::{GraphLayerData, GraphLayers, GraphSearchError};
     use crate::index::hnsw_index::graph_layers_batched::GraphLayersBatched;
     use crate::index::hnsw_index::graph_links::{
         GraphLinks, GraphLinksFormatParam, GraphLinksResidency,
@@ -361,7 +361,7 @@ mod tests {
     fn unfiltered_search_reaches_live_points_after_deletions(
         #[case] deletion: Deletion,
         #[values(true, false)] with_indexed_count: bool,
-        #[values(1, 2)] bridge_count: usize,
+        #[values(1, 2, 256)] bridge_count: usize,
         #[values(false, true)] batched: bool,
     ) {
         let _scope = ambient::test_guard();
@@ -379,7 +379,7 @@ mod tests {
                 .unwrap();
         }
 
-        // The entry stays live, with one or two deleted bridges before the self-match.
+        // The entry stays live, with deleted bridges before the self-match.
         let links = (0..point_count)
             .map(|point| {
                 let mut neighbors = Vec::new();
@@ -440,7 +440,10 @@ mod tests {
         let telemetry = HNSWSearchesTelemetry::new();
         let query = QueryVector::Nearest(vec![1.0, 0.0].into());
         let query_context = QueryContext::default();
-        let search = |segment: &Segment, exact, deleted: &BitSlice, acorn| {
+        let search = |segment: &Segment,
+                      exact: bool,
+                      deleted: &BitSlice,
+                      acorn: Option<AcornSearchParams>| {
             let id_tracker = segment.id_tracker.borrow();
             let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
@@ -454,7 +457,7 @@ mod tests {
                 .payload_index
                 .borrow()
                 .with_view(|payload_index| {
-                    HNSWIndexReadView {
+                    let view = HNSWIndexReadView {
                         id_tracker: &*id_tracker,
                         vector_storage: &*vector_storage,
                         quantized_vectors: None::<&QuantizedVectors>,
@@ -462,8 +465,53 @@ mod tests {
                         config: &config,
                         graph: &graph,
                         searches_telemetry: &telemetry,
+                    };
+                    if matches!(deletion, Deletion::Proxy) && deleted.all() {
+                        // Storage still counts vectors hidden by the proxy mask.
+                        let seeds = view
+                            .first_unfiltered_points(
+                                usize::MAX,
+                                deleted,
+                                &vector_context.is_stopped(),
+                            )
+                            .unwrap();
+                        assert!(seeds.is_empty());
+                        assert_eq!(
+                            seeds.capacity(),
+                            0,
+                            "fully hidden vectors must not reserve a seed buffer",
+                        );
                     }
-                    .search(
+                    if bridge_count == 256 && !exact && acorn.is_none() {
+                        let deleted_points = if matches!(deletion, Deletion::Proxy) {
+                            deleted
+                        } else {
+                            id_tracker.deleted_point_bitslice()
+                        };
+                        let scorer = FilteredScorer::new(
+                            query.clone(),
+                            &*vector_storage,
+                            None::<&QuantizedVectors>,
+                            None,
+                            deleted_points,
+                        )
+                        .unwrap();
+                        if scorer.filters().check_vector(0) && !scorer.filters().check_vector(1) {
+                            assert!(matches!(
+                                graph.search(GraphSearchArgs {
+                                    top: 1,
+                                    ef: config.ef,
+                                    algorithm: SearchAlgorithm::Acorn,
+                                    scorers: SearchScorers::Regular(scorer),
+                                    custom_entry_points: None,
+                                    filtered_points_reader: None,
+                                    is_stopped: &vector_context.is_stopped(),
+                                }),
+                                Err(GraphSearchError::AcornTraversalLimit),
+                            ));
+                        }
+                    }
+                    view.search(
                         &[&query],
                         None,
                         1,
@@ -561,7 +609,7 @@ mod tests {
             expected,
         );
 
-        delete(&mut segment, &mut deleted, 0, 20);
+        delete(&mut segment, &mut deleted, 0, point_count as u64 + 19);
         assert_eq!(search(&segment, true, &deleted, None), expected);
         assert_eq!(search(&segment, false, &deleted, None), expected);
 
@@ -608,7 +656,7 @@ mod tests {
             &mut segment,
             &mut deleted,
             (point_count - 1) as PointOffsetType,
-            21,
+            point_count as u64 + 20,
         );
         assert!(search(&segment, true, &deleted, None).is_empty());
         assert!(search(&segment, false, &deleted, None).is_empty());

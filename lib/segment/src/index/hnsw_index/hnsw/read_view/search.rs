@@ -15,7 +15,7 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{FilteredPoints, GraphSearchArgs, SearchScorers};
-use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
+use crate::index::hnsw_index::graph_layers::{GraphSearchError, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
@@ -97,7 +97,7 @@ where
             };
 
             trace::mark!("graph_search begin (inline vectors, ef={ef})");
-            let result = self.graph.search(GraphSearchArgs {
+            match self.graph.search(GraphSearchArgs {
                 top,
                 ef: std::cmp::max(ef, oversampled_top),
                 algorithm: SearchAlgorithm::Hnsw,
@@ -109,8 +109,11 @@ where
                 custom_entry_points,
                 filtered_points_reader,
                 is_stopped: &is_stopped,
-            })?;
-            Ok(Some(result))
+            }) {
+                Ok(result) => Ok(Some(result)),
+                Err(GraphSearchError::Operation(error)) => Err(error),
+                Err(GraphSearchError::AcornTraversalLimit) => Ok(None),
+            }
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
@@ -127,7 +130,7 @@ where
             )?;
 
             trace::mark!("graph_search begin (ef={ef})");
-            let search_result = self.graph.search(GraphSearchArgs {
+            let search_result = match self.graph.search(GraphSearchArgs {
                 top: oversampled_top,
                 ef,
                 algorithm,
@@ -135,7 +138,22 @@ where
                 custom_entry_points,
                 filtered_points_reader,
                 is_stopped: &is_stopped,
-            })?;
+            }) {
+                Ok(result) => result,
+                Err(GraphSearchError::Operation(error)) => return Err(error),
+                Err(GraphSearchError::AcornTraversalLimit) => {
+                    // A large deleted component must not cause unbounded random graph reads.
+                    // A sequential scan still finds live vectors beyond the traversal budget.
+                    return self
+                        .search_plain_unfiltered_batched(
+                            &[vector],
+                            top,
+                            params,
+                            vector_query_context,
+                        )
+                        .map(|mut results| results.remove(0));
+                }
+            };
 
             trace::mark!("postprocess begin");
             postprocess_search_result(
@@ -340,7 +358,7 @@ where
     }
 
     /// Live vectors to seed the graph after all stored entry points were deleted.
-    fn first_unfiltered_points(
+    pub(super) fn first_unfiltered_points(
         &self,
         n: usize,
         deleted_points: &BitSlice,
@@ -351,7 +369,7 @@ where
             return Ok(Vec::new());
         }
         let not_deleted = self.vector_storage.not_deleted_checker(deleted_points);
-        let mut points = Vec::with_capacity(n.min(available_vectors));
+        let mut points = Vec::new();
         for point in self.id_tracker.point_mappings().iter_internal() {
             check_process_stopped(is_stopped)?;
             if not_deleted.check(point)? {

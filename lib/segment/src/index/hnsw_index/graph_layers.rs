@@ -44,7 +44,7 @@ use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, serialize_graph_links};
-use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer};
+use crate::index::hnsw_index::point_scorer::{FilteredBytesScorer, FilteredScorer, ScorerFilters};
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::vector_storage::RawScorer;
@@ -78,6 +78,69 @@ pub struct GraphLayers {
 pub enum SearchAlgorithm {
     Hnsw,
     Acorn,
+}
+
+/// Graph traversal may ask its caller to use a sequential search instead.
+#[derive(Debug)]
+pub enum GraphSearchError {
+    Operation(OperationError),
+    AcornTraversalLimit,
+}
+
+impl From<OperationError> for GraphSearchError {
+    fn from(error: OperationError) -> Self {
+        Self::Operation(error)
+    }
+}
+
+/// Bound deletion-induced queues and link scans across an unfiltered search.
+/// Live first-hop neighbors and filtered ACORN retain their existing limits.
+pub(super) struct AcornTraversalBudget {
+    deleted_nodes: Option<usize>,
+    links: Option<usize>,
+    exhausted: bool,
+}
+
+impl AcornTraversalBudget {
+    pub(super) fn new(ef: usize, m: usize, filters: &ScorerFilters<'_>) -> Self {
+        let deleted_nodes = (!filters.has_payload_filter())
+            .then(|| ef.saturating_mul(m.max(1)).saturating_mul(m.max(1)));
+        Self {
+            deleted_nodes,
+            links: deleted_nodes.map(|nodes| nodes.saturating_mul(m.max(1))),
+            exhausted: false,
+        }
+    }
+
+    fn consume(remaining: &mut Option<usize>) -> bool {
+        if let Some(remaining) = remaining {
+            if *remaining == 0 {
+                return false;
+            }
+            *remaining -= 1;
+        }
+        true
+    }
+
+    pub(super) fn visit_deleted(&mut self) -> bool {
+        let within_budget = Self::consume(&mut self.deleted_nodes);
+        self.exhausted |= !within_budget;
+        within_budget
+    }
+
+    pub(super) fn visit_link(&mut self) -> bool {
+        let within_budget = Self::consume(&mut self.links);
+        self.exhausted |= !within_budget;
+        within_budget
+    }
+
+    pub(super) fn check(&self) -> Result<(), GraphSearchError> {
+        if self.exhausted {
+            Err(GraphSearchError::AcornTraversalLimit)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// Where a search enters the graph.
@@ -161,7 +224,7 @@ pub trait GraphLayersBase {
         ef: usize,
         points_scorer: &mut FilteredScorer,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+    ) -> Result<FixedLengthPriorityQueue<ScoredPointOffset>, GraphSearchError> {
         // Each node in `hop1_visited_list` either:
         // a) Non-deleted node that going to be scored and added to
         //    `search_context` for further expansion. (or already added)
@@ -180,6 +243,7 @@ pub trait GraphLayersBase {
         // This is necessary to avoid over-scoring when there are many
         // additional graph links.
         let m = self.get_m(level);
+        let mut budget = AcornTraversalBudget::new(ef, m, points_scorer.filters());
         let (hop1_limit, hop2_limit, capacity);
         if m != 0 {
             hop1_limit = m;
@@ -202,7 +266,7 @@ pub trait GraphLayersBase {
         let expand_deleted = !points_scorer.filters().has_payload_filter();
 
         while let Some(candidate) = search_context.candidates.pop() {
-            check_process_stopped(is_stopped)?;
+            check_process_stopped(is_stopped).map_err(OperationError::from)?;
 
             if candidate.score < search_context.lower_bound() {
                 break;
@@ -229,6 +293,9 @@ pub trait GraphLayersBase {
                         return ControlFlow::Break(());
                     }
                 } else if is_head {
+                    if !budget.visit_deleted() {
+                        return ControlFlow::Break(());
+                    }
                     hop1_visited_list.check_and_update_visited(hop1);
                     to_explore.push(hop1);
                 } else {
@@ -236,21 +303,30 @@ pub trait GraphLayersBase {
                 }
                 ControlFlow::Continue(())
             });
+            budget.check()?;
             for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                if !budget.visit_deleted() {
+                    break;
+                }
                 hop1_visited_list.check_and_update_visited(hop1);
                 to_explore.push(hop1);
             }
+
+            budget.check()?;
 
             // Filtered ACORN stays two-hop. Without a payload predicate, continue through
             // consecutive deleted nodes, which must never be scored.
             let mut explored = 0;
             while explored < to_explore.len() {
-                check_process_stopped(is_stopped)?;
+                check_process_stopped(is_stopped).map_err(OperationError::from)?;
                 let hop1 = to_explore[explored];
                 explored += 1;
 
                 let total_limit = to_score.len().saturating_add(hop2_limit);
                 _ = self.try_for_each_link(hop1, level, |hop2| {
+                    if !budget.visit_link() {
+                        return ControlFlow::Break(());
+                    }
                     if hop1_visited_list.check(hop2)
                         || hop2_visited_list.check_and_update_visited(hop2)
                     {
@@ -268,11 +344,15 @@ pub trait GraphLayersBase {
                             return ControlFlow::Break(());
                         }
                     } else if expand_deleted {
+                        if !budget.visit_deleted() {
+                            return ControlFlow::Break(());
+                        }
                         hop1_visited_list.check_and_update_visited(hop2);
                         to_explore.push(hop2);
                     }
                     ControlFlow::Continue(())
                 });
+                budget.check()?;
             }
 
             points_scorer
@@ -550,7 +630,7 @@ impl GraphLayers {
         points_scorer: &mut FilteredScorer,
         entry: &SearchEntry,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> Result<Vec<ScoredPointOffset>, GraphSearchError> {
         let level_entries: &[_] = match entry {
             SearchEntry::Point(entry_point) => &[self.search_entry(
                 entry_point.point_id,
@@ -564,12 +644,12 @@ impl GraphLayers {
         let ef = max(ef, top);
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
-                self.search_on_level(level_entries, 0, ef, points_scorer, is_stopped)
+                self.search_on_level(level_entries, 0, ef, points_scorer, is_stopped)?
             }
             SearchAlgorithm::Acorn => {
-                self.search_on_level_acorn(level_entries, 0, ef, points_scorer, is_stopped)
+                self.search_on_level_acorn(level_entries, 0, ef, points_scorer, is_stopped)?
             }
-        }?;
+        };
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
@@ -891,6 +971,156 @@ mod tests {
     }
 
     const M: usize = 8;
+
+    #[rstest]
+    #[case::deleted_chain(254, 1, 129)]
+    #[case::wide_live_boundary(1, 1024, 514)]
+    fn unfiltered_acorn_bounds_graph_reads_through_deleted_region(
+        #[case] deleted_bridges: u64,
+        #[case] live_boundary: u64,
+        #[case] max_reads: usize,
+    ) {
+        use std::cell::Cell;
+
+        use crate::data_types::vectors::only_default_vector;
+        use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+        use crate::id_tracker::IdTrackerRead;
+        use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+
+        struct CountingGraph<'a> {
+            graph: &'a GraphLayers,
+            reads: Cell<usize>,
+        }
+
+        impl GraphLayersBase for CountingGraph<'_> {
+            fn get_visited_list_from_pool(&self) -> VisitedListHandle<'_> {
+                self.graph.get_visited_list_from_pool()
+            }
+
+            fn for_each_link<F>(&self, point: PointOffsetType, level: usize, mut f: F)
+            where
+                F: FnMut(PointOffsetType),
+            {
+                self.graph.for_each_link(point, level, |link| {
+                    self.reads.set(self.reads.get() + 1);
+                    f(link);
+                });
+            }
+
+            fn try_for_each_link<F>(
+                &self,
+                point: PointOffsetType,
+                level: usize,
+                mut f: F,
+            ) -> ControlFlow<(), ()>
+            where
+                F: FnMut(PointOffsetType) -> ControlFlow<(), ()>,
+            {
+                self.graph.try_for_each_link(point, level, |link| {
+                    self.reads.set(self.reads.get() + 1);
+                    f(link)
+                })
+            }
+
+            fn get_m(&self, level: usize) -> usize {
+                self.graph.get_m(level)
+            }
+        }
+
+        let _scope = ambient::test_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        let count = 1 + deleted_bridges + live_boundary;
+        for point in 0..count {
+            segment
+                .upsert_point(point, point.into(), only_default_vector(&[1.0, 0.0]))
+                .unwrap();
+            if point != 0 && point <= deleted_bridges {
+                segment.delete_point(point, point.into()).unwrap();
+            }
+        }
+        let hnsw_m = HnswM::new2(2);
+        let links = (0..count)
+            .map(|point| {
+                vec![if point < deleted_bridges {
+                    vec![(point + 1) as PointOffsetType]
+                } else if point == deleted_bridges {
+                    (point + 1..count).map(|id| id as PointOffsetType).collect()
+                } else {
+                    vec![]
+                }]
+            })
+            .collect();
+        let graph = GraphLayers {
+            hnsw_m,
+            links: GraphLinks::new_from_edges(links, GraphLinksFormatParam::Compressed, hnsw_m)
+                .unwrap(),
+            entry_points: EntryPoints::new(1),
+            visited_pool: VisitedPool::new(),
+            residency: GraphLinksResidency::Pinned,
+        };
+        let counted = CountingGraph {
+            graph: &graph,
+            reads: Cell::new(0),
+        };
+        let storage = segment.vector_data[crate::data_types::vectors::DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow();
+        let ids = segment.id_tracker.borrow();
+        let mut scorer = FilteredScorer::new_for_test(
+            vec![1.0, 0.0].into(),
+            &storage,
+            ids.deleted_point_bitslice(),
+        );
+        let ef = 8;
+        let result = counted.search_on_level_acorn(
+            &[ScoredPointOffset { idx: 0, score: 1.0 }],
+            0,
+            ef,
+            &mut scorer,
+            &DEFAULT_STOPPED,
+        );
+        assert!(
+            counted.reads.get() <= max_reads,
+            "read {} graph links before scoring live vectors",
+            counted.reads.get()
+        );
+        assert!(matches!(result, Err(GraphSearchError::AcornTraversalLimit)));
+
+        common::fs::atomic_save_bin(
+            &GraphLayers::get_path(dir.path()),
+            &GraphLayerData {
+                m: hnsw_m.m,
+                m0: hnsw_m.m0,
+                ef_construct: ef,
+                entry_points: Cow::Borrowed(&graph.entry_points),
+            },
+        )
+        .unwrap();
+        fs_err::write(
+            GraphLayers::get_links_path(dir.path(), graph.links.format()),
+            graph.links.as_bytes().unwrap(),
+        )
+        .unwrap();
+        let batched = crate::index::hnsw_index::graph_layers_batched::GraphLayersBatched::open(
+            &MmapFs,
+            dir.path(),
+            GraphLinksResidency::Cold,
+        )
+        .unwrap();
+        assert!(matches!(
+            batched.search(
+                1,
+                ef,
+                SearchAlgorithm::Acorn,
+                &mut scorer,
+                &SearchEntry::Seeds(vec![ScoredPointOffset { idx: 0, score: 1.0 }]),
+                4,
+                &DEFAULT_STOPPED,
+            ),
+            Err(GraphSearchError::AcornTraversalLimit)
+        ));
+    }
 
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]

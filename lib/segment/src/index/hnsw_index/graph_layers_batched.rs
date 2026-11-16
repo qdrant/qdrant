@@ -13,7 +13,8 @@ use itertools::Itertools;
 
 use super::entry_points::{EntryPoint, EntryPoints};
 use super::graph_layers::{
-    GraphLayerData, GraphLayers, SearchAlgorithm, SearchEntry, evenly_spaced,
+    AcornTraversalBudget, GraphLayerData, GraphLayers, GraphSearchError, SearchAlgorithm,
+    SearchEntry, evenly_spaced,
 };
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
@@ -80,7 +81,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         entry: &SearchEntry,
         batch_size: usize,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> Result<Vec<ScoredPointOffset>, GraphSearchError> {
         let mut arena = stumpalo::Arena::new();
 
         let entry: &[_] = match entry {
@@ -94,12 +95,11 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         trace::mark!("level0 begin (bs={batch_size})");
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
-                self.search_on_level(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
+                self.search_on_level(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)?
             }
-            SearchAlgorithm::Acorn => {
-                self.search_on_level_acorn(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
-            }
-        }?;
+            SearchAlgorithm::Acorn => self
+                .search_on_level_acorn(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)?,
+        };
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
@@ -422,7 +422,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         links_batch_size: usize,
         is_stopped: &AtomicBool,
         arena: &mut stumpalo::Arena,
-    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
+    ) -> Result<FixedLengthPriorityQueue<ScoredPointOffset>, GraphSearchError> {
         // See `GraphLayers::search_on_level_acorn` for the invariants of the
         // two visited lists.
         let mut hop1_visited_list = self.visited_pool.get(self.num_points());
@@ -433,6 +433,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
         let m = self.hnsw_m.level_m(level);
+        let mut budget = AcornTraversalBudget::new(ef, m, points_scorer.filters());
         let (hop1_limit, hop2_limit, capacity);
         if m != 0 {
             hop1_limit = m;
@@ -471,7 +472,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
-            check_process_stopped(is_stopped)?;
+            check_process_stopped(is_stopped).map_err(OperationError::from)?;
             trace::mark!("round {round} begin ({} points)", batch.len());
             round += 1;
 
@@ -533,6 +534,9 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                         matches += 1;
                         to_score.push(l.id);
                     } else if (l.dest_idx as usize) < hop1_limit {
+                        if !budget.visit_deleted() {
+                            break;
+                        }
                         to_explore.push(l.id);
                     } else {
                         tail_bridges.push(l.id);
@@ -542,15 +546,20 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     hop1_visited_list.unvisit(id);
                 }
                 for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                    if !budget.visit_deleted() {
+                        break;
+                    }
                     hop1_visited_list.check_and_update_visited(hop1);
                     to_explore.push(hop1);
                 }
             }
 
+            budget.check()?;
+
             // Keep payload filtering two-hop; bypass chains of tombstones only when unfiltered.
             let mut explored = 0;
             while explored < to_explore.len() {
-                check_process_stopped(is_stopped)?;
+                check_process_stopped(is_stopped).map_err(OperationError::from)?;
                 arena.reset();
                 let end = to_explore
                     .len()
@@ -564,6 +573,9 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     |position, links_iter| {
                         let position = position as u32;
                         for hop2 in links_iter {
+                            if !budget.visit_link() {
+                                break;
+                            }
                             if !hop1_visited_list.check(hop2)
                                 && !hop2_visited_list.check_and_update_visited(hop2)
                             {
@@ -572,6 +584,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                         }
                     },
                 )?;
+                budget.check()?;
 
                 let n = points_scorer.filters().check_batched(
                     &mut unchecked_links,
@@ -585,10 +598,15 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 let (matches, non_matches) = unchecked_links.split_at(n);
                 if expand_deleted {
                     for link in non_matches {
+                        if !budget.visit_deleted() {
+                            break;
+                        }
                         hop1_visited_list.check_and_update_visited(link.id);
                         to_explore.push(link.id);
                     }
                 }
+
+                budget.check()?;
 
                 let quotas = arena.alloc_slice_fill_with(bridge_count, |_| hop2_limit);
                 admit_matches(matches, quotas, &mut hop2_visited_list, |id| {
