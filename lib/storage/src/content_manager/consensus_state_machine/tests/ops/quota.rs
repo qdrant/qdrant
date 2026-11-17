@@ -1,5 +1,7 @@
 //! `SetQuotaConfig` operation
 
+use collection::operations::types::PeerMetadata;
+
 use super::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
@@ -71,6 +73,29 @@ fn set_quota_config_replay() {
     ));
 
     assert_eq!(machine.state(), &state);
+}
+
+/// Until all peers merge updates, every peer replaces the whole config like older peers do
+#[test]
+fn set_quota_config_merge_gated_on_version() {
+    for (version, enabled) in [("1.20.2", false), ("1.20.3-dev", true)] {
+        let state = ClusterState {
+            peer_address_by_id: [(PEER_ID, "http://peer".parse().unwrap())].into(),
+            peer_metadata_by_id: [(PEER_ID, PeerMetadata::new(version.parse().unwrap()))].into(),
+            quota_config: quota_config(true),
+            ..Default::default()
+        };
+
+        let mut machine = state_machine(state);
+        let update = ConsensusOperations::SetQuotaConfig(QuotaConfig::default());
+        machine.apply(&update).unwrap();
+
+        assert_eq!(
+            machine.state().quota_config,
+            quota_config(enabled),
+            "{version}"
+        );
+    }
 }
 
 fn quota_config(enabled: bool) -> QuotaConfigInternal {

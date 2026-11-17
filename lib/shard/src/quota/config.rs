@@ -152,3 +152,38 @@ impl Default for QuotaLimits {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update() {
+        let current = QuotaConfigInternal {
+            enabled: true,
+            max_resident_memory_percent: Some(90),
+            max_disk_usage_percent: Some(80),
+            release_margin_percent: None,
+        };
+        let update = |enabled| QuotaConfig {
+            enabled,
+            max_disk_usage_percent: Some(95),
+            ..Default::default()
+        };
+
+        // Set fields replace, unset fields keep their value
+        let expected = QuotaConfigInternal {
+            max_disk_usage_percent: Some(95),
+            ..current
+        };
+        assert_eq!(current.update(&update(None)), expected);
+        assert_eq!(current.update(&update(Some(true))), expected);
+
+        // Disabling resets unset fields
+        let expected = QuotaConfigInternal {
+            max_disk_usage_percent: Some(95),
+            ..Default::default()
+        };
+        assert_eq!(current.update(&update(Some(false))), expected);
+    }
+}
