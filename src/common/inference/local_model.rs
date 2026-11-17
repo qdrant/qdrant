@@ -1,7 +1,7 @@
 use collection::operations::point_ops::VectorPersisted;
+use segment::index::field_index::full_text_index::bm25_embedder::{Bm25Embedder, UnknownLanguage};
 use storage::content_manager::errors::StorageError;
 
-use super::bm25_inference::Bm25;
 use super::service::{InferenceInput, InferenceType};
 use crate::common::inference::inference_input::InferenceDataType;
 
@@ -60,16 +60,18 @@ pub fn infer_local(
         let embedding = match model_name {
             LocalModelName::Bm25 => {
                 let bm25_config = InferenceInput::parse_bm25_config(options)?;
-                let bm25 = Bm25::new(bm25_config)?;
+                // The server keeps accepting the deprecated `language: "none"`.
+                let bm25 = Bm25Embedder::new(bm25_config, UnknownLanguage::Legacy)
+                    .map_err(|err| StorageError::bad_input(err.to_string()))?;
 
                 match inference_type {
-                    InferenceType::Update => bm25.doc_embed(input_str),
-                    InferenceType::Search => bm25.search_embed(input_str),
+                    InferenceType::Update => bm25.embed_document(input_str),
+                    InferenceType::Search => bm25.embed_query(input_str),
                 }
             }
         };
 
-        out.push(embedding);
+        out.push(VectorPersisted::Sparse(embedding));
     }
 
     Ok(out)

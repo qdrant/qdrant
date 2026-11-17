@@ -14,11 +14,11 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use bm25::{Bm25Accept, Bm25Query};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
+use self::bm25::{Bm25Accept, Bm25Query};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_estimator::expected_should_estimation;
