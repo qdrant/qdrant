@@ -45,6 +45,7 @@ impl InferenceData {
 pub struct InferenceService {
     pub(crate) config: InferenceConfig,
     client: InferenceClient,
+    default_timeout: Duration,
 }
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
@@ -63,10 +64,10 @@ impl InferenceService {
             token,
         } = &config;
 
-        let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
+        let timeout = Duration::from_secs(timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS));
         let client = InferenceClient::new(InferenceClientConfig {
             address: address.clone(),
-            timeout: Duration::from_secs(timeout),
+            timeout,
             token: token.clone(),
             user_agent: Some(APP_USER_AGENT.to_string()),
             // The server keeps accepting the deprecated BM25 `language: "none"`.
@@ -74,7 +75,11 @@ impl InferenceService {
         })
         .expect("Invalid timeout value for HTTP client");
 
-        Self { config, client }
+        Self {
+            config,
+            client,
+            default_timeout: timeout,
+        }
     }
 
     pub fn init_global(config: Option<InferenceConfig>) -> Result<(), StorageError> {
@@ -122,6 +127,7 @@ impl InferenceService {
             token,
         } = api_keys;
 
+        let request_timeout = timeout.unwrap_or(self.default_timeout);
         let params = RequestParams {
             token,
             headers: convert_to_reqwest_headers(&ext_api_keys),
@@ -132,7 +138,7 @@ impl InferenceService {
             .client
             .infer(inference_inputs, inference_type, params)
             .await
-            .map_err(storage_error)?;
+            .map_err(|err| storage_error(err, request_timeout))?;
 
         Ok(InferenceResponse {
             embeddings,
@@ -156,15 +162,18 @@ fn inference_usage(usage: inference::InferenceUsage) -> InferenceUsage {
     }
 }
 
-fn storage_error(err: InferenceError) -> StorageError {
+fn storage_error(err: InferenceError, request_timeout: Duration) -> StorageError {
     match err {
         InferenceError::NotConfigured => StorageError::service_error(
             "InferenceService URL not configured - please provide valid address in config",
         ),
         InferenceError::InvalidInput(message) => StorageError::bad_input(message),
+        InferenceError::Transport(TransportError { timeout: true, .. }) => {
+            StorageError::timeout(request_timeout, "inference request")
+        }
         InferenceError::Transport(TransportError {
             stage,
-            timeout: _,
+            timeout: false,
             message,
         }) => match stage {
             TransportStage::Send => {
