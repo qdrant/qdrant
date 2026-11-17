@@ -1,42 +1,8 @@
-use std::collections::HashMap;
-
 use api::rest::{Document, DocumentOptions, Image, InferenceObject};
-use segment::index::field_index::full_text_index::bm25_embedder::Bm25EmbedderConfig;
-use serde::de::IntoDeserializer;
-use serde::{Deserialize, Serialize};
+pub use inference::{InferenceDataType, InferenceInput};
 use serde_json::Value;
-use storage::content_manager::errors::StorageError;
 
 use super::service::InferenceData;
-
-#[derive(Debug, Serialize, Clone)]
-pub struct InferenceInput {
-    pub data: Value,
-    pub data_type: InferenceDataType,
-    pub model: String,
-    pub options: Option<HashMap<String, Value>>,
-}
-
-impl InferenceInput {
-    /// Attempts to parse the input's options into a local model config.
-    ///
-    /// The options are shaped as the public `api::rest::Bm25Config`.
-    pub fn parse_bm25_config(
-        options: Option<HashMap<String, Value>>,
-    ) -> Result<Bm25EmbedderConfig, StorageError> {
-        let options = options.unwrap_or_default();
-        Bm25EmbedderConfig::deserialize(options.into_deserializer())
-            .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
-    }
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum InferenceDataType {
-    Text,
-    Image,
-    Object,
-}
 
 impl From<InferenceData> for InferenceInput {
     fn from(value: InferenceData) -> Self {
@@ -86,6 +52,8 @@ impl From<InferenceData> for InferenceInput {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use api::rest::{Bm25Config, TextPreprocessingConfig};
     use ordered_float::NotNan;
     use segment::data_types::index::{
@@ -120,7 +88,7 @@ mod tests {
         let options: HashMap<String, Value> =
             serde_json::from_value(serde_json::to_value(&public).unwrap()).unwrap();
 
-        let parsed = InferenceInput::parse_bm25_config(Some(options)).unwrap();
+        let parsed = inference::parse_bm25_config(Some(options)).unwrap();
 
         assert_eq!(
             serde_json::to_value(&parsed).unwrap(),

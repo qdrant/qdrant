@@ -1,50 +1,25 @@
-use std::fmt::Display;
-use std::hash::Hash;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use actix_web::http::header::HttpDate;
-use api::rest::models::InferenceUsage;
+use api::rest::models::{InferenceUsage, ModelUsage};
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
 use common::defaults::APP_USER_AGENT;
-use itertools::{Either, Itertools};
+use inference::{
+    InferenceClient, InferenceClientConfig, InferenceError, Rejection, RequestParams,
+    TransportError, TransportStage, UnknownLanguage,
+};
+pub use inference::{InferenceRequest, InferenceType};
 use parking_lot::RwLock;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
-use tokio_util::task::AbortOnDropHandle;
 
 pub use super::inference_input::InferenceInput;
-use super::local_model;
 use crate::common::inference::api_keys::{InferenceApiKeys, convert_to_reqwest_headers};
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
-#[derive(Debug, Serialize, Default, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
-pub enum InferenceType {
-    #[default]
-    Update,
-    Search,
-}
-
-impl Display for InferenceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", format!("{self:?}").to_lowercase())
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct InferenceRequest {
-    pub(crate) inputs: Vec<InferenceInput>,
-    pub(crate) inference: Option<InferenceType>,
-    #[serde(default)]
-    pub(crate) token: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(Serialize))]
+#[derive(Debug)]
 pub struct InferenceResponse {
     pub embeddings: Vec<VectorPersisted>,
     pub usage: Option<InferenceUsage>,
@@ -55,11 +30,6 @@ pub enum InferenceData {
     Document(Document),
     Image(Image),
     Object(InferenceObject),
-}
-
-#[derive(Debug, Deserialize)]
-struct InferenceError {
-    pub error: String,
 }
 
 impl InferenceData {
@@ -74,7 +44,7 @@ impl InferenceData {
 
 pub struct InferenceService {
     pub(crate) config: InferenceConfig,
-    pub(crate) client: Client,
+    client: InferenceClient,
 }
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
@@ -88,22 +58,23 @@ impl InferenceService {
     pub fn new(config: Option<InferenceConfig>) -> Self {
         let config = config.unwrap_or_default();
         let InferenceConfig {
-            address: _,
+            address,
             timeout,
-            token: _,
+            token,
         } = &config;
 
         let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
-        let client_builder = Client::builder()
-            .user_agent(APP_USER_AGENT.as_str())
-            .timeout(Duration::from_secs(timeout));
+        let client = InferenceClient::new(InferenceClientConfig {
+            address: address.clone(),
+            timeout: Duration::from_secs(timeout),
+            token: token.clone(),
+            user_agent: Some(APP_USER_AGENT.to_string()),
+            // The server keeps accepting the deprecated BM25 `language: "none"`.
+            unknown_bm25_language: UnknownLanguage::Legacy,
+        })
+        .expect("Invalid timeout value for HTTP client");
 
-        Self {
-            config,
-            client: client_builder
-                .build()
-                .expect("Invalid timeout value for HTTP client"),
-        }
+        Self { config, client }
     }
 
     pub fn init_global(config: Option<InferenceConfig>) -> Result<(), StorageError> {
@@ -134,63 +105,9 @@ impl InferenceService {
         Ok(())
     }
 
+    /// One embedding per input, in order: local models (BM25) in-process, the rest through the
+    /// inference service.
     pub async fn infer(
-        &self,
-        inference_inputs: Vec<InferenceInput>,
-        inference_type: InferenceType,
-        inference_params: InferenceParams,
-    ) -> Result<InferenceResponse, StorageError> {
-        let (
-            (local_inference_inputs, local_inference_positions),
-            (remote_inference_inputs, remote_inference_positions),
-        ): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) = inference_inputs
-            .into_iter()
-            // Keep track of the input's positions so we can properly merge them together later.
-            .enumerate()
-            .partition_map(|(pos, input)| {
-                // Check if input is targeting a local model or the configured remote server.
-                if local_model::is_local_model(&input.model) {
-                    Either::Left((input, pos))
-                } else {
-                    Either::Right((input, pos))
-                }
-            });
-
-        // Run inference on local models. This is synchronous CPU work
-        // (tokenization, stemming, hashing), so move it off the async worker.
-        // Skip the round-trip through the blocking pool when every input is
-        // remote, which is the common case with no local models in play.
-        let local_model_results = if local_inference_inputs.is_empty() {
-            vec![]
-        } else {
-            AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
-                local_model::infer_local(local_inference_inputs, inference_type)
-            }))
-            .await??
-        };
-
-        // Early return with the local model's results if no other inference_inputs were passed.
-        // If local models is also empty, we automatically return an empty response here.
-        if remote_inference_inputs.is_empty() {
-            return Ok(InferenceResponse {
-                embeddings: local_model_results,
-                usage: None, // No usage since everything was processed locally.
-            });
-        }
-
-        let remote_result = self
-            .infer_remote(remote_inference_inputs, inference_type, inference_params)
-            .await?;
-
-        Ok(Self::merge_local_and_remote_result(
-            local_model_results,
-            local_inference_positions,
-            remote_result,
-            remote_inference_positions,
-        ))
-    }
-
-    async fn infer_remote(
         &self,
         inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
@@ -199,181 +116,28 @@ impl InferenceService {
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
-
         let InferenceParams { api_keys, timeout } = inference_params;
         let InferenceApiKeys {
             keys: ext_api_keys,
-            token: inference_token,
+            token,
         } = api_keys;
 
-        let token = inference_token.or_else(|| self.config.token.clone());
-
-        let Some(url) = self.config.address.as_ref() else {
-            return Err(StorageError::service_error(
-                "InferenceService URL not configured - please provide valid address in config",
-            ));
-        };
-
-        let request_body = InferenceRequest {
-            inputs: inference_inputs,
-            inference: Some(inference_type),
+        let params = RequestParams {
             token,
+            headers: convert_to_reqwest_headers(&ext_api_keys),
+            timeout,
         };
 
-        let request = self.client.post(url);
-        let request = if let Some(timeout) = timeout {
-            request.timeout(timeout)
-        } else {
-            request
-        };
+        let inference::InferenceResponse { embeddings, usage } = self
+            .client
+            .infer(inference_inputs, inference_type, params)
+            .await
+            .map_err(storage_error)?;
 
-        let mut request = request.json(&request_body);
-        if !ext_api_keys.is_empty() {
-            request = request.headers(convert_to_reqwest_headers(&ext_api_keys));
-        }
-
-        let response = request.send().await;
-
-        let (response_body, status, retry_after) = match response {
-            Ok(response) => {
-                let status = response.status();
-                let retry_after = Self::parse_retry_after(response.headers());
-                match response.text().await {
-                    Ok(body) => (body, status, retry_after),
-                    Err(err) => {
-                        return Err(StorageError::service_error(format!(
-                            "Failed to read inference response body: {err}"
-                        )));
-                    }
-                }
-            }
-            Err(error) => {
-                if let Some(status) = error.status() {
-                    (error.to_string(), status, None)
-                } else {
-                    return Err(StorageError::service_error(format!(
-                        "Failed to send inference request: {error}"
-                    )));
-                }
-            }
-        };
-
-        Self::handle_inference_response(status, &response_body, retry_after)
-    }
-
-    fn merge_local_and_remote_result(
-        local_results: Vec<VectorPersisted>,
-        local_pos: Vec<usize>,
-        remote_res: InferenceResponse,
-        remote_pos: Vec<usize>,
-    ) -> InferenceResponse {
-        // Skip merging with local results if we only have inference results from remote.
-        if local_results.is_empty() {
-            return remote_res;
-        }
-
-        // Merge remote results and local results together in the exact same order they have been passed.
-        let merged = merge_position_items(
-            local_results,
-            local_pos,
-            remote_res.embeddings,
-            remote_pos,
-        )
-        .expect(
-            "Expected local results and remote items being contiguous. This is an internal bug!",
-        );
-
-        InferenceResponse {
-            embeddings: merged,
-            usage: remote_res.usage, // Only account for usage of remote.
-        }
-    }
-
-    fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-        headers
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| {
-                // Check if the value is a valid duration in seconds
-                if let Ok(seconds) = value.parse::<u64>() {
-                    return Some(Duration::from_secs(seconds));
-                }
-
-                // Check if the value is a valid Date
-                if let Ok(http_date) = value.parse::<HttpDate>() {
-                    let ts = SystemTime::from(http_date);
-                    return ts
-                        .duration_since(SystemTime::now())
-                        .ok()
-                        .map(|d| d.max(Duration::ZERO));
-                }
-
-                None
-            })
-    }
-
-    pub(crate) fn handle_inference_response(
-        status: reqwest::StatusCode,
-        response_body: &str,
-        retry_after: Option<Duration>,
-    ) -> Result<InferenceResponse, StorageError> {
-        match status {
-            reqwest::StatusCode::OK => {
-                serde_json::from_str(response_body)
-                    .map_err(|e| {
-                        StorageError::service_error(format!(
-                            "Failed to parse successful inference response: {e}. Response body: {response_body}",
-                        ))
-                    })
-            }
-            reqwest::StatusCode::BAD_REQUEST => {
-                // Try to extract error description from the response body, if it is a valid JSON
-                let parsed_body: Result<InferenceError, _> = serde_json::from_str(response_body);
-                match parsed_body {
-                    Ok(InferenceError { error }) => {
-                        Err(StorageError::bad_request(format!(
-                            "Inference request validation failed: {error}",
-                        )))
-                    }
-                    Err(_) => {
-                        Err(StorageError::bad_request(format!(
-                            "Invalid inference request: {response_body}",
-                        )))
-                    }
-                }
-            }
-            status @ (reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN) => {
-                Err(StorageError::service_error(format!(
-                    "Authentication failed for inference service ({status}): {response_body}",
-                )))
-            }
-            status @ reqwest::StatusCode::TOO_MANY_REQUESTS => {
-                Err(StorageError::rate_limit_exceeded(
-                    format!("Too many requests for inference service ({status}): {response_body}"),
-                    retry_after,
-                ))
-            }
-            status @ (reqwest::StatusCode::INTERNAL_SERVER_ERROR
-            | reqwest::StatusCode::SERVICE_UNAVAILABLE
-            | reqwest::StatusCode::GATEWAY_TIMEOUT) => Err(StorageError::service_error(format!(
-                "Inference service error ({status}): {response_body}",
-            ))),
-            _ => {
-                if status.is_server_error() {
-                    Err(StorageError::service_error(format!(
-                        "Inference service error ({status}): {response_body}",
-                    )))
-                } else if status.is_client_error() {
-                    Err(StorageError::bad_request(format!(
-                        "Inference can't process request ({status}): {response_body}",
-                    )))
-                } else {
-                    Err(StorageError::service_error(format!(
-                        "Unexpected inference error ({status}): {response_body}",
-                    )))
-                }
-            }
-        }
+        Ok(InferenceResponse {
+            embeddings,
+            usage: usage.map(inference_usage),
+        })
     }
 
     fn is_address_valid(&self) -> bool {
@@ -382,220 +146,117 @@ impl InferenceService {
     }
 }
 
-/// 2-way merge of lists with `PositionItems`. Also checks for skipped items and returns `None` in case an item is left out.
-fn merge_position_items<I>(
-    left: impl IntoIterator<Item = I>,
-    left_pos: Vec<usize>,
-    right: impl IntoIterator<Item = I>,
-    right_pos: Vec<usize>,
-) -> Option<Vec<I>> {
-    let left_iter = left.into_iter().zip(left_pos);
-    let right_iter = right.into_iter().zip(right_pos);
+fn inference_usage(usage: inference::InferenceUsage) -> InferenceUsage {
+    let inference::InferenceUsage { models } = usage;
+    InferenceUsage {
+        models: models
+            .into_iter()
+            .map(|(model, inference::ModelUsage { tokens })| (model, ModelUsage { tokens }))
+            .collect(),
+    }
+}
 
-    let mut i = 0; // Check that we cover all items and don't skip any.
-    left_iter
-        .merge_by(right_iter, |l: &(I, usize), r: &(I, usize)| l.1 < r.1)
-        .map(|item| {
-            if item.1 == i {
-                i += 1;
-                Some(item.0)
-            } else {
-                None
+fn storage_error(err: InferenceError) -> StorageError {
+    match err {
+        InferenceError::NotConfigured => StorageError::service_error(
+            "InferenceService URL not configured - please provide valid address in config",
+        ),
+        InferenceError::InvalidInput(message) => StorageError::bad_input(message),
+        InferenceError::Transport(TransportError {
+            stage,
+            timeout: _,
+            message,
+        }) => match stage {
+            TransportStage::Send => {
+                StorageError::service_error(format!("Failed to send inference request: {message}"))
             }
-        })
-        .collect::<Option<Vec<_>>>()
+            TransportStage::ReadBody => StorageError::service_error(format!(
+                "Failed to read inference response body: {message}"
+            )),
+        },
+        InferenceError::Rejected(rejection) => rejection_error(rejection),
+        InferenceError::InvalidResponse(message) | InferenceError::Internal(message) => {
+            StorageError::service_error(message)
+        }
+    }
+}
+
+fn rejection_error(rejection: Rejection) -> StorageError {
+    let Rejection {
+        status,
+        body,
+        error,
+        retry_after,
+    } = rejection;
+    match status {
+        reqwest::StatusCode::BAD_REQUEST => match error {
+            // Error description extracted from a JSON body
+            Some(error) => {
+                StorageError::bad_request(format!("Inference request validation failed: {error}",))
+            }
+            None => StorageError::bad_request(format!("Invalid inference request: {body}")),
+        },
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            StorageError::service_error(format!(
+                "Authentication failed for inference service ({status}): {body}",
+            ))
+        }
+        reqwest::StatusCode::TOO_MANY_REQUESTS => StorageError::rate_limit_exceeded(
+            format!("Too many requests for inference service ({status}): {body}"),
+            retry_after,
+        ),
+        status if status.is_server_error() => {
+            StorageError::service_error(format!("Inference service error ({status}): {body}"))
+        }
+        status if status.is_client_error() => StorageError::bad_request(format!(
+            "Inference can't process request ({status}): {body}",
+        )),
+        status => {
+            StorageError::service_error(format!("Unexpected inference error ({status}): {body}"))
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use std::assert_matches;
-    use std::collections::HashMap;
-
-    use rand::rngs::StdRng;
-    use rand::seq::SliceRandom;
-    use rand::{RngExt, SeedableRng};
-    use segment::index::field_index::full_text_index::bm25_embedder::{
-        Bm25Embedder, Bm25EmbedderConfig, UnknownLanguage,
-    };
-    use serde_json::{Value, json};
 
     use super::*;
-    use crate::common::inference::api_keys::InferenceApiKeys;
-    use crate::common::inference::inference_input::InferenceDataType;
 
-    const BM25_LOCAL_MODEL_NAME: &str = "bm25";
-
-    #[test]
-    fn test_merge_position_items() {
-        let (left, right): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) =
-            (0..1000).map(|i| (i, i)).partition(|i| i.0 % 7 == 0);
-        let merged = merge_position_items(left.0, left.1, right.0, right.1);
-        assert_eq!(merged, Some((0..1000).collect::<Vec<_>>()));
+    fn rejection(status: u16, body: &str, retry_after: Option<Duration>) -> InferenceError {
+        InferenceError::Rejected(Rejection {
+            status: reqwest::StatusCode::from_u16(status).unwrap(),
+            body: body.to_string(),
+            error: serde_json::from_str::<serde_json::Value>(body)
+                .ok()
+                .and_then(|body| body["error"].as_str().map(str::to_string)),
+            retry_after,
+        })
     }
 
     #[test]
-    fn test_merge_position_items_fail() {
-        let (left, mut right): ((Vec<_>, Vec<_>), (Vec<_>, Vec<_>)) =
-            (0..1000).map(|i| (i, i)).partition(|i| i.0 % 7 == 0);
-
-        right.0.remove(5);
-        right.1.remove(5);
-
-        let merged = merge_position_items(left.0, left.1, right.0, right.1);
-
-        // We were missing an item and therefore expect `None`.
-        assert_eq!(merged, None);
-    }
-
-    #[tokio::test]
-    async fn test_bm25_end_to_end() {
-        let mut rng = StdRng::seed_from_u64(42);
-
-        // Test without any BM25
-        let only_inference_inputs: Vec<_> = (0..rng.random_range(30..100))
-            .map(|_| make_normal_inference_input("this is some input", &mut rng))
-            .collect();
-        let res = run_inference_with_mocked_remote(only_inference_inputs.clone()).await;
-        check_inference_response(only_inference_inputs, res);
-
-        // Test with only BM25
-        let only_bm25_inputs: Vec<_> = (0..rng.random_range(30..100))
-            .map(|_| make_bm25_inference_input("this is some input"))
-            .collect();
-        let res = run_inference_with_mocked_remote(only_bm25_inputs.clone()).await;
-        check_inference_response(only_bm25_inputs, res);
-
-        // Test BM25 and inference mixed.
-        let mut inputs: Vec<InferenceInput> = vec![];
-        inputs.extend(
-            (0..rng.random_range(30..100)).map(|_| make_bm25_inference_input("this is some input")),
+    fn rejections_map_onto_storage_errors() {
+        assert_matches!(
+            storage_error(rejection(400, r#"{"error":"bad model"}"#, None)),
+            StorageError::BadRequest { description }
+                if description == "Inference request validation failed: bad model"
         );
-        inputs.extend(
-            (0..rng.random_range(30..100))
-                .map(|_| make_normal_inference_input("this is some input", &mut rng)),
+        assert_matches!(
+            storage_error(rejection(422, "nope", None)),
+            StorageError::BadRequest { .. }
         );
-        inputs.shuffle(&mut rng);
-        let res = run_inference_with_mocked_remote(inputs.clone()).await;
-        check_inference_response(inputs, res);
-    }
-
-    fn make_normal_inference_input(input: &str, rand: &mut StdRng) -> InferenceInput {
-        let options = if rand.random_bool(0.3) {
-            let mut opts = HashMap::default();
-            let value = rand.random_iter::<char>().take(10).collect::<String>(); // Test utf8
-            opts.insert("some-key".to_string(), Value::String(value));
-            Some(opts)
-        } else {
-            None
-        };
-
-        InferenceInput {
-            data: Value::String(input.to_string()),
-            data_type: InferenceDataType::Text,
-            model: "anyModel".to_string(),
-            options,
-        }
-    }
-
-    fn make_bm25_inference_input(input: &str) -> InferenceInput {
-        let bm25_config = Bm25EmbedderConfig::default();
-
-        let options: HashMap<String, Value> =
-            serde_json::from_str(&serde_json::to_string(&bm25_config).unwrap()).unwrap();
-
-        InferenceInput {
-            data: Value::String(input.to_string()),
-            data_type: InferenceDataType::Text,
-            model: BM25_LOCAL_MODEL_NAME.to_string(),
-            options: Some(options),
-        }
-    }
-
-    fn check_inference_response(inputs: Vec<InferenceInput>, response: InferenceResponse) {
-        assert_eq!(inputs.len(), response.embeddings.len());
-
-        for (idx, (input, response)) in inputs.into_iter().zip(response.embeddings).enumerate() {
-            if input.model == BM25_LOCAL_MODEL_NAME {
-                // In our test-setup, only BM25 returns sparse vectors. Normal inference is mocked
-                // and always returns dense vectors.
-                assert_matches!(response, VectorPersisted::Sparse(..));
-                let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
-
-                // Re-run bm25 and check that response is correct.
-                let bm25 = Bm25Embedder::new(bm25_config, UnknownLanguage::Legacy)
-                    .unwrap()
-                    .embed_document(input.data.as_str().unwrap());
-                assert_eq!(response, VectorPersisted::Sparse(bm25));
-            } else {
-                let expected_vector = VectorPersisted::Dense(vec![0.0; idx]);
-                assert_eq!(response, expected_vector);
-            }
-        }
-    }
-
-    async fn run_inference_with_mocked_remote(
-        inference_inputs: Vec<InferenceInput>,
-    ) -> InferenceResponse {
-        // Request a new server from the pool
-        let mut server = mockito::Server::new_async().await;
-
-        // Create dummy dense vectors for non-bm25 inputs with the length of the index.
-        // The dummy dense vector have the dimension of the position they appeared in `inference_inputs`,
-        // so we can easily check for correct ordering later, although it is a bit hacky.
-        let expected_embeddings: Vec<_> = inference_inputs
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item.model != BM25_LOCAL_MODEL_NAME)
-            .map(|(index, _)| {
-                let values = vec![0.0; index];
-                VectorPersisted::Dense(values)
-            })
-            .collect();
-
-        // Create an HTTP mock
-        let mock = server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "text/json")
-            .with_body(
-                json!(InferenceResponse {
-                    embeddings: expected_embeddings,
-                    usage: None,
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let config = InferenceConfig {
-            address: Some(server.url()), // Use mock's URL as address when doing inference.
-            timeout: None,
-            token: Some(String::default()),
-        };
-
-        let service = InferenceService::new(Some(config));
-
-        let has_remote_inference_items = inference_inputs
-            .iter()
-            .any(|i| i.model != BM25_LOCAL_MODEL_NAME);
-
-        let res = service
-            .infer(
-                inference_inputs,
-                InferenceType::Update,
-                InferenceParams::new(InferenceApiKeys::new(Some("key".to_string())), None),
-            )
-            .await
-            .expect("Failed to do inference");
-
-        // We expect exactly 1 request if there is any inference (non-bm25) request
-        // and 0 if all inputs are bm25.
-        if has_remote_inference_items {
-            mock.expect(1).assert_async().await;
-        } else {
-            mock.expect(0).assert_async().await;
-        }
-
-        res
+        assert_matches!(
+            storage_error(rejection(429, "slow down", Some(Duration::from_secs(7)))),
+            StorageError::RateLimitExceeded { retry_after: Some(after), .. }
+                if after == Duration::from_secs(7)
+        );
+        assert_matches!(
+            storage_error(rejection(503, "down", None)),
+            StorageError::ServiceError { .. }
+        );
+        assert_matches!(
+            storage_error(InferenceError::InvalidInput("Only text".to_string())),
+            StorageError::BadInput { .. }
+        );
     }
 }

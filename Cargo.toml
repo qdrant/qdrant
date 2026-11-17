@@ -129,6 +129,7 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 bm25 = { path = "lib/bm25" }
+inference = { path = "lib/inference" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }
 
@@ -378,6 +379,7 @@ members = [
     "lib/edge/tools/edge_tool",
     "lib/edge/tools/shard_query",
     "lib/edge/tools/shard_update",
+    "lib/inference",
     "lib/blobstore",
     "lib/macros",
     "lib/posting_list",

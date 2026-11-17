@@ -5,8 +5,6 @@ use std::str::FromStr;
 use actix_web::{FromRequest, HttpMessage};
 use futures::future::{Ready, ready};
 
-pub const EMBEDDING_API_KEY_HEADER_SUFFIX: &str = "-api-key";
-
 /// Combined inference authentication containing both the inference token (from JWT)
 /// and external API keys (from headers like `openai-api-key`).
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -28,7 +26,7 @@ impl InferenceApiKeys {
     /// Single source of truth: extracts API keys from any iterator of (key, value) string pairs
     fn extract_keys_from_pairs<'a>(&mut self, iter: impl Iterator<Item = (&'a str, &'a str)>) {
         for (k, v) in iter {
-            if k.ends_with(EMBEDDING_API_KEY_HEADER_SUFFIX) {
+            if inference::is_provider_api_key(k) {
                 self.keys.insert(k.to_string(), v.to_string());
             }
         }

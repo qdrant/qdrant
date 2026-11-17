@@ -3886,6 +3886,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "inference"
+version = "0.1.0"
+dependencies = [
+ "httpdate",
+ "itertools 0.15.0",
+ "mockito",
+ "rand 0.10.3",
+ "reqwest",
+ "segment",
+ "serde",
+ "serde_json",
+ "shard",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "inferno"
 version = "0.11.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6168,6 +6185,7 @@ dependencies = [
  "futures-util",
  "gpu",
  "http 1.5.0",
+ "inference",
  "issues",
  "itertools 0.15.0",
  "jsonwebtoken",
