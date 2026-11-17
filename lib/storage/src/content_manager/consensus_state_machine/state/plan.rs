@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
+use std::sync::LazyLock;
 
 use collection::collection::{ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION, vector_name_schema};
 use collection::collection_state::ShardInfo;
@@ -24,6 +25,10 @@ use crate::content_manager::consensus_state_machine::{
 };
 use crate::content_manager::toc::apply_alias_actions;
 use crate::quota::{QuotaConfig, QuotaConfigInternal};
+
+/// First version that applies a quota config update on top of the current config
+static QUOTA_CONFIG_UPDATE_FROM_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.20.3-dev").unwrap());
 
 type Actions = Vec<Action>;
 
@@ -1684,12 +1689,18 @@ impl ClusterState {
         }]
     }
 
-    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> Actions {
+    pub fn plan_set_quota_config(&self, update: &QuotaConfig) -> Actions {
+        // Older peers replace the whole config, reading a missing `enabled` as `false`
+        // TODO(1.22.0): remove this gate
+        let config = if self.all_peers_at_version(&QUOTA_CONFIG_UPDATE_FROM_VERSION) {
+            self.quota_config.update(update)
+        } else {
+            QuotaConfigInternal::default().update(update)
+        };
+
         // `QuotaManager::set_config` additionally clears exceeded-quota flags,
         // so we always emit the action, even if the config is the same
-        vec![Action::SetQuotaConfig {
-            config: QuotaConfigInternal::from(config),
-        }]
+        vec![Action::SetQuotaConfig { config }]
     }
 
     pub fn plan_add_peer(&self, peer_id: PeerId, uri: &str) -> StorageResult<Actions> {

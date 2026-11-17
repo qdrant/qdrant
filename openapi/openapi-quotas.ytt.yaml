@@ -17,7 +17,7 @@ paths:
       tags:
         - Quotas
       summary: Set global quotas
-      description: Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts
+      description: Update the cluster-wide resource quota configuration. Fields not set keep their current value, unless `enabled` is set to false, which resets them. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts
       operationId: update_quotas
       requestBody:
         description: Quota configuration to apply

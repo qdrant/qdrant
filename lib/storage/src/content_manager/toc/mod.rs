@@ -51,7 +51,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::quota::{self, QuotaConfig, QuotaConfigInternal, QuotaManager};
+use crate::quota::{self, QuotaConfig, QuotaManager};
 use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -313,23 +313,22 @@ impl TableOfContent {
         &self.quota_manager
     }
 
-    /// Set the quota config for the whole cluster.
+    /// Update the quota config for the whole cluster.
     ///
-    /// In distributed mode the new config is proposed through consensus, so every
+    /// In distributed mode the update is proposed through consensus, so every
     /// peer persists and starts enforcing it; `wait` blocks until the operation is
     /// confirmed by this peer. In single node mode it is applied directly.
     pub async fn update_quota_config(
         &self,
-        config: QuotaConfig,
+        update: QuotaConfig,
         wait: bool,
     ) -> Result<(), StorageError> {
         if !self.is_distributed() {
-            return Ok(self
-                .quota_manager
-                .set_config(QuotaConfigInternal::from(config))?);
+            let config = self.quota_manager.config().update(&update);
+            return Ok(self.quota_manager.set_config(config)?);
         }
 
-        let operation = ConsensusOperations::SetQuotaConfig(config);
+        let operation = ConsensusOperations::SetQuotaConfig(update);
 
         if wait {
             let dispatcher = self

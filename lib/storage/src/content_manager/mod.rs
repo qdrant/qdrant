@@ -61,7 +61,7 @@ pub mod consensus_ops {
             key: String,
             value: serde_json::Value,
         },
-        /// Replace the cluster-wide resource quota config on every peer.
+        /// Update the cluster-wide resource quota config on every peer.
         SetQuotaConfig(QuotaConfig),
         RequestSnapshot,
         ReportSnapshot {

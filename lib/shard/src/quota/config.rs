@@ -9,16 +9,15 @@ pub const DEFAULT_RELEASE_MARGIN_PERCENT: u8 = 5;
 /// Cluster-wide limits on node resources.
 ///
 /// An unset limit means the corresponding resource is not capped. Limits are
-/// only enforced while `enabled` is true.
+/// only enforced while `enabled` is true. In an update, unset fields keep their
+/// current value, unless `enabled` is set to false, which resets them.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Validate,
 )]
 pub struct QuotaConfig {
     /// Whether the limits below are enforced.
-    // `enable` is accepted as an alias. A body that sets both `enable` and
-    // `enabled` fails with a duplicate-field error. This is known and accepted.
-    #[serde(default, alias = "enable")]
-    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 
     /// Reject memory-consuming updates once process resident memory reaches this
     /// percentage of total system memory (or of the cgroup limit, if one applies).
@@ -58,25 +57,7 @@ impl From<QuotaConfigInternal> for QuotaConfig {
         } = config;
 
         QuotaConfig {
-            enabled,
-            max_resident_memory_percent,
-            max_disk_usage_percent,
-            release_margin_percent,
-        }
-    }
-}
-
-impl From<QuotaConfig> for QuotaConfigInternal {
-    fn from(config: QuotaConfig) -> Self {
-        let QuotaConfig {
-            enabled,
-            max_resident_memory_percent,
-            max_disk_usage_percent,
-            release_margin_percent,
-        } = config;
-
-        QuotaConfigInternal {
-            enabled,
+            enabled: Some(enabled),
             max_resident_memory_percent,
             max_disk_usage_percent,
             release_margin_percent,
@@ -104,6 +85,30 @@ pub struct QuotaConfigInternal {
 }
 
 impl QuotaConfigInternal {
+    /// Apply `update` on top of this config. Disabling resets fields not set in it.
+    #[must_use]
+    pub fn update(&self, update: &QuotaConfig) -> Self {
+        let QuotaConfig {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+            release_margin_percent,
+        } = *update;
+
+        let base = match enabled {
+            Some(false) => Self::default(),
+            Some(true) | None => *self,
+        };
+
+        QuotaConfigInternal {
+            enabled: enabled.unwrap_or(base.enabled),
+            max_resident_memory_percent: max_resident_memory_percent
+                .or(base.max_resident_memory_percent),
+            max_disk_usage_percent: max_disk_usage_percent.or(base.max_disk_usage_percent),
+            release_margin_percent: release_margin_percent.or(base.release_margin_percent),
+        }
+    }
+
     /// Limits that this config puts into effect, `None` for each resource left
     /// uncapped or while the quota is disabled.
     pub fn limits(&self) -> QuotaLimits {

@@ -659,9 +659,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 true
             }
 
-            ConsensusOperations::SetQuotaConfig(config) => {
-                self.toc
-                    .set_quota_config(QuotaConfigInternal::from(config))?;
+            ConsensusOperations::SetQuotaConfig(update) => {
+                let config = self.toc.quota_config().update(&update);
+                self.toc.set_quota_config(config)?;
                 true
             }
 
@@ -759,8 +759,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     ConsensusOperations::UpdateClusterMetadata { key, value } => {
                         persistent.cluster_metadata.get(key) == Some(value)
                     }
-                    ConsensusOperations::SetQuotaConfig(config) => {
-                        self.toc.quota_config() == QuotaConfigInternal::from(*config)
+                    ConsensusOperations::SetQuotaConfig(update) => {
+                        let current = self.toc.quota_config();
+                        current.update(update) == current
                     }
                     // Snapshot state can't be inspected to confirm these are satisfied — leave
                     // their awaiters pending so they fall back to the regular timeout path.

@@ -1035,7 +1035,7 @@
           "Quotas"
         ],
         "summary": "Set global quotas",
-        "description": "Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts",
+        "description": "Update the cluster-wide resource quota configuration. Fields not set keep their current value, unless `enabled` is set to false, which resets them. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts",
         "operationId": "update_quotas",
         "requestBody": {
           "description": "Quota configuration to apply",
@@ -14021,13 +14021,13 @@
         }
       },
       "QuotaConfig": {
-        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
+        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true. In an update, unset fields keep their current value, unless `enabled` is set to false, which resets them.",
         "type": "object",
         "properties": {
           "enabled": {
             "description": "Whether the limits below are enforced.",
-            "default": false,
-            "type": "boolean"
+            "type": "boolean",
+            "nullable": true
           },
           "max_resident_memory_percent": {
             "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
