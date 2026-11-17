@@ -192,6 +192,13 @@ fn test_heal_new_integer_value(#[values(0, 16)] m: usize, #[values(false, true)]
          {healed_degree:.2}, fresh {fresh_degree:.2}; old links kept: healed {healed_kept:.3}, \
          fresh {fresh_kept:.3}"
     );
+    // The main graph alone gives each new value point about one such link: without a block for
+    // the new value in the fresh build, the next check would pass without testing anything.
+    assert!(
+        fresh_degree > 4.0,
+        "fresh build made no block for the new value ({fresh_degree:.2}): the test no longer \
+         exercises healing it",
+    );
     assert!(
         healed_degree >= fresh_degree / 2.0,
         "new value points have {healed_degree:.2} links to each other healed, \
