@@ -476,3 +476,64 @@ fn scale_down_abort_hooks_precede_dead_write_and_are_omitted_on_replay() {
     ));
     assert_eq!(replay.state(), machine.state());
 }
+
+/// Marking the destination of a non-sync transfer `Dead` must not remove its replica first.
+/// Otherwise a replay after the removal is rejected if the peer has left the cluster.
+#[test]
+fn dead_on_removed_transfer_target_is_replay_safe() {
+    let mut state = auto_resharding_state(1);
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Partial);
+    collection.transfers.insert(ShardTransfer {
+        shard_id: 0,
+        to_shard_id: None,
+        from: PEER_ID,
+        to: OTHER_PEER_ID,
+        sync: false,
+        method: Some(ShardTransferMethod::WalDelta),
+        filter: None,
+    });
+    assert!(!state.peer_address_by_id.contains_key(&OTHER_PEER_ID));
+
+    let operation = set_replica_state_op(0, OTHER_PEER_ID, ReplicaState::Dead, None);
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&operation);
+
+    let Ok(Plan { actions, .. }) = outcome else {
+        panic!("marking a transfer target dead should be accepted, got {outcome:?}");
+    };
+    assert!(
+        !actions
+            .iter()
+            .any(|action| matches!(action, Action::RemoveReplica { .. })),
+        "the transfer abort must leave the replica to the final Dead write: {actions:?}",
+    );
+
+    let goal = machine.state().clone();
+    let collection = goal.collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.shards[&0].replicas[&OTHER_PEER_ID],
+        ReplicaState::Dead
+    );
+    assert!(collection.transfers.is_empty());
+
+    for crash_after in 0..=actions.len() {
+        let mut crashed = state.clone();
+        for action in &actions[..crash_after] {
+            crashed.apply_action(action);
+        }
+
+        let mut replay = state_machine(crashed);
+        let outcome = replay.apply(&operation);
+        assert!(
+            outcome.is_ok(),
+            "replay after {crash_after} actions should be accepted, got {outcome:?}",
+        );
+        assert_eq!(replay.state(), &goal);
+    }
+}
