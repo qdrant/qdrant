@@ -427,6 +427,27 @@ fn hnsw_product_quantization_cosine_test() {
     );
 }
 
+/// The only segment-level check of PQ with an inverted (L2) distance going
+/// through HNSW and oversampling. 503 x 64 x 4 B = 128 KB, just above the
+/// 100 KB `full_scan_threshold`, so search still uses the graph.
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_product_quantization_euclid_test() {
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        503,
+        64,
+        ProductQuantizationConfig {
+            memory: None,
+            compression: CompressionRatio::X4,
+            always_ram: Some(true),
+        }
+        .into(),
+        false,
+        false,
+    );
+}
+
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[test]
 fn hnsw_turbo_quantization_cosine_test() {
