@@ -90,6 +90,21 @@ impl ClockMap {
         let _ = self.advance_clock_impl(clock_tag);
     }
 
+    /// Save the clock referenced by `clock_tag`, to undo an advance with [`Self::restore_clock`]
+    pub fn clock_state(&self, clock_tag: ClockTag) -> ClockState {
+        ClockState(self.clocks.get(&Key::from_tag(clock_tag)).copied())
+    }
+
+    /// Put back a clock saved by [`Self::clock_state`]
+    pub fn restore_clock(&mut self, clock_tag: ClockTag, state: ClockState) {
+        let key = Key::from_tag(clock_tag);
+        match state.0 {
+            Some(clock) => self.clocks.insert(key, clock),
+            None => self.clocks.remove(&key),
+        };
+        self.changed = true;
+    }
+
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
@@ -194,6 +209,10 @@ impl Key {
         Self::new(clock_tag.peer_id, clock_tag.clock_id)
     }
 }
+
+/// Saved state of one clock in a [`ClockMap`]
+#[derive(Copy, Clone, Debug)]
+pub struct ClockState(Option<Clock>);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 struct Clock {
