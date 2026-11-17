@@ -415,7 +415,7 @@ mod test {
     use rand::seq::SliceRandom;
     use rand::{RngExt, SeedableRng};
     use segment::index::field_index::full_text_index::bm25_embedder::{
-        Bm25Embedder, Bm25EmbedderConfig,
+        Bm25Embedder, Bm25EmbedderConfig, UnknownLanguage,
     };
     use serde_json::{Value, json};
 
@@ -522,7 +522,7 @@ mod test {
                 let bm25_config = InferenceInput::parse_bm25_config(input.options).unwrap();
 
                 // Re-run bm25 and check that response is correct.
-                let bm25 = Bm25Embedder::new(bm25_config)
+                let bm25 = Bm25Embedder::new(bm25_config, UnknownLanguage::Legacy)
                     .unwrap()
                     .embed_document(input.data.as_str().unwrap());
                 assert_eq!(response, VectorPersisted::Sparse(bm25));

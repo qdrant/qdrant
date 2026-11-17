@@ -9,11 +9,9 @@
 //! consumers (e.g. Python bindings) construct [`EdgeBm25Config`] from their own input format.
 
 use std::fmt;
-use std::str::FromStr;
 
-use segment::data_types::index::Language;
 use segment::index::field_index::full_text_index::bm25_embedder::{
-    Bm25Embedder, Bm25EmbedderConfig,
+    Bm25Embedder, Bm25EmbedderConfig, Bm25EmbedderError, UnknownLanguage,
 };
 use sparse::common::sparse_vector::SparseVector;
 
@@ -28,7 +26,8 @@ pub type EdgeBm25Config = Bm25EmbedderConfig;
 pub enum EdgeBm25Error {
     /// BM25 hyperparameters failed validation (see [`bm25::Bm25Error`]).
     Bm25(bm25::Bm25Error),
-    /// `language` did not match any supported [`Language`] variant.
+    /// `language` did not match any supported
+    /// [`Language`](segment::data_types::index::Language) variant.
     UnsupportedLanguage(String),
 }
 
@@ -49,6 +48,15 @@ impl From<bm25::Bm25Error> for EdgeBm25Error {
     }
 }
 
+impl From<Bm25EmbedderError> for EdgeBm25Error {
+    fn from(e: Bm25EmbedderError) -> Self {
+        match e {
+            Bm25EmbedderError::Bm25(e) => Self::Bm25(e),
+            Bm25EmbedderError::UnsupportedLanguage(language) => Self::UnsupportedLanguage(language),
+        }
+    }
+}
+
 /// Edge-side BM25 model. Embeds raw text into [`SparseVector`].
 #[derive(Debug)]
 pub struct EdgeBm25(Bm25Embedder);
@@ -57,12 +65,7 @@ impl EdgeBm25 {
     /// Unlike the server, edge rejects an unrecognized `language` up front instead of silently
     /// disabling stemming and stopwords (the server's deprecated `language: "none"` behavior).
     pub fn new(config: EdgeBm25Config) -> Result<Self, EdgeBm25Error> {
-        if let Some(language) = &config.language
-            && Language::from_str(language).is_err()
-        {
-            return Err(EdgeBm25Error::UnsupportedLanguage(language.clone()));
-        }
-        Ok(Self(Bm25Embedder::new(config)?))
+        Ok(Self(Bm25Embedder::new(config, UnknownLanguage::Reject)?))
     }
 
     pub fn embed_query(&self, text: &str) -> SparseVector {

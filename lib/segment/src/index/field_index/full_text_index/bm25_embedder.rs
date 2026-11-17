@@ -41,8 +41,8 @@ pub struct Bm25EmbedderConfig {
     pub tokenizer: TokenizerType,
     /// Language for default stopwords / stemmer (English if unset).
     ///
-    /// An unrecognized language (notably the legacy `"none"`) disables the default stemmer and
-    /// stopwords. That behavior is deprecated; see [`Bm25Embedder::new`].
+    /// What an unrecognized language (notably the legacy `"none"`) does is up to the caller's
+    /// [`UnknownLanguage`] policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     /// Lowercase before tokenization. Default true.
@@ -98,6 +98,28 @@ impl Default for Bm25EmbedderConfig {
     }
 }
 
+/// How [`Bm25Embedder::new`] treats a `language` that is not a supported [`Language`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownLanguage {
+    /// Fail with [`Bm25EmbedderError::UnsupportedLanguage`], even if `stemmer` and `stopwords`
+    /// are set explicitly.
+    Reject,
+    /// Deprecated behavior kept for existing qdrant server configs: disable the default stemmer
+    /// and stopwords, and log a deprecation warning once.
+    Legacy,
+}
+
+/// Error returned by [`Bm25Embedder::new`] for an invalid configuration.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum Bm25EmbedderError {
+    /// BM25 hyperparameters failed validation.
+    #[error("{0}")]
+    Bm25(#[from] bm25::Bm25Error),
+    /// `language` is not a supported [`Language`], and the policy is [`UnknownLanguage::Reject`].
+    #[error("unsupported language: {0:?}")]
+    UnsupportedLanguage(String),
+}
+
 /// BM25 embedding model: raw text in, [`SparseVector`] out.
 #[derive(Debug)]
 pub struct Bm25Embedder {
@@ -106,12 +128,12 @@ pub struct Bm25Embedder {
 }
 
 impl Bm25Embedder {
-    /// Fails only on invalid BM25 hyperparameters.
-    ///
-    /// An unrecognized `language` is tolerated for backward compatibility: it disables the
-    /// default stemmer and stopwords and logs a deprecation warning once. Callers that want to
-    /// reject it should validate `language` themselves.
-    pub fn new(config: Bm25EmbedderConfig) -> Result<Self, bm25::Bm25Error> {
+    /// Fails on invalid BM25 hyperparameters, and on an unrecognized `language` if
+    /// `unknown_language` is [`UnknownLanguage::Reject`].
+    pub fn new(
+        config: Bm25EmbedderConfig,
+        unknown_language: UnknownLanguage,
+    ) -> Result<Self, Bm25EmbedderError> {
         let Bm25EmbedderConfig {
             k,
             b,
@@ -125,6 +147,17 @@ impl Bm25Embedder {
             min_token_len,
             max_token_len,
         } = config;
+
+        match unknown_language {
+            UnknownLanguage::Reject => {
+                if let Some(language) = &language
+                    && Language::from_str(language).is_err()
+                {
+                    return Err(Bm25EmbedderError::UnsupportedLanguage(language.clone()));
+                }
+            }
+            UnknownLanguage::Legacy => {}
+        }
 
         let bm25 = bm25::Bm25::new(bm25::Bm25Params {
             k1: k.into_inner(),
@@ -235,7 +268,8 @@ mod tests {
 
     #[test]
     fn defaults_construct_a_working_model() {
-        let model = Bm25Embedder::new(Bm25EmbedderConfig::default()).unwrap();
+        let model =
+            Bm25Embedder::new(Bm25EmbedderConfig::default(), UnknownLanguage::Reject).unwrap();
         let text = "the quick brown fox jumps over the lazy dog";
         let q = model.embed_query(text);
         let d = model.embed_document(text);
@@ -252,7 +286,8 @@ mod tests {
 
     #[test]
     fn english_stopwords_and_stemming_by_default() {
-        let model = Bm25Embedder::new(Bm25EmbedderConfig::default()).unwrap();
+        let model =
+            Bm25Embedder::new(Bm25EmbedderConfig::default(), UnknownLanguage::Reject).unwrap();
         assert_eq!(
             model.embed_query("the cat is a hunter").indices.len(),
             model.embed_query("cat hunter").indices.len(),
@@ -262,23 +297,39 @@ mod tests {
 
     #[test]
     fn language_alias_matches_full_name() {
-        let alias = Bm25Embedder::new(config(serde_json::json!({"language": "de"}))).unwrap();
-        let full = Bm25Embedder::new(config(serde_json::json!({"language": "german"}))).unwrap();
+        let alias = Bm25Embedder::new(
+            config(serde_json::json!({"language": "de"})),
+            UnknownLanguage::Reject,
+        )
+        .unwrap();
+        let full = Bm25Embedder::new(
+            config(serde_json::json!({"language": "german"})),
+            UnknownLanguage::Reject,
+        )
+        .unwrap();
         let text = "Die Häuser und die Hunde laufen";
         assert_eq!(alias.embed_document(text), full.embed_document(text));
     }
 
-    /// The deprecated `language: "none"` keeps working: no stemming and no stopwords.
+    /// Legacy policy: the deprecated `language: "none"` keeps working, with no stemming and no
+    /// stopwords.
     #[test]
-    fn unrecognized_language_disables_stemming_and_stopwords() {
-        let none = Bm25Embedder::new(config(serde_json::json!({"language": "none"}))).unwrap();
-        let explicit = Bm25Embedder::new(Bm25EmbedderConfig {
-            stemmer: Some(StemmingAlgorithm::Disabled(DisabledStemmerParams {
-                r#type: NoStemmer::None,
-            })),
-            stopwords: Some(StopwordsInterface::Set(Default::default())),
-            ..Default::default()
-        })
+    fn legacy_unrecognized_language_disables_stemming_and_stopwords() {
+        let none = Bm25Embedder::new(
+            config(serde_json::json!({"language": "none"})),
+            UnknownLanguage::Legacy,
+        )
+        .unwrap();
+        let explicit = Bm25Embedder::new(
+            Bm25EmbedderConfig {
+                stemmer: Some(StemmingAlgorithm::Disabled(DisabledStemmerParams {
+                    r#type: NoStemmer::None,
+                })),
+                stopwords: Some(StopwordsInterface::Set(Default::default())),
+                ..Default::default()
+            },
+            UnknownLanguage::Reject,
+        )
         .unwrap();
         let text = "the running run";
         assert_eq!(none.embed_document(text).indices.len(), 3);
@@ -286,13 +337,36 @@ mod tests {
         assert_eq!(none.embed_query(text), explicit.embed_query(text));
     }
 
+    /// Reject policy: an unrecognized language fails, even with explicit stemmer and stopwords.
+    #[test]
+    fn reject_unrecognized_language() {
+        for json in [
+            serde_json::json!({"language": "none"}),
+            serde_json::json!({
+                "language": "klingon",
+                "stemmer": {"type": "none"},
+                "stopwords": {"custom": []},
+            }),
+        ] {
+            assert_matches!(
+                Bm25Embedder::new(config(json), UnknownLanguage::Reject),
+                Err(Bm25EmbedderError::UnsupportedLanguage(_))
+            );
+        }
+    }
+
     #[test]
     fn invalid_avg_len_is_rejected() {
-        let cfg = Bm25EmbedderConfig {
-            avg_len: NotNan::new(0.0).unwrap(),
-            ..Default::default()
-        };
-        assert_matches!(Bm25Embedder::new(cfg), Err(_));
+        for unknown_language in [UnknownLanguage::Reject, UnknownLanguage::Legacy] {
+            let cfg = Bm25EmbedderConfig {
+                avg_len: NotNan::new(0.0).unwrap(),
+                ..Default::default()
+            };
+            assert_matches!(
+                Bm25Embedder::new(cfg, unknown_language),
+                Err(Bm25EmbedderError::Bm25(_))
+            );
+        }
     }
 
     const CORPUS: &[&str] = &[
@@ -329,10 +403,13 @@ mod tests {
     }
 
     fn model(tokenizer: TokenizerType) -> Bm25Embedder {
-        Bm25Embedder::new(Bm25EmbedderConfig {
-            tokenizer,
-            ..Default::default()
-        })
+        Bm25Embedder::new(
+            Bm25EmbedderConfig {
+                tokenizer,
+                ..Default::default()
+            },
+            UnknownLanguage::Reject,
+        )
         .unwrap()
     }
 
