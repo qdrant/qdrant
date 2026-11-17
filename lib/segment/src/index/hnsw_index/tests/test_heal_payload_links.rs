@@ -115,7 +115,9 @@ fn two_way_share(index: &HNSWIndex) -> f64 {
     two_way as f64 / total as f64
 }
 
-const OLD_INTEGER_VALUES: usize = 8;
+// With fewer, the segment is too small: the block of the new value exceeds the largest block
+// the healed graph builds, `BlockFilter::fits`.
+const OLD_INTEGER_VALUES: usize = 4;
 const POINTS_PER_INTEGER_VALUE: usize = 600;
 const NEW_INTEGER_VALUE_POINTS: usize = 350;
 
