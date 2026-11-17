@@ -17,7 +17,9 @@ pub const DEFAULT_RELEASE_MARGIN_PERCENT: u8 = 5;
 )]
 pub struct QuotaConfig {
     /// Whether the limits below are enforced.
-    #[serde(default)]
+    // `enable` is accepted as an alias. A body that sets both `enable` and
+    // `enabled` fails with a duplicate-field error. This is known and accepted.
+    #[serde(default, alias = "enable")]
     pub enabled: bool,
 
     /// Reject memory-consuming updates once process resident memory reaches this
