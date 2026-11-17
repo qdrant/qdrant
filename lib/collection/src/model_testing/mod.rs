@@ -1489,12 +1489,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_snapshots() {
         let _scope = ambient::async_test_guard();
-        // restart_probability 0.002 (~20 restarts over the run): exercise drain-before-restart,
-        // and the WAL replay of the optimizer-off restart path, which has no other gate
+        // restart_probability 0.001: exercise drain-before-restart, and the WAL replay of the
+        // optimizer-off restart path, which has no other gate. 0.002 made the run 30-70% slower
         smoke(
             "harness_no_optimizer_snapshots",
             true,
-            0.002,
+            0.001,
             SNAPSHOTS_ON,
             OP_NUM,
             false,
