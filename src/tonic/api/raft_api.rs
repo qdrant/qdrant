@@ -16,6 +16,7 @@ use crate::consensus;
 pub struct RaftService {
     message_sender: Sender<consensus::Message>,
     consensus_state: ConsensusStateRef,
+    this_peer_id: u64,
     use_tls: bool,
 }
 
@@ -25,9 +26,12 @@ impl RaftService {
         consensus_state: ConsensusStateRef,
         use_tls: bool,
     ) -> Self {
+        // Peer id never changes after the consensus state is loaded
+        let this_peer_id = consensus_state.this_peer_id();
         Self {
             message_sender: sender,
             consensus_state,
+            this_peer_id,
             use_tls,
         }
     }
@@ -41,6 +45,15 @@ impl Raft for RaftService {
                 .map_err(|err| {
                     Status::invalid_argument(format!("Failed to parse raft message: {err}"))
                 })?;
+        // Reject messages meant for another peer, e.g. sent to a reused address
+        if message.to != self.this_peer_id {
+            let reason = format!(
+                "Raft message from {} addressed to peer {}, this peer is {}",
+                message.from, message.to, self.this_peer_id,
+            );
+            log::debug!("Rejecting {reason}");
+            return Err(Status::failed_precondition(reason));
+        }
         self.message_sender
             .send(consensus::Message::FromPeer(Box::new(message)))
             .await
