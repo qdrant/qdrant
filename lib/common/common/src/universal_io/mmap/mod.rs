@@ -166,12 +166,13 @@ impl MmapFile {
             advice,
         } = options;
 
-        let populate = match populate {
-            Populate::Auto => Self::populate_auto(),
-            Populate::Partial(_) | // mmap does not support partial populate
-            Populate::No => false,
+        let (populate, populate_range) = match populate {
+            Populate::Auto => (Self::populate_auto(), None),
+            Populate::No => (false, None),
+            // Sub-range is populated asynchronously with `MADV_WILLNEED` (see below)
+            Populate::Partial(range) => (false, Some(range)),
             Populate::PreferBackground | // mmap does not yet implement background populate
-            Populate::Blocking => true,
+            Populate::Blocking => (true, None),
         };
 
         let (file, file_id) = open_file(path.as_ref(), writeable)?;
@@ -201,6 +202,18 @@ impl MmapFile {
             ptr_seq,
             file_id,
         };
+
+        // `MADV_WILLNEED` reads the range ahead in a few large I/Os, even under `MADV_RANDOM`
+        if let Some(range) = populate_range
+            && !crate::low_memory::low_memory_mode().skip_populate()
+        {
+            let bytes = mmap.as_bytes::<Random>();
+            let range = range.into_byte_range::<u8>();
+            let end = (range.end as usize).min(bytes.len());
+            if let Some(region) = bytes.get(range.start as usize..end) {
+                crate::mmap::advice::will_need_multiple_pages(region);
+            }
+        }
 
         Ok(mmap)
     }
