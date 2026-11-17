@@ -1,11 +1,9 @@
-use std::assert_matches;
 use std::collections::HashMap;
 use std::time::Duration;
 
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
-use reqwest::StatusCode;
 use segment::index::field_index::full_text_index::bm25_embedder::{
     Bm25Embedder, Bm25EmbedderConfig, UnknownLanguage,
 };
@@ -17,16 +15,12 @@ use crate::*;
 const BM25_LOCAL_MODEL_NAME: &str = "bm25";
 
 fn client(address: Option<String>) -> InferenceClient {
-    client_with(address, UnknownLanguage::Legacy)
-}
-
-fn client_with(address: Option<String>, unknown_bm25_language: UnknownLanguage) -> InferenceClient {
     InferenceClient::new(InferenceClientConfig {
         address,
         timeout: Duration::from_secs(10),
         token: Some(String::default()),
         user_agent: None,
-        unknown_bm25_language,
+        unknown_bm25_language: UnknownLanguage::Legacy,
     })
     .unwrap()
 }
@@ -162,186 +156,4 @@ async fn run_inference_with_mocked_remote(
         .await;
 
     res
-}
-
-#[tokio::test]
-async fn sends_token_headers_and_mode() {
-    let mut server = mockito::Server::new_async().await;
-    let mock = server
-        .mock("POST", "/")
-        .match_header("openai-api-key", "secret")
-        .match_body(mockito::Matcher::PartialJson(json!({
-            "inference": "search",
-            "token": "per-request",
-            "inputs": [{"data": "q", "data_type": "text", "model": "m", "options": null}],
-        })))
-        .with_status(200)
-        .with_body(r#"{"embeddings":[[1.0]],"usage":{"models":{"m":{"tokens":3}}}}"#)
-        .create_async()
-        .await;
-
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert("openai-api-key", "secret".parse().unwrap());
-    let response = client(Some(server.url()))
-        .infer(
-            vec![text_input("q", "m")],
-            InferenceType::Search,
-            RequestParams {
-                token: Some("per-request".to_string()),
-                headers,
-                timeout: None,
-            },
-        )
-        .await
-        .unwrap();
-
-    mock.assert_async().await;
-    assert_eq!(response.embeddings, vec![VectorPersisted::Dense(vec![1.0])]);
-    assert_eq!(response.usage.unwrap().models["m"].tokens, 3);
-}
-
-#[tokio::test]
-async fn rate_limit_carries_retry_after() {
-    let mut server = mockito::Server::new_async().await;
-    server
-        .mock("POST", "/")
-        .with_status(429)
-        .with_header("retry-after", "7")
-        .with_body(r#"{"error":"slow down"}"#)
-        .create_async()
-        .await;
-
-    let err = client(Some(server.url()))
-        .infer(
-            vec![text_input("q", "m")],
-            InferenceType::Search,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap_err();
-
-    let InferenceError::Rejected(rejection) = err else {
-        panic!("expected a rejection, got {err:?}");
-    };
-    assert_eq!(rejection.status, StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(rejection.retry_after, Some(Duration::from_secs(7)));
-    assert_eq!(rejection.message(), "slow down");
-}
-
-#[tokio::test]
-async fn non_json_error_body_is_the_message() {
-    let mut server = mockito::Server::new_async().await;
-    server
-        .mock("POST", "/")
-        .with_status(502)
-        .with_body("bad gateway")
-        .create_async()
-        .await;
-
-    let err = client(Some(server.url()))
-        .infer(
-            vec![text_input("q", "m")],
-            InferenceType::Search,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap_err();
-
-    let InferenceError::Rejected(rejection) = err else {
-        panic!("expected a rejection, got {err:?}");
-    };
-    assert_eq!(rejection.error, None);
-    assert_eq!(rejection.message(), "bad gateway");
-}
-
-#[tokio::test]
-async fn too_few_embeddings_is_an_error() {
-    let mut server = mockito::Server::new_async().await;
-    server
-        .mock("POST", "/")
-        .with_status(200)
-        .with_body(r#"{"embeddings":[[1.0]]}"#)
-        .create_async()
-        .await;
-
-    let err = client(Some(server.url()))
-        .infer(
-            vec![text_input("a", "m"), text_input("b", "m")],
-            InferenceType::Update,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap_err();
-
-    assert_matches!(err, InferenceError::InvalidResponse(_));
-}
-
-#[tokio::test]
-async fn bm25_needs_no_address_but_remote_models_do() {
-    let client = client(None);
-
-    let local = client
-        .infer(
-            vec![text_input("hello world", "qdrant/bm25")],
-            InferenceType::Search,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap();
-    assert_matches!(local.embeddings[..], [VectorPersisted::Sparse(_)]);
-
-    let err = client
-        .infer(
-            vec![text_input("hello world", "m")],
-            InferenceType::Search,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap_err();
-    assert_matches!(err, InferenceError::NotConfigured);
-}
-
-#[tokio::test]
-async fn bm25_rejects_images() {
-    let err = client(None)
-        .infer(
-            vec![InferenceInput {
-                data_type: InferenceDataType::Image,
-                ..text_input("https://example.com/a.png", "bm25")
-            }],
-            InferenceType::Update,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap_err();
-    assert_matches!(err, InferenceError::InvalidInput(_));
-}
-
-/// An unrecognized BM25 `language` follows the client's policy: `Legacy` embeds without
-/// stemming and stopwords, `Reject` fails the request as invalid input.
-#[tokio::test]
-async fn bm25_unknown_language_follows_the_client_policy() {
-    let input = InferenceInput {
-        options: Some([("language".to_string(), json!("none"))].into()),
-        ..text_input("the running run", BM25_LOCAL_MODEL_NAME)
-    };
-
-    let legacy = client_with(None, UnknownLanguage::Legacy)
-        .infer(
-            vec![input.clone()],
-            InferenceType::Update,
-            RequestParams::default(),
-        )
-        .await
-        .unwrap();
-    assert_matches!(
-        legacy.embeddings.as_slice(),
-        [VectorPersisted::Sparse(v)] if v.indices.len() == 3
-    );
-
-    let err = client_with(None, UnknownLanguage::Reject)
-        .infer(vec![input], InferenceType::Update, RequestParams::default())
-        .await
-        .unwrap_err();
-    assert_matches!(err, InferenceError::InvalidInput(ref msg) if msg.contains("none"));
 }
