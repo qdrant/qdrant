@@ -4,16 +4,19 @@
 #[cfg(test)]
 mod aws_tests;
 mod compose;
+mod goog4;
 mod native;
 pub(super) mod part_copy;
 mod signed;
 #[cfg(test)]
 pub(super) mod stub;
+mod xml_compose;
 
 pub use compose::ComposeAppend;
 pub use native::NativeAppend;
 pub use part_copy::PartCopyAppend;
 pub use signed::SignedRequestContext;
+pub use xml_compose::XmlComposeAppend;
 
 fn crc64nvme(data: &[u8]) -> String {
     let checksum = crc_fast::checksum(crc_fast::CrcAlgorithm::Crc64Nvme, data);
@@ -96,4 +99,9 @@ pub enum AppendContext {
     /// GCS: appends land as server-side `compose` requests — the new data
     /// uploaded as a temporary object, then composed onto the existing one.
     Compose(ComposeAppend),
+    /// GCS through its S3-compatible XML API (the S3 backend pointed at
+    /// `storage.googleapis.com` with HMAC keys): the same compose, issued
+    /// over the XML API. Part-copy cannot run there, GCS does not implement
+    /// `UploadPartCopy`.
+    XmlCompose(XmlComposeAppend),
 }

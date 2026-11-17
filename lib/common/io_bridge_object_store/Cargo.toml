@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 bytes = { workspace = true }
+chrono = { workspace = true }
 common = { workspace = true }
 crc-fast = { workspace = true }
 data-encoding = { workspace = true }
@@ -16,6 +17,7 @@ futures = { workspace = true }
 http = { workspace = true }
 io_bridge = { workspace = true }
 object_store = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 

@@ -3951,6 +3951,7 @@ name = "io_bridge_object_store"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "chrono",
  "common",
  "crc-fast",
  "data-encoding",
@@ -3958,6 +3959,7 @@ dependencies = [
  "http 1.5.0",
  "io_bridge",
  "object_store",
+ "sha2 0.11.1",
  "tempfile",
  "tokio",
  "url",

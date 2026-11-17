@@ -4,11 +4,16 @@ use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::aws::{AmazonS3, AmazonS3Builder, Checksum};
 use url::Url;
 
-use crate::append::{AppendContext, NativeAppend, PartCopyAppend, SignedRequestContext};
+use crate::append::{
+    AppendContext, NativeAppend, PartCopyAppend, SignedRequestContext, XmlComposeAppend,
+};
 use crate::backend::BlobBackend;
 
 /// SigV4 signing needs a region even for endpoints that ignore it.
 const DEFAULT_REGION: &str = "us-east-1";
+
+/// Host of GCS's S3-compatible XML API.
+const GCS_XML_API_HOST: &str = "storage.googleapis.com";
 
 /// Connection parameters for [`AmazonS3`]. Fed into [`AmazonS3Builder`] by
 /// the [`BlobBackend`] impl below.
@@ -28,7 +33,8 @@ pub struct AwsConfig {
     /// `x-amz-write-offset-bytes`). Not detectable from the endpoint — the
     /// operator declares it for stores like MinIO AiStor or RustFS;
     /// `s3_express` implies it. Left off (plain S3 Standard), appends go
-    /// through multipart rewrites with server-side prefix copies.
+    /// through multipart rewrites with server-side prefix copies — or, on
+    /// GCS's XML API endpoint (detected from `endpoint`), through `compose`.
     pub native_append: bool,
     /// How to authenticate to S3.
     pub credentials: AwsCredentials,
@@ -52,33 +58,7 @@ impl BlobBackend for AmazonS3 {
     type Config = AwsConfig;
 
     fn build_store(config: &Self::Config) -> UioResult<Self> {
-        let mut builder = match &config.credentials {
-            AwsCredentials::Default => AmazonS3Builder::from_env(),
-            AwsCredentials::Static {
-                access_key_id,
-                secret_access_key,
-                session_token,
-            } => {
-                let mut b = AmazonS3Builder::new()
-                    .with_access_key_id(access_key_id)
-                    .with_secret_access_key(secret_access_key);
-                if let Some(t) = session_token {
-                    b = b.with_token(t);
-                }
-                b
-            }
-        };
-        builder = builder
-            .with_bucket_name(&config.bucket)
-            .with_s3_express(config.s3_express);
-        if let Some(region) = &config.region {
-            builder = builder.with_region(region);
-        }
-        if let Some(endpoint) = &config.endpoint {
-            builder = builder.with_endpoint(endpoint).with_allow_http(true);
-        }
-        builder
-            .with_checksum_algorithm(Checksum::CRC64NVME)
+        store_builder(config, |name| std::env::var(name).ok())
             .build()
             .map_err(|err| UniversalIoError::S3Config {
                 description: format!("AmazonS3Builder: {err}"),
@@ -94,6 +74,8 @@ impl BlobBackend for AmazonS3 {
 
         let (endpoint, region) =
             resolve_endpoint_and_region(config, |name| std::env::var(name).ok());
+
+        let is_gcs = endpoint.as_deref().is_some_and(is_gcs_xml_api);
 
         let (object_url_base, service) = match &endpoint {
             // Path-style addressing, as object_store uses for custom
@@ -152,10 +134,59 @@ impl BlobBackend for AmazonS3 {
 
         Ok(Some(if config.s3_express || config.native_append {
             AppendContext::Native(NativeAppend::new(context))
+        } else if is_gcs {
+            // GCS implements no `UploadPartCopy`, the part-copy rewrite
+            // cannot run there.
+            AppendContext::XmlCompose(XmlComposeAppend::new(context))
         } else {
             AppendContext::PartCopy(PartCopyAppend::new(context))
         }))
     }
+}
+
+/// The [`AmazonS3Builder`] for `config`, with `env` standing in for the
+/// process environment when resolving the endpoint.
+fn store_builder(config: &AwsConfig, env: impl Fn(&str) -> Option<String>) -> AmazonS3Builder {
+    let mut builder = match &config.credentials {
+        AwsCredentials::Default => AmazonS3Builder::from_env(),
+        AwsCredentials::Static {
+            access_key_id,
+            secret_access_key,
+            session_token,
+        } => {
+            let mut b = AmazonS3Builder::new()
+                .with_access_key_id(access_key_id)
+                .with_secret_access_key(secret_access_key);
+            if let Some(t) = session_token {
+                b = b.with_token(t);
+            }
+            b
+        }
+    };
+    builder = builder
+        .with_bucket_name(&config.bucket)
+        .with_s3_express(config.s3_express);
+    if let Some(region) = &config.region {
+        builder = builder.with_region(region);
+    }
+    if let Some(endpoint) = &config.endpoint {
+        builder = builder.with_endpoint(endpoint).with_allow_http(true);
+    }
+    // GCS's XML API has no bulk `DeleteObjects`: delete one object at a
+    // time there, as for the other S3-compatible stores lacking it.
+    let (endpoint, _region) = resolve_endpoint_and_region(config, env);
+    if endpoint.as_deref().is_some_and(is_gcs_xml_api) {
+        builder = builder.with_disable_bulk_delete(true);
+    }
+    builder.with_checksum_algorithm(Checksum::CRC64NVME)
+}
+
+/// Whether `endpoint` is GCS's S3-compatible XML API.
+fn is_gcs_xml_api(endpoint: &str) -> bool {
+    Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host == GCS_XML_API_HOST)
 }
 
 /// The availability-zone segment of a directory-bucket name
@@ -291,5 +322,76 @@ mod tests {
         express.bucket = "bucket--use1-az4--x-s3".to_string();
         let context = <AmazonS3 as BlobBackend>::append_context(&express).unwrap();
         assert!(matches!(context, Some(AppendContext::Native(_))));
+    }
+
+    /// The GCS XML API endpoint gets the compose strategy: part-copy cannot
+    /// run there. Other endpoints keep part-copy, and declared native
+    /// appends still win.
+    #[test]
+    fn gcs_xml_api_endpoint_appends_by_compose() {
+        let with_endpoint = |endpoint: &str| {
+            let mut config = config(AwsCredentials::Static {
+                access_key_id: "id".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+            });
+            config.endpoint = Some(endpoint.to_string());
+            config
+        };
+
+        for endpoint in [
+            "https://storage.googleapis.com",
+            "https://storage.googleapis.com/",
+            "https://STORAGE.googleapis.com",
+        ] {
+            let context = <AmazonS3 as BlobBackend>::append_context(&with_endpoint(endpoint));
+            assert!(
+                matches!(context, Ok(Some(AppendContext::XmlCompose(_)))),
+                "{endpoint}",
+            );
+        }
+
+        for endpoint in ["http://minio:9000", "https://storage.example.com"] {
+            let context = <AmazonS3 as BlobBackend>::append_context(&with_endpoint(endpoint));
+            assert!(
+                matches!(context, Ok(Some(AppendContext::PartCopy(_)))),
+                "{endpoint}",
+            );
+        }
+
+        let mut native = with_endpoint("https://storage.googleapis.com");
+        native.native_append = true;
+        let context = <AmazonS3 as BlobBackend>::append_context(&native);
+        assert!(matches!(context, Ok(Some(AppendContext::Native(_)))));
+    }
+
+    /// GCS's XML API has no bulk `DeleteObjects`, so the store deletes one
+    /// object at a time there, whether the endpoint is configured or comes
+    /// from the environment.
+    #[test]
+    fn gcs_xml_api_endpoint_disables_bulk_delete() {
+        use object_store::aws::AmazonS3ConfigKey;
+
+        let bulk_delete_disabled = |config: &AwsConfig, env: &dyn Fn(&str) -> Option<String>| {
+            store_builder(config, env).get_config_value(&AmazonS3ConfigKey::DisableBulkDelete)
+                == Some("true".to_string())
+        };
+        let no_env = |_: &str| None;
+
+        let mut gcs = config(AwsCredentials::Default);
+        gcs.endpoint = Some("https://storage.googleapis.com".to_string());
+        assert!(bulk_delete_disabled(&gcs, &no_env));
+
+        let gcs_env = |name: &str| {
+            (name == "AWS_ENDPOINT").then(|| "https://storage.googleapis.com".to_string())
+        };
+        assert!(bulk_delete_disabled(
+            &config(AwsCredentials::Default),
+            &gcs_env
+        ));
+
+        let mut minio = config(AwsCredentials::Default);
+        minio.endpoint = Some("http://minio:9000".to_string());
+        assert!(!bulk_delete_disabled(&minio, &no_env));
     }
 }
