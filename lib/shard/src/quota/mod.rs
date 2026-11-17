@@ -26,7 +26,7 @@ mod status;
 
 use std::sync::{Arc, OnceLock};
 
-pub use config::{QuotaConfig, QuotaLimits};
+pub use config::{QuotaConfig, QuotaConfigInternal, QuotaLimits};
 pub use error::{QuotaError, QuotaResult};
 pub use manager::{DiskFit, QUOTA_CONFIG_FILE, QuotaManager};
 pub use status::{PeerQuotaUsage, QuotaExceeded, QuotaStatus, QuotaTelemetry, QuotaUsage};

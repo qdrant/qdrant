@@ -124,14 +124,14 @@ impl QuotaManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quota::QuotaConfig;
+    use crate::quota::QuotaConfigInternal;
 
     #[test]
     fn fits_on_disk_answers_from_free_space_not_the_quota() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
         let manager = QuotaManager::load_or_init(
             dir.path(),
-            QuotaConfig {
+            QuotaConfigInternal {
                 enabled: true,
                 // The strictest quota there is, so if it were consulted at all it
                 // would refuse anything this filesystem is asked for

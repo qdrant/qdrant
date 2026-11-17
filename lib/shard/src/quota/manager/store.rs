@@ -6,7 +6,7 @@ use ::common::save_on_disk::SaveOnDisk;
 use parking_lot::RwLock;
 use validator::Validate as _;
 
-use crate::quota::config::QuotaConfig;
+use crate::quota::config::QuotaConfigInternal;
 use crate::quota::error::{QuotaError, QuotaResult};
 
 /// Quota configuration file, at the root of the storage directory.
@@ -14,9 +14,9 @@ pub const QUOTA_CONFIG_FILE: &str = "quota.json";
 
 /// The quota config and its backing, if it has one.
 pub enum Store {
-    Persisted(SaveOnDisk<QuotaConfig>),
+    Persisted(SaveOnDisk<QuotaConfigInternal>),
     /// For a node with no storage directory to own the file — edge, and tests.
-    Ephemeral(RwLock<QuotaConfig>),
+    Ephemeral(RwLock<QuotaConfigInternal>),
 }
 
 impl Store {
@@ -27,7 +27,10 @@ impl Store {
     /// we cannot honour must not silently become "no limits". Only the config that
     /// ends up in effect is validated, so a stale `storage.quotas` does not stop a
     /// node whose quota file is fine.
-    pub fn load_or_init(storage_path: &Path, from_settings: QuotaConfig) -> QuotaResult<Self> {
+    pub fn load_or_init(
+        storage_path: &Path,
+        from_settings: QuotaConfigInternal,
+    ) -> QuotaResult<Self> {
         let config =
             SaveOnDisk::load_or_init(storage_path.join(QUOTA_CONFIG_FILE), || from_settings)
                 .map_err(|err| QuotaError::Io(format!("Failed to read quota config: {err}")))?;
@@ -39,10 +42,10 @@ impl Store {
 
     /// A store that enforces nothing and persists nothing.
     pub fn ephemeral() -> Self {
-        Store::Ephemeral(RwLock::new(QuotaConfig::default()))
+        Store::Ephemeral(RwLock::new(QuotaConfigInternal::default()))
     }
 
-    pub fn read(&self) -> QuotaConfig {
+    pub fn read(&self) -> QuotaConfigInternal {
         match self {
             Store::Persisted(config) => *config.read(),
             Store::Ephemeral(config) => *config.read(),
@@ -51,7 +54,7 @@ impl Store {
 
     /// Written to disk before the in-memory value is swapped, so a crash can only
     /// lose the update, never apply an unpersisted one.
-    pub fn write(&self, new: QuotaConfig) -> QuotaResult<()> {
+    pub fn write(&self, new: QuotaConfigInternal) -> QuotaResult<()> {
         validate(&new)?;
 
         match self {
@@ -69,7 +72,7 @@ impl Store {
 /// The REST handler validates its own body, but a hand-edited quota file and a
 /// config arriving through consensus do not. A `0%` limit would reject every
 /// update forever, one above `100%` would cap nothing.
-fn validate(config: &QuotaConfig) -> QuotaResult<()> {
+fn validate(config: &QuotaConfigInternal) -> QuotaResult<()> {
     config.validate().map_err(|errs| {
         let fields = errs
             .field_errors()
@@ -101,7 +104,7 @@ mod tests {
     #[test]
     fn persisted_config_takes_priority_over_settings() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
-        let settings = QuotaConfig {
+        let settings = QuotaConfigInternal {
             enabled: true,
             max_disk_usage_percent: Some(80),
             ..Default::default()
@@ -110,7 +113,7 @@ mod tests {
         let manager = QuotaManager::load_or_init(dir.path(), settings).unwrap();
         assert_eq!(manager.config(), settings);
 
-        let updated = QuotaConfig {
+        let updated = QuotaConfigInternal {
             enabled: true,
             max_disk_usage_percent: Some(95),
             max_resident_memory_percent: Some(90),
@@ -126,11 +129,12 @@ mod tests {
     #[test]
     fn out_of_range_limits_are_rejected() {
         let dir = tempfile::Builder::new().tempdir().unwrap();
-        let manager = QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).unwrap();
+        let manager =
+            QuotaManager::load_or_init(dir.path(), QuotaConfigInternal::default()).unwrap();
 
         // A 0% limit can never be satisfied, so it must not be installable —
         // neither through consensus, nor by hand-editing the quota file.
-        let impossible = QuotaConfig {
+        let impossible = QuotaConfigInternal {
             enabled: true,
             max_disk_usage_percent: Some(0),
             ..Default::default()
@@ -140,14 +144,14 @@ mod tests {
             err.to_string().contains("max_disk_usage_percent"),
             "the error should name the field that is out of range: {err}",
         );
-        assert_eq!(manager.config(), QuotaConfig::default());
+        assert_eq!(manager.config(), QuotaConfigInternal::default());
 
         fs_err::write(
             dir.path().join(QUOTA_CONFIG_FILE),
             serde_json::to_vec(&impossible).unwrap(),
         )
         .unwrap();
-        assert!(QuotaManager::load_or_init(dir.path(), QuotaConfig::default()).is_err());
+        assert!(QuotaManager::load_or_init(dir.path(), QuotaConfigInternal::default()).is_err());
     }
 
     #[test]
@@ -155,7 +159,7 @@ mod tests {
         let dir = tempfile::Builder::new().tempdir().unwrap();
         let config_path = dir.path().join(QUOTA_CONFIG_FILE);
 
-        let impossible = QuotaConfig {
+        let impossible = QuotaConfigInternal {
             enabled: true,
             max_resident_memory_percent: Some(0),
             ..Default::default()

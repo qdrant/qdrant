@@ -163,7 +163,7 @@ fn threshold(limit: u8, was_exceeded: bool, release_margin_percent: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quota::QuotaConfig;
+    use crate::quota::QuotaConfigInternal;
     use crate::quota::check::percent_of;
     use crate::quota::config::DEFAULT_RELEASE_MARGIN_PERCENT;
 
@@ -287,7 +287,7 @@ mod tests {
         let dir = storage_dir_at_least_one_percent_full();
         // The lowest limit there is rejects everything on that filesystem —
         // while it is in force.
-        let settings = QuotaConfig {
+        let settings = QuotaConfigInternal {
             enabled: false,
             max_disk_usage_percent: Some(1),
             ..Default::default()
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(manager.exceeded().disk_usage, None);
 
         manager
-            .set_config(QuotaConfig {
+            .set_config(QuotaConfigInternal {
                 enabled: true,
                 ..settings
             })

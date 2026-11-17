@@ -523,7 +523,7 @@ fn container() -> Container {
             collection_state(Vec::new()),
         )])),
         aliases: Mutex::new(aliases),
-        quota_config: QuotaConfig {
+        quota_config: QuotaConfigInternal {
             enabled: true,
             ..Default::default()
         },
@@ -540,7 +540,7 @@ fn container() -> Container {
 struct Container {
     collections: Mutex<HashMap<CollectionId, collection_state::State>>,
     aliases: Mutex<AliasMapping>,
-    quota_config: QuotaConfig,
+    quota_config: QuotaConfigInternal,
     error_after_write: Mutex<Option<StorageError>>,
     actions: Mutex<Vec<Action>>,
     /// Number of full collection-state reads, used to distinguish resync from rebuild
@@ -653,7 +653,7 @@ impl CollectionContainer for Container {
         node_context()
     }
 
-    fn quota_config(&self) -> QuotaConfig {
+    fn quota_config(&self) -> QuotaConfigInternal {
         self.quota_config
     }
 
@@ -694,7 +694,7 @@ impl CollectionContainer for Container {
         unimplemented!()
     }
 
-    fn set_quota_config(&self, _config: QuotaConfig) -> Result<(), StorageError> {
+    fn set_quota_config(&self, _config: QuotaConfigInternal) -> Result<(), StorageError> {
         unimplemented!()
     }
 }

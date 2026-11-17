@@ -31,7 +31,7 @@ use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::quota::QuotaConfig;
+use crate::quota::{QuotaConfig, QuotaConfigInternal};
 use crate::types::{PeerAddressById, PeerMetadataById};
 
 const PEER_IDS: &[PeerId] = &[PEER_ID, OTHER_PEER_ID];
@@ -379,12 +379,12 @@ fn arb_metadata_value() -> impl Strategy<Value = serde_json::Value> {
 }
 
 /// Quota config varying two of its fields: no covered operation reads any of them
-fn arb_quota_config() -> impl Strategy<Value = QuotaConfig> {
+fn arb_quota_config() -> impl Strategy<Value = QuotaConfigInternal> {
     let enabled = proptest::bool::ANY;
     let max_resident_memory_percent = proptest::option::of(Just(90));
 
     (enabled, max_resident_memory_percent).prop_map(|(enabled, max_resident_memory_percent)| {
-        QuotaConfig {
+        QuotaConfigInternal {
             enabled,
             max_resident_memory_percent,
             max_disk_usage_percent: None,
@@ -407,7 +407,8 @@ pub fn arb_consensus_operation(
         1 => arb_peer_id().prop_map(ConsensusOperations::RemovePeer),
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
-        1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
+        1 => arb_quota_config()
+            .prop_map(|config| ConsensusOperations::SetQuotaConfig(QuotaConfig::from(config))),
     ]
 }
 

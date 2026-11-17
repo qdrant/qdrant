@@ -51,7 +51,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::quota::{self, QuotaConfig, QuotaManager};
+use crate::quota::{self, QuotaConfig, QuotaConfigInternal, QuotaManager};
 use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
@@ -324,7 +324,9 @@ impl TableOfContent {
         wait: bool,
     ) -> Result<(), StorageError> {
         if !self.is_distributed() {
-            return Ok(self.quota_manager.set_config(config)?);
+            return Ok(self
+                .quota_manager
+                .set_config(QuotaConfigInternal::from(config))?);
         }
 
         let operation = ConsensusOperations::SetQuotaConfig(config);

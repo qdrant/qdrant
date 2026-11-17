@@ -7,7 +7,7 @@ use collection::shards::CollectionId;
 
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::consensus_state_machine::ClusterState;
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
 /// Lightweight view of applied consensus state.
@@ -23,7 +23,7 @@ pub struct ShallowState {
     pub peer_address_by_id: PeerAddressById,
     pub peer_metadata_by_id: PeerMetadataById,
     pub cluster_metadata: HashMap<String, serde_json::Value>,
-    pub quota_config: QuotaConfig,
+    pub quota_config: QuotaConfigInternal,
 }
 
 /// Compare collection names and cluster fields
@@ -151,7 +151,7 @@ mod tests {
     use super::*;
     use crate::content_manager::alias_mapping::AliasMapping;
     use crate::content_manager::consensus_state_machine::tests::{PEER_ID, collection_state};
-    use crate::quota::QuotaConfig;
+    use crate::quota::QuotaConfigInternal;
 
     const COLLECTION: &str = "books";
     const ALIAS: &str = "novels";
@@ -214,7 +214,7 @@ mod tests {
             HashMap::from([(PEER_ID, "http://localhost:6335".parse().expect("valid URI"))]);
         let peer_metadata_by_id = HashMap::from([(PEER_ID, PeerMetadata::current())]);
         let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
-        let quota_config = QuotaConfig::default();
+        let quota_config = QuotaConfigInternal::default();
 
         let expected = ClusterState {
             collections: HashMap::from([(COLLECTION.to_string(), collection_state(Vec::new()))]),

@@ -11,7 +11,7 @@ use storage::content_manager::consensus_manager::ConsensusManager;
 use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
-use storage::quota::{QUOTA_CONFIG_FILE, QuotaConfig, QuotaManager};
+use storage::quota::{QUOTA_CONFIG_FILE, QuotaConfigInternal, QuotaManager};
 use tempfile::TempDir;
 
 use super::alias_tests::{FULL_ACCESS, create_collection, new_dispatcher};
@@ -313,14 +313,14 @@ fn set_quota_config_action_replay() {
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&FULL_ACCESS, &pass);
     let manager = consensus_manager(&storage_dir, toc.clone());
-    let config = QuotaConfig {
+    let config = QuotaConfigInternal {
         enabled: true,
         max_resident_memory_percent: Some(80),
         max_disk_usage_percent: Some(90),
         release_margin_percent: Some(7),
     };
 
-    for config in [config, QuotaConfig::default()] {
+    for config in [config, QuotaConfigInternal::default()] {
         for _ in 0..2 {
             manager
                 .apply_action(Action::SetQuotaConfig { config })
@@ -328,7 +328,8 @@ fn set_quota_config_action_replay() {
 
             assert_eq!(toc.quota_config(), config);
             let reloaded =
-                QuotaManager::load_or_init(storage_dir.path(), QuotaConfig::default()).unwrap();
+                QuotaManager::load_or_init(storage_dir.path(), QuotaConfigInternal::default())
+                    .unwrap();
             assert_eq!(reloaded.config(), config);
         }
     }
@@ -340,7 +341,7 @@ fn set_quota_config_action_save_failure_retry() {
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&FULL_ACCESS, &pass);
     let manager = consensus_manager(&storage_dir, toc.clone());
-    let initial = QuotaConfig {
+    let initial = QuotaConfigInternal {
         enabled: true,
         max_disk_usage_percent: Some(90),
         ..Default::default()
@@ -348,7 +349,7 @@ fn set_quota_config_action_save_failure_retry() {
     manager
         .apply_action(Action::SetQuotaConfig { config: initial })
         .unwrap();
-    let updated = QuotaConfig {
+    let updated = QuotaConfigInternal {
         max_disk_usage_percent: Some(95),
         ..initial
     };
@@ -373,7 +374,7 @@ fn set_quota_config_action_save_failure_retry() {
 
         assert_eq!(toc.quota_config(), config);
         let reloaded =
-            QuotaManager::load_or_init(storage_dir.path(), QuotaConfig::default()).unwrap();
+            QuotaManager::load_or_init(storage_dir.path(), QuotaConfigInternal::default()).unwrap();
         assert_eq!(reloaded.config(), config);
     }
 }
@@ -385,7 +386,7 @@ fn set_quota_config_action_invalid_config() {
     let toc = dispatcher.toc(&FULL_ACCESS, &pass);
     let manager = consensus_manager(&storage_dir, toc.clone());
     let before = toc.quota_config();
-    let invalid = QuotaConfig {
+    let invalid = QuotaConfigInternal {
         max_disk_usage_percent: Some(0),
         ..Default::default()
     };

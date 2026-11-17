@@ -24,7 +24,7 @@ use crate::content_manager::collection_meta_ops::UpdateCollection;
 #[cfg(feature = "staging")]
 use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use crate::content_manager::errors::StorageResult;
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
@@ -209,7 +209,7 @@ pub enum Action {
     },
 
     SetQuotaConfig {
-        config: QuotaConfig,
+        config: QuotaConfigInternal,
     },
 
     /// Introduce the requested delay on the selected peers

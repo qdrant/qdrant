@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use storage::content_manager::consensus_manager::{CollectionsSnapshot, SnapshotData};
-use storage::quota::QuotaConfig;
+use storage::quota::QuotaConfigInternal;
 use storage::types::{PeerAddressById, PeerMetadataById};
 
 /// `SnapshotData` as an older peer defines it — no `quota_config` field.
@@ -40,7 +40,7 @@ fn quota_config_is_optional_in_both_directions() {
         address_by_id: HashMap::new(),
         metadata_by_id: HashMap::new(),
         cluster_metadata: HashMap::new(),
-        quota_config: Some(QuotaConfig {
+        quota_config: Some(QuotaConfigInternal {
             enabled: true,
             max_resident_memory_percent: Some(90),
             max_disk_usage_percent: Some(95),

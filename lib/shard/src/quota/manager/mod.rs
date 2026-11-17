@@ -13,7 +13,7 @@ pub use self::enforce::ExceededVerdicts;
 pub use self::measure::DiskFit;
 pub use self::store::QUOTA_CONFIG_FILE;
 use self::store::Store;
-use super::config::QuotaConfig;
+use super::config::{QuotaConfig, QuotaConfigInternal};
 use super::error::QuotaResult;
 use super::meter::Meter;
 use super::status::QuotaStatus;
@@ -73,7 +73,10 @@ impl QuotaManager {
     ///
     /// Fails if the config in effect cannot be read or does not validate: a quota
     /// we cannot honour must not silently become "no limits".
-    pub fn load_or_init(storage_path: &Path, from_settings: QuotaConfig) -> QuotaResult<Self> {
+    pub fn load_or_init(
+        storage_path: &Path,
+        from_settings: QuotaConfigInternal,
+    ) -> QuotaResult<Self> {
         Ok(QuotaManager {
             config: Store::load_or_init(storage_path, from_settings)?,
             storage_path: storage_path.to_path_buf(),
@@ -83,12 +86,12 @@ impl QuotaManager {
         })
     }
 
-    pub fn config(&self) -> QuotaConfig {
+    pub fn config(&self) -> QuotaConfigInternal {
         self.config.read()
     }
 
     /// Persist `config` and start enforcing it.
-    pub fn set_config(&self, config: QuotaConfig) -> QuotaResult<()> {
+    pub fn set_config(&self, config: QuotaConfigInternal) -> QuotaResult<()> {
         self.config.write(config)?;
 
         // New limits, so the old verdicts say nothing: an operator raising a
@@ -106,7 +109,7 @@ impl QuotaManager {
     /// which belongs to the API layer rather than here.
     pub fn status(&self) -> QuotaStatus {
         QuotaStatus {
-            config: self.config(),
+            config: QuotaConfig::from(self.config()),
             usage: self.usage(),
             peers: None,
         }

@@ -10,7 +10,7 @@ use semver::Version;
 use super::Action;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::errors::{StorageError, StorageResult};
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
 /// Cluster state modeled by consensus state machine. Mirrors [`SnapshotData`].
@@ -23,7 +23,7 @@ pub struct ClusterState {
     pub peer_address_by_id: PeerAddressById,
     pub peer_metadata_by_id: PeerMetadataById,
     pub cluster_metadata: HashMap<String, serde_json::Value>,
-    pub quota_config: QuotaConfig,
+    pub quota_config: QuotaConfigInternal,
 }
 
 impl ClusterState {

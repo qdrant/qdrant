@@ -48,7 +48,62 @@ pub struct QuotaConfig {
     pub release_margin_percent: Option<u8>,
 }
 
-impl QuotaConfig {
+impl From<QuotaConfigInternal> for QuotaConfig {
+    fn from(config: QuotaConfigInternal) -> Self {
+        let QuotaConfigInternal {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+            release_margin_percent,
+        } = config;
+
+        QuotaConfig {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+            release_margin_percent,
+        }
+    }
+}
+
+impl From<QuotaConfig> for QuotaConfigInternal {
+    fn from(config: QuotaConfig) -> Self {
+        let QuotaConfig {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+            release_margin_percent,
+        } = config;
+
+        QuotaConfigInternal {
+            enabled,
+            max_resident_memory_percent,
+            max_disk_usage_percent,
+            release_margin_percent,
+        }
+    }
+}
+
+/// Quota config in effect, as persisted and replicated. See [`QuotaConfig`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Validate)]
+pub struct QuotaConfigInternal {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, max = 100))]
+    pub max_resident_memory_percent: Option<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, max = 100))]
+    pub max_disk_usage_percent: Option<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(max = 100))]
+    pub release_margin_percent: Option<u8>,
+}
+
+impl QuotaConfigInternal {
     /// Limits that this config puts into effect, `None` for each resource left
     /// uncapped or while the quota is disabled.
     pub fn limits(&self) -> QuotaLimits {

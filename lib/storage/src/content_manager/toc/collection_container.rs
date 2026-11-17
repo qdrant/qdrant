@@ -19,7 +19,7 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::{Action, NodeContext};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::{CollectionContainer, consensus_manager};
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 
 impl CollectionContainer for TableOfContent {
     fn apply_action(&self, action: Action) -> Result<(), StorageError> {
@@ -100,11 +100,11 @@ impl CollectionContainer for TableOfContent {
         Ok(())
     }
 
-    fn quota_config(&self) -> QuotaConfig {
+    fn quota_config(&self) -> QuotaConfigInternal {
         self.quota_manager().config()
     }
 
-    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError> {
+    fn set_quota_config(&self, config: QuotaConfigInternal) -> Result<(), StorageError> {
         Ok(self.quota_manager().set_config(config)?)
     }
 

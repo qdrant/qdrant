@@ -23,6 +23,7 @@ use crate::content_manager::consensus_state_machine::{
     apply_collection_config_diffs,
 };
 use crate::content_manager::toc::apply_alias_actions;
+use crate::quota::{QuotaConfig, QuotaConfigInternal};
 
 type Actions = Vec<Action>;
 
@@ -1686,7 +1687,9 @@ impl ClusterState {
     pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> Actions {
         // `QuotaManager::set_config` additionally clears exceeded-quota flags,
         // so we always emit the action, even if the config is the same
-        vec![Action::SetQuotaConfig { config }]
+        vec![Action::SetQuotaConfig {
+            config: QuotaConfigInternal::from(config),
+        }]
     }
 
     pub fn plan_add_peer(&self, peer_id: PeerId, uri: &str) -> StorageResult<Actions> {

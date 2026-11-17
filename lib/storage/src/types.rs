@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::{Validate, ValidationError};
 
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
@@ -143,7 +143,7 @@ pub struct StorageConfig {
     /// quota config file exists in the storage directory, it takes over.
     #[validate(nested)]
     #[serde(default)]
-    pub quotas: Option<QuotaConfig>,
+    pub quotas: Option<QuotaConfigInternal>,
 }
 
 impl StorageConfig {

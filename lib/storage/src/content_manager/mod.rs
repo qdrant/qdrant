@@ -9,7 +9,7 @@ use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
 use self::consensus_state_machine::{Action, NodeContext};
 use self::errors::StorageError;
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 
 pub mod alias_mapping;
 pub mod collection_meta_ops;
@@ -231,9 +231,9 @@ pub trait CollectionContainer {
 
     fn sync_local_state(&self) -> Result<(), StorageError>;
 
-    fn quota_config(&self) -> QuotaConfig;
+    fn quota_config(&self) -> QuotaConfigInternal;
 
-    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError>;
+    fn set_quota_config(&self, config: QuotaConfigInternal) -> Result<(), StorageError>;
 
     fn node_context(&self) -> NodeContext;
     fn collection_names(&self) -> BTreeSet<CollectionId>;

@@ -37,7 +37,7 @@ use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
-use crate::quota::QuotaConfig;
+use crate::quota::QuotaConfigInternal;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
     PeerInfo, PeerMetadataById, RaftInfo,
@@ -69,7 +69,7 @@ pub struct SnapshotData {
     pub cluster_metadata: HashMap<String, serde_json::Value>,
     /// `None` when the snapshot was taken by a peer that predates global quotas.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quota_config: Option<QuotaConfig>,
+    pub quota_config: Option<QuotaConfigInternal>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -660,7 +660,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
 
             ConsensusOperations::SetQuotaConfig(config) => {
-                self.toc.set_quota_config(config)?;
+                self.toc
+                    .set_quota_config(QuotaConfigInternal::from(config))?;
                 true
             }
 
@@ -759,7 +760,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         persistent.cluster_metadata.get(key) == Some(value)
                     }
                     ConsensusOperations::SetQuotaConfig(config) => {
-                        self.toc.quota_config() == *config
+                        self.toc.quota_config() == QuotaConfigInternal::from(*config)
                     }
                     // Snapshot state can't be inspected to confirm these are satisfied — leave
                     // their awaiters pending so they fall back to the regular timeout path.
@@ -1472,7 +1473,7 @@ mod tests {
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
     use crate::content_manager::consensus::persistent::Persistent;
-    use crate::quota::QuotaConfig;
+    use crate::quota::QuotaConfigInternal;
     use crate::types::PeerAddressById;
 
     #[test]
@@ -1648,13 +1649,13 @@ mod tests {
             Ok(())
         }
 
-        fn quota_config(&self) -> QuotaConfig {
-            QuotaConfig::default()
+        fn quota_config(&self) -> QuotaConfigInternal {
+            QuotaConfigInternal::default()
         }
 
         fn set_quota_config(
             &self,
-            _config: QuotaConfig,
+            _config: QuotaConfigInternal,
         ) -> Result<(), crate::content_manager::errors::StorageError> {
             Ok(())
         }

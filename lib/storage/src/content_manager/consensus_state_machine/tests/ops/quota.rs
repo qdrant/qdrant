@@ -3,12 +3,14 @@
 use super::*;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::*;
-use crate::quota::QuotaConfig;
+use crate::quota::{QuotaConfig, QuotaConfigInternal};
 
 #[test]
 fn set_quota_config() {
     let mut machine = state_machine(ClusterState::default());
-    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(QuotaConfig::from(
+        quota_config(true),
+    )));
 
     let Ok(Plan { actions, .. }) = outcome else {
         panic!("a quota config should be accepted, got {outcome:?}");
@@ -30,7 +32,9 @@ fn set_quota_config_replace() {
     };
 
     let mut machine = state_machine(state);
-    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(false)));
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(QuotaConfig::from(
+        quota_config(false),
+    )));
 
     let Ok(Plan { actions, .. }) = outcome else {
         panic!("another quota config should be accepted, got {outcome:?}");
@@ -52,7 +56,9 @@ fn set_quota_config_replay() {
     };
 
     let mut machine = state_machine(state.clone());
-    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
+    let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(QuotaConfig::from(
+        quota_config(true),
+    )));
 
     let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied quota config should be accepted, got {outcome:?}");
@@ -67,8 +73,8 @@ fn set_quota_config_replay() {
     assert_eq!(machine.state(), &state);
 }
 
-fn quota_config(enabled: bool) -> QuotaConfig {
-    QuotaConfig {
+fn quota_config(enabled: bool) -> QuotaConfigInternal {
+    QuotaConfigInternal {
         enabled,
         max_resident_memory_percent: None,
         max_disk_usage_percent: None,

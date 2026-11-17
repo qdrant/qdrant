@@ -15,7 +15,7 @@ use serde::Serialize;
 use shard::common::stopping_guard::StoppingGuard;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
-use storage::quota::QuotaTelemetry;
+use storage::quota::{QuotaConfig, QuotaTelemetry};
 use storage::rbac::{AccessRequirements, Auth};
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
@@ -155,7 +155,7 @@ impl TelemetryCollector {
                     .quota_manager();
 
                 QuotaTelemetry {
-                    config: manager.config(),
+                    config: QuotaConfig::from(manager.config()),
                     exceeded: manager.exceeded(),
                 }
             });
