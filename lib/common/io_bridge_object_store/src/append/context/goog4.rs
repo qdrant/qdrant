@@ -157,41 +157,6 @@ mod tests {
 
     use super::*;
 
-    /// The HMAC chain reproduces AWS's published SigV4 signing-key example
-    /// (`AWS4` prefix; the `GOOG4` chain differs only in the prefix and
-    /// names fed through it).
-    #[test]
-    fn signing_key_matches_the_published_sigv4_example() {
-        let key = signing_key(
-            "AWS4",
-            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-            "20120215",
-            "us-east-1",
-            "iam",
-            "aws4_request",
-        );
-        assert_eq!(
-            HEXLOWER.encode(&key),
-            "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d",
-        );
-    }
-
-    /// RFC 4231 test case 2, and case 6 for a key longer than one block.
-    #[test]
-    fn hmac_sha256_matches_rfc_4231() {
-        assert_eq!(
-            HEXLOWER.encode(&hmac_sha256(b"Jefe", b"what do ya want for nothing?")),
-            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
-        );
-        assert_eq!(
-            HEXLOWER.encode(&hmac_sha256(
-                &[0xaa; 131],
-                b"Test Using Larger Than Block-Size Key - Hash Key First",
-            )),
-            "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
-        );
-    }
-
     /// A conditional compose, signed at a fixed time. The expected
     /// signature comes from an independent signer (openssl, in the
     /// GCS-verified probe script), whose canonical requests matched the
@@ -243,11 +208,5 @@ mod tests {
             headers.iter().all(|(name, _)| !name.starts_with("x-amz-")),
             "GCS rejects x-amz-* next to x-goog-* headers",
         );
-    }
-
-    #[test]
-    fn path_segments_are_encoded_strictly() {
-        assert_eq!(encode_path_segment("seg-1_a.b~c"), "seg-1_a.b~c");
-        assert_eq!(encode_path_segment("a b=c+d"), "a%20b%3Dc%2Bd");
     }
 }

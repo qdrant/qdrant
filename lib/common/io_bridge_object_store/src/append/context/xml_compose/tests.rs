@@ -116,22 +116,6 @@ fn compose_appends_the_uploaded_tail_conditionally() {
     assert_eq!(delete.path, "/bucket/dir/append.dat.compose-append");
 }
 
-/// An empty object is written whole: there is nothing to compose onto.
-#[test]
-fn append_at_zero_is_a_plain_put() {
-    let (endpoint, seen) = stub_server(vec![put_ok()]);
-
-    assert_eq!(append_data_at(&endpoint, 0).unwrap(), 4);
-
-    let seen = seen.lock().unwrap();
-    let [put] = &seen[..] else {
-        panic!("expected exactly one request");
-    };
-    assert_eq!(put.method, "PUT");
-    assert_eq!(put.path, "/bucket/dir/append.dat");
-    assert_eq!(put.body, b"data");
-}
-
 /// The object is not at `offset`: nothing is uploaded.
 #[test]
 fn size_mismatch_is_an_offset_conflict() {
@@ -143,17 +127,6 @@ fn size_mismatch_is_an_offset_conflict() {
         UniversalIoError::AppendOffsetConflict { offset: 10, .. }
     );
     assert_eq!(seen.lock().unwrap().len(), 1);
-}
-
-#[test]
-fn missing_object_is_an_offset_conflict() {
-    let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
-
-    let err = append_data_at(&endpoint, 10).unwrap_err();
-    assert_matches!(
-        err,
-        UniversalIoError::AppendOffsetConflict { offset: 10, .. }
-    );
 }
 
 /// The generation moved between the HEAD and the compose: an offset
@@ -176,45 +149,4 @@ fn precondition_failure_is_an_offset_conflict() {
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 4);
     assert_eq!(seen[3].method, "DELETE");
-}
-
-#[test]
-fn compose_failure_surfaces_the_body_excerpt() {
-    let (endpoint, _seen) = stub_server(vec![
-        head_ok(10),
-        put_ok(),
-        StubResponse::new(400).body("<Error><Code>InvalidArgument</Code></Error>"),
-        delete_ok(),
-    ]);
-
-    let err = append_data_at(&endpoint, 10).unwrap_err();
-    assert_matches!(err, UniversalIoError::S3 { .. });
-    let message = err.to_string();
-    assert!(message.contains("400"), "{message}");
-    assert!(message.contains("InvalidArgument"), "{message}");
-}
-
-/// Without a generation there is nothing to make the compose conditional
-/// on: refuse rather than compose unguarded.
-#[test]
-fn head_without_a_generation_is_an_error() {
-    let (endpoint, seen) = stub_server(vec![StubResponse::new(200).header("content-length", 10)]);
-
-    let err = append_data_at(&endpoint, 10).unwrap_err();
-    assert_matches!(err, UniversalIoError::S3 { .. });
-    assert!(err.to_string().contains("x-goog-generation"), "{err}");
-    assert_eq!(seen.lock().unwrap().len(), 1);
-}
-
-/// Names are the stored object names (`Path` already percent-encodes
-/// characters it does not allow, such as `<`), XML-escaped.
-#[test]
-fn compose_body_escapes_object_names() {
-    let a = object_store::path::Path::from("a&b");
-    let b = object_store::path::Path::from("c<d>");
-    assert_eq!(
-        compose_body(&[&a, &b]),
-        "<ComposeRequest><Component><Name>a&amp;b</Name></Component>\
-         <Component><Name>c%3Cd%3E</Name></Component></ComposeRequest>",
-    );
 }

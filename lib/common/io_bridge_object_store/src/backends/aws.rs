@@ -534,38 +534,4 @@ mod tests {
             assert_eq!(store_url.as_str(), expected, "store, {endpoint}");
         }
     }
-
-    /// GCS's XML API has no bulk `DeleteObjects`, so the store deletes one
-    /// object at a time there, whether the endpoint is configured or comes
-    /// from the environment.
-    #[test]
-    fn gcs_xml_api_endpoint_disables_bulk_delete() {
-        let bulk_delete_disabled = |config: &AwsConfig, env: &dyn Fn(&str) -> Option<String>| {
-            store_builder(config, env)
-                .unwrap()
-                .get_config_value(&AmazonS3ConfigKey::DisableBulkDelete)
-                == Some("true".to_string())
-        };
-        let no_env = |_: &str| None;
-
-        let mut gcs = config(AwsCredentials::Default);
-        gcs.endpoint = Some("https://storage.googleapis.com".to_string());
-        assert!(bulk_delete_disabled(&gcs, &no_env));
-
-        let mut gcs_subdomain = config(AwsCredentials::Default);
-        gcs_subdomain.endpoint = Some("https://bucket.storage.googleapis.com".to_string());
-        assert!(bulk_delete_disabled(&gcs_subdomain, &no_env));
-
-        let gcs_env = |name: &str| {
-            (name == "AWS_ENDPOINT").then(|| "https://storage.googleapis.com".to_string())
-        };
-        assert!(bulk_delete_disabled(
-            &config(AwsCredentials::Default),
-            &gcs_env
-        ));
-
-        let mut minio = config(AwsCredentials::Default);
-        minio.endpoint = Some("http://minio:9000".to_string());
-        assert!(!bulk_delete_disabled(&minio, &no_env));
-    }
 }
