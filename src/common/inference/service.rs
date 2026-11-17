@@ -45,6 +45,7 @@ impl InferenceData {
 pub struct InferenceService {
     pub(crate) config: InferenceConfig,
     client: InferenceClient,
+    default_timeout: Duration,
 }
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
@@ -63,10 +64,10 @@ impl InferenceService {
             token,
         } = &config;
 
-        let timeout = timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS);
+        let timeout = Duration::from_secs(timeout.unwrap_or(DEFAULT_INFERENCE_TIMEOUT_SECS));
         let client = InferenceClient::new(InferenceClientConfig {
             address: address.clone(),
-            timeout: Duration::from_secs(timeout),
+            timeout,
             token: token.clone(),
             user_agent: Some(APP_USER_AGENT.to_string()),
             // The server keeps accepting the deprecated BM25 `language: "none"`.
@@ -74,7 +75,11 @@ impl InferenceService {
         })
         .expect("Invalid timeout value for HTTP client");
 
-        Self { config, client }
+        Self {
+            config,
+            client,
+            default_timeout: timeout,
+        }
     }
 
     pub fn init_global(config: Option<InferenceConfig>) -> Result<(), StorageError> {
@@ -122,6 +127,7 @@ impl InferenceService {
             token,
         } = api_keys;
 
+        let request_timeout = timeout.unwrap_or(self.default_timeout);
         let params = RequestParams {
             token,
             headers: convert_to_reqwest_headers(&ext_api_keys),
@@ -132,7 +138,7 @@ impl InferenceService {
             .client
             .infer(inference_inputs, inference_type, params)
             .await
-            .map_err(storage_error)?;
+            .map_err(|err| storage_error(err, request_timeout))?;
 
         Ok(InferenceResponse {
             embeddings,
@@ -156,15 +162,18 @@ fn inference_usage(usage: inference::InferenceUsage) -> InferenceUsage {
     }
 }
 
-fn storage_error(err: InferenceError) -> StorageError {
+fn storage_error(err: InferenceError, request_timeout: Duration) -> StorageError {
     match err {
         InferenceError::NotConfigured => StorageError::service_error(
             "InferenceService URL not configured - please provide valid address in config",
         ),
         InferenceError::InvalidInput(message) => StorageError::bad_input(message),
+        InferenceError::Transport(TransportError { timeout: true, .. }) => {
+            StorageError::timeout(request_timeout, "inference request")
+        }
         InferenceError::Transport(TransportError {
             stage,
-            timeout: _,
+            timeout: false,
             message,
         }) => match stage {
             TransportStage::Send => {
@@ -214,5 +223,52 @@ fn rejection_error(rejection: Rejection) -> StorageError {
         status => {
             StorageError::service_error(format!("Unexpected inference error ({status}): {body}"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use inference::InferenceDataType;
+    use serde_json::Value;
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_request_timeout_is_a_timeout_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}/", listener.local_addr().unwrap());
+        // Accepts the request and never replies.
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let service = InferenceService::new(Some(InferenceConfig::new(Some(address))));
+        let input = InferenceInput {
+            data: Value::String("some text".to_string()),
+            data_type: InferenceDataType::Text,
+            model: "some-model".to_string(),
+            options: None,
+        };
+        let params = InferenceParams::new(
+            InferenceApiKeys::default(),
+            Some(Duration::from_millis(100)),
+        );
+
+        let err = service
+            .infer(vec![input], InferenceType::Search, params)
+            .await
+            .unwrap_err();
+        server.abort();
+
+        assert!(
+            matches!(
+                &err,
+                StorageError::Timeout { description }
+                    if description == "Operation 'inference request' timed out after 100ms"
+            ),
+            "{err}",
+        );
     }
 }
