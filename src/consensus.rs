@@ -1329,17 +1329,34 @@ impl RaftMessageBroker {
                 }
             };
 
-            match sender.send(message).map_err(|err| *err) {
+            // Resolve the peer address *now*, on the consensus thread, rather than later in the
+            // message sender task.
+            //
+            // Messages are forwarded to sender tasks *before* committed entries are applied. If a
+            // committed entry removes the peer (`RemoveNode`), its address is deleted from the
+            // address book while the messages to it may still sit in the sender queue. Those last
+            // messages carry the commit index that tells the removed peer about its own removal,
+            // so without the captured address they would be dropped and the removed peer would
+            // never learn that it should stop consensus.
+            let uri = self.consensus_state.peer_address(peer_id);
+
+            match sender.send(message, uri).map_err(|err| *err) {
                 Ok(()) => (),
 
-                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full(QueuedRaftMessage {
+                    message,
+                    ..
+                })) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is full. Message will be dropped.",
                     );
                 }
 
-                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(QueuedRaftMessage {
+                    message,
+                    ..
+                })) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is closed. \
@@ -1355,7 +1372,11 @@ impl RaftMessageBroker {
 
     fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
         let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
-        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Default::default());
+        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(QueuedRaftMessage {
+            index: 0,
+            message: RaftMessage::default(),
+            uri: None,
+        });
 
         let task = RaftMessageSender {
             messages: messages_rx,
@@ -1378,25 +1399,42 @@ impl RaftMessageBroker {
     }
 }
 
+/// Raft message queued for a [`RaftMessageSender`] task.
+#[derive(Clone, Debug)]
+struct QueuedRaftMessage {
+    /// Sequence number of the message, used to skip outdated heartbeats.
+    index: usize,
+    message: RaftMessage,
+    /// Address of the receiving peer, as known when the message was queued.
+    ///
+    /// Used if the peer address is no longer known when the message is actually sent
+    /// (e.g. the peer was removed from the cluster in the meantime).
+    uri: Option<Uri>,
+}
+
 #[derive(Debug)]
 struct RaftMessageSenderHandle {
-    messages: Sender<(usize, RaftMessage)>,
-    heartbeat: watch::Sender<(usize, RaftMessage)>,
+    messages: Sender<QueuedRaftMessage>,
+    heartbeat: watch::Sender<QueuedRaftMessage>,
     index: usize,
 }
 
 impl RaftMessageSenderHandle {
-    fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
-        if !is_heartbeat(&message) {
-            self.messages
-                .try_send((self.index, message))
-                .map_err(Box::new)?;
+    fn send(&mut self, message: RaftMessage, uri: Option<Uri>) -> RaftMessageSenderResult<()> {
+        let queued = QueuedRaftMessage {
+            index: self.index,
+            message,
+            uri,
+        };
+
+        if !is_heartbeat(&queued.message) {
+            self.messages.try_send(queued).map_err(Box::new)?;
         } else {
-            self.heartbeat.send((self.index, message)).map_err(
-                |watch::error::SendError(message)| {
+            self.heartbeat
+                .send(queued)
+                .map_err(|watch::error::SendError(message)| {
                     Box::new(tokio::sync::mpsc::error::TrySendError::Closed(message))
-                },
-            )?;
+                })?;
         }
 
         self.index += 1;
@@ -1406,11 +1444,11 @@ impl RaftMessageSenderHandle {
 }
 
 type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
-type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>>;
+type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<QueuedRaftMessage>>;
 
 struct RaftMessageSender {
-    messages: Receiver<(usize, RaftMessage)>,
-    heartbeat: watch::Receiver<(usize, RaftMessage)>,
+    messages: Receiver<QueuedRaftMessage>,
+    heartbeat: watch::Receiver<QueuedRaftMessage>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -1479,7 +1517,11 @@ impl RaftMessageSender {
         let mut prev_index = 0;
 
         loop {
-            let (index, message) = tokio::select! {
+            let QueuedRaftMessage {
+                index,
+                message,
+                uri,
+            } = tokio::select! {
                 biased;
                 Some(message) = self.messages.recv() => message,
                 Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
@@ -1487,14 +1529,14 @@ impl RaftMessageSender {
             };
 
             if prev_index <= index {
-                self.send(&message).await;
+                self.send(&message, uri).await;
                 prev_index = index;
             }
         }
     }
 
-    async fn send(&self, message: &RaftMessage) {
-        if let Err(err) = self.try_send(message).await {
+    async fn send(&self, message: &RaftMessage, queued_uri: Option<Uri>) {
+        if let Err(err) = self.try_send(message, queued_uri).await {
             let peer_id = message.to;
 
             if log::max_level() >= log::Level::Debug {
@@ -1505,10 +1547,10 @@ impl RaftMessageSender {
         }
     }
 
-    async fn try_send(&self, message: &RaftMessage) -> anyhow::Result<()> {
+    async fn try_send(&self, message: &RaftMessage, queued_uri: Option<Uri>) -> anyhow::Result<()> {
         let peer_id = message.to;
 
-        let uri = self.uri(peer_id).await?;
+        let uri = self.uri(peer_id, queued_uri).await?;
         let bytes = <RaftMessage as prost_for_raft::Message>::encode_to_vec(message);
         let grpc_message = GrpcRaftMessage { message: bytes };
 
@@ -1564,8 +1606,11 @@ impl RaftMessageSender {
         Ok(())
     }
 
-    async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        let uri = self.consensus_state.peer_address(peer_id);
+    async fn uri(&self, peer_id: PeerId, queued_uri: Option<Uri>) -> anyhow::Result<Uri> {
+        // Prefer the current address (it might have been updated since the message was queued),
+        // then the address known when the message was queued (the peer might have been removed
+        // since), and only then ask the bootstrap peer.
+        let uri = self.consensus_state.peer_address(peer_id).or(queued_uri);
 
         match uri {
             Some(uri) => Ok(uri),
