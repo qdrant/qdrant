@@ -97,6 +97,8 @@ impl ComposeAppend {
         // deterministic: under the single-writer contract a collision is a
         // leftover of our own failed attempt, and overwriting it is exactly
         // right.
+        // The contract relies on the caller's shard write lock: if two
+        // writers overlap, one may compose the other's bytes.
         let temp_key = object_store::path::Path::from(format!("{key}.compose-append"));
         store
             .put(&temp_key, PutPayload::from(data))
