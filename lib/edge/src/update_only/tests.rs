@@ -379,6 +379,7 @@ mod store {
         let (writer, outcome) = writer.apply_batch(store_batch(2000, vec![moved])).unwrap();
         let record = &outcome.points[0];
         assert_eq!(record.tombstoned.len(), 1, "below the cutoff, moves retire");
+        assert!(!record.deferred);
         assert!(record.shadowed.is_empty());
 
         let filler = (2001..=2256).map(point).collect();
@@ -393,6 +394,7 @@ mod store {
             .unwrap();
         let record = &outcome.points[0];
         assert_eq!(record.kind, PointApplyKind::Stored);
+        assert!(record.deferred);
         assert!(record.tombstoned.is_empty());
         assert_eq!(record.superseded, None);
         assert_eq!(
@@ -441,6 +443,94 @@ mod store {
             retrieve_500(&follower),
             Some(point(500).vector.try_into().unwrap()),
         );
+    }
+
+    #[test]
+    fn store_batch_reports_deferred_points_across_the_cutoff() {
+        for threshold_kb in [Some(1), None] {
+            let dir = leader_with_ten_points("edge-update-deferred-records");
+            recreate_payload_storages_append_only(dir.path());
+            let writer = UpdateOnlyEdgeShard::open(
+                MmapFs,
+                dir.path(),
+                crate::LocalSegmentEnumerator::new(dir.path()),
+                threshold_kb,
+            )
+            .unwrap();
+            let target = writer.write_target().unwrap();
+
+            let (writer, outcome) = writer
+                .apply_batch(store_batch(100, vec![point(11)]))
+                .unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(outcome.points.len(), 1);
+            assert!(!outcome.points[0].deferred);
+            assert!(outcome.points[0].shadowed.is_empty());
+
+            let (writer, outcome) = writer
+                .apply_batch(store_batch(101, (12..=258).map(point).collect()))
+                .unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(outcome.points.len(), 247);
+            for (record, id) in outcome.points.iter().zip(12..=258) {
+                assert_eq!(record.id, ExtendedPointId::NumId(id));
+                assert_eq!(record.kind, PointApplyKind::Stored);
+                assert_eq!(record.deferred, threshold_kb.is_some() && id >= 257);
+                assert!(record.shadowed.is_empty());
+            }
+
+            let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! { "kind": "rewritten" },
+                points: Some(vec![ExtendedPointId::NumId(11)]),
+                filter: None,
+                key: None,
+            }));
+            let (writer, outcome) = writer.apply_batch([(102, set_payload)]).unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            let [record] = &outcome.points[..] else {
+                panic!("expected one payload rewrite");
+            };
+            assert_eq!(record.id, ExtendedPointId::NumId(11));
+            assert_eq!(record.kind, PointApplyKind::Stored);
+            assert_eq!(record.deferred, threshold_kb.is_some());
+            assert!(record.shadowed.is_empty());
+            assert_eq!(record.superseded, Some((target, 10)));
+
+            let operations = store_batch(101, vec![point(258)])
+                .into_iter()
+                .chain(conditional_batch(
+                    103,
+                    vec![point(12)],
+                    UpdateMode::InsertOnly,
+                ))
+                .chain(conditional_batch(
+                    104,
+                    vec![point(999)],
+                    UpdateMode::UpdateOnly,
+                ))
+                .chain([(
+                    105,
+                    PointOperation(DeletePoints {
+                        ids: vec![ExtendedPointId::NumId(13)],
+                    }),
+                )]);
+            let (writer, outcome) = writer.apply_batch(operations).unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(
+                outcome
+                    .points
+                    .iter()
+                    .map(|record| record.kind)
+                    .collect::<Vec<_>>(),
+                [
+                    PointApplyKind::Skipped,
+                    PointApplyKind::Rejected,
+                    PointApplyKind::Missing,
+                    PointApplyKind::Deleted,
+                ],
+            );
+            assert!(outcome.points.iter().all(|record| !record.deferred));
+        }
     }
 
     /// A retried store batch is a no-op — through the same writer and through

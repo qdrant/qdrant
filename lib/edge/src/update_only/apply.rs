@@ -59,6 +59,9 @@ pub struct UpdateBatchOutcome {
 pub struct PointApplyRecord {
     pub id: PointIdType,
     pub kind: PointApplyKind,
+    /// Whether the point was stored at or past the deferred-points cutoff.
+    /// False for non-stored points or when no threshold is configured.
+    pub deferred: bool,
     /// Slots retired with a tombstone: every segment that held a copy of the
     /// point, except the write target's own slot when the point is stored.
     /// Empty for a stored point means a fresh insert, not an overwrite.
@@ -251,6 +254,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             let mut record = PointApplyRecord {
                 id,
                 kind,
+                deferred: false,
                 tombstoned: Vec::new(),
                 superseded: None,
                 shadowed: Vec::new(),
@@ -314,15 +318,19 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 .store_points(&self.pool, &mut to_store)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
 
+            for (store_index, &record_index) in stored_records.iter().enumerate() {
+                let is_deferred =
+                    deferred_cutoff.is_some_and(|cutoff| new_slots[store_index] >= cutoff);
+                outcome.points[record_index].deferred = is_deferred;
+            }
+
             // A copy stored past the cutoff is deferred: retiring the point's
             // other copies would leave readers that hide deferred points with
             // none, so they stay until a rebuild deduplicates them, as the
             // server keeps the source of a copy-on-write move.
             for (store_index, segment, internal_id) in stored_retirements.drain(..) {
                 let record = &mut outcome.points[stored_records[store_index]];
-                let is_deferred =
-                    deferred_cutoff.is_some_and(|cutoff| new_slots[store_index] >= cutoff);
-                if is_deferred {
+                if record.deferred {
                     record.shadowed.push((segment, internal_id));
                 } else {
                     to_tombstone

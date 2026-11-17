@@ -127,6 +127,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     }
 
     /// The append target; `None` when every appendable is claimed by a rebuild.
+    /// Unchanged by [`Self::apply_batch`], so it identifies the segment that received its stores.
     pub fn write_target(&self) -> Option<Uuid> {
         self.segments.read().write_target_uuid()
     }
