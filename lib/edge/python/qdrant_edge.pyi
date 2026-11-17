@@ -18,7 +18,7 @@ Payload = Dict[str, Any]
 JsonPath = str
 WithPayloadType = Union[bool, List[str], "PayloadSelector"]
 WithVectorType = Union[bool, List[str]]
-ScoringQueryType = Union["Query", "Fusion", "OrderBy", "Formula", "Sample", "Mmr"]
+ScoringQueryType = Union["Query", "Fusion", "OrderBy", "Formula", "Sample", "Mmr", "TextQuery"]
 ConditionType = Union[
     "FieldCondition",
     "IsEmptyCondition",
@@ -29,7 +29,14 @@ ConditionType = Union[
     "Filter",
 ]
 MatchType = Union[
-    "MatchValue", "MatchText", "MatchTextAny", "MatchPhrase", "MatchAny", "MatchExcept"
+    "MatchValue",
+    "MatchText",
+    "MatchTextAny",
+    "MatchPhrase",
+    "MatchPrefix",
+    "MatchSubstring",
+    "MatchAny",
+    "MatchExcept",
 ]
 RangeType = Union["RangeFloat", "RangeDateTime"]
 QuantizationConfigType = Union[
@@ -45,6 +52,17 @@ ExpressionType = "Expression"
 # ============================================================================
 # Main EdgeShard Class
 # ============================================================================
+
+class Memory(Enum):
+    """Memory placement of a component (vectors, HNSW, indexes, payload, …).
+
+    Prefer this over the deprecated ``on_disk`` / ``always_ram`` /
+    ``on_disk_payload`` flags.
+    """
+
+    Cold = ...
+    Cached = ...
+    Pinned = ...
 
 class EdgeShard:
     """
@@ -74,7 +92,8 @@ class EdgeShard:
     def create(path: str, config: "EdgeConfig") -> "EdgeShard":
         """
         Create a new edge shard at path with the given configuration.
-        Fails if the path already contains segment data.
+        Creates path if it does not exist. Fails if the path already contains
+        segment data.
 
         Args:
             path: Path to the shard directory (must not contain existing segments).
@@ -120,6 +139,22 @@ class EdgeShard:
 
         Returns:
             List of scored points matching the query.
+        """
+        ...
+
+    def query_batch(self, request: "QueryBatchRequest") -> List[List["ScoredPoint"]]:
+        """
+        Execute several queries as one planned batch.
+
+        Cheaper than calling `query` once per request: the batch is planned as a
+        whole, so its searches share one pass over the segments and queries that
+        differ only in their vector are scored together.
+
+        Args:
+            request: The batch of query requests to run together.
+
+        Returns:
+            One list of scored points per request, in the same order.
         """
         ...
 
@@ -248,23 +283,50 @@ class EdgeConfig:
             Union["EdgeVectorParams", Dict[str, "EdgeVectorParams"]]
         ] = None,
         sparse_vectors: Optional[Dict[str, "EdgeSparseVectorParams"]] = None,
-        on_disk_payload: bool = True,
+        on_disk_payload: Optional[bool] = None,
         hnsw_config: Optional["HnswIndexConfig"] = None,
         quantization_config: Optional[QuantizationConfigType] = None,
         optimizers: Optional["EdgeOptimizersConfig"] = None,
+        max_search_threads: Optional[int] = None,
+        search_pool_core: Optional[int] = None,
+        payload_memory: Optional["Memory"] = None,
+        id_tracker_memory: Optional["Memory"] = None,
+        wal_enabled: Optional[bool] = None,
     ) -> None:
         """
         Create an EdgeConfig.
+
+        Parameters left as None are "not specified": when loading an existing shard each
+        one resolves through provided -> persisted -> derived from segments -> default,
+        so an unspecified parameter keeps the shard as it is. vectors and sparse_vectors
+        define the stored data: if provided they are validated for compatibility against
+        the existing segments, if omitted they are inherited from the shard.
 
         Args:
             vectors: Dense vector configuration. Can be a single EdgeVectorParams for
                      the default vector (name "") or a dict of name -> EdgeVectorParams.
                      Optional if sparse_vectors is provided (sparse-only config).
             sparse_vectors: Optional sparse vector configurations.
-            on_disk_payload: If True, store payload on disk (mmap); otherwise in RAM.
+            on_disk_payload: Deprecated, use payload_memory instead. If True, store
+                             payload on disk (mmap); otherwise in RAM.
+                             None keeps the shard's current value (defaults to on-disk).
             hnsw_config: Optional global HNSW config (used when building HNSW index).
             quantization_config: Optional global quantization config.
             optimizers: Optional optimizer settings.
+            max_search_threads: Number of threads in the shard's search thread pool, which
+                                runs per-segment reads in parallel and loads segments in
+                                parallel. None (the default) derives the count from the number
+                                of CPUs, matching the core search runtime.
+            search_pool_core: Pin every search pool thread to this CPU core (best-effort),
+                              bounding search compute to one core. None = OS scheduling.
+            payload_memory: Memory placement of the payload storage. Overrides the deprecated
+                            on_disk_payload flag if both are set. Pinned is not supported
+                            (treated as Cached). Defaults to Cold.
+            id_tracker_memory: Memory placement of the point id tracker in non-appendable
+                               segments. None uses the deployment default.
+            wal_enabled: Whether updates are written to a write-ahead log. None means enabled.
+                         Fixed when the shard is created: loading with a different value fails.
+                         Without a WAL, updates are durable only once flush() returns.
         """
         ...
 
@@ -279,13 +341,13 @@ class EdgeConfig:
         ...
 
     @property
-    def on_disk_payload(self) -> bool:
-        """Whether payload is stored on disk."""
+    def on_disk_payload(self) -> Optional[bool]:
+        """Whether payload is stored on disk, or None if not specified."""
         ...
 
     @property
-    def hnsw_config(self) -> "HnswIndexConfig":
-        """Global HNSW config."""
+    def hnsw_config(self) -> Optional["HnswIndexConfig"]:
+        """Global HNSW config, or None if not specified."""
         ...
 
     @property
@@ -294,8 +356,33 @@ class EdgeConfig:
         ...
 
     @property
-    def optimizers(self) -> "EdgeOptimizersConfig":
-        """Optimizer settings."""
+    def optimizers(self) -> Optional["EdgeOptimizersConfig"]:
+        """Optimizer settings, or None if not specified."""
+        ...
+
+    @property
+    def max_search_threads(self) -> Optional[int]:
+        """Number of threads in the search thread pool, or None for the CPU-derived default."""
+        ...
+
+    @property
+    def search_pool_core(self) -> Optional[int]:
+        """CPU core the search pool is pinned to, or None for OS scheduling."""
+        ...
+
+    @property
+    def payload_memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload storage, or None if not specified."""
+        ...
+
+    @property
+    def id_tracker_memory(self) -> Optional["Memory"]:
+        """Memory placement of the point id tracker, or None if not specified."""
+        ...
+
+    @property
+    def wal_enabled(self) -> Optional[bool]:
+        """Whether updates are written to a write-ahead log, or None if not specified (enabled)."""
         ...
 
 class EdgeVectorParams:
@@ -310,6 +397,7 @@ class EdgeVectorParams:
         datatype: Optional["VectorStorageDatatype"] = None,
         quantization_config: Optional[QuantizationConfigType] = None,
         hnsw_config: Optional["HnswIndexConfig"] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create EdgeVectorParams.
@@ -317,11 +405,15 @@ class EdgeVectorParams:
         Args:
             size: Dimension of vectors.
             distance: Distance metric.
-            on_disk: If True, store vectors on disk (mmap); otherwise in RAM.
+            on_disk: Deprecated, use memory instead. If True, store vectors on disk
+                     (mmap); otherwise in RAM.
             multivector_config: Optional multi-vector configuration.
             datatype: Optional storage datatype.
             quantization_config: Optional per-vector quantization override.
             hnsw_config: Optional per-vector HNSW config override.
+            memory: Memory placement of the original vector storage. Overrides the
+                    deprecated on_disk flag if both are set.
+                    Pinned is not supported (treated as Cached). Defaults to Cached.
         """
         ...
 
@@ -360,6 +452,11 @@ class EdgeVectorParams:
         """HNSW config override."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the original vector storage, or None if not specified."""
+        ...
+
 class EdgeSparseVectorParams:
     """Sparse vector parameters for EdgeConfig."""
 
@@ -369,15 +466,19 @@ class EdgeSparseVectorParams:
         on_disk: Optional[bool] = None,
         modifier: Optional["Modifier"] = None,
         datatype: Optional["VectorStorageDatatype"] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create EdgeSparseVectorParams.
 
         Args:
             full_scan_threshold: Threshold for full scan vs index search.
-            on_disk: If True, sparse index on disk; otherwise in RAM.
+            on_disk: Deprecated, use memory instead. If True, sparse index on disk;
+                     otherwise in RAM.
             modifier: Optional modifier (e.g., IDF).
             datatype: Storage datatype.
+            memory: Memory placement of the sparse index. Overrides the deprecated
+                    on_disk flag if both are set. Defaults to Pinned.
         """
         ...
 
@@ -399,6 +500,11 @@ class EdgeSparseVectorParams:
     @property
     def datatype(self) -> Optional["VectorStorageDatatype"]:
         """Storage datatype."""
+        ...
+
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the sparse index, or None if not specified."""
         ...
 
 class EdgeOptimizersConfig:
@@ -477,6 +583,7 @@ class HnswIndexConfig:
         on_disk: Optional[bool] = None,
         payload_m: Optional[int] = None,
         inline_storage: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create an HnswIndexConfig.
@@ -486,9 +593,11 @@ class HnswIndexConfig:
             ef_construct: Number of candidates during index construction.
             full_scan_threshold: Threshold for full scan.
             max_indexing_threads: Max threads for HNSW indexing (0 = auto).
-            on_disk: Whether to store on disk.
+            on_disk: Deprecated, use memory instead. Whether to store on disk.
             payload_m: Payload index m value.
             inline_storage: Whether to use inline storage.
+            memory: Memory placement of the HNSW graph. Overrides the deprecated on_disk
+                    flag if both are set.
         """
         ...
 
@@ -527,6 +636,11 @@ class HnswIndexConfig:
         """Inline storage flag."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the HNSW graph, or None if not specified."""
+        ...
+
 class MultiVectorConfig:
     """Configuration for multi-vector storage."""
 
@@ -556,6 +670,7 @@ class ScalarQuantizationConfig:
         type: "ScalarType",
         quantile: Optional[float] = None,
         always_ram: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create a ScalarQuantizationConfig.
@@ -563,7 +678,9 @@ class ScalarQuantizationConfig:
         Args:
             type: Scalar type (e.g., Int8).
             quantile: Quantile for normalization.
-            always_ram: Whether to keep in RAM.
+            always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+            memory: Memory placement of the quantized vectors. Overrides the deprecated
+                    always_ram flag if both are set.
         """
         ...
 
@@ -582,6 +699,11 @@ class ScalarQuantizationConfig:
         """Always RAM flag."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the quantized vectors, or None if not specified."""
+        ...
+
 class ProductQuantizationConfig:
     """Configuration for product quantization."""
 
@@ -589,13 +711,16 @@ class ProductQuantizationConfig:
         self,
         compression: "CompressionRatio",
         always_ram: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create a ProductQuantizationConfig.
 
         Args:
             compression: Compression ratio.
-            always_ram: Whether to keep in RAM.
+            always_ram: Deprecated, use memory instead. Whether to keep in RAM.
+            memory: Memory placement of the quantized vectors. Overrides the deprecated
+                    always_ram flag if both are set.
         """
         ...
 
@@ -609,6 +734,11 @@ class ProductQuantizationConfig:
         """Always RAM flag."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the quantized vectors, or None if not specified."""
+        ...
+
 class BinaryQuantizationConfig:
     """Configuration for binary quantization."""
 
@@ -617,14 +747,17 @@ class BinaryQuantizationConfig:
         always_ram: Optional[bool] = None,
         encoding: Optional["BinaryQuantizationEncoding"] = None,
         query_encoding: Optional["BinaryQuantizationQueryEncoding"] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create a BinaryQuantizationConfig.
 
         Args:
-            always_ram: Whether to keep in RAM.
+            always_ram: Deprecated, use memory instead. Whether to keep in RAM.
             encoding: Binary encoding type.
             query_encoding: Query encoding type.
+            memory: Memory placement of the quantized vectors. Overrides the deprecated
+                    always_ram flag if both are set.
         """
         ...
 
@@ -643,22 +776,28 @@ class BinaryQuantizationConfig:
         """Query encoding."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the quantized vectors, or None if not specified."""
+        ...
+
 class TurboQuantQuantizationConfig:
     """Configuration for TurboQuant quantization."""
 
     def __init__(
         self,
         always_ram: Optional[bool] = None,
-        plus: Optional[bool] = None,
         bits: Optional["TurboQuantBitSize"] = None,
+        memory: Optional["Memory"] = None,
     ) -> None:
         """
         Create a TurboQuantQuantizationConfig.
 
         Args:
-            always_ram: Whether to keep in RAM.
-            plus: Enable the TurboQuant+ variant.
+            always_ram: Deprecated, use memory instead. Whether to keep in RAM.
             bits: Bit size used for compressed codes.
+            memory: Memory placement of the quantized vectors. Overrides the deprecated
+                    always_ram flag if both are set.
         """
         ...
 
@@ -668,13 +807,13 @@ class TurboQuantQuantizationConfig:
         ...
 
     @property
-    def plus(self) -> Optional[bool]:
-        """TurboQuant+ flag."""
+    def bits(self) -> Optional["TurboQuantBitSize"]:
+        """Bit size."""
         ...
 
     @property
-    def bits(self) -> Optional["TurboQuantBitSize"]:
-        """Bit size."""
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the quantized vectors, or None if not specified."""
         ...
 
 # ============================================================================
@@ -695,6 +834,8 @@ class VectorStorageDatatype(Enum):
     Float32 = ...
     Float16 = ...
     Uint8 = ...
+    Turbo8 = ...
+    Turbo16 = ...
 
 class MultiVectorComparator(Enum):
     """Multi-vector comparison methods."""
@@ -737,6 +878,7 @@ class TurboQuantBitSize(Enum):
     Bits1_5 = ...
     Bits2 = ...
     Bits4 = ...
+    Bits8 = ...
 
 class Modifier(Enum):
     """Sparse vector modifiers."""
@@ -1090,14 +1232,24 @@ class KeywordIndexParams:
         is_tenant: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        prefix: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create KeywordIndexParams.
 
         Args:
             is_tenant: Whether this field is used for tenant separation.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            prefix: Whether to enable prefix matching for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1116,6 +1268,21 @@ class KeywordIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def prefix(self) -> Optional[bool]:
+        """Whether prefix matching is enabled."""
+        ...
+
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
 class IntegerIndexParams:
     """Index parameters for integer fields."""
 
@@ -1126,6 +1293,8 @@ class IntegerIndexParams:
         is_principal: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create IntegerIndexParams.
@@ -1134,8 +1303,14 @@ class IntegerIndexParams:
             lookup: Enable exact match filtering.
             range: Enable range filtering.
             is_principal: Whether this field is a principal identifier.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1164,6 +1339,16 @@ class IntegerIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
 class FloatIndexParams:
     """Index parameters for float fields."""
 
@@ -1172,14 +1357,22 @@ class FloatIndexParams:
         is_principal: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create FloatIndexParams.
 
         Args:
             is_principal: Whether this field is a principal identifier.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1198,6 +1391,16 @@ class FloatIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
 class GeoIndexParams:
     """Index parameters for geo fields."""
 
@@ -1205,13 +1408,21 @@ class GeoIndexParams:
         self,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create GeoIndexParams.
 
         Args:
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1223,6 +1434,16 @@ class GeoIndexParams:
     @property
     def enable_hnsw(self) -> Optional[bool]:
         """Whether to enable HNSW index."""
+        ...
+
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
         ...
 
 class BoolIndexParams:
@@ -1232,13 +1453,21 @@ class BoolIndexParams:
         self,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create BoolIndexParams.
 
         Args:
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1250,6 +1479,16 @@ class BoolIndexParams:
     @property
     def enable_hnsw(self) -> Optional[bool]:
         """Whether to enable HNSW index."""
+        ...
+
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
         ...
 
 class DatetimeIndexParams:
@@ -1260,14 +1499,22 @@ class DatetimeIndexParams:
         is_principal: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create DatetimeIndexParams.
 
         Args:
             is_principal: Whether this field is a principal identifier.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1286,6 +1533,16 @@ class DatetimeIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
 class UuidIndexParams:
     """Index parameters for UUID fields."""
 
@@ -1294,14 +1551,22 @@ class UuidIndexParams:
         is_tenant: Optional[bool] = None,
         on_disk: Optional[bool] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create UuidIndexParams.
 
         Args:
             is_tenant: Whether this field is used for tenant separation.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].price". The field must be inside the array's
+                    elements, and `is_empty` on it matches a point when one of its
+                    elements lacks the field.
         """
         ...
 
@@ -1320,6 +1585,16 @@ class UuidIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
 class TextIndexParams:
     """Index parameters for text fields."""
 
@@ -1335,6 +1610,9 @@ class TextIndexParams:
         on_disk: Optional[bool] = None,
         stemmer: Optional["StemmingAlgorithm"] = None,
         enable_hnsw: Optional[bool] = None,
+        memory: Optional["Memory"] = None,
+        scoring: Optional[Union[bool, "TextScoringParams"]] = None,
+        nested: Optional[str] = None,
     ) -> None:
         """
         Create TextIndexParams.
@@ -1347,9 +1625,19 @@ class TextIndexParams:
             ascii_folding: Apply ASCII folding.
             phrase_matching: Enable phrase matching.
             stopwords: Stopwords configuration.
-            on_disk: Whether to store index on disk.
+            on_disk: Deprecated, use memory instead. Whether to store index on disk.
             stemmer: Stemming algorithm.
             enable_hnsw: Whether to enable HNSW index for this field.
+            memory: Memory placement of the payload index. Overrides the deprecated
+                    on_disk flag if both are set.
+            scoring: Record document lengths and term frequencies, so a
+                     TextQuery can rank points over this field. `True` for
+                     BM25, or the TextScoringParams. Default: disabled.
+            nested: Index every object of this array as a separate entry, e.g. "offers"
+                    for the field "offers[].title". The field must be inside the array's
+                    elements. Every query on the field treats each element as its own
+                    document: a condition matches a point when a single element matches
+                    it, and BM25 scores elements separately.
         """
         ...
 
@@ -1403,6 +1691,45 @@ class TextIndexParams:
         """Whether to enable HNSW index."""
         ...
 
+    @property
+    def memory(self) -> Optional["Memory"]:
+        """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def scoring(self) -> Optional["TextScoringParams"]:
+        """How the index ranks documents, or None if it doesn't."""
+        ...
+
+    @property
+    def nested(self) -> Optional[str]:
+        """The array whose objects are indexed as separate entries, or None if the field is indexed per point."""
+        ...
+
+class TextScoringParams:
+    """Ranking over a text index. The index records the length of each
+    document, which ranking normalizes by. BM25's `k` and `b` are set per
+    query, with `Bm25Params`."""
+
+    def __init__(self, type: "TextScoringType" = ...) -> None:
+        """
+        Create TextScoringParams.
+
+        Args:
+            type: How documents are ranked. Default: TextScoringType.Bm25.
+        """
+        ...
+
+    @property
+    def type(self) -> "TextScoringType":
+        """How documents are ranked."""
+        ...
+
+class TextScoringType(Enum):
+    """How a text index ranks documents."""
+
+    Bm25 = ...
+
 class TokenizerType(Enum):
     """Text tokenizer types."""
 
@@ -1410,6 +1737,7 @@ class TokenizerType(Enum):
     Whitespace = ...
     Word = ...
     Multilingual = ...
+    Code = ...
 
 Stopwords = Union["Language", "StopwordsSet"]
 """Stopwords configuration - either a language or a custom set."""
@@ -1475,7 +1803,7 @@ class StopwordsSet:
         """Custom stopwords."""
         ...
 
-StemmingAlgorithm = Union["SnowballParams"]
+StemmingAlgorithm = Union["SnowballParams", "DisabledStemmer"]
 
 class SnowballParams:
     """Snowball stemming algorithm parameters."""
@@ -1492,6 +1820,18 @@ class SnowballParams:
     @property
     def language(self) -> "SnowballLanguage":
         """Snowball language."""
+        ...
+
+class DisabledStemmer:
+    """
+    Explicitly disable stemming, overriding the language default.
+
+    Use together with an empty stopword set for language-neutral text
+    processing, instead of the deprecated ``language="none"`` hack.
+    """
+
+    def __init__(self) -> None:
+        """Create a DisabledStemmer."""
         ...
 
 class SnowballLanguage(Enum):
@@ -1520,6 +1860,16 @@ class SnowballLanguage(Enum):
 # ============================================================================
 # Request Classes
 # ============================================================================
+
+class QueryBatchRequest:
+    def __init__(self, queries: List["QueryRequest"]) -> None:
+        """Create a batch of queries, returning results in the same order."""
+        ...
+
+    @property
+    def queries(self) -> List["QueryRequest"]: ...
+
+    def __repr__(self) -> str: ...
 
 class QueryRequest:
     """Request for query operation."""
@@ -1883,6 +2233,7 @@ class SearchParams:
         quantization: Optional["QuantizationSearchParams"] = None,
         indexed_only: bool = False,
         acorn: Optional["AcornSearchParams"] = None,
+        idf: Optional["IdfParams"] = None,
     ) -> None:
         """
         Create SearchParams.
@@ -1893,6 +2244,7 @@ class SearchParams:
             quantization: Quantization search parameters.
             indexed_only: Whether to search only indexed vectors.
             acorn: Acorn search parameters.
+            idf: Population sparse IDF statistics are computed over.
         """
         ...
 
@@ -1919,6 +2271,36 @@ class SearchParams:
     @property
     def acorn(self) -> Optional["AcornSearchParams"]:
         """Acorn parameters."""
+        ...
+
+    @property
+    def idf(self) -> Optional["IdfParams"]:
+        """IDF scope parameters."""
+        ...
+
+class IdfParams:
+    """Population over which sparse vector IDF statistics are computed - the IDF corpus.
+
+    Only applicable to sparse vectors with the IDF modifier enabled.
+    """
+
+    def __init__(
+        self,
+        corpus: Optional["Filter"] = None,
+    ) -> None:
+        """
+        Create IdfParams.
+
+        Args:
+            corpus: Filter defining the corpus: IDF statistics are computed over
+                the points matching this filter. If None, statistics are
+                collection-wide (global).
+        """
+        ...
+
+    @property
+    def corpus(self) -> Optional["Filter"]:
+        """Corpus filter, None for global statistics."""
         ...
 
 class QuantizationSearchParams:
@@ -2130,6 +2512,67 @@ class Mmr:
     @property
     def candidates_limit(self) -> int:
         """Candidates limit."""
+        ...
+
+class TextQuery:
+    """BM25 over the text index of a payload field.
+
+    The field's index must be created with `TextIndexParams(scoring=True)`.
+    """
+
+    def __init__(
+        self,
+        field: JsonPath,
+        query: str,
+        scoring: Optional["Bm25Params"] = None,
+    ) -> None:
+        """
+        Create a TextQuery.
+
+        Args:
+            field: Payload field whose text index scores the points.
+            query: Text to search for, tokenized by the field's text index.
+            scoring: Parameters of the scorer, which must match the scoring of
+                     the field's text index. If absent, the defaults.
+        """
+        ...
+
+    @property
+    def field(self) -> JsonPath:
+        """Payload field whose text index scores the points."""
+        ...
+
+    @property
+    def query(self) -> str:
+        """Text to search for."""
+        ...
+
+    @property
+    def scoring(self) -> "Bm25Params":
+        """Parameters of the scorer."""
+        ...
+
+class Bm25Params:
+    """BM25 parameters of a TextQuery."""
+
+    def __init__(self, k: Optional[float] = None, b: Optional[float] = None) -> None:
+        """
+        Create Bm25Params.
+
+        Args:
+            k: Term frequency saturation, non-negative. Default: 1.2.
+            b: Document length normalization, within [0, 1]. Default: 0.75.
+        """
+        ...
+
+    @property
+    def k(self) -> float:
+        """Term frequency saturation."""
+        ...
+
+    @property
+    def b(self) -> float:
+        """Document length normalization."""
         ...
 
 class RecommendQuery:
@@ -2381,6 +2824,16 @@ class Expression(Enum):
         ...
 
     @staticmethod
+    def Max(exprs: List["Expression"]) -> "Expression":
+        """Create a maximum expression. Requires at least one operand."""
+        ...
+
+    @staticmethod
+    def Min(exprs: List["Expression"]) -> "Expression":
+        """Create a minimum expression. Requires at least one operand."""
+        ...
+
+    @staticmethod
     def Neg(expr: "Expression") -> "Expression":
         """Create a negation expression."""
         ...
@@ -2417,6 +2870,11 @@ class Expression(Enum):
     @staticmethod
     def Ln(expr: "Expression") -> "Expression":
         """Create a natural log expression."""
+        ...
+
+    @staticmethod
+    def Acosh(expr: "Expression") -> "Expression":
+        """Create an inverse hyperbolic cosine expression."""
         ...
 
     @staticmethod
@@ -2744,6 +3202,40 @@ class MatchPhrase:
     @property
     def phrase(self) -> str:
         """Phrase."""
+        ...
+
+class MatchPrefix:
+    """Match keyword values starting with the given prefix."""
+
+    def __init__(self, prefix: str) -> None:
+        """
+        Create a MatchPrefix.
+
+        Args:
+            prefix: Prefix to match.
+        """
+        ...
+
+    @property
+    def prefix(self) -> str:
+        """Prefix."""
+        ...
+
+class MatchSubstring:
+    """Match keyword values containing the given substring."""
+
+    def __init__(self, substring: str) -> None:
+        """
+        Create a MatchSubstring.
+
+        Args:
+            substring: Substring to match.
+        """
+        ...
+
+    @property
+    def substring(self) -> str:
+        """Substring."""
         ...
 
 class MatchAny:

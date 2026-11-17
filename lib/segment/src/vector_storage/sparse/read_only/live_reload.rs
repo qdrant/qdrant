@@ -1,33 +1,52 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlySparseVectorStorage;
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
 
 impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    /// Reload the Gridstore, apply `deleted_points`, and recompute
-    /// `next_point_offset`; appended points come from the Gridstore, so
-    /// `new_points` is unused.
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let futs = self.storage.live_preload(fs)?;
+        self.deleted.live_preload(fs)?;
+        Ok(futs)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
-        _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.deleted.insert_all(deleted_points);
+        // A deleted slot never lies above the storage's end, but keep the end covering it
+        let deleted_end = self.deleted.as_bitslice().last_one().map_or(0, |i| i + 1);
+        self.next_point_offset = self.next_point_offset.max(deleted_end);
+        Ok(())
+    }
+
+    /// Reload the Blobstore, apply `deleted_points`, fold in the persisted
+    /// deletion of each appended offset, and recompute `next_point_offset`.
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
         self.deleted.insert_all(deleted_points);
+        self.deleted.reload_appended::<S>(fs, new_points)?;
 
         self.next_point_offset = self
             .deleted
             .as_bitslice()
             .last_one()
-            .max(Some(self.storage.max_point_offset() as usize))
+            .map(|i| i + 1)
+            .max(Some(self.storage.max_point_offset()? as usize))
             .unwrap_or_default();
 
         Ok(())

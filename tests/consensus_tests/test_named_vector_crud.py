@@ -158,6 +158,140 @@ def test_create_vector_no_optimization(tmp_path: pathlib.Path):
         assert "new_sparse" in sparse, f"new_sparse not in sparse vectors config on {uri}"
 
 
+def update_collection_hnsw_m(peer_url, collection_name, m, timeout=30):
+    """Force a config-mismatch by changing the collection-wide HNSW `m`.
+
+    Returns immediately (wait happens via collection status); the config-mismatch
+    optimizer then rebuilds every already-indexed segment to apply the new value.
+    """
+    r = requests.patch(
+        f"{peer_url}/collections/{collection_name}?timeout={timeout}",
+        json={"hnsw_config": {"m": m}},
+    )
+    assert_http_ok(r)
+    return r.json()
+
+
+def test_delete_vector_keeps_optimizations_progressing(tmp_path: pathlib.Path):
+    """
+    Regression test for the deleted-vector optimizer deadlock.
+
+    Before the fix, deleting a named vector could permanently block the
+    config-mismatch optimizer: if a rebuilt source segment still carried the
+    deleted vector (a DeleteVectorName landing while that segment was mid-
+    optimization), `SegmentBuilder` cancelled the merge, and every retry
+    cancelled again — so no segment was ever rebuilt and any pending config
+    migration stalled forever (the collection never returns to green).
+
+    This drives a real server so the delete-vs-optimization race can occur
+    naturally. It is a stress/regression guard: it most reliably catches the
+    deadlock (the collection failing to return to green) and the data-loss
+    variant (points or the surviving vector disappearing); it also guards the
+    happy path of "delete a vector + run a config migration with data intact".
+
+    1. Create a collection with two dense vectors `keep` and `drop`, low
+       indexing threshold so segments get HNSW-indexed.
+    2. Upload points populating both, wait green.
+    3. Force a config-mismatch migration (bump HNSW `m`) and, while that
+       optimization is in flight, delete the `drop` vector — overlapping the
+       deletion with an active rebuild. Force a couple more migrations to keep
+       the optimizer churning while the schema settles.
+    4. Assert the collection returns to green (optimizations progress, not
+       stuck), all points survive, search on `keep` still works, and `drop` is
+       gone.
+    """
+    VECTOR_DIM = 32
+    N_POINTS = 1000
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    # Two dense vectors, low indexing threshold so the optimizer builds HNSW
+    # indexes — giving the config-mismatch optimizer segments to rebuild later.
+    r = requests.put(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}?timeout=30",
+        json={
+            "vectors": {
+                "keep": {"size": VECTOR_DIM, "distance": "Cosine"},
+                "drop": {"size": VECTOR_DIM, "distance": "Dot"},
+            },
+            "shard_number": 1,
+            "replication_factor": 1,
+            "optimizers_config": {"indexing_threshold": 100},
+        },
+    )
+    assert_http_ok(r)
+
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
+    )
+
+    # Upload N_POINTS points populating both vectors.
+    for i in range(N_POINTS // 100):
+        points = [
+            {
+                "id": i * 100 + j,
+                "vector": {
+                    "keep": [float((i + j + x) % 10) / 10 for x in range(VECTOR_DIM)],
+                    "drop": [float((i * j + x) % 7) / 10 for x in range(VECTOR_DIM)],
+                },
+                "payload": {"idx": i * 100 + j},
+            }
+            for j in range(100)
+        ]
+        r = requests.put(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+            json={"points": points},
+        )
+        assert_http_ok(r)
+
+    wait_collection_green(peer_api_uris[0], COLLECTION_NAME)
+    wait_collection_points_count(peer_api_uris[0], COLLECTION_NAME, N_POINTS)
+
+    # Kick off a config-mismatch rebuild of all indexed segments, then delete
+    # `drop` while that optimization is in flight — this is the race that used
+    # to wedge the optimizer forever. `wait=False` so the deletion overlaps the
+    # active rebuild rather than blocking until it has fully drained.
+    update_collection_hnsw_m(peer_api_uris[0], COLLECTION_NAME, 32)
+    delete_vector_name(peer_api_uris[0], COLLECTION_NAME, "drop", wait=False)
+
+    # Keep forcing fresh config mismatches so the optimizer must repeatedly
+    # rebuild the (now `drop`-less in schema) segments. Pre-fix, any segment
+    # still carrying `drop` would cancel each round and never converge.
+    update_collection_hnsw_m(peer_api_uris[0], COLLECTION_NAME, 48)
+    update_collection_hnsw_m(peer_api_uris[0], COLLECTION_NAME, 16)
+
+    # Key assertion: optimizations make progress and the collection returns to
+    # green. If the deleted-vector deadlock regresses, this times out.
+    wait_collection_green(peer_api_uris[0], COLLECTION_NAME)
+
+    # No data loss: every point still present.
+    wait_collection_points_count(peer_api_uris[0], COLLECTION_NAME, N_POINTS)
+
+    # `drop` is gone from the schema on all peers; `keep` remains.
+    for uri in peer_api_uris:
+        wait_for(
+            lambda u=uri: "drop" not in get_collection_vectors_config(u, COLLECTION_NAME)
+        )
+        vectors = get_collection_vectors_config(uri, COLLECTION_NAME)
+        assert "keep" in vectors, f"keep vector missing on {uri}"
+
+    # Search on the surviving vector still works.
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={"vector": {"name": "keep", "vector": [0.1] * VECTOR_DIM}, "limit": 5},
+    )
+    assert_http_ok(r)
+    assert len(r.json()["result"]) > 0, "search on surviving vector returned nothing"
+
+    # Searching the deleted vector must fail (it no longer exists).
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search",
+        json={"vector": {"name": "drop", "vector": [0.1] * VECTOR_DIM}, "limit": 5},
+    )
+    assert r.status_code != 200, "search on deleted vector should fail"
+
+
 def test_vector_crud_with_consensus_snapshot(tmp_path: pathlib.Path):
     """
     Test that named vector create/delete survives consensus snapshot recovery.

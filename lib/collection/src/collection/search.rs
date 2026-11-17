@@ -3,19 +3,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future;
 use itertools::{Either, Itertools};
 use segment::types::{
-    ExtendedPointId, Filter, Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::common::batching::empty_batch_results;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
@@ -25,9 +26,9 @@ impl Collection {
         &self,
         request: CoreSearchRequest,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -40,9 +41,9 @@ impl Collection {
             .do_core_search_batch(
                 request_batch,
                 read_consistency,
+                routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
         Ok(results.into_iter().next().unwrap())
@@ -52,14 +53,14 @@ impl Collection {
         &self,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
+            return Ok(empty_batch_results(request.searches.len()));
         }
 
         let is_payload_required = request
@@ -107,9 +108,9 @@ impl Collection {
                 .do_core_search_batch(
                     without_payload_batch,
                     read_consistency,
+                    routing_token,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
             // update timeout
@@ -123,9 +124,9 @@ impl Collection {
                         req.with_payload.clone(),
                         req.with_vector.unwrap_or_default(),
                         read_consistency,
+                        routing_token,
                         &shard_selection,
                         timeout,
-                        hw_measurement_acc.clone(),
                     )
                 });
             future::try_join_all(filled_results).await
@@ -134,9 +135,9 @@ impl Collection {
                 .do_core_search_batch(
                     request,
                     read_consistency,
+                    routing_token,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await?;
             Ok(result)
@@ -147,40 +148,31 @@ impl Collection {
         &self,
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
         let instant = Instant::now();
 
-        // Snapshot the targeted shards under the read guard, then drop it
-        // before awaiting the per-shard searches. Holding the guard across
-        // the searches would block writers (e.g. shard creation) for the
-        // entire search duration; cloning `Arc<ShardReplicaSet>` lets each
-        // search keep the shard alive on its own.
-        let targets: Vec<(Arc<_>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        let targets = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         // query all shards concurrently
         let all_searches = targets.into_iter().map(|(shard, shard_key)| {
             let request = request.clone();
-            let hw_measurement_acc = hw_measurement_acc.clone();
             async move {
                 let mut records = shard
                     .core_search(
                         request,
                         read_consistency,
+                        routing_token,
                         shard_selection.is_shard_id(),
                         timeout,
-                        hw_measurement_acc,
                     )
                     .await?;
                 if shard_key.is_some() {
@@ -217,9 +209,9 @@ impl Collection {
         with_payload: Option<WithPayloadInterface>,
         with_vector: WithVector,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -244,9 +236,9 @@ impl Collection {
             .retrieve(
                 retrieve_request,
                 read_consistency,
+                routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 

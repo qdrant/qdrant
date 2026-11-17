@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
-use common::bitvec::BitVec;
+use common::bitvec::DeletedBitVec;
 use common::persisted_hashmap::{Key, UniversalHashMap};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 use serde::{Deserialize, Serialize};
 
 use super::MapIndexKey;
+use super::prefix_index::PrefixIndex;
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 
 mod lifecycle;
@@ -19,10 +20,11 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 /// Immutable map index served directly from a [`UniversalRead`] storage backend.
 ///
-/// On-disk state (`values_to_points.bin`, `deleted.bin`, `point_to_values.*`,
-/// `mmap_field_index_config.json`) is written once during [`Self::build`] and
-/// not mutated afterwards: `deleted.bin` records only the points whose payload
-/// was empty at build time.
+/// On-disk state (`values_to_points.bin`, `deleted_mask.bin`,
+/// `point_to_values.*`, `mmap_field_index_config.json`) is written once during
+/// [`Self::build`] and not mutated afterwards: `deleted_mask.bin` (legacy
+/// `deleted.bin` on older segments) records only the points whose payload was
+/// empty at build time.
 ///
 /// Runtime deletions live in the in-memory `Storage::deleted` bitvec. They are
 /// **not persisted** — [`Self::flusher`] is a no-op and [`Self::remove_point`]
@@ -32,17 +34,25 @@ pub(super) const CONFIG_PATH: &str = "mmap_field_index_config.json";
 pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) path: PathBuf,
     pub(super) storage: Storage<N, S>,
-    pub(super) deleted_count: usize,
     pub(super) total_key_value_pairs: usize,
+    /// Whether the "no values" mask was read from the compact
+    /// `deleted_mask.bin` or the legacy `deleted.bin`.
+    pub(super) compact_deleted_mask: bool,
+    /// Whether the pages were left on disk at open rather than populated.
+    pub(super) cold: bool,
 }
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {
     pub(super) value_to_points: UniversalHashMap<N, PointOffsetType, S>,
     pub(super) point_to_values: OnDiskPointToValues<N, S>,
     /// In-memory deletion bitmap. Reconstructed at load time as the union of
-    /// the build-time empty-payload bits read from `deleted.bin` and the
-    /// segment-level deleted bitslice supplied by the id-tracker. Not persisted.
-    pub(super) deleted: BitVec,
+    /// the build-time empty-payload mask read from disk and the segment-level
+    /// deleted bitslice supplied by the id-tracker. Not persisted.
+    pub(super) deleted: DeletedBitVec,
+    /// Sorted key dictionary for prefix queries. Present only when the index
+    /// was built with the `prefix` option (signalled by the presence of its
+    /// file on disk).
+    pub(super) prefix_index: Option<PrefixIndex<S>>,
 }
 
 impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
@@ -51,10 +61,15 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> Storage<N, S> {
             value_to_points: _,
             point_to_values,
             deleted,
+            prefix_index,
         } = self;
 
         // `value_to_points` is a storage-backed hashmap with no in-memory state.
-        point_to_values.ram_usage_bytes() + deleted.capacity().div_ceil(u8::BITS as usize)
+        point_to_values.ram_usage_bytes()
+            + deleted.ram_usage_bytes()
+            + prefix_index
+                .as_ref()
+                .map_or(0, |prefix_index| prefix_index.ram_usage_bytes())
     }
 }
 

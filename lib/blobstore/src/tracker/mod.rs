@@ -1,0 +1,736 @@
+pub(crate) mod append_only;
+// Only read by the storages yet, nothing writes it
+#[cfg_attr(not(test), expect(dead_code))]
+pub(crate) mod compacted;
+pub mod iter;
+mod journal;
+mod read;
+pub mod read_only;
+pub(crate) mod tracker_enum;
+
+#[cfg(test)]
+mod tests;
+
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use ahash::{AHashMap, AHashSet};
+use common::generic_consts::{AccessPattern, Random};
+use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::universal_io::{
+    CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
+    UniversalReadFs, UniversalWrite, UserData,
+};
+use smallvec::SmallVec;
+
+pub use self::iter::{Iter, PointerItem};
+pub(crate) use self::journal::Journal;
+use self::journal::Record;
+pub use self::read::TrackerRead;
+pub use self::read_only::ReadOnlyTracker;
+use crate::Result;
+use crate::error::BlobstoreError;
+
+pub type PointOffset = u32;
+pub type BlockOffset = u32;
+pub type PageId = u32;
+
+/// OpenOptions for the tracker file (random access, no populate).
+///
+/// `writeable` is `false` for read-only readers (so the backend may be
+/// write-enforced, e.g. `ReadOnly<MmapFile>`) and `true` for the writable
+/// tracker that appends pointers.
+fn tracker_open_options(populate: Populate, writeable: bool) -> OpenOptions {
+    OpenOptions {
+        writeable,
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Advice(Advice::Random),
+    }
+}
+
+/// A type similar to [`std::option::Option<ValuePointer>`], but with stable layout. It is intended to be compatible with older
+/// gridstore files, but it is well-defined, unlike [`std::option::Option`].
+///
+/// Please note that it uses 32-bit tag so that there's no padding before `ValuePointer`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub(crate) struct OptionalPointer {
+    discriminant: u32,
+    value: ValuePointer,
+}
+
+impl From<Option<ValuePointer>> for OptionalPointer {
+    fn from(value: Option<ValuePointer>) -> Self {
+        match value {
+            Some(value) => Self::some(value),
+            None => Self::none(),
+        }
+    }
+}
+
+impl OptionalPointer {
+    const OPTIONAL_NONE: u32 = 0;
+    const OPTIONAL_SOME: u32 = 1;
+
+    /// None value is all zeroes.
+    pub fn none() -> Self {
+        Self {
+            discriminant: Self::OPTIONAL_NONE,
+            value: ValuePointer::new(0, 0, 0),
+        }
+    }
+
+    /// Some is 1 for the discriminant, and value is stored as is.
+    pub const fn some(value: ValuePointer) -> Self {
+        Self {
+            discriminant: Self::OPTIONAL_SOME,
+            value,
+        }
+    }
+
+    pub fn to_option(self) -> Option<ValuePointer> {
+        if self.discriminant == Self::OPTIONAL_NONE {
+            None
+        } else {
+            Some(self.value)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct ValuePointer {
+    /// Which page the value is stored in
+    pub page_id: PageId,
+
+    /// Start offset of the value within the page
+    ///
+    /// Counted in blocks in mutable mode, in bytes in append-only mode (which packs values
+    /// without blocks or alignment).
+    pub block_offset: BlockOffset,
+
+    /// Length in bytes of the value
+    pub length: u32,
+}
+
+impl ValuePointer {
+    pub fn new(page_id: PageId, block_offset: BlockOffset, length: u32) -> Self {
+        Self {
+            page_id,
+            block_offset,
+            length,
+        }
+    }
+}
+
+/// Path of the journal next to the tracker file at `path`, `None` if `path` is no tracker file.
+///
+/// The journal is no storage file, it isn't part of snapshots. Where storage files are replaced
+/// in place, such as when merging a partial snapshot, it must be removed first: opening would
+/// replay it onto the replaced tracker.
+pub fn tracker_journal_path(path: &Path) -> Option<PathBuf> {
+    (path.file_name()? == Tracker::<()>::FILE_NAME).then(|| path.with_file_name(journal::FILE_NAME))
+}
+
+/// Decode a slot read from the tracker file.
+///
+/// A pointer with length zero reads as `None`. We never write pointers with length zero, but it
+/// may appear on a torn mapping write. Unlike the tracker file, the append-only tracker stores
+/// empty values with length zero, so it must not use this.
+fn decode_slot(slot: OptionalPointer) -> Option<ValuePointer> {
+    let pointer = slot.to_option()?;
+
+    // Disallow in debug builds, disregard in release builds to avoid panics on startup
+    #[cfg(not(test))]
+    debug_assert_ne!(
+        pointer.length, 0,
+        "ValuePointer with length 0 must not exist"
+    );
+
+    if pointer.length > 0 {
+        Some(pointer)
+    } else {
+        None
+    }
+}
+
+/// Read the slot for `point_offset` directly from `storage`.
+///
+/// Offsets beyond the file read as `None`; so do allocated-but-never-written
+/// slots — the file is zero-initialized and all-zeroes is the `None` slot.
+fn read_slot<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offset: PointOffset,
+) -> Result<Option<ValuePointer>> {
+    Ok(read_raw_slot::<P, _>(storage, point_offset)?.and_then(decode_slot))
+}
+
+/// Read the slot for `point_offset` directly from `storage` without decoding it, `None` if it
+/// is beyond the file.
+fn read_raw_slot<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offset: PointOffset,
+) -> Result<Option<OptionalPointer>> {
+    let start_offset =
+        size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
+    let end_offset = start_offset + size_of::<OptionalPointer>();
+    let storage_len = storage.len::<u8>()?;
+    if end_offset as u64 > storage_len {
+        return Ok(None);
+    }
+    let slot =
+        storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
+    Ok(Some(slot))
+}
+
+/// Read the slots for a contiguous range of point offsets directly from `storage`, with a
+/// single read.
+///
+/// Slots beyond the file read as `None`, like in [`read_slot`].
+fn read_slots<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offsets: Range<PointOffset>,
+) -> Result<Vec<Option<ValuePointer>>> {
+    let slot_size = size_of::<OptionalPointer>() as u64;
+    let start_offset =
+        size_of::<TrackerHeader>() as u64 + u64::from(point_offsets.start) * slot_size;
+    let stored_slots = storage.len::<u8>()?.saturating_sub(start_offset) / slot_size;
+    let length = (point_offsets.len() as u64).min(stored_slots);
+
+    let mut pointers = Vec::with_capacity(point_offsets.len());
+    if length > 0 {
+        let range = ReadRange {
+            byte_offset: start_offset,
+            length,
+        };
+        let slots = storage.read::<_, OptionalPointer>(range, P::default())?;
+        pointers.extend(slots.iter().copied().map(decode_slot));
+    }
+    pointers.resize(point_offsets.len(), None);
+
+    Ok(pointers)
+}
+
+/// Pointer updates for a given point offset
+///
+/// Keeps track of the places where the value for a point offset have been written, until we persist them.
+///
+/// In context of Blobstore, for each point offset this means:
+///
+/// - `current` is the value the tracker should report and become persisted when flushing.
+///   If exists, `Some`; otherwise, `None`.
+///
+/// - `to_free` is the list of pointers that should be freed in the bitmask during flush, so that
+///   the space in the pages can be reused.
+///
+/// When flushing, we persist all changes we have currently collected. It is possible that new changes
+/// come in between preparing the flusher and executing it. After we've written to disk, we remove (drain),
+/// the now persisted changes from these pointer updates. With this mechanism we write each update to
+/// disk exactly once.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct PointerUpdates {
+    /// Pointer to write in tracker when persisting
+    current: Option<ValuePointer>,
+    /// List of pointers to free in bitmask when persisting
+    to_free: SmallVec<[ValuePointer; 1]>,
+}
+
+impl PointerUpdates {
+    /// Mark this pointer as set
+    ///
+    /// It will mark the pointer as used on disk on flush, and will free all previous pending
+    /// pointers
+    fn set(&mut self, pointer: ValuePointer) {
+        if self.current == Some(pointer) {
+            debug_assert!(false, "we should not set the same point twice");
+            return;
+        }
+
+        // Move the current pointer to the pointers to free, if it exists
+        if let Some(old_pointer) = self.current.replace(pointer) {
+            self.to_free.push(old_pointer);
+            debug_assert_eq!(
+                self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
+                self.to_free.len(),
+                "should not have duplicate pointers to free",
+            );
+        }
+
+        debug_assert!(
+            !self.to_free.contains(&pointer),
+            "old list cannot contain pointer we just set",
+        );
+    }
+
+    /// Mark this pointer as unset
+    ///
+    /// It will completely free the pointer on disk on flush including all it's previous pending
+    /// pointers
+    fn unset(&mut self, pointer: ValuePointer) {
+        let old_pointer = self.current.take();
+
+        // Fallback: if the pointer to unset is not the current one, free both pointers, though this shouldn't happen
+        debug_assert!(
+            old_pointer.is_none_or(|p| p == pointer),
+            "new unset pointer should match with current one, if any",
+        );
+        if let Some(old_pointer) = old_pointer
+            && old_pointer != pointer
+        {
+            self.to_free.push(old_pointer);
+        }
+
+        self.to_free.push(pointer);
+
+        debug_assert_eq!(
+            self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
+            self.to_free.len(),
+            "should not have duplicate pointers to free",
+        );
+    }
+
+    /// Pointer is empty if there is no set nor unsets
+    fn is_empty(&self) -> bool {
+        self.current.is_none() && self.to_free.is_empty()
+    }
+
+    /// Remove all pointers from self that have been persisted
+    ///
+    /// After calling this self may end up being empty. The caller is responsible for dropping
+    /// empty structures if desired.
+    ///
+    /// Unknown pointers in `persisted` are ignored.
+    ///
+    /// Returns if the structure is empty after this operation
+    fn drain_persisted(&mut self, persisted: &Self) -> bool {
+        debug_assert!(!self.is_empty(), "must have at least one pointer");
+        debug_assert!(
+            !persisted.is_empty(),
+            "persisted must have at least one pointer",
+        );
+
+        // Shortcut: we persisted everything if both are equal, we can empty this structure
+        if self == persisted {
+            *self = Self::default();
+            return true;
+        }
+
+        let Self {
+            current: previous_current,
+            to_free: freed,
+        } = persisted;
+
+        // Remove self set if persisted
+        if let (Some(current), Some(previous_current)) = (self.current, *previous_current)
+            && current == previous_current
+        {
+            self.current.take();
+        }
+
+        // Only keep unsets that are not persisted
+        self.to_free.retain(|pointer| !freed.contains(pointer));
+
+        self.is_empty()
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+struct TrackerHeader {
+    next_pointer_offset: u32,
+}
+
+#[derive(Debug)]
+pub struct Tracker<S> {
+    /// Path to the file
+    path: PathBuf,
+    /// Header of the file
+    header: TrackerHeader,
+    /// Storage for the file (universal io backend)
+    storage: S,
+    /// Updates that haven't been flushed
+    ///
+    /// When flushing, these updates get written into the storage and flushed at once.
+    pub(super) pending_updates: AHashMap<PointOffset, PointerUpdates>,
+
+    /// The maximum pointer offset in the tracker (updated in memory).
+    next_pointer_offset: PointOffset,
+
+    /// Journal of pointer writes, to repair torn writes of the file. `None` if disabled.
+    journal: Option<Arc<Journal>>,
+}
+
+// Methods that do not use storage (no trait bound).
+impl<S> Tracker<S> {
+    const FILE_NAME: &'static str = "tracker.dat";
+
+    pub fn tracker_file_name(path: &Path) -> PathBuf {
+        path.join(Self::FILE_NAME)
+    }
+
+    /// The journal is no storage file, see [`tracker_journal_path`].
+    pub fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    /// Journal to append pointer writes to before writing them, `None` if disabled.
+    pub(crate) fn journal(&self) -> Option<Arc<Journal>> {
+        self.journal.clone()
+    }
+
+    /// Don't journal pointer writes anymore, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: crate::Blobstore::disable_journal
+    pub fn disable_journal(&mut self) {
+        let Some(journal) = self.journal.take() else {
+            return;
+        };
+
+        if journal.path().exists() {
+            debug_assert!(
+                false,
+                "journal must not be disabled while it holds pointer writes"
+            );
+            log::warn!(
+                "Disabled GridStore journalling while a journal file exists: {}",
+                journal.path().display()
+            );
+        }
+    }
+
+    pub fn pointer_count(&self) -> u32 {
+        self.next_pointer_offset
+    }
+}
+
+// Read operations -- only require UniversalRead
+impl<S: UniversalRead> Tracker<S> {
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, tracker_path: &Path, populate: Populate) {
+        // Default a lazy open to partially populating the header.
+        let populate = populate.or_partial(0..size_of::<TrackerHeader>() as u64);
+        fs.schedule_open(
+            tracker_path,
+            Some(tracker_open_options(populate, false)),
+            None,
+        );
+    }
+
+    /// Open an existing PageTracker at the given path
+    /// If the file does not exist, return an error
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        dir: &Path,
+        populate: Populate,
+        writeable: bool,
+    ) -> Result<Self> {
+        let path = Self::tracker_file_name(dir);
+
+        let storage = Self::open_storage(fs, &path, populate, writeable)?;
+
+        let header: TrackerHeader = Self::read_header(&storage)?;
+        let pending_updates = AHashMap::new();
+        Ok(Self {
+            next_pointer_offset: header.next_pointer_offset,
+            path,
+            header,
+            storage,
+            pending_updates,
+            journal: Some(Arc::new(Journal::new(dir))),
+        })
+    }
+
+    fn read_header(storage: &S) -> Result<TrackerHeader> {
+        let header = storage.read(ReadRange::one(0), Random)?[0];
+        Ok(header)
+    }
+
+    fn open_storage<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        populate: Populate,
+        writeable: bool,
+    ) -> Result<S> {
+        let storage = match fs.open(
+            path,
+            tracker_open_options(populate, writeable),
+            Default::default(),
+        ) {
+            Err(UniversalIoError::NotFound { .. }) => {
+                // If config exists and storage doesn't,
+                // it should be treated as inconsistent storage rather than a missing one
+                return Err(BlobstoreError::service_error(format!(
+                    "Tracker file does not exist: {}",
+                    path.display()
+                )));
+            }
+            other => other?,
+        };
+        Ok(storage)
+    }
+
+    /// Get the raw value at the given point offset
+    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        read_slot::<Random, _>(&self.storage, point_offset)
+    }
+
+    pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
+        Ok(self.get::<Random>(point_offset)?.is_some())
+    }
+
+    pub fn populate(&self) -> Result<()> {
+        self.storage.populate().map_err(Into::into)
+    }
+}
+
+impl<S: UniversalRead> TrackerRead for Tracker<S> {
+    /// Exact for the writable tracker: maintained in memory alongside the
+    /// header (see [`Tracker::pointer_count`]).
+    fn max_point_offset(&self) -> Result<PointOffset> {
+        Ok(self.next_pointer_offset)
+    }
+
+    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        match self.pending_updates.get(&point_offset) {
+            // Pending update exists but is empty, should not happen, fall back to real data
+            Some(pending) if pending.is_empty() => {
+                debug_assert!(false, "pending updates must not be empty");
+                read_slot::<P, _>(&self.storage, point_offset)
+            }
+            // Use set from pending updates
+            Some(pending) => Ok(pending.current),
+            // No pending update, use real data
+            None => read_slot::<P, _>(&self.storage, point_offset),
+        }
+    }
+
+    fn get_range<P: AccessPattern>(
+        &self,
+        point_offsets: Range<PointOffset>,
+    ) -> Result<Vec<Option<ValuePointer>>> {
+        let start = point_offsets.start;
+        let mut pointers = read_slots::<P, _>(&self.storage, point_offsets)?;
+
+        // Pending updates take precedence over the persisted slots, see `get`
+        for (index, pointer) in pointers.iter_mut().enumerate() {
+            if let Some(pending) = self.pending_updates.get(&(start + index as PointOffset)) {
+                debug_assert!(!pending.is_empty(), "pending updates must not be empty");
+                *pointer = pending.current;
+            }
+        }
+
+        Ok(pointers)
+    }
+
+    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffset)>,
+    {
+        Iter::new(point_offsets, &self.storage, &self.pending_updates)
+    }
+}
+
+// Write operations and constructors -- require UniversalWrite
+impl<S> Tracker<S>
+where
+    S: UniversalWrite,
+{
+    const DEFAULT_SIZE: usize = 1024 * 1024; // 1MB
+
+    /// Create a new PageTracker at the given dir path
+    /// The file is created with the default size if no size hint is given
+    pub fn new(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        size_hint: Option<usize>,
+    ) -> Result<Self> {
+        let path = Self::tracker_file_name(dir);
+        let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
+        assert!(
+            size > std::mem::size_of::<TrackerHeader>(),
+            "Size hint is too small"
+        );
+        create_and_ensure_length(&path, size)?;
+        let storage = fs.open(
+            &path,
+            tracker_open_options(Populate::No, true),
+            Default::default(),
+        )?;
+        let header = TrackerHeader::default();
+        let pending_updates = AHashMap::new();
+
+        // An existing journal belongs to an earlier tracker, opening would replay it onto this one
+        let journal = Journal::new(dir);
+        if journal.path().exists() {
+            debug_assert!(false, "new tracker must not have an existing journal");
+            log::warn!(
+                "Removing existing Gridstore tracker journal when creating new tracker: {}",
+                journal.path().display(),
+            );
+            journal.remove()?;
+        }
+
+        let mut page_tracker = Self {
+            path,
+            header,
+            storage,
+            pending_updates,
+            next_pointer_offset: 0,
+            journal: Some(Arc::new(journal)),
+        };
+        page_tracker.write_header()?;
+        Ok(page_tracker)
+    }
+
+    /// Replay the pointer writes in the journal onto the file, which repairs writes a crash may
+    /// have torn during a flush. The file is then durably persisted and the journal removed.
+    ///
+    /// Must be called when opening, before anything else writes.
+    pub fn replay_journal(&mut self) -> Result<()> {
+        let Some(journal) = self.journal.clone() else {
+            return Ok(());
+        };
+        let Some(records) = journal.read()? else {
+            return Ok(());
+        };
+
+        for Record { point_offset, slot } in records {
+            // Only write slots that differ, replaying the journal left behind by a clean
+            // shutdown doesn't rewrite the file
+            let current = read_raw_slot::<Random, _>(&self.storage, point_offset)?;
+            if current.unwrap_or_else(OptionalPointer::none) != slot {
+                self.persist_pointer(point_offset, slot.to_option())?;
+            }
+            self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
+        }
+        self.write_pointer_count()?;
+        self.flusher()()?;
+
+        journal.remove()
+    }
+
+    /// Writes the accumulated pending updates to storage and flushes it
+    ///
+    /// Changes should be captured from [`self.pending_updates`]. This method may therefore flush
+    /// an earlier version of changes.
+    ///
+    /// This updates the list of pending updates inside this tracker for each given update that is
+    /// processed.
+    ///
+    /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
+    #[must_use = "The old pointers need to be freed in the bitmask"]
+    pub fn write_pending(
+        &mut self,
+        pending_updates: AHashMap<PointOffset, PointerUpdates>,
+    ) -> Result<Vec<ValuePointer>> {
+        let mut old_pointers = Vec::new();
+
+        for (point_offset, updates) in pending_updates {
+            match updates.current {
+                // Write to store a new pointer
+                Some(new_pointer) => {
+                    // Mark any existing pointer for removal to free its blocks
+                    if let Some(old_pointer) = self.get_raw(point_offset)? {
+                        old_pointers.push(old_pointer);
+                    }
+
+                    self.persist_pointer(point_offset, Some(new_pointer))?;
+                }
+                // Write to empty the pointer
+                None => self.persist_pointer(point_offset, None)?,
+            }
+
+            // Mark all old pointers for removal to free its blocks
+            old_pointers.extend(&updates.to_free);
+
+            // Remove all persisted updates from the latest updates, drop if no changes are left
+            if let Some(latest_updates) = self.pending_updates.get_mut(&point_offset) {
+                let is_empty = latest_updates.drain_persisted(&updates);
+                if is_empty {
+                    let prev = self.pending_updates.remove(&point_offset);
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.is_empty(),
+                            "remove pending element should be empty but got {prev:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Increment header count if necessary
+        self.write_pointer_count()?;
+
+        Ok(old_pointers)
+    }
+
+    pub fn flusher(&self) -> crate::blobstore::Flusher {
+        let inner = self.storage.flusher();
+        Box::new(move || inner().map_err(Into::into))
+    }
+
+    /// Write the current page header to the storage
+    fn write_header(&mut self) -> Result<()> {
+        self.storage.write(0, &[self.header])?;
+        Ok(())
+    }
+
+    /// Save the mapping at the given offset
+    /// The file is resized if necessary
+    fn persist_pointer(
+        &mut self,
+        point_offset: PointOffset,
+        pointer: Option<ValuePointer>,
+    ) -> Result<()> {
+        let storage_len = self.storage.len::<u8>()? as usize;
+        if pointer.is_none() && point_offset as usize >= storage_len {
+            return Ok(());
+        }
+
+        let point_offset = point_offset as usize;
+        let start_offset = size_of::<TrackerHeader>() + point_offset * size_of::<OptionalPointer>();
+        let end_offset = start_offset + size_of::<OptionalPointer>();
+
+        // Grow tracker file if it isn't big enough
+        if storage_len < end_offset {
+            self.storage.flusher()()?;
+            let new_size = end_offset.next_power_of_two();
+            create_and_ensure_length(&self.path, new_size)?;
+            self.storage.live_reload()?;
+        }
+
+        let pointer = OptionalPointer::from(pointer);
+        self.storage.write(start_offset as u64, &[pointer])?;
+        Ok(())
+    }
+
+    /// Increment the header count if the given point offset is larger than the current count
+    fn write_pointer_count(&mut self) -> Result<()> {
+        self.header.next_pointer_offset = self.next_pointer_offset;
+        self.write_header()
+    }
+
+    pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
+        self.pending_updates
+            .entry(point_offset)
+            .or_default()
+            .set(value_pointer);
+        self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
+    }
+
+    /// Unset the value at the given point offset and return its previous value
+    pub fn unset(&mut self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        let pointer_opt = self.get::<Random>(point_offset)?;
+
+        if let Some(pointer) = pointer_opt {
+            self.pending_updates
+                .entry(point_offset)
+                .or_default()
+                .unset(pointer);
+        }
+
+        Ok(pointer_opt)
+    }
+}

@@ -1,32 +1,32 @@
 use std::borrow::Cow;
-use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
+use common::ambient::hw::HwMetric;
 use common::binary_search::binary_search_by;
-use common::bitvec::{BitSlice, BitSliceExt};
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::stored_bitslice::{MmapBitSlice, StoredBitSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead,
-    read_json_via,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex, TypedStorage,
+    UioResult, UniversalRead, UniversalReadFs, UserData, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
 
 use super::super::mutable_geo_index::InMemoryGeoIndex;
 use super::{
-    COUNTS_PER_HASH, Counts, DELETED_PATH, OnDiskGeoIndex, POINTS_MAP, POINTS_MAP_IDS,
-    PointKeyValue, STATS_PATH, Storage, StoredGeoIndexStat,
+    COUNTS_PER_HASH, COUNTS_PER_HASH_BLOCK_INDEX, Counts, DELETED_PATH, OnDiskGeoIndex, POINTS_MAP,
+    POINTS_MAP_BLOCK_INDEX, POINTS_MAP_IDS, PointKeyValue, STATS_PATH, Storage, StoredGeoIndexStat,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::deleted_mask::{
+    bitor_deleted_mask, deleted_mask_file, preopen_deleted_mask, save_deleted_mask,
+};
 use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
@@ -41,14 +41,13 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
-        let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the file
-        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
+        OnDiskPointToValues::<GeoPoint, S>::build_from_iter(
             path,
             dynamic_index
                 .point_to_values
@@ -90,6 +89,8 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 );
                 ids_offset += ids.len();
             }
+
+            SortedBlockIndex::write(&path.join(POINTS_MAP_BLOCK_INDEX), &points_map)?;
         }
 
         {
@@ -114,38 +115,21 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                     dst.values = *values as u32;
                 }
             }
+
+            SortedBlockIndex::write(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), &counts_per_hash)?;
         }
 
-        {
-            let _ = create_and_ensure_length(
-                &deleted_path,
-                dynamic_index
-                    .point_to_values
-                    .len()
-                    .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<u64>()),
-            )?;
-            let mut deleted = MmapBitSlice::open(
-                &MmapFs,
-                &deleted_path,
-                OpenOptions {
-                    writeable: true,
-                    need_sequential: false,
-                    populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                },
-                (),
-            )?;
-            deleted.set_ascending_bits_batch(
-                dynamic_index
-                    .point_to_values
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, values)| values.is_empty())
-                    .map(|(idx, _)| (idx as u64, true)),
-            )?;
-            deleted.flusher()()?;
-        }
+        save_deleted_mask(
+            path,
+            DELETED_PATH,
+            dynamic_index.point_to_values.len(),
+            dynamic_index
+                .point_to_values
+                .iter()
+                .enumerate()
+                .filter(|(_, values)| values.is_empty())
+                .map(|(idx, _)| idx as PointOffsetType),
+        )?;
 
         atomic_save_json(
             &stats_path,
@@ -160,13 +144,63 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         })
     }
 
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    /// Schedule background prefetch of every file [`open`](Self::open) will read.
+    ///
+    /// Returns `false` when the segment is not in the
+    /// on-disk format.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Stats
+        let stats_path = path.join(STATS_PATH);
+        if !fs.exists(&stats_path)? {
+            // If stats file doesn't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+        fs.schedule_open(&stats_path, None, None);
+
+        // Geohash counts, points map, and point-id list
+        let options = Self::open_options(populate);
+        fs.schedule_open(&path.join(COUNTS_PER_HASH), Some(options), None);
+        fs.schedule_open(&path.join(POINTS_MAP), Some(options), None);
+        fs.schedule_open(&path.join(POINTS_MAP_IDS), Some(options), None);
+
+        // Block indexes over the two sorted arrays; optional, absent on old
+        // segments
+        fs.schedule_open(&path.join(COUNTS_PER_HASH_BLOCK_INDEX), None, None);
+        fs.schedule_open(&path.join(POINTS_MAP_BLOCK_INDEX), None, None);
+
+        // Point to values
+        OnDiskPointToValues::<GeoPoint, S>::preopen(fs, path, populate);
+
+        // "No values" mask
+        preopen_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(Populate::PreferBackground),
+        );
+
+        Ok(true)
+    }
+
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
         let points_map_path = path.join(POINTS_MAP);
@@ -178,35 +212,27 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             return Ok(None);
         };
 
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice: AdviceSetting::Global,
-        };
+        let open_options = Self::open_options(populate);
 
         let counts_per_hash =
-            TypedStorage::open(fs, &counts_per_hash_path, open_options, Default::default())?;
+            TypedStorage::new(fs.open(&counts_per_hash_path, open_options, Default::default())?);
+        let counts_per_hash_block_index = SortedBlockIndex::open(
+            fs,
+            &path.join(COUNTS_PER_HASH_BLOCK_INDEX),
+            counts_per_hash.len()? as usize,
+        )?;
         let points_map =
-            TypedStorage::open(fs, &points_map_path, open_options, Default::default())?;
+            TypedStorage::new(fs.open(&points_map_path, open_options, Default::default())?);
+        let points_map_block_index = SortedBlockIndex::open(
+            fs,
+            &path.join(POINTS_MAP_BLOCK_INDEX),
+            points_map.len()? as usize,
+        )?;
         let points_map_ids =
-            TypedStorage::open(fs, &points_map_ids_path, open_options, Default::default())?;
+            TypedStorage::new(fs.open(&points_map_ids_path, open_options, Default::default())?);
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
-
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
-            &deleted_path,
-            OpenOptions {
-                writeable: true,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
-            Default::default(),
-        )?;
-        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only
         // tracks the index's contents. The id-tracker's deleted mask can be
@@ -214,54 +240,70 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // (the id-tracker is the source of truth for deletions, and a shorter
         // mask just means it doesn't yet know about those higher offsets).
         deleted.resize(point_to_values.len(), false);
-        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
-
-        let deleted_count = deleted.count_ones();
+        let compact_deleted_mask = bitor_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(populate),
+            &mut deleted,
+        )?;
 
         Ok(Some(Self {
             path: path.to_owned(),
             storage: Storage {
                 counts_per_hash,
+                counts_per_hash_block_index,
                 points_map,
+                points_map_block_index,
                 points_map_ids,
                 point_to_values,
-                deleted,
+                deleted: DeletedBitVec::new(deleted),
             },
-            deleted_count,
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
+            compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+    ) -> OperationResult<bool> {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
-                .check_values_any(idx, |v| check_fn(v), &hw_counter)
-                // FIXME: don't silently ignore error
-                .unwrap_or(false)
+                .check_values_any(idx, |v| check_fn(v))
         } else {
-            false
+            Ok(false)
         }
+    }
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    pub fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        self.storage.point_to_values.values_iter_batch(
+            items,
+            &self.storage.deleted,
+            |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
+        )
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
         self.storage
             .point_to_values
-            // TODO: propagate counter upwards
-            .values_iter(idx, ConditionedCounter::never())
+            .values_iter(idx)
             .ok()?
             .map(|iter| iter.map(Cow::into_owned))
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
-        if self.storage.deleted.get_bit(idx as usize) == Some(false) {
+        if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
                 .get_values_count(idx)
@@ -277,10 +319,10 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         &self,
         filter: impl Fn(&(GeoHash, usize)) -> bool,
     ) -> OperationResult<Vec<(GeoHash, usize)>> {
-        let counts = self.storage.counts_per_hash.read::<Sequential>(ReadRange {
-            byte_offset: 0,
-            length: self.storage.counts_per_hash.len()?,
-        })?;
+        let counts = self.storage.counts_per_hash.read(
+            ReadRange::new(0, self.storage.counts_per_hash.len()?),
+            Sequential,
+        )?;
         let mut results = Vec::with_capacity(counts.len());
         for count in counts.iter() {
             let pair = (count.hash.normalize(), count.points as usize);
@@ -291,44 +333,49 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         Ok(results)
     }
 
-    pub fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    pub fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self
-            .counts_of_hash(hash, hw_counter)?
+            .counts_of_hash(hash)?
             .map(|c| c.points as usize)
             .unwrap_or(0))
     }
 
-    pub fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    pub fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self
-            .counts_of_hash(hash, hw_counter)?
+            .counts_of_hash(hash)?
             .map(|c| c.values as usize)
             .unwrap_or(0))
     }
 
-    fn counts_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Counts>> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
+    fn counts_of_hash(&self, hash: GeoHash) -> OperationResult<Option<Counts>> {
         let len = self.storage.counts_per_hash.len()? as usize;
 
-        hw_counter
-            .payload_index_io_read_counter()
-            // Simulate binary search complexity as IO read estimation
-            .incr_delta((len as f32).log2().ceil() as usize * size_of::<Counts>());
+        if let Some(block_index) = &self.storage.counts_per_hash_block_index {
+            let block = block_index.find_block(|counts| counts.hash.normalize().cmp(&hash));
+            if block.is_empty() {
+                return Ok(None);
+            }
+
+            HwMetric::PayloadIndexIoRead.bump(block.len() * size_of::<Counts>());
+
+            let range = ReadRange::new(
+                (block.start * size_of::<Counts>()) as u64,
+                block.len() as u64,
+            );
+            let counts = self.storage.counts_per_hash.read(range, Random)?;
+            return Ok(counts
+                .binary_search_by(|counts| counts.hash.normalize().cmp(&hash))
+                .ok()
+                .map(|idx| counts[idx]));
+        }
+
+        // Simulate binary search complexity as IO read estimation
+        HwMetric::PayloadIndexIoRead
+            .bump((len as f32).log2().ceil() as usize * size_of::<Counts>());
 
         let read_one = |idx| -> OperationResult<Counts> {
             let range = ReadRange::one((idx * size_of::<Counts>()) as u64);
-            let value = self.storage.counts_per_hash.read::<Random>(range)?;
+            let value = self.storage.counts_per_hash.read(range, Random)?;
             Ok(value[0])
         };
 
@@ -357,25 +404,39 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
 
     pub fn files(&self) -> Vec<PathBuf> {
         let mut files = vec![
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(COUNTS_PER_HASH),
             self.path.join(POINTS_MAP),
             self.path.join(POINTS_MAP_IDS),
             self.path.join(STATS_PATH),
         ];
+        files.extend(self.block_index_files());
         files.extend(self.storage.point_to_values.files());
         files
     }
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(COUNTS_PER_HASH),
             self.path.join(POINTS_MAP),
             self.path.join(POINTS_MAP_IDS),
             self.path.join(STATS_PATH),
         ];
+        files.extend(self.block_index_files());
         files.extend(self.storage.point_to_values.immutable_files());
+        files
+    }
+
+    /// Paths of the optional block-index sidecar files which are present.
+    fn block_index_files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        if self.storage.counts_per_hash_block_index.is_some() {
+            files.push(self.path.join(COUNTS_PER_HASH_BLOCK_INDEX));
+        }
+        if self.storage.points_map_block_index.is_some() {
+            files.push(self.path.join(POINTS_MAP_BLOCK_INDEX));
+        }
         files
     }
 
@@ -390,11 +451,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
+        self.storage.deleted.mark_deleted(idx);
     }
 
     /// Return all unique point IDs which have any of the geo-hash prefixes.
@@ -434,25 +491,43 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // │ entries < smallest_hash       │ m = matching      │ past end    │
         // └───────────────────────────────┴───────────────────┴─────────────┘
 
-        // Step 1: binary search to find the index of the `start` entry.
-        let start_idx = binary_search_by(0..len, |idx| {
-            let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
-            let value = self.storage.points_map.read::<Random>(range)?;
-            OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
-        })?
-        .unwrap_or_else(|index| index);
+        // Step 1: binary search to find the index of the `start` entry. With a
+        // block index available, this costs a single contiguous read of one
+        // block instead of `O(log n)` random reads.
+        let start_idx = if let Some(block_index) = &self.storage.points_map_block_index {
+            let block = block_index.find_block(|entry| entry.hash.normalize().cmp(&smallest_hash));
+            let entries = self.storage.points_map.read(
+                ReadRange {
+                    byte_offset: (block.start * size_of::<PointKeyValue>()) as u64,
+                    length: block.len() as u64,
+                },
+                Random,
+            )?;
+            let idx = entries
+                .binary_search_by(|entry| entry.hash.normalize().cmp(&smallest_hash))
+                .unwrap_or_else(|idx| idx);
+            (block.start + idx) as u64
+        } else {
+            binary_search_by(0..len, |idx| {
+                let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
+                let value = self.storage.points_map.read(range, Random)?;
+                OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
+            })?
+            .unwrap_or_else(|index| index)
+        };
 
         // Step 2: read entries in chunks starting from `start`. Chunks may
         // arrive out of order from the underlying IO, so we reorder them with
         // `OrderingIterator` before inspecting their contents; this lets us
         // stop reading as soon as we walk past the last prefix.
-        let chunks = self.storage.points_map.read_iter::<Sequential, _>(
+        let chunks = self.storage.points_map.read_iter(
             ReadRange {
                 byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
                 length: len - start_idx,
             }
             .iter_autochunks::<PointKeyValue>()
             .enumerate(),
+            Sequential,
         )?;
 
         let ordered_chunks = OrderingIterator::new(chunks);
@@ -495,16 +570,13 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // Step 3: read the collected ranges and accumulate unique,
         // non-deleted point ids.
         let mut points = AHashSet::new();
-        self.storage.points_map_ids.read_batch::<Random, _>(
+        let deleted = &self.storage.deleted;
+        self.storage.points_map_ids.read_batch(
             point_map_ranges.into_iter().enumerate(),
+            Random,
             |_idx, values| {
-                points.extend(
-                    values
-                        .iter()
-                        .copied()
-                        .filter(|&id| !self.storage.deleted.get_bit(id as usize).unwrap_or(true)),
-                );
-                Ok(())
+                points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
+                UioResult::Ok(())
             },
         )?;
 
@@ -515,7 +587,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         self.storage
             .point_to_values
             .len()
-            .saturating_sub(self.deleted_count)
+            .saturating_sub(self.storage.deleted.deleted_count())
     }
 
     pub fn points_values_count(&self) -> usize {
@@ -541,20 +613,33 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let Self {
             path,
             storage,
-            deleted_count: _,
             points_values_count: _,
             max_values_per_point: _,
+            compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             counts_per_hash,
+            counts_per_hash_block_index,
             points_map,
+            points_map_block_index,
             points_map_ids,
             point_to_values,
             deleted: _,
         } = storage;
-        clear_disk_cache(&path.join(DELETED_PATH))?;
+        clear_disk_cache(&deleted_mask_file(
+            path,
+            *compact_deleted_mask,
+            DELETED_PATH,
+        ))?;
         counts_per_hash.clear_ram_cache()?;
+        if counts_per_hash_block_index.is_some() {
+            clear_disk_cache(&path.join(COUNTS_PER_HASH_BLOCK_INDEX))?;
+        }
         points_map.clear_ram_cache()?;
+        if points_map_block_index.is_some() {
+            clear_disk_cache(&path.join(POINTS_MAP_BLOCK_INDEX))?;
+        }
         points_map_ids.clear_ram_cache()?;
         point_to_values.clear_cache()?;
         Ok(())

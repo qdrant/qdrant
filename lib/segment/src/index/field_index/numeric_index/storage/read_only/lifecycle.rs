@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::universal_io::{Populate, UniversalRead};
-use gridstore::Blob;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::super::Encodable;
 use super::super::super::mutable_numeric_index::read_only::ReadOnlyAppendableNumericIndex;
@@ -13,12 +14,39 @@ use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumer
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, S: UniversalRead>
     ReadOnlyNumericIndexInner<T, S>
 where
     Vec<T>: Blob,
 {
+    /// Schedule background prefetch for the appendable (Gridstore) format.
+    ///
+    /// Returns `false` when nothing was scheduled (directory absent).
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyAppendableNumericIndex::preopen(fs, dir)
+    }
+
+    /// Schedule background prefetch for the immutable (mmap) format.
+    ///
+    /// Returns `false` when the on-disk index doesn't exist.
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        memory: Memory,
+    ) -> OperationResult<bool> {
+        let populate = match memory.clamp_to_low_memory().populate_on_open() {
+            true => Populate::PreferBackground,
+            false => Populate::No,
+        };
+
+        OnDiskNumericIndex::<T, S>::preopen(fs, path, populate)
+    }
+
     /// Read-only mirror of [`NumericIndexInner::new_gridstore`][1]: open the
     /// appendable (Gridstore-backed) numeric index read-only, threading every
     /// file open through the filesystem handle `fs`.
@@ -28,8 +56,16 @@ where
     /// uniformly. No `create_if_missing`: the read path never creates.
     ///
     /// [1]: super::super::NumericIndexInner::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableNumericIndex::open(fs, dir)?.map(Self::Appendable))
+    pub fn open_appendable(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: PathBuf,
+        max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        Ok(
+            ReadOnlyAppendableNumericIndex::open(fs, dir, max_point_offset, deleted)?
+                .map(Self::Appendable),
+        )
     }
 
     /// Read-only mirror of [`NumericIndexInner::new_mmap`][1]: open the
@@ -40,29 +76,29 @@ where
     /// The writable enum has three variants (`Mutable`, `Immutable`, `Mmap`);
     /// the read-only side collapses the latter two into [`Self::Immutable`]
     /// because [`UniversalNumericIndex`] reads on-demand from the mmap and
-    /// `is_on_disk` (→ populate) already covers the lazy/eager distinction.
+    /// the placement already covers the lazy/eager distinction.
     /// `Ok(None)` propagates from the leaf when the on-disk index doesn't
     /// exist.
     ///
     /// [1]: super::super::NumericIndexInner::new_mmap
     pub fn open_immutable(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement, as the writable open does.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(mmap_index) = OnDiskNumericIndex::open(fs, path, populate, deleted_points)? else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            Self::OnDisk(mmap_index)
-        } else {
+        let index = if memory.is_heap() {
             Self::Immutable(ImmutableNumericIndex::load_from_on_disk(mmap_index))
+        } else {
+            Self::OnDisk(mmap_index)
         };
 
         Ok(Some(index))
@@ -87,6 +123,48 @@ where
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::Immutable(_) => IndexMutability::Immutable,
             Self::OnDisk(_) => IndexMutability::Immutable,
+        }
+    }
+
+    pub fn is_cold(&self) -> bool {
+        match self {
+            Self::Appendable(_) => false,
+            Self::Immutable(_) => false,
+            Self::OnDisk(index) => index.is_cold(),
+        }
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::OnDisk(index) => index.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(_) => vec![],
+            Self::Immutable(index) => index.immutable_files(),
+            Self::OnDisk(index) => index.immutable_files(),
+        }
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(_) => Ok(()),
+            Self::Immutable(_) => Ok(()),
+            Self::OnDisk(index) => index.populate(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(index) => index.clear_cache(),
+            Self::Immutable(index) => index.clear_cache(),
+            Self::OnDisk(index) => index.clear_cache(),
         }
     }
 }

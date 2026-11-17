@@ -1,4 +1,4 @@
-use std::ops::{Deref, Range, RangeInclusive};
+use std::ops::Deref;
 
 pub struct SortedSlice<'a, T: PartialOrd>(&'a [T]);
 
@@ -17,21 +17,6 @@ impl<'a, T: PartialOrd> SortedSlice<'a, T> {
     pub unsafe fn new_unchecked(slice: &'a [T]) -> Self {
         debug_assert!(slice.is_sorted());
         Self(slice)
-    }
-}
-
-impl<'a, T: PartialOrd + Copy> SortedSlice<'a, T> {
-    pub fn get_range_inclusive(&self) -> Option<RangeInclusive<T>> {
-        let first = *self.first()?;
-        let last = *self.last()?;
-        Some(first..=last)
-    }
-}
-
-impl<'a> SortedSlice<'a, u32> {
-    pub fn range_u64(&self) -> Option<Range<u64>> {
-        let (start, end) = self.get_range_inclusive()?.into_inner();
-        Some(u64::from(start)..u64::from(end) + 1)
     }
 }
 

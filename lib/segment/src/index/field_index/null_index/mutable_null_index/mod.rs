@@ -6,6 +6,7 @@ use crate::common::flags::roaring_flags::RoaringFlags;
 
 mod lifecycle;
 mod read_ops;
+pub mod update_only;
 
 pub use self::lifecycle::MutableNullIndexBuilder;
 
@@ -29,8 +30,7 @@ pub(super) struct Storage<S: common::universal_io::UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::types::PointOffsetType;
     use serde_json::Value;
     use tempfile::TempDir;
@@ -55,26 +55,26 @@ mod tests {
 
         let mut builder = MutableNullIndex::builder(dir.path(), n as usize).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for i in 0..n {
             match i % 4 {
-                0 => builder.add_point(i, &[&null_value], &hw_counter).unwrap(),
-                1 => builder
-                    .add_point(i, &[&null_value_in_array], &hw_counter)
-                    .unwrap(),
-                2 => builder.add_point(i, &[], &hw_counter).unwrap(),
-                3 => builder
-                    .add_point(i, &[&Value::Bool(true)], &hw_counter)
-                    .unwrap(),
+                0 => builder.add_point(i, &[&null_value]).unwrap(),
+                1 => builder.add_point(i, &[&null_value_in_array]).unwrap(),
+                2 => builder.add_point(i, &[]).unwrap(),
+                3 => builder.add_point(i, &[&Value::Bool(true)]).unwrap(),
                 _ => unreachable!(),
-            }
+            };
         }
 
         let null_index = builder.finalize().unwrap();
         let key = JsonPath::new("test");
 
         let filter_is_null = FieldCondition::new_is_null(key.clone(), true);
+
+        let filter_is_not_null = FieldCondition::new_is_null(key.clone(), false);
+
+        let filter_is_empty = FieldCondition::new_is_empty(key.clone(), true);
 
         let filter_is_not_empty = FieldCondition {
             key: key.clone(),
@@ -88,25 +88,24 @@ mod tests {
             is_null: None,
         };
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         let is_null_values: Vec<_> = null_index
-            .filter(&filter_is_null, &hw_counter)
+            .filter(&filter_is_null)
             .unwrap()
             .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
-            .filter(&filter_is_not_empty, &hw_counter)
+            .filter(&filter_is_not_empty)
             .unwrap()
             .unwrap()
             .collect();
 
         let is_empty_values: Vec<_> = (0..n)
-            .filter(|&id| null_index.values_is_empty(id))
+            .filter(|&id| null_index.values_is_empty(id).unwrap())
             .collect();
         let not_null_values: Vec<_> = (0..n)
-            .filter(|&id| !null_index.values_is_null(id))
+            .filter(|&id| !null_index.values_is_null(id).unwrap())
             .collect();
 
         for i in 0..n {
@@ -143,18 +142,30 @@ mod tests {
             }
         }
 
-        let hw_cell = HardwareCounterCell::new();
         let is_null_cardinality = null_index
-            .estimate_cardinality(&filter_is_null, &hw_cell)
+            .estimate_cardinality(&filter_is_null)
             .unwrap()
             .unwrap();
         let non_empty_cardinality = null_index
-            .estimate_cardinality(&filter_is_not_empty, &hw_cell)
+            .estimate_cardinality(&filter_is_not_empty)
+            .unwrap()
+            .unwrap();
+        let is_empty_cardinality = null_index
+            .estimate_cardinality(&filter_is_empty)
+            .unwrap()
+            .unwrap();
+        let not_null_cardinality = null_index
+            .estimate_cardinality(&filter_is_not_null)
             .unwrap()
             .unwrap();
 
         assert_eq!(is_null_cardinality.exp, 50);
         assert_eq!(non_empty_cardinality.exp, 50);
+        // Complement estimates use total − indexed count (no arbitrary delete discount).
+        assert_eq!(is_empty_cardinality.exp, 50);
+        assert_eq!(is_empty_cardinality.max, 50);
+        assert_eq!(not_null_cardinality.exp, 50);
+        assert_eq!(not_null_cardinality.max, 50);
     }
 
     #[test]
@@ -162,19 +173,19 @@ mod tests {
         let dir = TempDir::with_prefix("test_manual_buffer_flushing").unwrap();
         let mut index = MutableNullIndex::builder(dir.path(), 10).unwrap().0;
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for i in 0..10 {
             index
-                .add_point(i as PointOffsetType, &[&Value::Bool(true)], &hw_counter)
+                .add_point(i as PointOffsetType, &[&Value::Bool(true)])
                 .unwrap();
         }
 
         index.flusher()().unwrap();
 
         for i in 0..10 {
-            assert!(!index.values_is_empty(i as PointOffsetType));
-            assert!(!index.values_is_null(i as PointOffsetType));
+            assert!(!index.values_is_empty(i as PointOffsetType).unwrap());
+            assert!(!index.values_is_null(i as PointOffsetType).unwrap());
         }
     }
 }

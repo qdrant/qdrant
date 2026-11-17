@@ -1,11 +1,14 @@
 mod build;
+mod nested;
 mod payload_index;
 mod read_view;
 
-pub use read_view::StructPayloadIndexReadView;
+pub use read_view::{IdsConditionChecker, MaterializationHint, StructPayloadIndexReadView};
 
+pub mod read_only;
 #[cfg(test)]
 mod tests;
+pub mod update_only;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,26 +16,48 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::defaults::log_load_timing;
+use common::reason::reason;
 use fs_err as fs;
 
-use super::field_index::FieldIndex;
 use super::field_index::index_selector::IndexSelector;
+use super::field_index::{FieldIndex, FieldIndexRead as _};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::payload_config::{self, PayloadConfig};
+use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
-#[derive(Debug)]
-enum StorageType {
+/// Desired storage type for payload indices of a segment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StorageType {
     Appendable,
     NonAppendable,
+}
+
+impl StorageType {
+    /// Storage type for payload indices of a segment, given whether the segment is appendable.
+    pub fn from_appendable(appendable: bool) -> Self {
+        if appendable {
+            StorageType::Appendable
+        } else {
+            StorageType::NonAppendable
+        }
+    }
+}
+
+/// Whether opening a payload index may create missing index data or must only load existing data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexLoadMode {
+    /// Create missing index data while loading.
+    CreateIfMissing,
+    /// Only load existing index data.
+    LoadExisting,
 }
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
@@ -53,11 +78,20 @@ pub struct StructPayloadIndex {
     pub(super) visited_pool: VisitedPool,
     /// Desired storage type for payload indices, used in builder to pick correct type
     storage_type: StorageType,
+    /// Whether the value mappings of field indices built from now on are journaled, see
+    /// [`Self::disable_journal`]
+    journaled: bool,
 }
 
 impl StructPayloadIndex {
     fn config_path(&self) -> PathBuf {
         PayloadConfig::get_config_path(&self.path)
+    }
+
+    /// Don't journal the value mappings of field indices built from now on, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal).
+    pub fn disable_journal(&mut self) {
+        self.journaled = false;
     }
 
     pub(super) fn save_config(&self) -> OperationResult<()> {
@@ -101,9 +135,16 @@ impl StructPayloadIndex {
         let id_tracker_borrow = self.id_tracker.borrow();
         let deleted_points = id_tracker_borrow.deleted_point_bitslice();
         let mut rebuild = false;
+        let mut load_error = None;
         let mut is_dirty = false;
 
-        let mut indexes = if payload_schema.types.is_empty() {
+        let nested = payload_schema.schema.nested();
+
+        let mut indexes = if nested.is_some() && payload_schema.types.is_empty() {
+            // No exact index types to open per element
+            rebuild = true;
+            vec![]
+        } else if payload_schema.types.is_empty() {
             let selector = self.selector(&payload_schema.schema);
             let indexes = selector.new_index(
                 field,
@@ -124,7 +165,8 @@ impl StructPayloadIndex {
                 if let Some(null_index) = selector.new_null_index(
                     field,
                     create_if_missing,
-                    &id_tracker_borrow,
+                    id_tracker_borrow.total_point_count(),
+                    deleted_points,
                     selector.default_mutability(),
                 )? {
                     indexes.push(null_index);
@@ -145,37 +187,66 @@ impl StructPayloadIndex {
                 .iter()
                 // Load each index
                 .map(|index| {
-                    let selector = self.selector_with_type(index);
-                    selector.new_index_with_type(
-                        field,
-                        &payload_schema.schema,
-                        index,
-                        create_if_missing,
-                        &id_tracker_borrow,
-                        deleted_points,
-                    )
+                    let selector = self.selector_with_type(index, &payload_schema.schema);
+                    match nested {
+                        Some(array_key) => self.open_nested_index(
+                            &selector,
+                            field,
+                            array_key,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            &id_tracker_borrow,
+                        ),
+                        None => selector.new_index_with_type(
+                            field,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            id_tracker_borrow.total_point_count(),
+                            deleted_points,
+                        ),
+                    }
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load
                 .take_while(|index| {
                     let is_loaded = index.as_ref().is_ok_and(|index| index.is_some());
                     rebuild |= !is_loaded;
+                    if let Err(err) = index {
+                        load_error = Some(err.to_string());
+                    }
                     is_loaded
                 })
                 .filter_map(|index| index.transpose())
                 .collect::<OperationResult<Vec<_>>>()?
         };
 
-        // TODO(rocksdb): review leftover code in this function
-
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
-            log::debug!("Rebuilding payload index for field `{field}`...");
-            indexes = self.build_field_indexes(
-                field,
-                &payload_schema.schema,
-                &HardwareCounterCell::disposable(), // Internal operation
-            )?;
+            match &load_error {
+                // For example corrupt index data, repaired by rebuilding from payload storage
+                Some(err) => log::warn!(
+                    "Failed to load payload index for field `{field}` at {}, rebuilding it: {err}",
+                    self.path.display(),
+                ),
+                None => log::debug!("Rebuilding payload index for field `{field}`..."),
+            }
+            // Close any partially-loaded index storages first: the rebuild wipes
+            // their directories before building fresh.
+            indexes.clear();
+            indexes = ambient::unmeasured(reason("Internal operation"), || {
+                self.build_field_indexes(field, &payload_schema.schema)
+            })?;
+
+            // The durable config keeps listing this field: persist the rebuilt data
+            // now, or a crash before the next flush cycle would leave the config
+            // pointing at empty index storages that silently load as a complete
+            // index. Safe here: the segment is still being opened, so no flush
+            // pipeline capture of these storages can exist yet.
+            for index in &indexes {
+                index.flusher()()?;
+            }
 
             // Persist exact payload index types of newly built indices
             is_dirty = true;
@@ -190,8 +261,8 @@ impl StructPayloadIndex {
         id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
-        is_appendable: bool,
-        create: bool,
+        storage_type: StorageType,
+        load_mode: IndexLoadMode,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
         let config_path = PayloadConfig::get_config_path(path);
@@ -199,12 +270,6 @@ impl StructPayloadIndex {
             PayloadConfig::load(&config_path)?
         } else {
             PayloadConfig::default()
-        };
-
-        let storage_type = if is_appendable {
-            StorageType::Appendable
-        } else {
-            StorageType::NonAppendable
         };
 
         let mut index = StructPayloadIndex {
@@ -216,6 +281,7 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             storage_type,
+            journaled: true,
         };
 
         if !index.config_path().exists() {
@@ -223,7 +289,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields(create)?;
+        index.load_all_fields(load_mode == IndexLoadMode::CreateIfMissing)?;
 
         Ok(index)
     }
@@ -271,23 +337,30 @@ impl StructPayloadIndex {
 
     /// Select which type of PayloadIndex to use for the field
     pub(super) fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector<'_> {
-        let is_on_disk = payload_schema.is_on_disk();
+        let memory = payload_schema.memory_placement();
 
         match &self.storage_type {
             StorageType::Appendable => IndexSelector::Appendable { dir: &self.path },
             StorageType::NonAppendable => IndexSelector::NonAppendable {
                 dir: &self.path,
-                is_on_disk,
+                memory,
             },
         }
     }
 
-    fn selector_with_type(&self, index_type: &FullPayloadIndexType) -> IndexSelector<'_> {
-        match index_type.storage_type {
-            payload_config::StorageType::Gridstore => IndexSelector::Appendable { dir: &self.path },
-            payload_config::StorageType::Mmap { is_on_disk } => IndexSelector::NonAppendable {
+    fn selector_with_type(
+        &self,
+        index_type: &FullPayloadIndexType,
+        payload_schema: &PayloadFieldSchema,
+    ) -> IndexSelector<'_> {
+        match index_type
+            .storage_type
+            .immutable_memory(payload_schema.memory_placement())
+        {
+            None => IndexSelector::Appendable { dir: &self.path },
+            Some(memory) => IndexSelector::NonAppendable {
                 dir: &self.path,
-                is_on_disk,
+                memory,
             },
         }
     }
@@ -313,7 +386,7 @@ impl StructPayloadIndex {
     pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                if index.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
             }

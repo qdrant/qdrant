@@ -1,9 +1,14 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::{self, Hash, Hasher};
 use std::mem;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -11,6 +16,8 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use chrono::SubsecRound as _;
+use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
@@ -28,6 +35,8 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
+mod hnsw_config_serde;
+use self::hnsw_config_serde::HnswConfigDeserialize;
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
@@ -41,8 +50,9 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
-use crate::json_path::JsonPath;
+use crate::json_path::{JsonPath, JsonPathItem};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::utils::unordered_hash_unique;
@@ -68,6 +78,10 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
+///
+/// Qdrant supports datetimes with microsecond precision. Constructing through [`From`],
+/// [`FromStr`] or deserialization truncates anything below a microsecond, so that filtering
+/// gives the same result with and without a payload index.
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, Eq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
@@ -150,8 +164,9 @@ impl Display for DateTimePayloadType {
 }
 
 impl From<chrono::DateTime<chrono::Utc>> for DateTimePayloadType {
+    /// Truncates to microseconds, matching [`DateTimeWrapper::timestamp`]
     fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
-        DateTimeWrapper(dt)
+        DateTimeWrapper(dt.trunc_subsecs(6))
     }
 }
 
@@ -347,21 +362,6 @@ impl Distance {
             Distance::Euclid | Distance::Manhattan => Order::SmallBetter,
         }
     }
-
-    pub fn is_ordered(&self, left: ScoreType, right: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => left >= right,
-            Order::SmallBetter => left <= right,
-        }
-    }
-
-    /// Checks if score satisfies threshold condition
-    pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => score > threshold,
-            Order::SmallBetter => score < threshold,
-        }
-    }
 }
 
 /// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
@@ -386,6 +386,23 @@ pub enum Order {
     SmallBetter,
 }
 
+impl Order {
+    pub fn is_ordered(self, left: ScoreType, right: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => left >= right,
+            Order::SmallBetter => left <= right,
+        }
+    }
+
+    /// Checks if score satisfies threshold condition
+    pub fn check_threshold(self, score: ScoreType, threshold: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => score > threshold,
+            Order::SmallBetter => score < threshold,
+        }
+    }
+}
+
 /// Search result
 #[derive(Clone, Debug)]
 pub struct ScoredPoint {
@@ -403,6 +420,25 @@ pub struct ScoredPoint {
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     pub order_value: Option<OrderValue>,
+    /// Where the segment that scored this point holds it, if a search of
+    /// this process found it there.
+    pub location: Option<ScoredPointLocation>,
+}
+
+/// Where a segment holds a point its search returned: valid only in the
+/// process that searched it, for reading the point back by offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScoredPointLocation {
+    pub segment: Uuid,
+    pub offset: PointOffsetType,
+}
+
+/// A point to read from a segment by its offset, expected there at `version`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointAtOffset {
+    pub id: PointIdType,
+    pub offset: PointOffsetType,
+    pub version: SeqNumberType,
 }
 
 impl Eq for ScoredPoint {}
@@ -471,12 +507,53 @@ impl PayloadIndexInfo {
     }
 }
 
+/// Universal I/O backend that is used to read files.
+///
+/// Decided when the component is opened based on `storage.performance.io_uring` option,
+/// component memory placement and kernel io_uring support.
+///
+/// Options:
+///
+/// * `Mmap` - Reads are served by the page cache through a memory mapping.
+///
+/// * `IoUring` - Reads are submitted to the kernel with io_uring.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IoBackend {
+    // Reads are served by the page cache through a memory mapping.
+    Mmap,
+    // Reads are submitted to the kernel with io_uring.
+    IoUring,
+}
+
+impl IoBackend {
+    /// `None` for a kind that is neither of the two a component can be opened on.
+    pub fn from_universal_kind(kind: common::universal_io::UniversalKind) -> Option<Self> {
+        match kind {
+            common::universal_io::UniversalKind::Mmap => Some(Self::Mmap),
+            common::universal_io::UniversalKind::IoUring => Some(Self::IoUring),
+            common::universal_io::UniversalKind::DiskCache
+            | common::universal_io::UniversalKind::SimpleDiskCache
+            | common::universal_io::UniversalKind::CachedBlob
+            | common::universal_io::UniversalKind::S3
+            | common::universal_io::UniversalKind::Gcs
+            | common::universal_io::UniversalKind::Azure
+            | common::universal_io::UniversalKind::UioGrpc => None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataInfo {
     pub num_vectors: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
+    /// Universal I/O backend that this vector storage reads files with. Absent if vector storage
+    /// does not support configurable backends or only supports a single backend type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub io_backend: Option<IoBackend>,
 }
 
 /// Aggregated information about segment
@@ -501,6 +578,11 @@ pub struct SegmentInfo {
     pub is_appendable: bool,
     pub index_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     pub vector_data: HashMap<String, VectorDataInfo>,
+    /// Universal I/O backend that payload storage reads files with. Absent if payload storage
+    /// does not support configurable backends or only supports a single backend type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub payload_storage_io_backend: Option<IoBackend>,
     /// Internal ID from which points are deferred (hidden from reads).
     /// Only set for appendable segments.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -599,9 +681,7 @@ pub struct AcornSearchParams {
 }
 
 /// Additional parameters of the search
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Copy, Clone, PartialEq, Default, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -631,13 +711,103 @@ pub struct SearchParams {
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
+
+    /// Which population IDF statistics are computed over.
+    /// By default (or with explicit `"global"`) statistics are collection-wide.
+    /// Only applicable to sparse vectors with the IDF modifier enabled, and to
+    /// BM25 over a text index.
+    #[serde(default)]
+    #[validate(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idf: Option<IdfParams>,
+}
+
+/// Population over which IDF statistics are computed for scoring — the *IDF
+/// corpus*.
+///
+/// - `"global"` — collection-wide statistics, same as omitting the parameter.
+/// - `{ "corpus": <filter> }` — document count and per-term document frequencies
+///   (and, for BM25 over a text index, the average document length) are computed
+///   over the points matching the corpus filter only. The corpus is independent
+///   of the retrieval filter and is usually broader than it.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum IdfParams {
+    Scope(IdfScope),
+    Corpus(IdfCorpusParams),
+}
+
+/// Named IDF scope without a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum IdfScope {
+    // Collection-wide statistics. This is the default behavior.
+    Global,
+}
+
+/// IDF statistics computed over the points matching a corpus filter.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct IdfCorpusParams {
+    /// Filter defining the corpus: IDF statistics are computed over the points
+    /// matching this filter.
+    pub corpus: Filter,
+}
+
+impl IdfParams {
+    /// Corpus filter defining the IDF population, `None` for global statistics.
+    pub fn corpus(&self) -> Option<&Filter> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => None,
+            IdfParams::Corpus(IdfCorpusParams { corpus }) => Some(corpus),
+        }
+    }
+}
+
+impl Validate for IdfParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            IdfParams::Scope(IdfScope::Global) => Ok(()),
+            IdfParams::Corpus(corpus_params) => corpus_params.validate(),
+        }
+    }
+}
+
+impl Validate for IdfCorpusParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let IdfCorpusParams { corpus } = self;
+        corpus.validate()
+    }
 }
 
 /// Configuration for vectors.
 #[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
 pub struct VectorsConfigDefaults {
+    /// Deprecated: use `memory` instead.
     #[serde(default)]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Default memory placement of the original vector storage for newly created collections.
+    /// Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for
+    /// dense vector storage.
+    #[serde(default)]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
+}
+
+/// Reject memory placements not supported by dense vector storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(Cow::from(
+                "`pinned` memory placement is not supported for dense vector storage",
+            ));
+            Err(error)
+        }
+    }
 }
 
 /// Vector index configuration
@@ -661,10 +831,10 @@ impl Indexes {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
-            Indexes::Hnsw(config) => config.on_disk.unwrap_or_default(),
+            Indexes::Hnsw(config) => config.memory_placement().is_cold(),
         }
     }
 }
@@ -673,12 +843,17 @@ impl Indexes {
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
 )]
-#[serde(rename_all = "snake_case")]
+// Reads a missing `ef_construct` as the default, without making it optional in the JSON schema
+#[serde(rename_all = "snake_case", from = "HnswConfigDeserialize")]
 #[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    /// Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    /// may still be built when the effective payload M is positive (see payload_m).
+    /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
+    // Read as `DEFAULT_HNSW_EF_CONSTRUCT` if missing, see `HnswConfigDeserialize`
     #[validate(range(min = 4))]
     pub ef_construct: usize,
     /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
@@ -695,10 +870,18 @@ pub struct HnswConfig {
     /// On small CPUs, less threads are used.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
+    /// Deprecated: use `memory` instead.
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
-    /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    /// Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are
+    /// set. Default: `cached` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
+    pub memory: Option<Memory>,
+    /// Number of additional payload-aware links per node. If unset, the value of m is used.
+    /// An effective value of 0 disables these additional links. A positive value allows
+    /// them for indexed payload fields with HNSW enabled, even when m is 0.
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
@@ -725,7 +908,10 @@ impl HnswConfig {
             full_scan_threshold,
             max_indexing_threads: _,
             payload_m,
-            on_disk,
+            // Compared through the effective placement below, so that expressing the same
+            // placement through the new `memory` parameter does not trigger a rebuild
+            on_disk: _,
+            memory: _,
             inline_storage,
         } = *self;
 
@@ -736,8 +922,15 @@ impl HnswConfig {
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
             // to flip this flag
-            || on_disk != other.on_disk
+            || self.memory_placement() != other.memory_placement()
             || inline_storage != other.inline_storage
+    }
+
+    /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag. Defaults to [`Memory::Cached`].
+    pub fn memory_placement(&self) -> Memory {
+        Memory::resolve(self.memory, self.on_disk.map(Memory::from_on_disk))
+            .unwrap_or(Memory::Cached)
     }
 }
 
@@ -790,9 +983,15 @@ pub struct ScalarQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: Option<f32>,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 }
 
 impl ScalarQuantizationConfig {
@@ -804,6 +1003,18 @@ impl ScalarQuantizationConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
     }
+
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
+}
+
+/// `always_ram=true` used to force quantized vectors into RAM, never evicted by placement
+/// config: the pinned placement. `always_ram=false` means "follow storage", same as unset.
+fn legacy_always_ram_placement(always_ram: Option<bool>) -> Option<Memory> {
+    always_ram.and_then(|always_ram| always_ram.then_some(Memory::Pinned))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -817,8 +1028,15 @@ pub struct ScalarQuantization {
 pub struct ProductQuantizationConfig {
     pub compression: CompressionRatio,
 
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 }
 
 impl ProductQuantizationConfig {
@@ -829,6 +1047,12 @@ impl ProductQuantizationConfig {
     /// - to effectively change the configuration, a quantization rebuild is required
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self != other
+    }
+
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
     }
 }
 
@@ -841,6 +1065,7 @@ pub struct ProductQuantization {
 impl Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
+        self.memory.hash(state);
         self.r#type.hash(state);
     }
 }
@@ -859,8 +1084,14 @@ pub enum BinaryQuantizationEncoding {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct BinaryQuantizationConfig {
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encoding: Option<BinaryQuantizationEncoding>,
@@ -870,6 +1101,14 @@ pub struct BinaryQuantizationConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
+}
+
+impl BinaryQuantizationConfig {
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -886,17 +1125,32 @@ pub enum TurboQuantBitSize {
     Bits2,
     #[default]
     Bits4,
+    Bits8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct TurboQuantQuantizationConfig {
+    /// Deprecated: use `memory` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub always_ram: Option<bool>,
+    /// Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if
+    /// both are set. Default: follow the memory placement of the original vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
 
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bits: Option<TurboQuantBitSize>,
+}
+
+impl TurboQuantQuantizationConfig {
+    /// Requested memory placement, resolving the new `memory` parameter against the deprecated
+    /// `always_ram` flag. `None` means following the original vector storage placement.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        Memory::resolve(self.memory, legacy_always_ram_placement(self.always_ram))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -946,6 +1200,19 @@ impl QuantizationConfig {
             QuantizationConfig::Product(p) => p.product.always_ram == Some(true),
             QuantizationConfig::Binary(b) => b.binary.always_ram == Some(true),
             QuantizationConfig::Turbo(t) => t.turbo.always_ram == Some(true),
+        }
+    }
+
+    /// Requested memory placement of quantized vectors, resolving the new `memory` parameter
+    /// against the deprecated `always_ram` flag.
+    ///
+    /// `None` means the placement follows the original vector storage.
+    pub fn memory_placement(&self) -> Option<Memory> {
+        match self {
+            QuantizationConfig::Scalar(s) => s.scalar.memory_placement(),
+            QuantizationConfig::Product(p) => p.product.memory_placement(),
+            QuantizationConfig::Binary(b) => b.binary.memory_placement(),
+            QuantizationConfig::Turbo(t) => t.turbo.memory_placement(),
         }
     }
 }
@@ -1119,6 +1386,13 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
+
     // Search
     /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1186,26 +1460,23 @@ pub struct StrictModeConfig {
     #[validate(range(min = 0))]
     pub max_payload_index_count: Option<usize>,
 
+    /// Deprecated: use the node-wide quota config (`PUT /quotas`) instead, which
+    /// caps the same resource for every collection. Scheduled for removal in
+    /// 1.21.
+    ///
     /// Reject memory-consuming update operations (e.g. upsert, set payload)
     /// when the process resident memory exceeds this percentage of total system
-    /// memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external
-    /// and internal (replication) traffic — rejection is deterministic so it does
-    /// not cause replica divergence. Delete operations are not affected, so
-    /// callers can still free memory.
+    /// memory (or cgroup limit). Value in [1, 100]. Memory is a node-wide
+    /// resource, so this only tightens the quota for one collection; it cannot
+    /// lift it. Delete operations are not affected, so callers can still free
+    /// memory.
+    #[deprecated(
+        since = "1.19.0",
+        note = "memory is node-wide: use the global quota config instead. Removal planned for 1.21"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: Option<u8>,
-
-    /// Reject disk-consuming update operations (e.g. upsert, set payload) when
-    /// the filesystem hosting Qdrant storage is filled above this percentage
-    /// of its total capacity. Value in [1, 100]. Applied uniformly to external
-    /// and internal (replication) traffic — rejection is deterministic so it
-    /// does not cause replica divergence. Delete operations are not affected,
-    /// so callers can still free disk space. Free space is sampled with a
-    /// small TTL cache; the gate may take a few seconds to react.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1, max = 100))]
-    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -1235,7 +1506,7 @@ impl Hash for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
+            require_tenant_filter,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1257,7 +1528,7 @@ impl Hash for StrictModeConfig {
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
         max_resident_memory_percent.hash(state);
-        max_disk_usage_percent.hash(state);
+        require_tenant_filter.hash(state);
     }
 }
 
@@ -1286,6 +1557,13 @@ pub struct StrictModeConfigOutput {
     /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
+
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
 
     // Search
     /// Max HNSW value allowed in search parameters.
@@ -1358,15 +1636,14 @@ pub struct StrictModeConfigOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_payload_index_count: Option<usize>,
 
-    /// Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)
+    /// Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)
+    #[deprecated(
+        since = "1.19.0",
+        note = "memory is node-wide: use the global quota config instead. Removal planned for 1.21"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub max_resident_memory_percent: Option<u8>,
-
-    /// Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[anonymize(false)]
-    pub max_disk_usage_percent: Option<u8>,
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {
@@ -1393,7 +1670,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
+            require_tenant_filter,
         } = config;
 
         Self {
@@ -1418,7 +1695,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
             max_resident_memory_percent,
-            max_disk_usage_percent,
+            require_tenant_filter,
         }
     }
 }
@@ -1433,6 +1710,7 @@ impl Default for HnswConfig {
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
             on_disk: Some(false),
+            memory: None,
             payload_m: None,
             inline_storage: None,
         }
@@ -1465,12 +1743,31 @@ impl Default for PayloadStorageType {
 
 impl PayloadStorageType {
     /// Convert user-facing `on_disk_payload` (true = store on disk) to storage type.
-    /// Returns `Mmap` or `InRamMmap`; for RocksDB-backed variants use collection config.
+    /// Returns `Mmap` or `InRamMmap`.
     pub fn from_on_disk_payload(on_disk: bool) -> Self {
         if on_disk { Self::Mmap } else { Self::InRamMmap }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    /// Convert memory placement to payload storage type.
+    ///
+    /// `Pinned` is not supported for payload storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::Mmap,
+            Memory::Cached | Memory::Pinned => Self::InRamMmap,
+        }
+    }
+
+    /// Memory placement this storage type provides.
+    pub fn memory(&self) -> Memory {
+        match self {
+            PayloadStorageType::Mmap => Memory::Cold,
+            PayloadStorageType::InRamMmap => Memory::Cached,
+        }
+    }
+
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
@@ -1481,16 +1778,50 @@ impl PayloadStorageType {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     pub vector_data: HashMap<VectorNameBuf, VectorDataConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
+    /// Memory placement of the id tracker in non-appendable segments. Unset means the deployment
+    /// default: `cold` in serverless-compatible mode, `pinned` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_tracker_memory: Option<Memory>,
+}
+
+/// Reject vector names that would escape the segment directory, see
+/// [`crate::segment_constructor::check_vector_name_path`]. Covers every reader of `segment.json`.
+fn deserialize_vector_name_map<'de, D, V>(
+    deserializer: D,
+) -> Result<HashMap<VectorNameBuf, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    let map = HashMap::<VectorNameBuf, V>::deserialize(deserializer)?;
+    for name in map.keys() {
+        crate::segment_constructor::check_vector_name_path(name)
+            .map_err(serde::de::Error::custom)?;
+    }
+    Ok(map)
 }
 
 impl SegmentConfig {
+    /// Effective memory placement of the id tracker in a non-appendable segment: the configured
+    /// one, otherwise the deployment default (`cold`, i.e. the disk-resident tracker, in
+    /// serverless-compatible mode; `pinned`, i.e. the in-RAM immutable tracker, otherwise).
+    pub fn id_tracker_memory_placement(&self) -> Memory {
+        self.id_tracker_memory.unwrap_or_else(|| {
+            if common::flags::feature_flags().serverless_compatible() {
+                Memory::Cold
+            } else {
+                Memory::Pinned
+            }
+        })
+    }
+
     /// Helper to get vector specific quantization config.
     ///
     /// This grabs the quantization config for the given vector name if it exists.
@@ -1515,13 +1846,11 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data
-            .values()
-            .any(|config| config.storage_type.is_on_disk())
+        self.vector_data.values().any(|config| config.is_cold())
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.index.index_type.is_on_disk())
+                .any(|config| config.index.index_type.is_mmap())
     }
 
     pub fn is_appendable(&self) -> bool {
@@ -1549,6 +1878,7 @@ impl SegmentConfig {
             vector_data: _,
             sparse_vector_data: _,
             payload_storage_type: _,
+            id_tracker_memory: _,
         } = self;
 
         check_vectors_map_compatible(
@@ -1597,6 +1927,159 @@ where
     Ok(())
 }
 
+/// Memory placement of a component's data.
+///
+/// Data is always persisted on disk regardless of this setting; it only controls
+/// how the data is held in RAM.
+///
+/// Options:
+///
+/// * `Cold` - Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
+///   components larger than RAM size. First request might be slow, but data is cached with
+///   usage.
+///
+/// * `Cached` - Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
+///   evicted if there is not enough memory and some other component's data is used more
+///   frequently.
+///
+/// * `Pinned` - Data is loaded in RAM and never evicted. First request is fast, but the component must
+///   fit in RAM at all times. Recommended for frequently queried small components like
+///   quantized vectors or primary indexes.
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
+)]
+#[cfg_attr(any(test, feature = "testing"), derive(exhaustive::Exhaustive))]
+#[serde(rename_all = "snake_case")]
+pub enum Memory {
+    // Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
+    // components larger than RAM size. First request might be slow, but data is cached with
+    // usage.
+    Cold,
+    // Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be
+    // evicted if there is not enough memory and some other component's data is used more
+    // frequently.
+    Cached,
+    // Data is loaded in RAM and never evicted. First request is fast, but the component must
+    // fit in RAM at all times. Recommended for frequently queried small components like
+    // quantized vectors or primary indexes.
+    Pinned,
+}
+
+impl Memory {
+    /// Convert legacy `on_disk`-style flag (true = store on disk) into the memory placement it
+    /// used to mean: on-disk data is loaded lazily, in-RAM data is populated but evictable.
+    pub fn from_on_disk(on_disk: bool) -> Self {
+        if on_disk { Self::Cold } else { Self::Cached }
+    }
+
+    /// Convert legacy `on_disk`-style flag for components whose in-RAM variant is a heap
+    /// structure (payload field indexes, sparse vector index): on-disk data is loaded lazily,
+    /// in-RAM data is fully materialized on heap and never evicted.
+    pub fn from_on_disk_heap(on_disk: bool) -> Self {
+        if on_disk { Self::Cold } else { Self::Pinned }
+    }
+
+    /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
+    /// a cold component hit the disk, which is what makes an async IO backend worth using.
+    pub fn is_cold(self) -> bool {
+        match self {
+            Self::Cold => true,
+            Self::Cached | Self::Pinned => false,
+        }
+    }
+
+    /// Whether this placement is backed by a heap structure rather than an mmap file, for
+    /// components that have both heap and mmap variants (payload field indexes, sparse index).
+    pub fn is_heap(self) -> bool {
+        match self {
+            Self::Pinned => true,
+            Self::Cold | Self::Cached => false,
+        }
+    }
+
+    /// Whether the backing mmap should be populated on open: the cached placement primes the
+    /// page cache, and the pinned placement reads the whole file into heap right after anyway.
+    pub fn populate_on_open(self) -> bool {
+        match self {
+            Self::Cold => false,
+            Self::Cached | Self::Pinned => true,
+        }
+    }
+
+    /// Resolve the effective memory placement from the new explicit `memory` parameter and a
+    /// legacy parameter translated into placement terms. The explicit parameter always wins.
+    pub fn resolve(memory: Option<Self>, legacy: Option<Self>) -> Option<Self> {
+        memory.or(legacy)
+    }
+
+    /// Same as [`Memory::resolve`], but logs a warning if both parameters are set and disagree.
+    ///
+    /// Use at configuration resolution points (e.g. the optimizer); use the silent
+    /// [`Memory::resolve`] in repeatedly called accessors.
+    pub fn resolve_or_warn(
+        memory: Option<Self>,
+        legacy: Option<Self>,
+        component: &dyn std::fmt::Display,
+    ) -> Option<Self> {
+        if let (Some(memory), Some(legacy)) = (memory, legacy)
+            && memory != legacy
+        {
+            log::warn!(
+                "Component {component} has both `memory={memory:?}` and a deprecated storage \
+                 placement parameter implying {legacy:?} configured; using `memory={memory:?}`"
+            );
+        }
+        Self::resolve(memory, legacy)
+    }
+
+    /// Apply the node-wide low-memory mode to this placement at load time.
+    ///
+    /// Mirrors the legacy behavior: `NoResident` downgrades pinned components to their on-disk
+    /// variants (`prefer_disk`), `NoPopulate` additionally skips cache population, so every
+    /// placement degrades to [`Memory::Cold`].
+    ///
+    /// Never affects the persisted configuration.
+    pub fn clamp_to_low_memory(self) -> Self {
+        let mode = common::low_memory::low_memory_mode();
+        if mode.skip_populate() {
+            return Self::Cold;
+        }
+        if mode.prefer_disk() {
+            return match self {
+                Self::Pinned => Self::Cold,
+                Self::Cold | Self::Cached => self,
+            };
+        }
+        self
+    }
+
+    /// Apply a request-specific populate override (from a
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile)) to this placement at
+    /// load time: a cold-ward override parks any placement cold — like `clamp_to_low_memory`,
+    /// even a pinned one, whose components all support a lazy on-disk open over the same
+    /// files — and a warm-ward one primes the page cache of an otherwise cold placement
+    /// (never materializing on heap: `Pinned` only ever comes from the config).
+    ///
+    /// Never affects the persisted configuration.
+    pub fn with_populate_override(
+        self,
+        populate_override: Option<common::universal_io::Populate>,
+    ) -> Self {
+        use common::universal_io::Populate;
+
+        let Some(populate) = populate_override else {
+            return self;
+        };
+        match populate {
+            Populate::No | Populate::Auto | Populate::Partial(_) => Self::Cold,
+            Populate::Blocking | Populate::PreferBackground => match self {
+                Self::Cold | Self::Cached => Self::Cached,
+                Self::Pinned => Self::Pinned,
+            },
+        }
+    }
+}
+
 /// Storage types for vectors
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone)]
 pub enum VectorStorageType {
@@ -1614,16 +2097,12 @@ pub enum VectorStorageType {
     ChunkedMmap,
     /// Same as `ChunkedMmap`, but vectors are forced to be locked in RAM
     /// In this way we avoid cold requests to disk, but risk to run out of memory
-    ///
-    /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
     InRamChunkedMmap,
     /// Storage in a single mmap file, not appendable
     /// Pre-fetched into RAM on load
     InRamMmap,
-    /// Placeholder storage: contains no data, all vectors reported as deleted.
-    /// Used for newly created named vectors on immutable segments.
-    /// No files on disk, reconstructed from config on load.
-    Empty,
+    /// Vectors are inlined in the HNSW links file, not in a dedicated storage. Not appendable.
+    GraphInline,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -1649,6 +2128,10 @@ pub enum VectorStorageDatatype {
     Uint8,
     // TurboQuant 4-bit compressed storage
     Turbo4,
+    // TurboQuant 8-bit compressed storage
+    Turbo8,
+    // TurboQuant 16-bit compressed storage
+    Turbo16,
 }
 
 #[derive(
@@ -1696,22 +2179,39 @@ impl VectorStorageType {
         }
     }
 
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            Self::Memory | Self::InRamChunkedMmap | Self::InRamMmap => false,
-            Self::Mmap | Self::ChunkedMmap => true,
-            // Empty storage has no actual data; report based on what the
-            // runtime EmptyDenseVectorStorage was configured with.
-            // This fallback returns true to be safe, but callers that need
-            // the real on-disk status should check the storage instance.
-            Self::Empty => true,
+    /// Convert memory placement to appendable vector storage type.
+    ///
+    /// `Pinned` is not supported for dense vector storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn appendable_from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::ChunkedMmap,
+            Memory::Cached | Memory::Pinned => Self::InRamChunkedMmap,
         }
     }
 
-    /// Whether this is a placeholder empty storage type
-    pub fn is_empty(&self) -> bool {
-        matches!(self, Self::Empty)
+    /// Convert memory placement to non-appendable single-file vector storage type.
+    ///
+    /// `Pinned` is not supported for dense vector storage and is rejected by API validation;
+    /// it defensively maps to the closest supported placement.
+    pub fn immutable_from_memory(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => Self::Mmap,
+            Memory::Cached | Memory::Pinned => Self::InRamMmap,
+        }
+    }
+
+    /// Memory placement this storage type provides.
+    ///
+    /// `None` (for GraphInline) means no placement is applicable.
+    pub fn memory(&self) -> Option<Memory> {
+        match self {
+            // Legacy true-heap storage: pinned by construction
+            Self::Memory => Some(Memory::Pinned),
+            Self::Mmap | Self::ChunkedMmap => Some(Memory::Cold),
+            Self::InRamChunkedMmap | Self::InRamMmap => Some(Memory::Cached),
+            Self::GraphInline => None,
+        }
     }
 }
 
@@ -1752,7 +2252,7 @@ impl VectorDataConfig {
             VectorStorageType::ChunkedMmap => true,
             VectorStorageType::InRamChunkedMmap => true,
             VectorStorageType::InRamMmap => false,
-            VectorStorageType::Empty => false,
+            VectorStorageType::GraphInline => false,
         };
         is_index_appendable && is_storage_appendable
     }
@@ -1809,6 +2309,52 @@ impl VectorDataConfig {
         }
         Ok(())
     }
+
+    /// Effective check: whether inline-storage should be used.
+    pub fn inline_vectors_in_graph(&self) -> bool {
+        self.check_inline_vectors() == Ok(true)
+    }
+
+    /// Whether inline-storage is configured AND should be used.
+    ///
+    /// - `Ok(true)`    - configured,     should be used.
+    /// - `Ok(false)`   - not configured, should not be used.
+    /// - `Err(reason)` - configured, but won't be used because of `reason`.
+    pub fn check_inline_vectors(&self) -> Result<bool, &'static str> {
+        let hnsw_config = match &self.index {
+            Indexes::Hnsw(hnsw_config) => hnsw_config,
+            Indexes::Plain {} => return Ok(false),
+        };
+        if !hnsw_config.inline_storage.unwrap_or_default() {
+            return Ok(false);
+        }
+        if self.multivector_config.is_some() {
+            return Err(
+                "The `hnsw_config.inline_storage` option is not compatible with multivectors. \
+                 This option will be ignored.",
+            );
+        }
+        if self.quantization_config.is_none() {
+            return Err(
+                "The `hnsw_config.inline_storage` option requires quantization to be enabled. \
+                 This option will be ignored.",
+            );
+        }
+        Ok(true)
+    }
+
+    pub fn storage_memory(&self) -> Memory {
+        match (self.storage_type.memory(), &self.index) {
+            (Some(memory), _) => memory,
+            (None, Indexes::Hnsw(hnsw_config)) => hnsw_config.memory_placement(),
+            // Invalid config: no graph to follow
+            (None, Indexes::Plain {}) => Memory::Cold,
+        }
+    }
+
+    pub fn is_cold(&self) -> bool {
+        self.storage_memory().is_cold()
+    }
 }
 
 #[derive(
@@ -1819,18 +2365,15 @@ pub enum SparseVectorStorageType {
     /// Storage in memory maps (gridstore storage)
     #[default]
     Mmap,
-    /// Placeholder storage: contains no data, all vectors reported as deleted.
-    /// Used for newly created sparse named vectors on immutable segments.
-    Empty,
 }
 
 impl SparseVectorStorageType {
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
+    /// Whether this storage type is left on disk, see [`Memory::is_cold`]
+    pub fn is_cold(&self) -> bool {
         match self {
-            // Both options are on disk, but we keep it explicit for the case if someone adds a new
-            // storage type in the future
-            Self::Mmap | Self::Empty => true,
+            // On disk; kept explicit for the case if someone adds a new storage
+            // type in the future.
+            Self::Mmap => true,
         }
     }
 }
@@ -2169,23 +2712,6 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
     }
 }
 
-/// Payload interface structure which ensures that user is allowed to pass payload in
-/// both - array and single element forms.
-///
-/// Example:
-///
-/// Both versions should work:
-/// ```json
-/// {..., "payload": {"city": {"type": "keyword", "value": ["Berlin", "London"] }}},
-/// {..., "payload": {"city": {"type": "keyword", "value": "Moscow" }}},
-/// ```
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum PayloadVariant<T> {
-    List(Vec<T>),
-    Value(T),
-}
-
 /// All possible names of payload types
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Hash, Eq, EnumIter,
@@ -2269,16 +2795,54 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
+        self.memory_placement().is_cold()
+    }
+
+    /// Effective memory placement of the field index, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag.
+    ///
+    /// Defaults to [`Memory::Pinned`]: the legacy in-RAM field indexes are heap structures.
+    pub fn memory_placement(&self) -> Memory {
+        let (memory, on_disk) = match self {
+            PayloadSchemaParams::Keyword(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Integer(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Float(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Datetime(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Uuid(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Text(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Geo(i) => (i.memory, i.on_disk),
+            PayloadSchemaParams::Bool(i) => (i.memory, i.on_disk),
+        };
+        Memory::resolve(memory, on_disk.map(Memory::from_on_disk_heap)).unwrap_or(Memory::Pinned)
+    }
+
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    ///
+    /// Stored as the array key, e.g. `offers[]`, see [`PayloadFieldSchema::normalized`].
+    pub fn nested(&self) -> Option<&JsonPath> {
         match self {
-            PayloadSchemaParams::Keyword(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Integer(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Text(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Geo(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Bool(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Keyword(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Integer(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Float(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Datetime(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Uuid(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Geo(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Bool(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Text(params) => params.nested.as_ref(),
+        }
+    }
+
+    pub(crate) fn nested_mut(&mut self) -> &mut Option<JsonPath> {
+        match self {
+            PayloadSchemaParams::Keyword(params) => &mut params.nested,
+            PayloadSchemaParams::Integer(params) => &mut params.nested,
+            PayloadSchemaParams::Float(params) => &mut params.nested,
+            PayloadSchemaParams::Datetime(params) => &mut params.nested,
+            PayloadSchemaParams::Uuid(params) => &mut params.nested,
+            PayloadSchemaParams::Geo(params) => &mut params.nested,
+            PayloadSchemaParams::Bool(params) => &mut params.nested,
+            PayloadSchemaParams::Text(params) => &mut params.nested,
         }
     }
 
@@ -2303,7 +2867,7 @@ impl Validate for PayloadSchemaParams {
             PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
             PayloadSchemaParams::Float(_) => Ok(()),
             PayloadSchemaParams::Geo(_) => Ok(()),
-            PayloadSchemaParams::Text(_) => Ok(()),
+            PayloadSchemaParams::Text(text_index_params) => text_index_params.validate(),
             PayloadSchemaParams::Bool(_) => Ok(()),
             PayloadSchemaParams::Datetime(_) => Ok(()),
             PayloadSchemaParams::Uuid(_) => Ok(()),
@@ -2354,12 +2918,18 @@ impl Display for PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(t) => write!(f, "{}", t.name()),
             PayloadFieldSchema::FieldParams(params) => match params {
-                PayloadSchemaParams::Keyword(_)
-                | PayloadSchemaParams::Float(_)
+                PayloadSchemaParams::Float(_)
                 | PayloadSchemaParams::Geo(_)
                 | PayloadSchemaParams::Bool(_)
                 | PayloadSchemaParams::Datetime(_)
                 | PayloadSchemaParams::Uuid(_) => write!(f, "{}", params.name()),
+                PayloadSchemaParams::Keyword(keyword_params) => {
+                    if keyword_params.prefix.unwrap_or_default() {
+                        write!(f, "keyword (with prefix: true)")
+                    } else {
+                        write!(f, "keyword")
+                    }
+                }
                 PayloadSchemaParams::Integer(integer_params) => {
                     let range = integer_params.range.unwrap_or(true);
                     let lookup = integer_params.lookup.unwrap_or(true);
@@ -2400,6 +2970,56 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
+    /// Store `nested` as its array key, so `offers` and `offers[]` give the same
+    /// schema. A schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
+    pub fn normalized(self) -> Self {
+        match self {
+            PayloadFieldSchema::FieldParams(mut params) => {
+                let nested = params.nested_mut();
+                *nested = nested.as_ref().map(JsonPath::array_key);
+                PayloadFieldSchema::FieldParams(params)
+            }
+            schema @ PayloadFieldSchema::FieldType(_) => schema,
+        }
+    }
+
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    /// See [`PayloadSchemaParams::nested`].
+    pub fn nested(&self) -> Option<&JsonPath> {
+        match self {
+            PayloadFieldSchema::FieldType(_) => None,
+            PayloadFieldSchema::FieldParams(params) => params.nested(),
+        }
+    }
+
+    /// Check that `field` can be indexed with this schema: a per-element index needs
+    /// `field` inside the elements of its single-level `nested` array, and can't be a
+    /// tenant index.
+    pub fn validate_for_field(&self, field: &JsonPath) -> Result<(), String> {
+        let Some(nested) = self.nested() else {
+            return Ok(());
+        };
+        let array_key = nested.array_key();
+        if !is_single_array_level(&array_key.rest) {
+            return Err(format!(
+                "nested `{nested}` must point to a single array level, like `offers` or `offers[]`",
+            ));
+        }
+        if field.strip_prefix(&array_key).is_none() {
+            return Err(format!(
+                "field `{field}` must be inside the elements of nested `{nested}`, \
+                 like `{array_key}.price`",
+            ));
+        }
+        if self.expand().tenant_optimization() {
+            return Err(format!(
+                "nested `{nested}` can't be combined with `is_tenant` or `is_principal`",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
@@ -2422,10 +3042,19 @@ impl PayloadFieldSchema {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
+            PayloadFieldSchema::FieldParams(params) => params.is_cold(),
+        }
+    }
+
+    /// Effective memory placement of the field index, resolving the new `memory` parameter
+    /// against the deprecated `on_disk` flag. Defaults to [`Memory::Pinned`].
+    pub fn memory_placement(&self) -> Memory {
+        match self {
+            PayloadFieldSchema::FieldType(_) => Memory::Pinned,
+            PayloadFieldSchema::FieldParams(params) => params.memory_placement(),
         }
     }
 
@@ -2478,6 +3107,25 @@ impl From<PayloadSchemaType> for PayloadFieldSchema {
     }
 }
 
+#[cfg(test)]
+impl PayloadFieldSchema {
+    /// This schema, normalized, as a per-element index of the `nested` array.
+    pub(crate) fn nested_in(self, nested: &str) -> Self {
+        let mut params = self.expand().into_owned();
+        *params.nested_mut() = Some(nested.parse().unwrap());
+        PayloadFieldSchema::FieldParams(params).normalized()
+    }
+}
+
+/// Whether the path `items` go through exactly one array.
+fn is_single_array_level(items: &[JsonPathItem]) -> bool {
+    let arrays = items.iter().filter(|item| match item {
+        JsonPathItem::Key(_) => false,
+        JsonPathItem::Index(_) | JsonPathItem::WildcardIndex => true,
+    });
+    arrays.count() == 1
+}
+
 impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
@@ -2500,6 +3148,42 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
                 params.kind(),
             )),
         }
+    }
+}
+
+/// Byte-blob analogue of [`Payload`]: the whole payload object as a single
+/// encoded blob, tagged with its encoding.
+///
+/// Read from storage by `retrieve_raw` and shipped as-is, so it is parsed once: when the
+/// receiving node applies the point.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Hash)]
+pub struct RawPayload {
+    /// A compact byte string rather than the serde default of an integer sequence, which
+    /// is what the WAL would otherwise store.
+    ///
+    /// The helper is named through a `use` import rather than a full path: Qdrant Edge's
+    /// amalgamation rewrites paths in code but cannot see into attribute strings.
+    #[serde(with = "raw_bytes_serde")]
+    pub payload_bytes: Vec<u8>,
+}
+
+impl RawPayload {
+    /// Wrap payload bytes read from storage, which are plain uncompressed
+    /// serde_json.
+    pub fn from_storage_bytes(payload_bytes: Vec<u8>) -> Self {
+        Self { payload_bytes }
+    }
+
+    /// Parse the blob into a [`Payload`].
+    ///
+    /// Reported as user error, so an operation carrying a bad blob is skipped on WAL
+    /// replay rather than failing recovery.
+    pub fn decode(&self) -> OperationResult<Payload> {
+        serde_json::from_slice(&self.payload_bytes).map_err(|err| {
+            OperationError::MalformedPayloadBlob {
+                description: format!("Malformed raw payload blob: {err}"),
+            }
+        })
     }
 }
 
@@ -2604,6 +3288,45 @@ impl<S: Into<String>> From<S> for MatchPhrase {
     }
 }
 
+/// Match keyword values that start with the given string.
+///
+/// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
+/// consistent with exact keyword matching. Served efficiently by a keyword
+/// index created with the `prefix` option.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchPrefix {
+    pub prefix: String,
+}
+
+impl<S: Into<String>> From<S> for MatchPrefix {
+    fn from(prefix: S) -> Self {
+        MatchPrefix {
+            prefix: prefix.into(),
+        }
+    }
+}
+
+/// Match keyword values that contain the given string.
+///
+/// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
+/// consistent with exact keyword and prefix matching. Served by a keyword
+/// index with the `prefix` option, through a scan of its key dictionary;
+/// without one, falls back to reading the payload.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchSubstring {
+    pub substring: String,
+}
+
+impl<S: Into<String>> From<S> for MatchSubstring {
+    fn from(substring: S) -> Self {
+        MatchSubstring {
+            substring: substring.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -2626,6 +3349,8 @@ pub enum MatchInterface {
     Text(MatchText),
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
+    Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2638,6 +3363,8 @@ pub enum Match {
     Text(MatchText),
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
+    Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -2651,12 +3378,41 @@ impl Match {
         Self::Text(MatchText { text: text.into() })
     }
 
+    pub fn new_prefix(prefix: &str) -> Self {
+        Self::Prefix(MatchPrefix {
+            prefix: prefix.into(),
+        })
+    }
+
+    pub fn new_substring(substring: &str) -> Self {
+        Self::Substring(MatchSubstring {
+            substring: substring.into(),
+        })
+    }
+
     pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
 
     pub fn new_except(except: AnyVariants) -> Self {
         Self::Except(MatchExcept { except })
+    }
+
+    /// Whether values are matched by an unanchored substring.
+    ///
+    /// No key ordering bounds such a match, so answering it means looking at
+    /// every distinct value of the field, whichever index serves it.
+    pub fn is_substring(&self) -> bool {
+        match self {
+            Match::Substring(_) => true,
+            Match::Value(_)
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_)
+            | Match::Prefix(_)
+            | Match::Any(_)
+            | Match::Except(_) => false,
+        }
     }
 }
 
@@ -2679,6 +3435,10 @@ impl From<MatchInterface> for Match {
                 except: except.except,
             }),
             MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
+            MatchInterface::Prefix(MatchPrefix { prefix }) => Self::Prefix(MatchPrefix { prefix }),
+            MatchInterface::Substring(MatchSubstring { substring }) => {
+                Self::Substring(MatchSubstring { substring })
+            }
         }
     }
 }
@@ -2921,6 +3681,10 @@ impl From<std::ops::Range<usize>> for ValuesCount {
     }
 }
 
+pub trait CheckGeoPoint {
+    fn check_point(&self, point: &GeoPoint) -> bool;
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
@@ -2933,8 +3697,8 @@ pub struct GeoBoundingBox {
     pub bottom_right: GeoPoint,
 }
 
-impl GeoBoundingBox {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for GeoBoundingBox {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let longitude_check = if self.top_left.lon > self.bottom_right.lon {
             // Handle antimeridian crossing
             point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
@@ -2969,8 +3733,8 @@ impl Hash for GeoRadius {
     }
 }
 
-impl GeoRadius {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for GeoRadius {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::from(self.center);
         Haversine.distance(query_center, Point::from(*point)) < self.radius.0
     }
@@ -2986,8 +3750,8 @@ pub struct PolygonWrapper {
     pub polygon: Polygon,
 }
 
-impl PolygonWrapper {
-    pub fn check_point(&self, point: &GeoPoint) -> bool {
+impl CheckGeoPoint for PolygonWrapper {
+    fn check_point(&self, point: &GeoPoint) -> bool {
         let point_new = Point::new(point.lon.0, point.lat.0);
         self.polygon.contains(&point_new)
     }
@@ -3282,6 +4046,8 @@ impl FieldCondition {
             Match::Text(_) => 0,
             Match::Phrase(_) => 0,
             Match::TextAny(_) => 0,
+            Match::Prefix(_) => 0,
+            Match::Substring(_) => 0,
         }
     }
 }
@@ -3383,6 +4149,71 @@ impl FromIterator<PointIdType> for HasIdCondition {
     }
 }
 
+/// One of `total` disjoint deterministic slices of the id space.
+///
+/// A point belongs to the slice iff `hash(id) % total == index`, where `hash`
+/// is SipHash-2-4 with a zero key over the canonical id bytes: 8 little-endian
+/// bytes for numeric ids, the 16 RFC 4122 bytes for UUIDs. For a fixed
+/// `total`, slices `0..total` are disjoint and together cover all points;
+/// membership is uniform regardless of the id scheme and stable across
+/// queries, segments, platforms and Qdrant versions.
+///
+/// Slices with different `total` values are correlated (same hash, no salt):
+/// e.g. slice `0` of `total: 4` is a strict subset of slice `0` of `total: 2`.
+/// This keeps a smaller sample contained in a larger one.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Slice {
+    /// Total number of disjoint slices the id space is split into
+    pub total: NonZeroU32,
+    /// Which slice to select, must be in `0..total`
+    pub index: u32,
+}
+
+impl Slice {
+    /// True iff `point_id` belongs to this slice.
+    pub fn check(&self, point_id: PointIdType) -> bool {
+        let Self { total, index } = self;
+        slice_point_id_hash(point_id) % u64::from(total.get()) == u64::from(*index)
+    }
+}
+
+/// SipHash-2-4 with a zero key over the canonical byte encoding of a point id:
+/// 8 little-endian bytes for [`ExtendedPointId::NumId`], the 16 RFC 4122 bytes
+/// for [`ExtendedPointId::Uuid`].
+///
+/// This value is a public API contract of [`SliceCondition`]: clients may
+/// reproduce it to predict slice membership locally, so it must never change.
+/// It is deliberately independent from [`StableHash`], which is native-endian
+/// and internal to resharding.
+pub fn slice_point_id_hash(point_id: ExtendedPointId) -> u64 {
+    let mut hasher = siphasher::sip::SipHasher24::new();
+    match point_id {
+        ExtendedPointId::NumId(num) => hasher.write(&num.to_le_bytes()),
+        ExtendedPointId::Uuid(uuid) => hasher.write(uuid.as_bytes()),
+    }
+    hasher.finish()
+}
+
+/// Select points that fall into one of `total` disjoint deterministic slices
+/// of the id space, for parallel scans and reproducible sampling.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq, Hash, Validate)]
+#[validate(schema(function = "validate_slice_condition"))]
+pub struct SliceCondition {
+    pub slice: Slice,
+}
+
+pub fn validate_slice_condition(condition: &SliceCondition) -> Result<(), ValidationError> {
+    let SliceCondition { slice } = condition;
+    let Slice { total, index } = slice;
+    if index < &total.get() {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            "Slice index must be less than the total number of slices",
+        ))
+    }
+}
+
 /// Select points with payload for a specified nested field
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Validate, Hash)]
 pub struct Nested {
@@ -3435,6 +4266,8 @@ pub enum Condition {
     HasId(HasIdCondition),
     /// Check if point has vector assigned
     HasVector(HasVectorCondition),
+    /// Check if point id falls into a deterministic slice of the id space
+    Slice(SliceCondition),
     /// Nested filters
     Nested(NestedCondition),
     /// Nested filter
@@ -3442,6 +4275,11 @@ pub enum Condition {
 
     #[serde(skip)]
     CustomIdChecker(CustomIdChecker),
+
+    /// A filter already evaluated in one segment, shared by the searches of a batch.
+    /// Internal: never serialized nor received from a user.
+    #[serde(skip)]
+    ResolvedPoints(ResolvedPoints),
 }
 
 #[derive(Deserialize)]
@@ -3449,13 +4287,14 @@ pub enum Condition {
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
 )]
-#[allow(clippy::large_enum_variant, dead_code)]
+#[expect(clippy::large_enum_variant, dead_code)]
 enum ConditionUntagged {
     Field(FieldCondition),
     IsEmpty(IsEmptyCondition),
     IsNull(IsNullCondition),
     HasId(HasIdCondition),
     HasVector(HasVectorCondition),
+    Slice(SliceCondition),
     Nested(NestedCondition),
     Filter(Filter),
 
@@ -3471,6 +4310,7 @@ impl From<ConditionUntagged> for Condition {
             ConditionUntagged::IsNull(condition) => Condition::IsNull(condition),
             ConditionUntagged::HasId(condition) => Condition::HasId(condition),
             ConditionUntagged::HasVector(condition) => Condition::HasVector(condition),
+            ConditionUntagged::Slice(condition) => Condition::Slice(condition),
             ConditionUntagged::Nested(condition) => Condition::Nested(condition),
             ConditionUntagged::Filter(condition) => Condition::Filter(condition),
             ConditionUntagged::CustomIdChecker(condition) => Condition::CustomIdChecker(condition),
@@ -3497,8 +4337,15 @@ impl<'de> serde::Deserialize<'de> for Condition {
         // Special case: FieldCondition first to surface datetime parse errors.
         // Untagged enum would swallow these errors with generic message.
         if let serde_value::Value::Map(obj) = &value
-            && obj.contains_key(&serde_value::Value::String("key".into()))
+            && let Some(key) = obj.get(&serde_value::Value::String("key".into()))
         {
+            // Reject non-string `key` upfront, the deserialization error for it
+            // would not mention which field is invalid.
+            if !matches!(key, serde_value::Value::String(_)) {
+                return Err(serde::de::Error::custom(
+                    "Filter condition 'key' must be a string",
+                ));
+            }
             return value
                 .deserialize_into()
                 .map(Condition::Field)
@@ -3560,7 +4407,9 @@ impl Condition {
             Condition::IsEmpty(_)
             | Condition::IsNull(_)
             | Condition::HasVector(_)
+            | Condition::Slice(_)
             | Condition::CustomIdChecker(_) => 0,
+            Condition::ResolvedPoints(resolved) => resolved.len(),
         }
     }
 
@@ -3574,8 +4423,10 @@ impl Condition {
             | Condition::IsEmpty(_)
             | Condition::IsNull(_)
             | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_)
             | Condition::HasId(_)
-            | Condition::HasVector(_) => 1,
+            | Condition::HasVector(_)
+            | Condition::Slice(_) => 1,
         }
     }
 
@@ -3586,7 +4437,34 @@ impl Condition {
             Condition::IsNull(is_null_condition) => Some(is_null_condition.is_null.key.clone()),
             Condition::Nested(nested_condition) => Some(nested_condition.array_key()),
             Condition::Filter(filter) => filter.iter_conditions().find_map(|c| c.targeted_key()),
-            Condition::HasId(_) | Condition::HasVector(_) | Condition::CustomIdChecker(_) => None,
+            Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => None,
+        }
+    }
+
+    /// Key of the first [`Match::is_substring`] condition this condition
+    /// carries, nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        match self {
+            Condition::Field(field_condition) => field_condition
+                .r#match
+                .as_ref()
+                .is_some_and(Match::is_substring)
+                .then(|| field_condition.key.clone()),
+            Condition::Nested(nested_condition) => {
+                nested_condition.filter().one_substring_match_key()
+            }
+            Condition::Filter(filter) => filter.one_substring_match_key(),
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => None,
         }
     }
 }
@@ -3600,9 +4478,10 @@ impl Validate for Condition {
             | Condition::IsNull(_)
             | Condition::HasVector(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
+            Condition::Slice(slice_condition) => slice_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
-            Condition::CustomIdChecker(_) => Ok(()),
+            Condition::CustomIdChecker(_) | Condition::ResolvedPoints(_) => Ok(()),
         }
     }
 }
@@ -3841,6 +4720,10 @@ pub struct WithPayload {
 pub struct MinShould {
     #[validate(nested)]
     pub conditions: Vec<Condition>,
+    // Require `min_count > 0`. An empty condition list with `min_count == 0`
+    // matches every point, which is a footgun; reject it at the API boundary.
+    // See <https://github.com/qdrant/qdrant/pull/9401>.
+    #[validate(range(min = 1, message = "min_count must be greater than 0"))]
     pub min_count: usize,
 }
 
@@ -4032,6 +4915,13 @@ impl Filter {
             .max()
             .unwrap_or(0)
     }
+
+    /// Key of the first [`Match::is_substring`] condition in this filter,
+    /// nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        self.iter_conditions()
+            .find_map(Condition::one_substring_match_key)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -4058,7 +4948,8 @@ pub enum SnapshotFormat {
     /// The collection snapshot contains nested tar archives for segments.
     /// Distinguished by a single top-level directory `snapshot` in each segment
     /// tar archive. RocksDB data stored as backups and requires unpacking
-    /// procedure.
+    /// procedure. Note since Qdrant `>=1.18.0` snapshots including RocksDB files cannot be loaded
+    /// because RocksDB support is completely removed, a warning will be shown on restore.
     ///
     /// ```plaintext
     /// ./0/segments/
@@ -4164,6 +5055,156 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_memory_legacy_mapping() {
+        // Mmap-backed components: on-disk data loads lazily, in-RAM data is populated mmap
+        assert_eq!(Memory::from_on_disk(true), Memory::Cold);
+        assert_eq!(Memory::from_on_disk(false), Memory::Cached);
+        // Heap-backed components: in-RAM data is a heap structure, never evicted
+        assert_eq!(Memory::from_on_disk_heap(true), Memory::Cold);
+        assert_eq!(Memory::from_on_disk_heap(false), Memory::Pinned);
+
+        assert!(Memory::Cold.is_cold());
+        assert!(!Memory::Cached.is_cold());
+        assert!(!Memory::Pinned.is_cold());
+
+        assert!(!Memory::Cold.is_heap());
+        assert!(!Memory::Cached.is_heap());
+        assert!(Memory::Pinned.is_heap());
+
+        assert!(!Memory::Cold.populate_on_open());
+        assert!(Memory::Cached.populate_on_open());
+        assert!(Memory::Pinned.populate_on_open());
+    }
+
+    #[test]
+    fn test_memory_resolve_precedence() {
+        // Explicit `memory` always wins over the legacy parameter
+        assert_eq!(
+            Memory::resolve(Some(Memory::Cached), Some(Memory::Cold)),
+            Some(Memory::Cached),
+        );
+        // Legacy parameter is used when `memory` is not set
+        assert_eq!(
+            Memory::resolve(None, Some(Memory::Cold)),
+            Some(Memory::Cold),
+        );
+        assert_eq!(
+            Memory::resolve(Some(Memory::Pinned), None),
+            Some(Memory::Pinned)
+        );
+        assert_eq!(Memory::resolve(None, None), None);
+    }
+
+    #[test]
+    fn test_hnsw_memory_placement() {
+        let mut config = HnswConfig::default();
+        assert_eq!(config.memory_placement(), Memory::Cached);
+
+        config.on_disk = Some(true);
+        assert_eq!(config.memory_placement(), Memory::Cold);
+
+        // Explicit `memory` overrides the deprecated `on_disk` flag
+        config.memory = Some(Memory::Pinned);
+        assert_eq!(config.memory_placement(), Memory::Pinned);
+    }
+
+    #[test]
+    fn test_hnsw_memory_mismatch_no_rebuild_for_same_placement() {
+        // Expressing the same effective placement through `memory` instead of the deprecated
+        // `on_disk` flag must not trigger a rebuild
+        let legacy = HnswConfig {
+            on_disk: Some(true),
+            ..HnswConfig::default()
+        };
+        let explicit = HnswConfig {
+            on_disk: Some(true),
+            memory: Some(Memory::Cold),
+            ..HnswConfig::default()
+        };
+        assert!(!legacy.mismatch_requires_rebuild(&explicit));
+
+        // Changing the effective placement does require a rebuild
+        let cached = HnswConfig {
+            memory: Some(Memory::Cached),
+            ..legacy
+        };
+        assert!(legacy.mismatch_requires_rebuild(&cached));
+    }
+
+    #[test]
+    fn test_quantization_memory_placement() {
+        let mut scalar = ScalarQuantizationConfig {
+            r#type: ScalarType::Int8,
+            quantile: None,
+            always_ram: None,
+            memory: None,
+        };
+        // Unset: follow the original vector storage placement
+        assert_eq!(scalar.memory_placement(), None);
+        // Legacy `always_ram=false` also means "follow storage"
+        scalar.always_ram = Some(false);
+        assert_eq!(scalar.memory_placement(), None);
+        // Legacy `always_ram=true` means pinned in RAM
+        scalar.always_ram = Some(true);
+        assert_eq!(scalar.memory_placement(), Some(Memory::Pinned));
+        // Explicit `memory` overrides the deprecated flag
+        scalar.memory = Some(Memory::Cached);
+        assert_eq!(scalar.memory_placement(), Some(Memory::Cached));
+    }
+
+    #[test]
+    fn test_storage_type_memory_mapping() {
+        assert_eq!(
+            VectorStorageType::appendable_from_memory(Memory::Cold),
+            VectorStorageType::ChunkedMmap,
+        );
+        assert_eq!(
+            VectorStorageType::appendable_from_memory(Memory::Cached),
+            VectorStorageType::InRamChunkedMmap,
+        );
+        assert_eq!(
+            VectorStorageType::immutable_from_memory(Memory::Cold),
+            VectorStorageType::Mmap,
+        );
+        assert_eq!(
+            VectorStorageType::immutable_from_memory(Memory::Cached),
+            VectorStorageType::InRamMmap,
+        );
+
+        assert_eq!(
+            PayloadStorageType::from_memory(Memory::Cold),
+            PayloadStorageType::Mmap
+        );
+        assert_eq!(
+            PayloadStorageType::from_memory(Memory::Cached),
+            PayloadStorageType::InRamMmap,
+        );
+        assert_eq!(PayloadStorageType::Mmap.memory(), Memory::Cold);
+        assert_eq!(PayloadStorageType::InRamMmap.memory(), Memory::Cached);
+    }
+
+    #[test]
+    fn test_payload_field_index_memory_placement() {
+        let mut params = KeywordIndexParams::default();
+        // Legacy in-RAM field indexes are heap structures: pinned by default
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params.clone()).memory_placement(),
+            Memory::Pinned,
+        );
+        params.on_disk = Some(true);
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params.clone()).memory_placement(),
+            Memory::Cold,
+        );
+        // Explicit `memory` overrides the deprecated `on_disk` flag
+        params.memory = Some(Memory::Cached);
+        assert_eq!(
+            PayloadSchemaParams::Keyword(params).memory_placement(),
+            Memory::Cached,
+        );
+    }
+
+    #[test]
     fn test_search_params_rejects_zero_hnsw_ef() {
         let params = SearchParams {
             hnsw_ef: Some(0),
@@ -4180,14 +5221,70 @@ mod tests {
         params.validate().unwrap();
     }
 
+    fn match_condition(key: &str, value: &str) -> Condition {
+        Condition::Field(FieldCondition::new_match(
+            JsonPath::new(key),
+            value.to_string().into(),
+        ))
+    }
+
     #[test]
-    #[ignore]
-    fn test_rmp_vs_cbor_deserialize() {
-        let payload = payload_json! {"payload_key": "payload_value"};
-        let raw = rmp_serde::to_vec(&payload).unwrap();
-        let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
-        eprintln!("payload = {payload:#?}");
-        eprintln!("de_record = {de_record:#?}");
+    fn test_idf_params_json_shapes() {
+        // Explicit global shorthand.
+        let params: IdfParams = serde_json::from_str(r#""global""#).unwrap();
+        assert_eq!(params, IdfParams::Scope(IdfScope::Global));
+        assert_eq!(params.corpus(), None);
+        params.validate().unwrap();
+
+        // Corpus object form.
+        let params: IdfParams = serde_json::from_str(
+            r#"{"corpus": {"must": [{"key": "tenant", "match": {"value": "acme"}}]}}"#,
+        )
+        .unwrap();
+        let expected_corpus = Filter::new_must(match_condition("tenant", "acme"));
+        assert_eq!(params.corpus(), Some(&expected_corpus));
+        params.validate().unwrap();
+
+        // Round-trip both shapes.
+        for params in [
+            IdfParams::Scope(IdfScope::Global),
+            IdfParams::Corpus(IdfCorpusParams {
+                corpus: expected_corpus,
+            }),
+        ] {
+            let json = serde_json::to_string(&params).unwrap();
+            let restored: IdfParams = serde_json::from_str(&json).unwrap();
+            assert_eq!(params, restored);
+        }
+    }
+
+    #[test]
+    fn test_idf_corpus_accepts_any_filter() {
+        let corpus_params = |corpus: Filter| IdfParams::Corpus(IdfCorpusParams { corpus });
+
+        // The corpus is a regular filter — any valid filter shape is accepted.
+        corpus_params(Filter::new_must(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_should(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_must_not(match_condition("tenant", "acme")))
+            .validate()
+            .unwrap();
+        corpus_params(Filter::new_must(Condition::Field(
+            FieldCondition::new_range(
+                JsonPath::new("year"),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat(2024.0)),
+                    lte: None,
+                },
+            ),
+        )))
+        .validate()
+        .unwrap();
     }
 
     #[rstest]
@@ -4222,6 +5319,33 @@ mod tests {
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
+    /// Sub-microsecond digits must be truncated on parse, so that range filters give the same
+    /// result with and without a payload index. See: <https://github.com/qdrant/qdrant/issues/11087>
+    #[rstest]
+    #[case::one_nano("2024-01-01T00:00:00.000000001Z", "2024-01-01T00:00:00Z")]
+    #[case::nanos("2024-01-01T00:00:00.123456789Z", "2024-01-01T00:00:00.123456Z")]
+    #[case::without_z("2024-01-01T00:00:00.123456789", "2024-01-01T00:00:00.123456")]
+    #[case::with_tz("2024-01-01T01:00:00.123456789+01:00", "2024-01-01T00:00:00.123456Z")]
+    #[case::before_epoch("1969-12-31T23:59:59.999999999Z", "1969-12-31T23:59:59.999999Z")]
+    fn test_datetime_truncates_to_micros(#[case] input: &str, #[case] expected: &str) {
+        let datetime = DateTimePayloadType::from_str(input).unwrap();
+        let expected = DateTimePayloadType::from_str(expected).unwrap();
+        assert_eq!(datetime, expected);
+
+        // Must match the microsecond timestamp the payload index stores
+        let from_timestamp = DateTimePayloadType::from_timestamp(datetime.timestamp()).unwrap();
+        assert_eq!(datetime, from_timestamp);
+
+        // Range checks must agree with the index on the truncated value
+        let range = Range {
+            lt: None,
+            gt: Some(expected),
+            gte: None,
+            lte: None,
+        };
+        assert!(!range.check_range(datetime));
+    }
+
     #[test]
     fn test_invalid_datetime_range_returns_clear_rfc3339_error() {
         let json = r#"{
@@ -4240,15 +5364,33 @@ mod tests {
         assert!(err.contains("Example"), "err was: {err}");
     }
 
+    #[test]
+    fn test_condition_non_string_key_returns_clear_error() {
+        for json in [
+            r#"{"key": null, "match": {"value": "A"}}"#,
+            r#"{"key": 42, "match": {"value": "A"}}"#,
+            r#"{"key": ["a"], "match": {"value": "A"}}"#,
+        ] {
+            let err = serde_json::from_str::<Condition>(json)
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                err.contains("Filter condition 'key' must be a string"),
+                "err was: {err}"
+            );
+        }
+    }
+
     /// Regression test: DateTimePayloadType binary serialization roundtrip.
     /// Ensures DateTimePayloadType parses binary-encoded RFC3339 strings.
     #[test]
     fn test_datetime_payload_type_binary_roundtrip() {
         let original = DateTimePayloadType::from_str("2024-06-15T12:30:45Z").unwrap();
 
-        // rmp-serde uses non-human-readable format
-        let binary = rmp_serde::to_vec(&original).expect("serialize");
-        let restored: DateTimePayloadType = rmp_serde::from_slice(&binary).expect("deserialize");
+        // serde_cbor uses non-human-readable format
+        let binary = serde_cbor::to_vec(&original).expect("serialize");
+        let restored: DateTimePayloadType = serde_cbor::from_slice(&binary).expect("deserialize");
 
         assert_eq!(original, restored);
     }
@@ -4267,9 +5409,9 @@ mod tests {
             lte: Some(dt_lte),
         });
 
-        // rmp-serde uses non-human-readable format
-        let binary = rmp_serde::to_vec(&range).expect("serialize");
-        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+        // serde_cbor uses non-human-readable format
+        let binary = serde_cbor::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = serde_cbor::from_slice(&binary).expect("deserialize");
 
         assert_eq!(range, restored);
     }
@@ -4292,11 +5434,109 @@ mod tests {
         let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
         let condition: Condition = serde_json::from_str(nested_json).unwrap();
         assert_matches!(condition, Condition::Nested(_));
+
+        // SliceCondition
+        let slice_json = r#"{"slice": {"total": 8, "index": 3}}"#;
+        let condition: Condition = serde_json::from_str(slice_json).unwrap();
+        assert_matches!(condition, Condition::Slice(_));
+    }
+
+    #[test]
+    fn test_slice_condition_serde_and_validation() {
+        let condition: Condition =
+            serde_json::from_str(r#"{"slice": {"total": 8, "index": 3}}"#).unwrap();
+        let Condition::Slice(slice_condition) = &condition else {
+            panic!("expected slice condition, got {condition:?}");
+        };
+        assert_eq!(slice_condition.slice.total.get(), 8);
+        assert_eq!(slice_condition.slice.index, 3);
+        condition.validate().unwrap();
+
+        let serialized = serde_json::to_value(&condition).unwrap();
+        assert_eq!(
+            serialized,
+            serde_json::json!({"slice": {"total": 8, "index": 3}}),
+        );
+
+        // Zero total is rejected at deserialization
+        serde_json::from_str::<SliceCondition>(r#"{"slice": {"total": 0, "index": 0}}"#)
+            .unwrap_err();
+
+        // Out-of-range index is rejected by validation
+        let condition: Condition =
+            serde_json::from_str(r#"{"slice": {"total": 4, "index": 4}}"#).unwrap();
+        condition.validate().unwrap_err();
+    }
+
+    /// Frozen public contract: SipHash-2-4 with a zero key over canonical id
+    /// bytes (8 LE bytes for numeric ids, 16 RFC 4122 bytes for UUIDs).
+    /// Clients reproduce this hash to predict slice membership locally — if
+    /// this test fails, slice membership visibly changed for every existing
+    /// query and the change must be reverted.
+    #[test]
+    fn test_slice_point_id_hash_contract() {
+        // Vectors independently reproduced with a reference SipHash-2-4
+        // implementation outside this codebase.
+        let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::NumId(0)),
+            0xe849_e8bb_6ffe_2567,
+        );
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::NumId(42)),
+            0x0fc2_553f_0761_9dd3,
+        );
+        assert_eq!(
+            slice_point_id_hash(ExtendedPointId::Uuid(uuid)),
+            0xf5d0_ca21_ba34_d504,
+        );
+    }
+
+    #[test]
+    fn test_slice_disjoint_and_exhaustive() {
+        let numeric_ids = (0..1000_u64).map(ExtendedPointId::NumId);
+        let uuid_ids = (0..1000_u128).map(|seed| {
+            ExtendedPointId::Uuid(Uuid::from_u128(
+                seed.wrapping_mul(0x0123_4567_89ab_cdef_fedc_ba98_7654_3210),
+            ))
+        });
+
+        for point_id in numeric_ids.chain(uuid_ids) {
+            // Exactly one slice of each total matches
+            for total in [1, 2, 5, 10] {
+                let total = NonZeroU32::new(total).unwrap();
+                (0..total.get())
+                    .filter(|&index| Slice { total, index }.check(point_id))
+                    .exactly_one()
+                    .unwrap();
+            }
+
+            // A finer slice is a subset of the coarser slice it maps onto:
+            // hash % 10 == index implies hash % 5 == index % 5
+            let fine_total = NonZeroU32::new(10).unwrap();
+            let fine_index = (0..fine_total.get())
+                .filter(|&index| {
+                    Slice {
+                        total: fine_total,
+                        index,
+                    }
+                    .check(point_id)
+                })
+                .exactly_one()
+                .unwrap();
+            assert!(
+                Slice {
+                    total: NonZeroU32::new(5).unwrap(),
+                    index: fine_index % 5,
+                }
+                .check(point_id)
+            );
+        }
     }
 
     #[test]
     fn test_datetime_wrapper_transcoding() {
-        let expected = DateTimeWrapper(chrono::Utc::now());
+        let expected = DateTimeWrapper::from(chrono::Utc::now());
         let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
         assert_eq!(expected, transcoded);
     }
@@ -4940,6 +6180,25 @@ mod tests {
     }
 
     #[test]
+    fn test_min_should_min_count_validation() {
+        // `min_count == 0` is rejected: it is meaningless and a footgun, as an
+        // empty condition list with `min_count == 0` matches every point.
+        // See <https://github.com/qdrant/qdrant/pull/9401>.
+        let invalid = Filter::new_min_should(MinShould {
+            conditions: vec![],
+            min_count: 0,
+        });
+        assert!(invalid.validate().is_err());
+
+        // `min_count >= 1` is accepted.
+        let valid = Filter::new_min_should(MinShould {
+            conditions: vec![],
+            min_count: 1,
+        });
+        assert!(valid.validate().is_ok());
+    }
+
+    #[test]
     fn test_geo_validation() {
         let query1 = r#"
         {
@@ -5384,6 +6643,18 @@ mod tests {
         let cbor_bytes = serde_cbor::to_vec(&filter).unwrap();
         let deserialized: Filter = serde_cbor::from_slice(&cbor_bytes).unwrap();
         assert_eq!(filter, deserialized);
+    }
+
+    #[rstest]
+    #[case::traversal("x/../../tmp/pwned", false)]
+    #[case::absolute("/tmp/pwned", false)]
+    #[case::default("", true)]
+    #[case::plain("image", true)]
+    #[case::legacy_nested("a/b", true)]
+    fn vector_name_map_rejects_escaping_names(#[case] name: &str, #[case] ok: bool) {
+        let result =
+            deserialize_vector_name_map::<_, serde_json::Value>(serde_json::json!({ name: {} }));
+        assert_eq!(result.is_ok(), ok, "{name:?}: {result:?}");
     }
 }
 

@@ -5,7 +5,6 @@ use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
     SearchMatrixRequestInternal,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
@@ -14,6 +13,7 @@ use segment::types::{
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::collection_query::{
@@ -142,8 +142,8 @@ impl Collection {
         request: CollectionSearchMatrixRequest,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let start = std::time::Instant::now();
         let CollectionSearchMatrixRequest {
@@ -191,9 +191,9 @@ impl Collection {
             .query(
                 sampling_query,
                 read_consistency,
+                routing_token,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -259,8 +259,8 @@ impl Collection {
                 queries,
                 collection_by_name,
                 read_consistency,
+                routing_token,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 
@@ -300,6 +300,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            location: None,
         }
     }
 

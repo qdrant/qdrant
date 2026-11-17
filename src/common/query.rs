@@ -5,10 +5,10 @@ use collection::collection::distance_matrix::*;
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
 use collection::operations::universal_query::collection_query::*;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
@@ -23,10 +23,10 @@ pub async fn do_core_search_points(
     collection_name: &str,
     request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
         toc,
@@ -35,10 +35,10 @@ pub async fn do_core_search_points(
             searches: vec![request],
         },
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await?;
     batch_res
@@ -47,14 +47,15 @@ pub async fn do_core_search_points(
         .ok_or_else(|| StorageError::service_error("Empty search result"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_search_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
         (CoreSearchRequest, ShardSelectorInternal),
@@ -81,10 +82,10 @@ pub async fn do_search_batch_points(
                 collection_name,
                 core_batch,
                 read_consistency,
+                routing_token,
                 shard_selector,
                 auth.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
             );
             res.push(req);
             Ok(())
@@ -102,19 +103,19 @@ pub async fn do_core_search_batch_points(
     collection_name: &str,
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -125,19 +126,19 @@ pub async fn do_search_point_groups(
     collection_name: &str,
     request: SearchGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         GroupRequest::from(request),
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -148,31 +149,32 @@ pub async fn do_recommend_point_groups(
     collection_name: &str,
     request: RecommendGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         GroupRequest::from(request),
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_discover_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     request: DiscoverRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -191,9 +193,9 @@ pub async fn do_discover_batch_points(
         collection_name,
         requests,
         read_consistency,
+        routing_token,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -204,19 +206,19 @@ pub async fn do_count_points(
     collection_name: &str,
     request: CountRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CountResult, StorageError> {
     toc.count(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         timeout,
         shard_selection,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -227,19 +229,19 @@ pub async fn do_get_points(
     collection_name: &str,
     request: PointRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<RecordInternal>, StorageError> {
     toc.retrieve(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         timeout,
         shard_selection,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -250,19 +252,19 @@ pub async fn do_scroll_points(
     collection_name: &str,
     request: ScrollRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<ScrollResult, StorageError> {
     toc.scroll(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         timeout,
         shard_selection,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -273,10 +275,10 @@ pub async fn do_query_points(
     collection_name: &str,
     request: CollectionQueryRequest,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
     let batch_res = toc
@@ -284,9 +286,9 @@ pub async fn do_query_points(
             collection_name,
             requests,
             read_consistency,
+            routing_token,
             auth,
             timeout,
-            hw_measurement_acc,
         )
         .await?;
     batch_res
@@ -295,22 +297,23 @@ pub async fn do_query_points(
         .ok_or_else(|| StorageError::service_error("Empty query result"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_query_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
     requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.query_batch(
         collection_name,
         requests,
         read_consistency,
+        routing_token,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -321,19 +324,19 @@ pub async fn do_query_point_groups(
     collection_name: &str,
     request: CollectionQueryGroupsRequest,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
         GroupRequest::from(request),
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -344,19 +347,19 @@ pub async fn do_search_points_matrix(
     collection_name: &str,
     request: CollectionSearchMatrixRequest,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CollectionSearchMatrixResponse, StorageError> {
     toc.search_points_matrix(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         shard_selection,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }

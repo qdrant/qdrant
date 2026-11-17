@@ -1,34 +1,27 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::GeoIndex;
-use super::read_ops::{self, GeoIndexRead};
+use super::read_ops::{self, GeoConditionChecker, GeoIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
 };
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
 impl ValueIndexer for GeoIndex {
     type ValueType = GeoPoint;
 
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<GeoPoint>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
         match self {
-            GeoIndex::Mutable(index) => index.add_many_geo_points(id, values, hw_counter),
+            GeoIndex::Mutable(index) => index.add_many_geo_points(id, values),
             GeoIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),
@@ -70,10 +63,7 @@ impl ValueIndexer for GeoIndex {
 }
 
 impl GeoIndex {
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             GeoIndexRead::get_values(self, point_id)
                 .into_iter()
@@ -111,24 +101,22 @@ impl PayloadFieldIndex for GeoIndex {
 }
 
 impl PayloadFieldIndexRead for GeoIndex {
-    fn count_indexed_points(&self) -> usize {
-        self.points_count()
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(self.points_count())
     }
 
     fn filter<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition, hw_counter)
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition, hw_counter)
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -143,8 +131,30 @@ impl PayloadFieldIndexRead for GeoIndex {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        read_ops::condition_checker(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_radius,
+            geo_bounding_box,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = condition;
+        if let Some(filter) = *geo_radius {
+            let checker = GeoConditionChecker::new(self, filter);
+            return Ok(Some(ConditionCheckerEnum::GeoRadiusWritable(checker)));
+        }
+        if let Some(filter) = *geo_bounding_box {
+            let checker = GeoConditionChecker::new(self, filter);
+            return Ok(Some(ConditionCheckerEnum::GeoBoundingBoxWritable(checker)));
+        }
+        if let Some(polygon) = geo_polygon.as_ref() {
+            let checker = GeoConditionChecker::new(self, polygon.convert());
+            return Ok(Some(ConditionCheckerEnum::GeoPolygonWritable(checker)));
+        }
+        Ok(None)
     }
 }

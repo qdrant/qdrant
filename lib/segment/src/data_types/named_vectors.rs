@@ -258,6 +258,11 @@ impl<'a> NamedVectors<'a> {
             .insert(CowKey::Owned(name), CowVector::from(vector));
     }
 
+    pub fn insert_ref(&mut self, name: &'a VectorName, vector: VectorRef<'a>) {
+        self.map
+            .insert(Cow::Borrowed(name), CowVector::from(vector));
+    }
+
     pub fn remove_ref(&mut self, key: &VectorName) {
         self.map.remove(key);
     }
@@ -356,9 +361,13 @@ impl<'a> NamedVectors<'a> {
             Some(VectorStorageDatatype::Float16) => config
                 .distance
                 .preprocess_vector::<VectorElementTypeHalf>(dense_vector),
-            Some(VectorStorageDatatype::Turbo4) => {
-                unimplemented!("turbo4 datatype storage not yet wired up")
-            }
+            Some(
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16,
+            ) => config
+                .distance
+                .preprocess_vector::<VectorElementType>(dense_vector), // Turbo only needs normal preprocessing.
         }
     }
 }

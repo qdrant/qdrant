@@ -199,18 +199,21 @@ impl Collections for CollectionsService {
         mut request: Request<CollectionClusterInfoRequest>,
     ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
         validate(request.get_ref())?;
+        let timing = Instant::now();
         let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
-        let response = do_get_collection_cluster(
+        let result = do_get_collection_cluster(
             self.dispatcher.toc(&auth, &pass),
             &auth,
             request.into_inner().collection_name.as_str(),
         )
-        .await?
-        .into();
+        .await?;
+
+        let mut response = CollectionClusterInfoResponse::from(result);
+        response.time = timing.elapsed().as_secs_f64();
 
         Ok(Response::new(response))
     }
@@ -220,6 +223,7 @@ impl Collections for CollectionsService {
         mut request: Request<UpdateCollectionClusterSetupRequest>,
     ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
         validate(request.get_ref())?;
+        let timing = Instant::now();
         let auth = extract_auth(&mut request);
         let UpdateCollectionClusterSetupRequest {
             collection_name,
@@ -239,6 +243,7 @@ impl Collections for CollectionsService {
         .await?;
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
             result,
+            time: timing.elapsed().as_secs_f64(),
         }))
     }
 
@@ -268,6 +273,7 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CreateShardKeyRequest>,
     ) -> Result<Response<CreateShardKeyResponse>, Status> {
+        let timing = Instant::now();
         let auth = extract_auth(&mut request);
 
         let CreateShardKeyRequest {
@@ -295,13 +301,17 @@ impl Collections for CollectionsService {
         )
         .await?;
 
-        Ok(Response::new(CreateShardKeyResponse { result }))
+        Ok(Response::new(CreateShardKeyResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 
     async fn delete_shard_key(
         &self,
         mut request: Request<DeleteShardKeyRequest>,
     ) -> Result<Response<DeleteShardKeyResponse>, Status> {
+        let timing = Instant::now();
         let auth = extract_auth(&mut request);
 
         let DeleteShardKeyRequest {
@@ -329,7 +339,10 @@ impl Collections for CollectionsService {
         )
         .await?;
 
-        Ok(Response::new(DeleteShardKeyResponse { result }))
+        Ok(Response::new(DeleteShardKeyResponse {
+            result,
+            time: timing.elapsed().as_secs_f64(),
+        }))
     }
 }
 

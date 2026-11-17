@@ -20,7 +20,7 @@ use api::grpc::update_operation::Update;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
@@ -99,9 +99,35 @@ impl PointsInternalService {
             shard_id,
             clock_tag,
             wait_override,
+            raw_points,
         } = upsert_points_internal;
 
         let upsert_points = extract_internal_request(upsert_points)?;
+
+        if !raw_points.is_empty() {
+            if !upsert_points.points.is_empty() {
+                return Err(Status::invalid_argument(
+                    "An upsert request must carry either `points` or `raw_points`, never both",
+                ));
+            }
+
+            let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+                upsert_points.collection_name.clone(),
+            );
+
+            return upsert_raw(
+                self.toc.clone(),
+                upsert_points.collection_name,
+                raw_points,
+                upsert_points.wait,
+                upsert_points.ordering,
+                upsert_points.timeout,
+                InternalUpdateParams::from_grpc(shard_id, clock_tag, wait_override),
+                auth,
+                hw_metrics,
+            )
+            .await;
+        }
 
         let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
             upsert_points.collection_name.clone(),
@@ -423,13 +449,8 @@ pub async fn query_batch_internal(
     };
 
     let batch_response = toc
-        .query_batch_internal(
-            &collection_name,
-            batch_requests,
-            shard_selection,
-            timeout,
-            request_hw_data.get_counter(),
-        )
+        .query_batch_internal(&collection_name, batch_requests, shard_selection, timeout)
+        .measured(request_hw_data.get_counter())
         .await?;
 
     let response = QueryBatchResponseInternal {
@@ -485,8 +506,8 @@ async fn facet_counts_internal(
             request,
             shard_selection,
             timeout.map(Duration::from_secs),
-            request_hw_data.get_counter(),
         )
+        .measured(request_hw_data.get_counter())
         .await?;
 
     let FacetResponse { hits } = response;
@@ -507,8 +528,9 @@ impl PointsInternalService {
         &self,
         collection_name: String,
     ) -> RequestHwCounter {
-        let counter = HwMeasurementAcc::new_with_metrics_drain(
-            self.toc.get_collection_hw_metrics(collection_name),
+        let counter = AmbientContext::request(
+            &collection_name,
+            self.toc.get_collection_hw_metrics(collection_name.clone()),
         );
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting())
@@ -826,6 +848,8 @@ impl PointsInternal for PointsInternalService {
             None, // *Has* to be `None`!
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             timeout,
             hw_data,
         )
@@ -859,6 +883,8 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await?;
@@ -892,6 +918,8 @@ impl PointsInternal for PointsInternalService {
             scroll_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await
@@ -923,6 +951,8 @@ impl PointsInternal for PointsInternalService {
             get_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await
@@ -950,6 +980,8 @@ impl PointsInternal for PointsInternalService {
             count_points,
             shard_id,
             auth,
+            // Internal node-to-node call: routing is resolved by the coordinator.
+            None,
             hw_data,
         )
         .await?;

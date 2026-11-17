@@ -2,9 +2,10 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::bench_cache::{build_once, cache_path};
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use criterion::measurement::Measurement;
 use criterion::{Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
@@ -12,7 +13,7 @@ use fs_err as fs;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use itertools::Itertools;
 use rand::SeedableRng as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use sha2::Digest;
 use sparse::SearchScratchPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
@@ -62,7 +63,7 @@ pub fn bench_search(c: &mut Criterion) {
 }
 
 fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
 
     let index = cached_ram_index(name, || {
         let mut rnd = rnd.fork();
@@ -156,14 +157,16 @@ pub fn run_bench(
 
             run_bench2(
                 c.benchmark_group(format!("search/ram_{}/{name}", $name)),
-                &InvertedIndexCompressedImmutableRam::<$type>::open(&index_path).unwrap(),
+                &InvertedIndexCompressedImmutableRam::<$type>::open_ro(&MmapFs, &index_path)
+                    .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
 
             run_bench2(
                 c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
-                &InvertedIndexCompressedMmap::<$type, MmapFile>::open(&index_path).unwrap(),
+                &InvertedIndexCompressedMmap::<$type, MmapFile>::open_ro(&MmapFs, &index_path)
+                    .unwrap(),
                 query_vectors,
                 &hottest_query_vectors,
             );
@@ -187,14 +190,13 @@ fn run_bench2(
 
     let mut it = query_vectors.iter().cycle();
 
-    let hardware_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     group.bench_function("basic", |b| {
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
             |vec| {
                 let mut scratch = pool.get();
-                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, 1)
                     .unwrap()
                     .search(&|_| true)
             },
@@ -202,15 +204,14 @@ fn run_bench2(
         )
     });
 
-    let hardware_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     let mut it = hottest_query_vectors.iter().cycle();
     group.bench_function("hottest", |b| {
         b.iter_batched(
             || it.next().unwrap().clone(),
             |vec| {
                 let mut scratch = pool.get();
-                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, &hardware_counter)
+                SearchContext::new(vec, TOP, index, &mut scratch, &stopped, 1)
                     .unwrap()
                     .search(&|_| true)
             },
@@ -233,49 +234,28 @@ fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> InvertedIndexRam {
     builder.build()
 }
 
-fn cache_dir() -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"))
-}
-
 /// Load an [`InvertedIndexRam`] from the cache.
 /// If not exists, calls `build()` to create it.
 fn cached_ram_index(name: &str, build: impl FnOnce() -> InvertedIndexRam) -> InvertedIndexRam {
-    let path = cache_dir().join(name);
-    if !path.exists() {
-        eprintln!("Building cache: {path:?}");
-        let index = build();
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        index.test_save(&path.with_extension("tmp")).unwrap();
-        fs::rename(path.with_extension("tmp"), &path).unwrap();
-    }
-    eprintln!("Using cache: {path:?}");
+    let path = build_once(cache_path!("{name}"), |path| {
+        build().test_save(path).unwrap();
+    });
     InvertedIndexRam::test_load(&path).unwrap()
 }
 
 /// Loads [`InvertedIndexCompressedMmap`] from the cache.
 /// If not exists, converts it from the given [`InvertedIndexRam`].
 fn cached_compressed_index<W: Weight>(index: &InvertedIndexRam, name: &str) -> PathBuf {
-    let path = cache_dir().join(format!(
+    let path = cache_path!(
         "{name}-{}-{hash}",
         W::NAME,
         hash = inverted_index_partial_hash(index)
-    ));
-
-    if !path.exists() {
-        eprintln!("Building cache: {path:?}");
-        let tmp_path = path.with_extension("tmp");
-        if tmp_path.exists() {
-            fs::remove_dir_all(&tmp_path).unwrap();
-        }
-        fs::create_dir_all(&tmp_path).unwrap();
-        InvertedIndexCompressedMmap::<W, MmapFile>::from_ram_index(Cow::Borrowed(index), &tmp_path)
-            .unwrap();
-        fs::rename(tmp_path, &path).unwrap();
-    }
-    eprintln!("Using cache: {path:?}");
-    path
+    );
+    build_once(path, |path| {
+        fs::create_dir_all(path).unwrap();
+        let index = Cow::Borrowed(index);
+        InvertedIndexCompressedMmap::<W, _>::from_ram_index(&MmapFs, index, path).unwrap();
+    })
 }
 
 /// Compute hash of the given [`InvertedIndexRam`].

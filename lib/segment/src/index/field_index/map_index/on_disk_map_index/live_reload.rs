@@ -1,8 +1,7 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
@@ -14,22 +13,35 @@ where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalRead,
 {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        _fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        Ok(Vec::new())
+    }
+
+    fn apply_deletions(
         &mut self,
-        _fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.remove_point(*deleted_point);
+        }
+
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No on-disk state is changing when we live-reload, as
         // this UniversalMapIndex is not mutable.
         // We only patch in-memory deleted bitslice representation.
-        for deleted_point in deleted_points {
-            self.remove_point(*deleted_point)
-        }
-
-        Ok(())
+        self.apply_deletions(deleted_points)
     }
 }

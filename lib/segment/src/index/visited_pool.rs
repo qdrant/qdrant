@@ -75,6 +75,14 @@ impl<'a> VisitedListHandle<'a> {
         ) == self.visited_list.current_iter
     }
 
+    /// Mark as not visited.
+    pub fn unvisit(&mut self, point_id: PointOffsetType) {
+        // `current_iter` is never 0, so 0 always means "not visited".
+        if let Some(counter) = self.visited_list.visit_counters.get_mut(point_id as usize) {
+            *counter = 0;
+        }
+    }
+
     pub fn next_iteration(&mut self) {
         self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
         if self.visited_list.current_iter == 0 {

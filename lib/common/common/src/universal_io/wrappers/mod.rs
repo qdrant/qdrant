@@ -1,3 +1,4 @@
+mod async_io;
 mod buffered_update;
 mod read_only;
 mod stored_struct;
@@ -8,4 +9,4 @@ pub use buffered_update::SliceBufferedUpdateWrapper;
 pub use read_only::ReadOnly;
 pub use stored_struct::StoredStruct;
 pub use typed::TypedStorage;
-use wrapped_pipeline::{BorrowedWrappedReadPipeline, OwnedWrappedReadPipeline};
+use wrapped_pipeline::WrappedReadPipeline;

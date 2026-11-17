@@ -1,6 +1,6 @@
 use segment::types::Filter;
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 use crate::operations::types::{RecommendGroupsRequestInternal, RecommendRequestInternal};
 
 impl StrictModeVerification for RecommendRequestInternal {
@@ -14,6 +14,10 @@ impl StrictModeVerification for RecommendRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -36,6 +40,10 @@ impl StrictModeVerification for RecommendGroupsRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {

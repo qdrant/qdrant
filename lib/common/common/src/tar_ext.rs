@@ -24,7 +24,7 @@ type BorrowedOutput<'a> = Box<dyn WriteSeek + 'a>;
 pub trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-/// A wrapper around [`tar::Builder<FusedWriteSeek>`] that disables
+/// A wrapper around [`tar::Builder<FusedWriteSeek<W>>`] that disables
 /// [`FusedWriteSeek`] when it is dropped.
 ///
 /// Disabling the [`FusedWriteSeek`] is a workaround for the inconvenient
@@ -227,14 +227,6 @@ impl<W: Write + Seek> BuilderExt<W> {
 }
 
 impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
-    /// Append a file to the tar archive.
-    pub async fn append_file(&self, src: &Path, dst: &Path) -> io::Result<()> {
-        let src = src.to_path_buf();
-        let dst = join_relative(&self.path, dst)?;
-        self.run_async(move |tar| tar.append_path_with_name(src, dst))
-            .await
-    }
-
     /// Append a new entry to the tar archive with the given file contents.
     ///
     /// # Panics

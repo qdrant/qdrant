@@ -1,8 +1,9 @@
 //! Google Cloud Storage backend.
 
-use common::universal_io::{Result, UniversalIoError, UniversalKind};
+use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::gcp::{GoogleCloudStorage, GoogleCloudStorageBuilder};
 
+use crate::append::{AppendContext, ComposeAppend};
 use crate::backend::BlobBackend;
 
 /// Connection parameters for [`GoogleCloudStorage`]. Fed into
@@ -35,7 +36,7 @@ pub enum GcsCredentials {
 impl BlobBackend for GoogleCloudStorage {
     type Config = GcsConfig;
 
-    fn build_store(config: &Self::Config) -> Result<Self> {
+    fn build_store(config: &Self::Config) -> UioResult<Self> {
         let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(&config.bucket);
         builder = match &config.credentials {
             GcsCredentials::Default => builder,
@@ -52,5 +53,11 @@ impl BlobBackend for GoogleCloudStorage {
 
     fn kind() -> UniversalKind {
         UniversalKind::Gcs
+    }
+
+    fn append_context(config: &Self::Config) -> UioResult<Option<AppendContext>> {
+        Ok(Some(AppendContext::Compose(ComposeAppend::new(
+            config.bucket.clone(),
+        ))))
     }
 }

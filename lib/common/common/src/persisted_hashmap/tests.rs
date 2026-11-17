@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
 use itertools::{Itertools, assert_equal};
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngExt, SeedableRng};
 
 use super::fixtures::{Group, TestKey, TestReport, TestValue};
 use super::{Key, MmapHashMap, UniversalHashMap, serialize_hashmap};
-use crate::universal_io::{self, MmapFile, MmapFs, OpenOptions, UniversalRead};
 #[cfg(target_os = "linux")]
 use crate::universal_io::{IoUringFile, IoUringFs, IoUringOpenExtra};
+use crate::universal_io::{MmapFile, MmapFs, OpenOptions, UioResult, UniversalRead};
 
 #[rustfmt::skip] #[test] fn test_k_str_v_i64()   { run_checks::<str,  i64 >(); }
 #[rustfmt::skip] #[test] fn test_k_str_v_u128()  { run_checks::<str,  u128>(); }
@@ -38,7 +38,7 @@ fn run_checks2<K: ?Sized + TestKey, V: TestValue>(
     entry_count: usize,
     large_keys: bool,
 ) {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
 
     // Ground truth
     let mut orig = BTreeMap::<K::Owned, Vec<V>>::new();
@@ -129,7 +129,7 @@ fn run_mmap_checks<K: ?Sized + TestKey, V: TestValue>(
 
 fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
     mut r: Group<'_>,
-    mut rng: &mut StdRng,
+    mut rng: &mut SmallRng,
     uio: &UniversalHashMap<K, V, S>,
     orig: &BTreeMap<K::Owned, Vec<V>>,
     non_existing_keys: &[K::Owned],
@@ -239,7 +239,7 @@ fn run_uio_checks<K: ?Sized + TestKey, V: TestValue, S: UniversalRead>(
 }
 
 #[expect(clippy::unnecessary_wraps, reason = "reduce boilerplate in checks")]
-fn push_val<T>(v: &mut Vec<T>, val: T) -> universal_io::Result<()> {
+fn push_val<T>(v: &mut Vec<T>, val: T) -> UioResult<()> {
     v.push(val);
     Ok(())
 }

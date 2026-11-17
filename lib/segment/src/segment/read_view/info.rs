@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use common::types::TelemetryDetail;
 use uuid::Uuid;
 
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -64,16 +65,14 @@ where
                     num_vectors,
                     num_indexed_vectors,
                     num_deleted_vectors: vector_storage.deleted_vector_count(),
+                    io_backend: vector_storage.io_backend(),
                 };
                 (key.clone(), info)
             })
             .collect();
 
-        let vectors_size_bytes =
-            total_average_vectors_size_bytes * self.id_tracker.available_point_count();
-
-        // Unwrap and default to 0 here because the RocksDB storage is the only fallible one,
-        // and we will remove it eventually.
+        let num_points = self.id_tracker.available_point_count();
+        let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
         let payloads_size_bytes = self.payload_storage.get_storage_size_bytes().unwrap_or(0);
 
         SegmentInfo {
@@ -81,7 +80,7 @@ where
             segment_type,
             num_vectors: num_vectors_total,
             num_indexed_vectors: num_indexed_vectors_total,
-            num_points: self.id_tracker.available_point_count(),
+            num_points,
             num_deferred_points: Some(self.deferred_point_count()),
             num_deleted_deferred_points: Some(self.deferred_deleted_count()),
             num_deleted_vectors: self.id_tracker.deleted_point_count(),
@@ -92,6 +91,7 @@ where
             is_appendable,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
+            payload_storage_io_backend: self.payload_storage.io_backend(),
             deferred_internal_id: self.deferred_internal_id(),
         }
     }
@@ -102,19 +102,18 @@ where
         uuid: Uuid,
         segment_type: SegmentType,
         is_appendable: bool,
-    ) -> SegmentInfo {
+    ) -> OperationResult<SegmentInfo> {
         let mut info = self.build_size_info(uuid, segment_type, is_appendable);
         info.index_schema = self
             .payload_index
             .indexed_fields()
             .into_iter()
             .map(|(key, index_schema)| {
-                let points_count = self.payload_index.indexed_points(&key);
-                let index_info = PayloadIndexInfo::new(index_schema, points_count);
-                (key, index_info)
+                let points_count = self.payload_index.indexed_points(&key)?;
+                Ok((key, PayloadIndexInfo::new(index_schema, points_count)))
             })
-            .collect();
-        info
+            .collect::<OperationResult<_>>()?;
+        Ok(info)
     }
 
     /// Build the segment-level telemetry payload.
@@ -125,7 +124,7 @@ where
         is_appendable: bool,
         config: &SegmentConfig,
         detail: TelemetryDetail,
-    ) -> SegmentTelemetry {
+    ) -> OperationResult<SegmentTelemetry> {
         let vector_index_searches = self
             .vector_data
             .iter()
@@ -136,11 +135,11 @@ where
             })
             .collect();
 
-        SegmentTelemetry {
-            info: self.build_info(uuid, segment_type, is_appendable),
+        Ok(SegmentTelemetry {
+            info: self.build_info(uuid, segment_type, is_appendable)?,
             config: config.clone(),
             vector_index_searches,
-            payload_field_indices: self.payload_index.get_telemetry_data(),
-        }
+            payload_field_indices: self.payload_index.get_telemetry_data()?,
+        })
     }
 }

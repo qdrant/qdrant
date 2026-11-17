@@ -1,7 +1,7 @@
 use std::ops::Bound;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use super::Encodable;
 use crate::common::operation_error::OperationResult;
@@ -17,22 +17,26 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`super::mmap_numeric_index::UniversalNumericIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
-/// [`NumericIndexInner`] can call them generically. Variants that don't
-/// need `hw_counter` (`Mutable` / `Immutable`) accept and ignore it; the
-/// storage-backed `Mmap` variant uses it to track payload-index IO.
+/// [`NumericIndexInner`] can call them generically.
 ///
 /// [`NumericIndexInner`]: super::NumericIndexInner
 pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
-    /// Hardware counter is used only by the mmap-backed variant; in-memory
-    /// variants ignore it. Returns `false` if the mmap read fails (matches
-    /// the legacy enum dispatcher behavior — see the FIXME on
-    /// [`super::NumericIndexInner::check_values_any`]).
+    /// Returns an error if the underlying mmap read fails, so a transient IO
+    /// failure surfaces to the caller instead of being silently reported as
+    /// "no match".
     fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool;
+    ) -> OperationResult<bool>;
+
+    /// Batched counterpart of [`Self::check_values_any`].
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&T) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()>;
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
 
@@ -44,7 +48,6 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
 
     fn orderable_values_range(
@@ -62,11 +65,8 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        Ok(self
-            .values_range(start_bound, end_bound, hw_counter)?
-            .count())
+        Ok(self.values_range(start_bound, end_bound)?.count())
     }
 
     fn get_histogram(&self) -> &Histogram<T>;

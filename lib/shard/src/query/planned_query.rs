@@ -6,6 +6,7 @@ use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
 use super::query_enum::QueryEnum;
 use super::scroll::{QueryScrollRequestInternal, ScrollOrder};
+use super::text::TextSearchRequestInternal;
 use super::*;
 use crate::search::CoreSearchRequest;
 
@@ -26,6 +27,9 @@ pub struct PlannedQuery {
 
     /// All the leaf scrolls
     pub scrolls: Vec<QueryScrollRequestInternal>,
+
+    /// All the leaf BM25 queries
+    pub texts: Vec<TextSearchRequestInternal>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,6 +58,9 @@ pub enum Source {
 
     /// A reference offset into the scrolls list
     ScrollsIdx(usize),
+
+    /// A reference offset into the BM25 queries list
+    TextsIdx(usize),
 
     /// A nested prefetch
     Prefetch(Box<MergePlan>),
@@ -139,7 +146,8 @@ impl PlannedQuery {
             | Some(ScoringQuery::Fusion(_))
             | Some(ScoringQuery::OrderBy(_))
             | Some(ScoringQuery::Formula(_))
-            | Some(ScoringQuery::Sample(_)) => with_vector,
+            | Some(ScoringQuery::Sample(_))
+            | Some(ScoringQuery::Text(_)) => with_vector,
             Some(ScoringQuery::Mmr(mmr)) => with_vector.merge(&WithVector::from(mmr.using.clone())),
         };
 
@@ -189,23 +197,48 @@ impl PlannedQuery {
             Some(ScoringQuery::OrderBy(_)) => None,
             Some(ScoringQuery::Formula(_)) => None,
             Some(ScoringQuery::Sample(_)) => None,
+            Some(ScoringQuery::Text(_)) => None,
             Some(ScoringQuery::Mmr(_)) => Some(RescoreStages::collection_level(RescoreParams {
                 rescore: query.clone().unwrap(),
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
-                params,
+                params: params.clone(),
             })),
+        };
+
+        // A scroll leaf is the final result and retrieves payload and vectors once, for the
+        // merged page, so it can fetch them itself instead of resolving the ids again afterwards.
+        // A search leaf fetches them per segment before merging, which multiplies the I/O by
+        // the segment count, so it stays bare and the root plan retrieves for the final result.
+        // See: <https://github.com/qdrant/qdrant/pull/6279>
+        let leaf_fetches = match &query {
+            None | Some(ScoringQuery::OrderBy(_)) | Some(ScoringQuery::Sample(_)) => true,
+            Some(ScoringQuery::Vector(_))
+            | Some(ScoringQuery::Fusion(_))
+            | Some(ScoringQuery::Formula(_))
+            | Some(ScoringQuery::Mmr(_))
+            | Some(ScoringQuery::Text(_)) => false,
+        };
+        let requested = (with_vector, with_payload);
+        let nothing = (WithVector::from(false), WithPayloadInterface::from(false));
+        let ((leaf_with_vector, leaf_with_payload), (with_vector, with_payload)) = if leaf_fetches {
+            (requested, nothing)
+        } else {
+            (nothing, requested)
         };
 
         // Everything must come from a single source.
         let sources = vec![leaf_source_from_scoring_query(
             &mut self.searches,
             &mut self.scrolls,
+            &mut self.texts,
             query,
             limit,
             params,
             score_threshold,
             filter,
+            leaf_with_vector,
+            leaf_with_payload,
         )?];
 
         // Root-level query without prefetches means we won't do any extra rescoring
@@ -233,8 +266,13 @@ impl PlannedQuery {
             OperationError::validation_error("cannot have prefetches without a query".to_string())
         })?;
 
-        let sources =
-            recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
+        let sources = recurse_prefetches(
+            &mut self.searches,
+            &mut self.scrolls,
+            &mut self.texts,
+            prefetches,
+            &filter,
+        )?;
 
         let rescore_stages = match rescoring_query {
             ScoringQuery::Mmr(mmr) => {
@@ -253,7 +291,7 @@ impl PlannedQuery {
                     ))),
                     limit: *candidates_limit,
                     score_threshold: score_threshold.map(OrderedFloat),
-                    params,
+                    params: params.clone(),
                 };
 
                 let collection_level = RescoreParams {
@@ -271,7 +309,8 @@ impl PlannedQuery {
             rescore @ (ScoringQuery::Vector(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_)) => Some(RescoreStages::shard_level(RescoreParams {
+            | ScoringQuery::Sample(_)
+            | ScoringQuery::Text(_)) => Some(RescoreStages::shard_level(RescoreParams {
                 rescore,
                 limit,
                 score_threshold: score_threshold.map(OrderedFloat),
@@ -306,6 +345,7 @@ impl PlannedQuery {
 fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
+    texts: &mut Vec<TextSearchRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
     propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
 ) -> OperationResult<Vec<Source>> {
@@ -329,15 +369,19 @@ fn recurse_prefetches(
             leaf_source_from_scoring_query(
                 core_searches,
                 scrolls,
+                texts,
                 query,
                 limit,
                 params,
                 score_threshold.map(OrderedFloat::into_inner),
                 filter,
+                WithVector::from(false),
+                WithPayloadInterface::from(false),
             )?
         } else {
             // This has nested prefetches. Recurse into them
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, &filter)?;
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, texts, prefetches, &filter)?;
 
             let rescore = query.ok_or_else(|| {
                 OperationError::validation_error(
@@ -368,15 +412,19 @@ fn recurse_prefetches(
 /// Crafts a "leaf source" from a scoring query. This means that the scoring query
 /// does not act over prefetched points and will be executed over the segments directly.
 ///
-/// Only `Source::SearchesIdx` or `Source::ScrollsIdx` variants are returned.
+/// Only `Source::SearchesIdx`, `Source::ScrollsIdx` or `Source::TextsIdx` variants are returned.
+#[expect(clippy::too_many_arguments)]
 fn leaf_source_from_scoring_query(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
+    texts: &mut Vec<TextSearchRequestInternal>,
     query: Option<ScoringQuery>,
     limit: usize,
     params: Option<SearchParams>,
     score_threshold: Option<f32>,
     filter: Option<Filter>,
+    with_vector: WithVector,
+    with_payload: WithPayloadInterface,
 ) -> OperationResult<Source> {
     let source = match query {
         Some(ScoringQuery::Vector(query_enum)) => {
@@ -386,8 +434,8 @@ fn leaf_source_from_scoring_query(
                 params,
                 limit,
                 offset: 0,
-                with_vector: Some(WithVector::from(false)),
-                with_payload: Some(WithPayloadInterface::from(false)),
+                with_vector: Some(with_vector),
+                with_payload: Some(with_payload),
                 score_threshold,
             };
 
@@ -405,8 +453,8 @@ fn leaf_source_from_scoring_query(
             let scroll = QueryScrollRequestInternal {
                 scroll_order: ScrollOrder::ByField(order_by),
                 filter,
-                with_vector: WithVector::from(false),
-                with_payload: WithPayloadInterface::from(false),
+                with_vector,
+                with_payload,
                 limit,
             };
 
@@ -424,8 +472,8 @@ fn leaf_source_from_scoring_query(
             let scroll = QueryScrollRequestInternal {
                 scroll_order: ScrollOrder::Random,
                 filter,
-                with_vector: WithVector::from(false),
-                with_payload: WithPayloadInterface::from(false),
+                with_vector,
+                with_payload,
                 limit,
             };
 
@@ -446,8 +494,8 @@ fn leaf_source_from_scoring_query(
                 query,
                 filter,
                 score_threshold,
-                with_vector: Some(WithVector::from(false)),
-                with_payload: Some(WithPayloadInterface::from(false)),
+                with_vector: Some(with_vector),
+                with_payload: Some(with_payload),
                 offset: 0,
                 params,
                 limit: candidates_limit,
@@ -458,12 +506,31 @@ fn leaf_source_from_scoring_query(
 
             Source::SearchesIdx(idx)
         }
+        Some(ScoringQuery::Text(query)) => {
+            let idf_corpus = params
+                .and_then(|params| params.idf)
+                .and_then(|idf| idf.corpus().cloned());
+            let text = TextSearchRequestInternal {
+                query,
+                filter,
+                idf_corpus,
+                limit,
+                score_threshold,
+                with_vector,
+                with_payload,
+            };
+
+            let idx = texts.len();
+            texts.push(text);
+
+            Source::TextsIdx(idx)
+        }
         None => {
             let scroll = QueryScrollRequestInternal {
                 scroll_order: Default::default(),
                 filter,
-                with_vector: WithVector::from(false),
-                with_payload: WithPayloadInterface::from(false),
+                with_vector,
+                with_payload,
                 limit,
             };
 

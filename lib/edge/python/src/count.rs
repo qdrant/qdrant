@@ -1,15 +1,15 @@
 use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
+use edge::CountRequest;
 use pyo3::prelude::*;
 use segment::types::Filter;
-use shard::count::CountRequestInternal;
 
 use crate::repr::*;
 use crate::types::PyFilter;
 
 #[pyclass(name = "CountRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PyCountRequest(CountRequestInternal);
+pub struct PyCountRequest(CountRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -17,7 +17,7 @@ impl PyCountRequest {
     #[new]
     #[pyo3(signature = (exact = true, filter = None))]
     pub fn new(exact: bool, filter: Option<PyFilter>) -> Self {
-        Self(CountRequestInternal {
+        Self(CountRequest {
             filter: filter.map(Filter::from),
             exact,
         })

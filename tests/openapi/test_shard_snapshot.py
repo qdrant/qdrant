@@ -38,6 +38,55 @@ def test_recover_partial_snapshot_rejects_malformed_checksum(collection_name):
     )
 
 
+def test_delete_vector_advances_partial_snapshot_manifest(collection_name):
+    # Pin the vector storage tracker to a known version with a vector update.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={"points": [{"id": 1, "vector": [1.0, 2.0, 3.0, 4.0]}]},
+    )
+    assert response.ok
+
+    # Delete the default named vector of another point; this mutates the
+    # vector storage's deleted-flags file.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={"points": [1], "vector": [""]},
+    )
+    assert response.ok
+    delete_op = response.json()['result']['operation_id']
+
+    # Sanity: the vector is gone locally.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert '' not in (response.json()['result']['vector'] or {})
+
+    # The manifest must stamp the mutated vector storage files with the delete
+    # op version; a stale version makes partial snapshot recovery skip the
+    # changed deleted-flags file and resurrect the vector on the replica.
+    response = requests.get(
+        f"{QDRANT_HOST}/collections/{collection_name}/shards/0/snapshot/partial/manifest",
+        headers=qdrant_host_headers(),
+    )
+    assert response.ok
+    vector_file_versions = [
+        version
+        for segment in response.json()['result'].values()
+        for path, version in segment['file_versions'].items()
+        if path.startswith('vector_storage/') and version is not None
+    ]
+    assert max(vector_file_versions) >= delete_op
+
+
 def test_shard_snapshot_operations(http_server, collection_name):
     (srv_dir, srv_url) = http_server
 

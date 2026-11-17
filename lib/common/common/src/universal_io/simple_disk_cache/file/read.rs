@@ -1,0 +1,137 @@
+//! The [`UniversalRead`] implementation for [`DiskCache`] — the public read
+//! surface. The heavy lifting lives elsewhere: first-use init in [`super::init`],
+//! growth handling in [`super::reopen`].
+use std::borrow::Cow;
+use std::future::ready;
+use std::ops::Range;
+use std::path::Path;
+
+use futures::FutureExt as _;
+
+use super::DiskCache;
+use crate::ext::aligned_vec::ACow;
+use crate::generic_consts::{AccessPattern, Sequential};
+use crate::universal_io::cached_fs::FileInfo;
+use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
+use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
+use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote, to_block_range};
+use crate::universal_io::{
+    Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
+};
+
+impl<R> DiskCache<R>
+where
+    R: DiskCacheRemote,
+{
+    /// Make sure every byte from `byte_start` to the end of the file is present on the local file
+    fn populate_from(&self, byte_start: u64) -> UioResult<()> {
+        if crate::low_memory::low_memory_mode().skip_populate() {
+            return Ok(());
+        }
+
+        // The mirror is sized to the remote file on init: no remote round-trip needed
+        let len = self.len::<u8>()?;
+        if len == 0 {
+            return Ok(());
+        }
+
+        let one_byte_per_block = (byte_start..len)
+            .step_by(BLOCK_SIZE)
+            .map(|byte_offset| ((), ReadRange::one(byte_offset)));
+
+        // Read one byte per block purely to fault each block into the local
+        // cache; the bytes themselves are discarded.
+        self.read_batch(one_byte_per_block, Sequential, |(), _bytes: &[u8]| {
+            UioResult::Ok(())
+        })?;
+
+        Ok(())
+    }
+}
+
+impl<R> UniversalRead for DiskCache<R>
+where
+    R: DiskCacheRemote,
+{
+    type Fs = DiskCacheFs<R>;
+
+    type ReadPipeline<'a, U>
+        = DiskCachePipeline<'a, R, U>
+    where
+        Self: 'a,
+        R: 'a,
+        U: UserData;
+
+    fn live_reload(&mut self) -> UioResult<()> {
+        self.reopen_impl()
+    }
+
+    fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &self,
+        get_file_info: F,
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
+        let mut future = self.live_preload_impl(get_file_info)?;
+
+        // Poll once so that actual async work begins right away
+        let future = match (&mut future).now_or_never() {
+            Some(result) => ready(result).left_future(),
+            None => future.right_future(),
+        };
+
+        Ok(future.map(|result| result.map_err(|err| err.duplicate())))
+    }
+
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        align: usize,
+    ) -> UioResult<ACow<'_>> {
+        let mut pipeline = DiskCachePipeline::<R, ()>::new()?;
+        pipeline.schedule::<P>((), self, range, align)?;
+        let (_, bytes) = pipeline.wait()?.expect("there's exactly one read");
+        Ok(bytes)
+    }
+
+    fn read_whole<T: Item>(&self) -> UioResult<Cow<'_, [T]>> {
+        self.prefill_if_uninit()?;
+        let length = self.len::<T>()?;
+        self.read(ReadRange::new(0, length), Sequential)
+    }
+
+    fn len<T>(&self) -> UioResult<u64> {
+        self.state()?.local.mmap().len::<T>()
+    }
+
+    fn populate(&self) -> UioResult<()> {
+        self.populate_from(0)
+    }
+
+    fn populate_auto() -> bool {
+        false
+    }
+
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        // Only fetched blocks of an already-live mirror: the rest are fetched
+        // on read anyway.
+        if let Some(ready) = self.maybe_ready() {
+            let local = ready.local;
+            local.mmap().will_need(
+                byte_ranges.filter(|range| local.contains(to_block_range(range.clone()))),
+            );
+        }
+    }
+
+    fn clear_ram_cache(&self) -> UioResult<()> {
+        // Only touch an already-live mirror; don't force initialization just to
+        // clear a cache that may not exist yet.
+        if let Some(ready) = self.maybe_ready() {
+            ready.local.mmap().clear_ram_cache()?;
+        }
+        Ok(())
+    }
+
+    fn kind() -> UniversalKind {
+        UniversalKind::SimpleDiskCache
+    }
+}

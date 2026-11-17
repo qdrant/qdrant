@@ -1,21 +1,26 @@
 use ahash::AHashSet;
-use api::rest::LookupLocation;
+use api::rest::{self, LookupLocation};
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
+use segment::data_types::index::{TextIndexParams, TextScoringType};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal, VectorRef};
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
-    VectorNameBuf, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PayloadSchemaParams, PointIdType,
+    SearchParams, VectorName, VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
     ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
+    avg_vector_for_recommendation,
 };
 use serde::Serialize;
+use shard::payload_index_schema::PayloadIndexSchema;
 use shard::query::query_enum::QueryEnum;
+use shard::query::text::TextScoringQuery;
 
 use super::formula::FormulaInternal;
 use super::shard_query::{
@@ -25,7 +30,6 @@ use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::shard_query::MmrInternal;
-use crate::recommendations::avg_vector_for_recommendation;
 
 const DEFAULT_MMR_LAMBDA: f32 = 0.5;
 
@@ -102,6 +106,51 @@ pub enum Query {
 
     /// Sample points
     Sample(SampleInternal),
+
+    /// BM25 over the text index of the payload field named by `using`
+    Text(TextQueryInternal),
+}
+
+/// A text query before `using` names its field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextQueryInternal {
+    pub text: String,
+    /// `None` runs the field's scorer with its defaults.
+    pub params: Option<TextQueryParams>,
+}
+
+/// Parameters of a text query, one variant per [`TextScoringType`]: the
+/// variant must match the scoring type of the field's text index.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TextQueryParams {
+    Bm25(Bm25Params),
+}
+
+impl TextQueryParams {
+    /// `k` and `b` default to [`Bm25Params::default`] where not given.
+    pub fn bm25(k: Option<f32>, b: Option<f32>) -> Self {
+        let default = Bm25Params::default();
+        Self::Bm25(Bm25Params {
+            k1: k.unwrap_or(default.k1),
+            b: b.unwrap_or(default.b),
+        })
+    }
+}
+
+impl From<rest::TextInterface> for TextQueryInternal {
+    fn from(interface: rest::TextInterface) -> Self {
+        match interface {
+            rest::TextInterface::Query(text) => Self { text, params: None },
+            rest::TextInterface::Struct(rest::TextQueryInput { query, scoring }) => Self {
+                text: query,
+                params: scoring.map(|scoring| match scoring {
+                    rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params { k, b },
+                    }) => TextQueryParams::bm25(k, b),
+                }),
+            },
+        }
+    }
 }
 
 impl Query {
@@ -126,6 +175,19 @@ impl Query {
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
             Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
+            Query::Text(TextQueryInternal { text, params }) => {
+                // `check_text_queries` matched the parameters with the field's scorer,
+                // which can only be BM25 for now
+                let params = match params {
+                    None => Bm25Params::default(),
+                    Some(TextQueryParams::Bm25(params)) => params,
+                };
+                ScoringQuery::Text(TextScoringQuery {
+                    field: text_field(&using)?,
+                    text,
+                    params,
+                })
+            }
         };
 
         Ok(scoring_query)
@@ -138,7 +200,11 @@ impl Query {
                 .into_iter()
                 .copied()
                 .collect(),
-            Self::Fusion(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => Vec::new(),
+            Self::Fusion(_)
+            | Self::OrderBy(_)
+            | Self::Formula(_)
+            | Self::Sample(_)
+            | Self::Text(_) => Vec::new(),
         }
     }
 }
@@ -243,7 +309,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendAverageVector(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -254,7 +320,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendBestScore(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -265,7 +331,7 @@ impl VectorQuery<VectorInputInternal> {
                     ids_to_vectors,
                     lookup_vector_name,
                     lookup_collection,
-                );
+                )?;
                 Ok(VectorQuery::RecommendSumScores(RecoQuery::new(
                     positives, negatives,
                 )))
@@ -363,35 +429,32 @@ impl VectorQuery<VectorInputInternal> {
     }
 
     /// Resolves the references in the RecoQuery into actual vectors.
+    /// Returns an error if any referenced point ID cannot be resolved.
     fn resolve_reco_reference(
         reco_query: RecoQuery<VectorInputInternal>,
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
-    ) -> (Vec<VectorInternal>, Vec<VectorInternal>) {
-        let positives = reco_query
+    ) -> CollectionResult<(Vec<VectorInternal>, Vec<VectorInternal>)> {
+        let positives: Vec<VectorInternal> = reco_query
             .positives
             .into_iter()
-            .filter_map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                )
+            .map(|vector_input| {
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        let negatives = reco_query
+            .collect::<CollectionResult<_>>()?;
+        let negatives: Vec<VectorInternal> = reco_query
             .negatives
             .into_iter()
-            .filter_map(|vector_input| {
-                ids_to_vectors.resolve_reference(
-                    lookup_collection,
-                    lookup_vector_name,
-                    vector_input,
-                )
+            .map(|vector_input| {
+                ids_to_vectors
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))
             })
-            .collect();
-        (positives, negatives)
+            .collect::<CollectionResult<_>>()?;
+        Ok((positives, negatives))
     }
 }
 
@@ -779,5 +842,351 @@ impl CollectionQueryRequest {
         }
 
         Ok(())
+    }
+}
+
+/// The payload field a text query's `using` names.
+fn text_field(using: &VectorName) -> CollectionResult<JsonPath> {
+    if using == DEFAULT_VECTOR_NAME {
+        return Err(CollectionError::bad_request(
+            "A text query needs `using` to name the payload field to search",
+        ));
+    }
+    using.parse().map_err(|_| {
+        CollectionError::bad_request(format!(
+            "A text query's `using` must be a payload field, got `{using}`",
+        ))
+    })
+}
+
+/// Check a text query against the payload schema before any shard runs it:
+/// the field must have a text index that scores, the parameters must be for
+/// its scoring type, and they must be in range. The scorer checks the parameters too, but only in a segment
+/// holding a query term, so without this the same request would fail on some
+/// data and return nothing on the rest.
+fn check_text_query(
+    query: &Option<Query>,
+    using: &VectorName,
+    schema: &PayloadIndexSchema,
+) -> CollectionResult<()> {
+    let Some(Query::Text(TextQueryInternal { text: _, params })) = query else {
+        return Ok(());
+    };
+    let field = text_field(using)?;
+    let Some(field_schema) = schema.schema.get(&field) else {
+        return Err(CollectionError::bad_request(format!(
+            "A text query needs a text index on `{field}`, which has none",
+        )));
+    };
+    let scoring = match field_schema.expand().as_ref() {
+        PayloadSchemaParams::Text(TextIndexParams {
+            scoring: Some(scoring),
+            ..
+        }) => scoring.r#type,
+        PayloadSchemaParams::Text(_) => {
+            return Err(CollectionError::bad_request(format!(
+                "The text index on `{field}` does not score: set `scoring` on it to query it",
+            )));
+        }
+        PayloadSchemaParams::Keyword(_)
+        | PayloadSchemaParams::Integer(_)
+        | PayloadSchemaParams::Float(_)
+        | PayloadSchemaParams::Geo(_)
+        | PayloadSchemaParams::Bool(_)
+        | PayloadSchemaParams::Datetime(_)
+        | PayloadSchemaParams::Uuid(_) => {
+            return Err(CollectionError::bad_request(format!(
+                "A text query needs a text index on `{field}`, which is indexed as {}",
+                field_schema.name(),
+            )));
+        }
+    };
+    // Exhaustive on both sides: a new scoring type or parameter variant must
+    // say which pairs match, and how a query without parameters scores
+    let params = match (scoring, params) {
+        (TextScoringType::Bm25, None) => return Ok(()),
+        (TextScoringType::Bm25, Some(TextQueryParams::Bm25(params))) => params,
+    };
+    let Bm25Params { k1, b } = *params;
+    if !(k1.is_finite() && k1 >= 0.0) {
+        return Err(CollectionError::bad_request(format!(
+            "A text query's `k` must be non-negative, got {k1}",
+        )));
+    }
+    if !(b.is_finite() && (0.0..=1.0).contains(&b)) {
+        return Err(CollectionError::bad_request(format!(
+            "A text query's `b` must be within [0, 1], got {b}",
+        )));
+    }
+    Ok(())
+}
+
+impl CollectionPrefetch {
+    fn check_text_queries(&self, schema: &PayloadIndexSchema) -> CollectionResult<()> {
+        check_text_query(&self.query, &self.using, schema)?;
+        self.prefetch
+            .iter()
+            .try_for_each(|prefetch| prefetch.check_text_queries(schema))
+    }
+}
+
+impl CollectionQueryRequest {
+    /// Check every text query, here and in the prefetches, against the
+    /// payload schema. See [`check_text_query`].
+    pub fn check_text_queries(&self, schema: &PayloadIndexSchema) -> CollectionResult<()> {
+        check_text_query(&self.query, &self.using, schema)?;
+        self.prefetch
+            .iter()
+            .try_for_each(|prefetch| prefetch.check_text_queries(schema))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::retrieve::record_internal::RecordInternal;
+
+    use super::*;
+
+    fn create_referenced_vectors(point_id: PointIdType) -> ReferencedVectors {
+        let mut referenced = ReferencedVectors::default();
+        let vector = VectorStructInternal::Single(vec![1.0, 2.0, 3.0]);
+        let record = RecordInternal {
+            id: point_id,
+            payload: None,
+            vector: Some(vector),
+            shard_key: None,
+            order_value: None,
+        };
+        referenced.extend(None, vec![(point_id, record)]);
+        referenced
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_missing_point_id() {
+        let referenced = create_referenced_vectors(1u64.into());
+
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(999u64.into())], vec![]);
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when point ID does not exist in ReferencedVectors"
+        );
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_valid_point_id() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        let query = RecoQuery::new(vec![VectorInputInternal::Id(point_id)], vec![]);
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Expected success when point ID exists in ReferencedVectors"
+        );
+        let (positives, negatives) = result.unwrap();
+        assert_eq!(positives.len(), 1);
+        assert_eq!(negatives.len(), 0);
+    }
+
+    #[test]
+    fn test_resolve_reco_reference_mixed_point_ids() {
+        let point_id: PointIdType = 1u64.into();
+        let referenced = create_referenced_vectors(point_id);
+
+        // Mix of valid and invalid IDs — should fail on first invalid
+        let query = RecoQuery::new(
+            vec![
+                VectorInputInternal::Id(point_id),
+                VectorInputInternal::Id(999u64.into()),
+            ],
+            vec![],
+        );
+
+        let result = VectorQuery::<VectorInputInternal>::resolve_reco_reference(
+            query,
+            &referenced,
+            DEFAULT_VECTOR_NAME,
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "Expected error when at least one point ID is missing"
+        );
+    }
+
+    mod text_queries {
+        use segment::data_types::index::{TextIndexParams, TextScoringParams};
+        use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+        use super::*;
+
+        fn text(params: Bm25Params) -> Query {
+            Query::Text(TextQueryInternal {
+                text: "quick fox".to_string(),
+                params: Some(TextQueryParams::Bm25(params)),
+            })
+        }
+
+        /// `query` at the root and in a prefetch, both with `using`.
+        fn request(using: &str, query: Query) -> CollectionQueryRequest {
+            CollectionQueryRequest {
+                prefetch: vec![CollectionPrefetch {
+                    prefetch: vec![],
+                    query: Some(query.clone()),
+                    using: using.to_string(),
+                    filter: None,
+                    score_threshold: None,
+                    limit: 10,
+                    params: None,
+                    lookup_from: None,
+                }],
+                query: Some(query),
+                using: using.to_string(),
+                filter: None,
+                score_threshold: None,
+                limit: 10,
+                offset: 0,
+                params: None,
+                with_vector: CollectionQueryRequest::DEFAULT_WITH_VECTOR,
+                with_payload: CollectionQueryRequest::DEFAULT_WITH_PAYLOAD,
+                lookup_from: None,
+            }
+        }
+
+        /// `scored` has a scoring text index, `plain` one that does not score,
+        /// `tag` a keyword index.
+        fn schema() -> PayloadIndexSchema {
+            let scored =
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                    scoring: Some(TextScoringParams::default()),
+                    ..TextIndexParams::default()
+                }));
+            PayloadIndexSchema {
+                schema: [
+                    ("scored", scored),
+                    (
+                        "plain",
+                        PayloadFieldSchema::FieldType(PayloadSchemaType::Text),
+                    ),
+                    (
+                        "tag",
+                        PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+                    ),
+                ]
+                .into_iter()
+                .map(|(field, schema)| (field.parse().unwrap(), schema))
+                .collect(),
+            }
+        }
+
+        fn check(using: &str, params: Bm25Params) -> Result<(), String> {
+            request(using, text(params))
+                .check_text_queries(&schema())
+                .map_err(|error| error.to_string())
+        }
+
+        #[test]
+        fn a_scoring_text_index_passes() {
+            assert_eq!(check("scored", Bm25Params { k1: 2.0, b: 0.0 }), Ok(()));
+        }
+
+        #[test]
+        fn refused_before_any_shard_runs() {
+            let default = Bm25Params::default();
+            for (using, params, expected) in [
+                (DEFAULT_VECTOR_NAME, default, "needs `using`"),
+                ("absent", default, "which has none"),
+                ("plain", default, "does not score"),
+                ("tag", default, "indexed as keyword"),
+                (
+                    "scored",
+                    Bm25Params { k1: -1.0, b: 0.75 },
+                    "`k` must be non-negative",
+                ),
+                (
+                    "scored",
+                    Bm25Params { k1: 1.2, b: 1.5 },
+                    "`b` must be within [0, 1]",
+                ),
+            ] {
+                let error = check(using, params).unwrap_err();
+                assert!(error.contains(expected), "{using} {params:?}: {error}");
+            }
+        }
+
+        #[test]
+        fn a_prefetch_is_checked_too() {
+            let mut request = request("scored", text(Bm25Params::default()));
+            request.prefetch[0].using = "plain".to_string();
+            let error = request.check_text_queries(&schema()).unwrap_err();
+            assert!(error.to_string().contains("does not score"), "{error}");
+        }
+
+        #[test]
+        fn the_string_form_takes_the_defaults() {
+            let from_string = TextQueryInternal::from(rest::TextInterface::Query("fox".into()));
+            assert_eq!(from_string.params, None);
+
+            let from_struct =
+                TextQueryInternal::from(rest::TextInterface::Struct(rest::TextQueryInput {
+                    query: "fox".into(),
+                    scoring: Some(rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params {
+                            k: Some(2.0),
+                            b: None,
+                        },
+                    })),
+                }));
+            assert_eq!(from_struct.text, "fox");
+            assert_eq!(
+                from_struct.params,
+                Some(TextQueryParams::Bm25(Bm25Params {
+                    k1: 2.0,
+                    b: Bm25Params::default().b,
+                })),
+            );
+        }
+
+        #[test]
+        fn no_parameters_pass_and_score_with_the_defaults() {
+            let query = Query::Text(TextQueryInternal {
+                text: "quick fox".to_string(),
+                params: None,
+            });
+            request("scored", query.clone())
+                .check_text_queries(&schema())
+                .unwrap();
+
+            let scoring = query
+                .try_into_scoring_query(
+                    &ReferencedVectors::default(),
+                    DEFAULT_VECTOR_NAME,
+                    None,
+                    "scored".into(),
+                    10,
+                )
+                .unwrap();
+            let ScoringQuery::Text(TextScoringQuery { params, .. }) = scoring else {
+                panic!("expected a text scoring query, got {scoring:?}");
+            };
+            assert_eq!(params, Bm25Params::default());
+        }
     }
 }

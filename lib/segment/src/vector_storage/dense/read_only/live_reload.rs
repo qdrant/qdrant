@@ -1,7 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyChunkedDenseVectorStorage;
 use crate::common::live_reload::LiveReload;
@@ -11,20 +10,38 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
     for ReadOnlyChunkedDenseVectorStorage<T, S>
 {
-    type Fs = S::Fs;
+    type File = S;
 
-    /// Reload the chunked vectors and apply `deleted_points`; appended points are
-    /// served from the refreshed chunks, so `new_points` is unused.
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let futs = self.vectors.live_preload(fs)?;
+        self.deleted.live_preload(fs)?;
+        Ok(futs)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.vectors.apply_deletions(deleted_points)?;
+        self.deleted.insert_all(deleted_points);
+        Ok(())
+    }
+
+    /// Reload the chunked vectors, apply `deleted_points`, and fold in the
+    /// persisted deletion of each appended offset — a live point may have a
+    /// deleted vector slot recorded only on disk.
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.vectors
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        self.vectors.live_reload(fs, deleted_points, new_points)?;
         self.deleted.insert_all(deleted_points);
+        self.deleted.reload_appended::<S>(fs, new_points)?;
 
         Ok(())
     }

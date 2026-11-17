@@ -1,10 +1,10 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::StructPayloadIndex;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
+use crate::index::field_index::index_selector::wipe_field_dirs;
 use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
@@ -14,39 +14,50 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
+        // A build must start from a clean slate: files can be left behind by a build
+        // that crashed before its config entry was written, or by an index that
+        // failed to load. Appendable builders open existing storages, so leftovers
+        // would leak stale postings into the fresh build.
+        wipe_field_dirs(&self.path, field)?;
+
+        // Note: durability of the state this build reads (id tracker, payload storage)
+        // is the caller's responsibility. Component flushers must not be invoked here:
+        // flusher executions are serialized end-to-end with their capture by the shard
+        // flush pipeline, and an extra flush run between another flusher's capture and
+        // execution corrupts storage (Gridstore double-frees superseded blocks). The
+        // live update path pins the observed state by flushing the whole segment under
+        // that serialization before building (`shard::update::create_field_index`).
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);
-        let mut builders = selector.index_builder(
-            field,
-            payload_schema,
-            id_tracker_borrow.deleted_point_bitslice(),
-        )?;
+        let deleted = id_tracker_borrow.deleted_point_bitslice();
+        let mut builders = selector.index_builder(field, payload_schema, deleted)?;
 
         // Special null index complements every index. Seed it with the segment's total
         // point count so `iter_falses()` returns points that are missing from payload
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
-        let total_point_count = self.id_tracker.borrow().total_point_count();
-        let null_index = selector.null_builder(field, total_point_count)?;
-        builders.push(null_index);
+        let total_point_count = id_tracker_borrow.total_point_count();
+        builders.push(selector.null_builder(field, payload_schema, total_point_count)?);
 
         for index in &mut builders {
             index.init()?;
+            if !self.journaled {
+                index.disable_journal();
+            }
         }
 
-        payload_storage.iter(
-            |point_id, point_payload| {
-                let field_value = &point_payload.get_value(field);
-                for builder in builders.iter_mut() {
-                    builder.add_point(point_id, field_value, hw_counter)?;
-                }
-                Ok(true)
-            },
-            hw_counter,
-        )?;
+        payload_storage.iter(|point_id, point_payload| {
+            if id_tracker_borrow.is_deleted_point(point_id) {
+                return Ok(true);
+            }
+            for builder in &mut builders {
+                let values = point_payload.get_value(builder.input_path(field));
+                builder.add_point(point_id, &values)?;
+            }
+            Ok(true)
+        })?;
 
         builders
             .into_iter()
@@ -62,8 +73,15 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
+        // Per-element indexes keep an element map next to the inner index, rebuilding
+        // is simpler than reopening both in another mode
+        if payload_schema.nested().is_some() {
+            return Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            ));
+        }
+
         let loaded = {
             let selector = self.selector(payload_schema);
             let id_tracker = self.id_tracker.borrow();
@@ -73,7 +91,8 @@ impl StructPayloadIndex {
                     if let Some(null_index) = selector.new_null_index(
                         field,
                         false,
-                        &id_tracker,
+                        id_tracker.total_point_count(),
+                        deleted_points,
                         selector.default_mutability(),
                     )? {
                         indexes.push(null_index);
@@ -86,11 +105,9 @@ impl StructPayloadIndex {
 
         match loaded {
             Some(indexes) => Ok(BuildIndexResult::Built(indexes)),
-            None => Ok(BuildIndexResult::Built(self.build_field_indexes(
-                field,
-                payload_schema,
-                hw_counter,
-            )?)),
+            None => Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            )),
         }
     }
 
@@ -98,7 +115,7 @@ impl StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
     ) -> OperationResult<()> {
-        for (_, field_indexes) in self.field_indexes.iter_mut() {
+        for field_indexes in self.field_indexes.values_mut() {
             for index in field_indexes {
                 index.remove_point(point_id)?;
             }

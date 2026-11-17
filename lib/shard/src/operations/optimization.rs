@@ -1,6 +1,9 @@
+use std::num::NonZeroUsize;
+
 use common::progress_tracker::ProgressTree;
 use common::types::PointOffsetType;
 use schemars::JsonSchema;
+use segment::common::BYTES_IN_KB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -128,4 +131,11 @@ pub struct OptimizerThresholds {
     pub memmap_threshold_kb: usize,
     pub indexing_threshold_kb: usize,
     pub deferred_internal_id: Option<PointOffsetType>,
+}
+
+impl OptimizerThresholds {
+    /// Maximum segment size in bytes, or `None` when `max_segment_size_kb` is zero (uncapped).
+    pub fn max_segment_size_bytes(&self) -> Option<NonZeroUsize> {
+        NonZeroUsize::new(self.max_segment_size_kb.saturating_mul(BYTES_IN_KB))
+    }
 }

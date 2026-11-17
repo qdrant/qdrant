@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
 use common::fs::{atomic_save_json, read_json};
+use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::types::{DimId, DimOffset};
@@ -21,6 +22,11 @@ impl IndicesTracker {
         read_json(&path)
     }
 
+    /// Universal-IO variant of [`Self::open`].
+    pub fn open_universal<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self> {
+        read_json_via(fs, Self::file_path(path))
+    }
+
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         let path = Self::file_path(path);
         Ok(atomic_save_json(&path, self)?)
@@ -32,9 +38,8 @@ impl IndicesTracker {
 
     pub fn register_indices(&mut self, vector: &SparseVector) {
         for index in &vector.indices {
-            if !self.map.contains_key(index) {
-                self.map.insert(*index, self.map.len() as DimId);
-            }
+            let next = self.map.len() as DimId;
+            self.map.entry(*index).or_insert(next);
         }
     }
 

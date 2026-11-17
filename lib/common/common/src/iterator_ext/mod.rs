@@ -14,7 +14,7 @@ mod fallible;
 pub mod ordering_iterator;
 pub mod stoppable_iter;
 
-pub use fallible::{FallibleIteratorExt, TransposeResultIter};
+pub use fallible::FallibleIteratorExt;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
@@ -72,6 +72,19 @@ pub trait IteratorExt: Iterator {
             Err(e) => Some(Err(e)),
         })
         .unwrap_or(Ok(false))
+    }
+
+    /// [`Iterator::filter()`] but for fallible predicates.
+    fn try_filter<F, E>(self, mut f: F) -> impl Iterator<Item = Result<Self::Item, E>>
+    where
+        F: FnMut(&Self::Item) -> Result<bool, E>,
+        Self: Sized,
+    {
+        self.filter_map(move |item| match f(&item) {
+            Ok(true) => Some(Ok(item)),
+            Ok(false) => None,
+            Err(e) => Some(Err(e)),
+        })
     }
 }
 

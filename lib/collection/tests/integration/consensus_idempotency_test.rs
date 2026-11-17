@@ -1,0 +1,160 @@
+//! Replay/idempotency tests for `Collection::set_shard_replica_state` and the
+//! resharding-abort composition (audit findings B and I, Part 1).
+//!
+//! These exercise the in-process `Collection` API directly. The multi-peer
+//! crash-window scenarios (mid-teardown down crash, post-dir-drop up residue)
+//! live in the Python consensus suite
+//! (`tests/consensus_tests/test_resharding_set_replica_dead_replay.py`,
+//! `test_resharding_down_abort_converges_after_crash.py`,
+//! `test_resharding_replay.py`); here we cover what a single process can drive
+//! deterministically.
+
+use std::num::NonZeroU32;
+
+use collection::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal};
+use collection::operations::cluster_ops::ReshardingDirection;
+use collection::operations::types::CollectionError;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::ReshardKey;
+use collection::shards::shard_config::ShardConfig;
+use tempfile::Builder;
+use uuid::Uuid;
+
+use crate::common::{NoopReshardingConsensus, simple_collection_fixture};
+
+#[tokio::test]
+async fn set_shard_number_retry_after_save_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(dir.path(), 1).await;
+    let config_path = dir.path().join(COLLECTION_CONFIG_FILE);
+    let saved_config_path = dir.path().join("saved_config.json");
+    let shard_number = NonZeroU32::new(2).unwrap();
+
+    // A directory at the config path makes the atomic replacement fail
+    fs_err::rename(&config_path, &saved_config_path).unwrap();
+    fs_err::create_dir(&config_path).unwrap();
+
+    let result = collection.set_shard_number(shard_number).await;
+
+    assert!(matches!(result, Err(CollectionError::ServiceError { .. })));
+    assert_eq!(collection.config().await.params.shard_number.get(), 1);
+
+    fs_err::remove_dir(&config_path).unwrap();
+    fs_err::rename(&saved_config_path, &config_path).unwrap();
+
+    collection.set_shard_number(shard_number).await.unwrap();
+
+    let persisted = CollectionConfigInternal::load(dir.path()).unwrap();
+    assert_eq!(persisted.params.shard_number, shard_number);
+    assert_eq!(collection.config().await.params.shard_number, shard_number);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drop_shard_retry_after_cleanup_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(dir.path(), 1).await;
+    let shard_path = dir.path().join("0");
+    let saved_shard_path = dir.path().join("saved_shard");
+    let shard_holder = collection.shards_holder();
+    let mut shard_holder = shard_holder.write().await;
+
+    shard_holder.get_shard(0).unwrap().stop_gracefully().await;
+
+    // A file at the shard path makes filesystem cleanup fail on every platform
+    fs_err::rename(&shard_path, &saved_shard_path).unwrap();
+    fs_err::write(&shard_path, []).unwrap();
+
+    let result = shard_holder.drop_and_remove_shard(0).await;
+
+    assert!(result.is_err());
+    assert!(shard_holder.get_shard(0).is_some());
+
+    fs_err::remove_file(&shard_path).unwrap();
+    fs_err::rename(&saved_shard_path, &shard_path).unwrap();
+    // Cleanup may already have removed the shard config before failing
+    fs_err::remove_file(ShardConfig::get_config_path(&shard_path)).unwrap();
+
+    shard_holder.drop_and_remove_shard(0).await.unwrap();
+
+    assert!(shard_holder.get_shard(0).is_none());
+    assert!(!shard_path.exists());
+
+    shard_holder.drop_and_remove_shard(0).await.unwrap();
+}
+
+/// [audit-B] Setting a resharding-*up* replica `Dead` aborts the resharding
+/// first (dropping the shard) and then converges: the shard is gone, the
+/// persisted resharding state is cleared, and re-applying the same entry does
+/// not resurrect the shard or the state.
+#[tokio::test]
+async fn test_set_resharding_up_replica_dead_drops_shard_and_clears_state() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    // Auto-sharded collection with shards 0 and 1.
+    let collection = simple_collection_fixture(dir.path(), 2).await;
+
+    // Start resharding *up*: creates shard 2 on peer 0 in `Resharding` state and
+    // persists resharding_state (shard_number -> 3).
+    let key = ReshardKey {
+        uuid: Uuid::new_v4(),
+        direction: ReshardingDirection::Up,
+        peer_id: 0,
+        shard_id: 2,
+        shard_key: None,
+    };
+    collection
+        .start_resharding(
+            key,
+            Box::new(NoopReshardingConsensus),
+            std::future::ready(()),
+            std::future::ready(()),
+        )
+        .await
+        .expect("start_resharding up must succeed");
+
+    assert!(
+        collection.resharding_state().await.is_some(),
+        "resharding must be in progress after start",
+    );
+    assert!(
+        collection.state().await.shards.contains_key(&2),
+        "resharding up must have created shard 2",
+    );
+
+    // Deactivate the resharding replica. This triggers the abort composition
+    // (with skip_replica = (2, 0)): the shard is dropped, so the handler takes
+    // the missing-shard early return after clearing the state.
+    collection
+        .set_shard_replica_state(2, 0, ReplicaState::Dead, Some(ReplicaState::Resharding))
+        .await
+        .expect("deactivating a resharding-up replica must abort resharding and return Ok");
+
+    assert!(
+        collection.resharding_state().await.is_none(),
+        "resharding_state must be cleared after the abort",
+    );
+    assert!(
+        !collection.state().await.shards.contains_key(&2),
+        "shard 2 must be dropped by the resharding-up abort",
+    );
+
+    // Replay the exact same entry. The shard is gone and resharding_state is
+    // None, so the crash-signature re-entry does not fire and the entry is
+    // benignly dismissed (not_found) — critically, nothing is resurrected and
+    // the state stays converged.
+    let replay = collection
+        .set_shard_replica_state(2, 0, ReplicaState::Dead, Some(ReplicaState::Resharding))
+        .await;
+
+    assert!(
+        matches!(replay, Err(CollectionError::NotFound { .. })),
+        "replay after full completion is a benign dismissal (shard already gone)",
+    );
+    assert!(
+        collection.resharding_state().await.is_none(),
+        "resharding_state must stay cleared across the replay",
+    );
+    assert!(
+        !collection.state().await.shards.contains_key(&2),
+        "the dropped shard must not be resurrected by the replay",
+    );
+}

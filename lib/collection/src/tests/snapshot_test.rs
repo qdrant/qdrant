@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient;
 use common::budget::ResourceBudget;
 use segment::types::Distance;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -58,6 +59,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
@@ -167,12 +169,14 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_collection_normal() {
+    let _scope = ambient::async_test_guard();
     init_logger();
     _test_snapshot_collection(NodeType::Normal).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_snapshot_collection_listener() {
+    let _scope = ambient::async_test_guard();
     init_logger();
     _test_snapshot_collection(NodeType::Listener).await;
 }

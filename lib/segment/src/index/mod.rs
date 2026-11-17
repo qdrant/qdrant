@@ -1,9 +1,10 @@
+mod condition_checker;
 pub mod field_index;
 pub mod hnsw_index;
-mod key_encoding;
 mod memory_reporter;
 pub mod payload_config;
 mod payload_index_base;
+#[cfg(feature = "testing")]
 pub mod plain_payload_index;
 pub mod plain_vector_index;
 pub mod query_estimator;
@@ -11,11 +12,13 @@ pub mod query_optimization;
 pub mod read_only;
 mod sample_estimation;
 pub mod sparse_index;
-mod struct_filter_context;
 pub mod struct_payload_index;
+mod universal_io;
 pub mod vector_index_base;
 mod vector_index_search_common;
 mod visited_pool;
 
+pub use condition_checker::ConditionCheckerEnum;
 pub use payload_index_base::*;
+pub use universal_io::UniversalReadExt;
 pub use vector_index_base::*;

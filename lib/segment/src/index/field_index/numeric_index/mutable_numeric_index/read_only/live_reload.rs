@@ -1,10 +1,10 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::Blob;
+use blobstore::error::BlobstoreError;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
-use gridstore::Blob;
-use gridstore::error::GridstoreError;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableNumericIndex;
 use crate::common::operation_error::OperationResult;
@@ -17,33 +17,50 @@ impl<T: Encodable + Numericable + Send + Sync + Default, S: UniversalRead> LiveR
 where
     Vec<T>: Blob,
 {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        Ok(self.storage.live_preload(fs)?)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.in_memory_index.remove_point(*deleted_point);
+        }
+
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
+        self.apply_deletions(deleted_points)?;
 
         let in_memory_index = &mut self.in_memory_index;
 
-        for deleted_point in deleted_points {
-            in_memory_index.remove_point(*deleted_point);
-        }
-
         self.storage
             .view()
-            .read_values::<Sequential, _, GridstoreError>(
+            .read_values::<Sequential, _, BlobstoreError>(
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_list(point_offset, values);
-                    Ok(())
+                    Ok(true)
                 },
-                hw_counter.payload_index_io_read_counter(),
+                Some(HwMetric::PayloadIndexIoRead),
             )?;
 
         Ok(())

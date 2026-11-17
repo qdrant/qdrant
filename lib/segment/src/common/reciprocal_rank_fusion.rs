@@ -112,6 +112,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            location: None,
         }
     }
 
@@ -195,7 +196,7 @@ mod tests {
         // - Being at pos 0 in low-weight source still gives full 1/k score
         // So the weighted RRF favors items that rank well across sources,
         // with higher-weight sources having their position penalties reduced.
-        assert!(scored_points[0].id == 2.into());
+        assert_eq!(scored_points[0].id, 2.into());
         assert!(scored_points[0].score > scored_points[1].score);
     }
 

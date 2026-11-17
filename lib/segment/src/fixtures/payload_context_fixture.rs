@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -16,7 +16,7 @@ use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::PayloadIndex;
 use crate::index::plain_payload_index::PlainPayloadIndex;
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
@@ -48,12 +48,10 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
     let mut payload_storage = InMemoryPayloadStorage::default();
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let hw_counter = HardwareCounterCell::new();
-
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
         payload_storage
-            .set(id as PointOffsetType, &payload, &hw_counter)
+            .set(id as PointOffsetType, &payload)
             .unwrap();
     }
 
@@ -111,54 +109,30 @@ pub fn create_struct_payload_index(
         id_tracker,
         std::collections::HashMap::new(),
         path,
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     index
-        .set_indexed(
-            &STR_KEY.parse().unwrap(),
-            PayloadSchemaType::Keyword,
-            &hw_counter,
-        )
+        .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
         .unwrap();
     index
-        .set_indexed(
-            &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float,
-            &hw_counter,
-        )
+        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
         .unwrap();
     index
-        .set_indexed(
-            &GEO_KEY.parse().unwrap(),
-            PayloadSchemaType::Geo,
-            &hw_counter,
-        )
+        .set_indexed(&GEO_KEY.parse().unwrap(), PayloadSchemaType::Geo)
         .unwrap();
     index
-        .set_indexed(
-            &TEXT_KEY.parse().unwrap(),
-            PayloadSchemaType::Text,
-            &hw_counter,
-        )
+        .set_indexed(&TEXT_KEY.parse().unwrap(), PayloadSchemaType::Text)
         .unwrap();
     index
-        .set_indexed(
-            &BOOL_KEY.parse().unwrap(),
-            PayloadSchemaType::Bool,
-            &hw_counter,
-        )
+        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Bool)
         .unwrap();
 
     index

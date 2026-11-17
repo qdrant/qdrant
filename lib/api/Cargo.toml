@@ -1,6 +1,6 @@
 [package]
 name = "api"
-version = "1.18.3-dev"
+version = "1.20.3-dev"
 authors = [
     "Andrey Vasnetsov <vasnetsov93@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -38,6 +38,9 @@ segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+prost-types = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build = { workspace = true }

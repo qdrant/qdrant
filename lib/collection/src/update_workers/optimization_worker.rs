@@ -1,13 +1,12 @@
-use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::panic;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
+use common::{ambient, panic};
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -122,6 +121,24 @@ impl UpdateWorkers {
                 panic!("Failed to ensure there are appendable segments with capacity: {err}");
             }
 
+            // Backstop: reconcile the segment manifest with the live segment set. Registration
+            // normally happens at each publication site via the `NewSegmentToken`; this wake-up is
+            // the recovery path that picks up any registration that was skipped (e.g. an ignored
+            // token). No-op if already in sync.Manifest write uses fsync — keep it off the
+            // async worker.
+            let segments_for_sync = segments.clone();
+            if let Err(err) = tokio::task::spawn_blocking(move || {
+                segments_for_sync.read().sync_segment_manifest(None)
+            })
+            .await
+            .unwrap_or_else(|err| {
+                Err(OperationError::service_error(format!(
+                    "sync_segment_manifest task panicked: {err}"
+                )))
+            }) {
+                log::error!("Failed to write segment manifest: {err}");
+            }
+
             // If not forcing, wait on next signal if we have too many handles
             if !ignore_max_handles && optimization_handles.lock().await.len() >= max_handles {
                 continue;
@@ -132,6 +149,7 @@ impl UpdateWorkers {
                 wal.clone(),
                 update_operation_lock.clone(),
                 update_tracker.clone(),
+                some_optimizer.threshold_config().max_segment_size_bytes(),
             )
             .await
             .is_err()
@@ -174,18 +192,19 @@ impl UpdateWorkers {
                 continue;
             }
 
-            Self::process_optimization(
+            let mut new_handles = Self::process_optimization(
                 optimizers.clone(),
                 segments.clone(),
-                optimization_handles.clone(),
                 optimizers_log.clone(),
                 total_optimized_points.clone(),
-                &optimizer_resource_budget,
+                optimizer_resource_budget.clone(),
                 sender.clone(),
                 optimization_finished_sender.clone(),
                 limit,
             )
             .await;
+            let mut handles = optimization_handles.lock().await;
+            handles.append(&mut new_handles);
         }
     }
 
@@ -225,35 +244,47 @@ impl UpdateWorkers {
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_resource_budget: &ResourceBudget,
+        optimizer_resource_budget: ResourceBudget,
         sender: Sender<OptimizerSignal>,
         optimization_finished_sender: watch::Sender<()>,
         limit: usize,
-    ) {
-        let mut new_handles = Self::launch_optimization(
-            optimizers.clone(),
-            optimizers_log,
-            total_optimized_points,
-            optimizer_resource_budget,
-            segments.clone(),
-            move || {
-                // Notify other components that optimization is finished
-                // We do not care if there are no receivers or if they are lagging behind
-                let _ = optimization_finished_sender.send(());
+    ) -> Vec<StoppableTaskHandle<bool>> {
+        // Planning takes the segment holder read lock and builds the optimization plan
+        // synchronously - keep it off the async worker.
+        let new_handles = tokio::task::spawn_blocking(move || {
+            Self::launch_optimization(
+                optimizers,
+                optimizers_log,
+                total_optimized_points,
+                &optimizer_resource_budget,
+                segments,
+                move || {
+                    // Notify other components that optimization is finished
+                    // We do not care if there are no receivers or if they are lagging behind
+                    let _ = optimization_finished_sender.send(());
 
-                // After optimization is finished, we still need to check if there are
-                // some further optimizations possible.
-                // If receiver is already dead - we do not care.
-                // If channel is full - optimization will be triggered by some other signal
-                let _ = sender.try_send(OptimizerSignal::Nop);
-            },
-            Some(limit),
-        );
-        let mut handles = optimization_handles.lock().await;
-        handles.append(&mut new_handles);
+                    // After optimization is finished, we still need to check if there are
+                    // some further optimizations possible.
+                    // If receiver is already dead - we do not care.
+                    // If channel is full - optimization will be triggered by some other signal
+                    let _ = sender.try_send(OptimizerSignal::Nop);
+                },
+                Some(limit),
+            )
+        })
+        .await;
+
+        match new_handles {
+            Ok(new_handles) => new_handles,
+            // The runtime is shutting down, this worker is going away with it
+            Err(err) if err.is_cancelled() => vec![],
+            // Launching optimizations must not fail, propagate to the optimization worker
+            // like `ensure_appendable_segment_with_capacity` does. The panic hook already
+            // logged the original backtrace, `resume_unwind` does not run it again.
+            Err(err) => std::panic::resume_unwind(err.into_panic()),
+        }
     }
 
     /// Checks conditions for all optimizers until there is no suggested segment
@@ -358,7 +389,11 @@ impl UpdateWorkers {
             let tracker_handle = tracker.handle();
 
             let handle = spawn_stoppable(move |stopped| {
-                let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                // At low priority, as HNSW building already is: the rest of an
+                // optimization (copying and merging segments, building payload
+                // indexes, encoding quantized vectors) otherwise competes with
+                // search for the same cores at equal priority.
+                let result = common::cpu::run_with_low_priority("optimization", || {
                     optimizer.as_ref().optimize(
                         segments.clone(),
                         segments_to_merge,
@@ -373,7 +408,7 @@ impl UpdateWorkers {
                             optimizers_log.lock().register(tracker);
                         }),
                     )
-                }));
+                });
                 let is_optimized;
                 let status;
                 let reported_error;
@@ -430,8 +465,9 @@ impl UpdateWorkers {
 
     /// Ensure there is at least one appendable segment with enough capacity
     ///
-    /// If there is no appendable segment, or all are at or over capacity, a new empty one is
-    /// created.
+    /// If there is no appendable segment, or all are at or over capacity or have unflushed
+    /// copy-on-write moves out of them, a new empty one is created. See
+    /// [`shard::segment_holder::SegmentHolder::has_appendable_segment_with_capacity`].
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
     pub fn ensure_appendable_segment_with_capacity(
@@ -441,37 +477,26 @@ impl UpdateWorkers {
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
-        let no_segment_with_capacity = {
-            let segments_read = segments.read();
-            segments_read
-                .appendable_segments_ids()
-                .into_iter()
-                .filter_map(|segment_id| segments_read.get(segment_id))
-                .all(|segment| {
-                    let max_vector_size_bytes = segment
-                        .get()
-                        .read()
-                        .max_available_vectors_size_in_bytes()
-                        .unwrap_or_default();
-                    let max_segment_size_bytes = thresholds_config
-                        .max_segment_size_kb
-                        .saturating_mul(segment::common::BYTES_IN_KB);
-
-                    max_vector_size_bytes >= max_segment_size_bytes
-                })
-        };
+        let no_segment_with_capacity = !segments
+            .read()
+            .has_appendable_segment_with_capacity(thresholds_config.max_segment_size_bytes());
 
         if no_segment_with_capacity {
-            log::debug!("Creating new appendable segment, all existing segments are over capacity");
+            log::debug!(
+                "Creating new appendable segment, all existing ones are over capacity or have \
+                 unflushed copy-on-write moves out of them"
+            );
 
             let segments_guard = segments.upgradable_read();
-            let new_segment = segments_guard.build_tmp_segment(
+            // Building the segment yields a `NewSegmentToken` obliging us to register it.
+            let (new_segment, token) = segments_guard.build_tmp_segment(
                 segments_path,
                 Some(segment_config.plain_segment_config()),
                 payload_index_schema,
                 thresholds_config.deferred_internal_id,
                 true,
             )?;
+            segments_guard.sync_segment_manifest(Some(token))?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
             write_guard.add_new_locked(new_segment);
         }
@@ -507,6 +532,7 @@ impl UpdateWorkers {
         wal: LockedWal,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<std::num::NonZeroUsize>,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
@@ -520,14 +546,16 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    CollectionUpdater::update(
-                        &segments,
-                        op_num,
-                        operation.operation,
-                        update_operation_lock.clone(),
-                        update_tracker.clone(),
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                    ambient::unmeasured(reason("Internal operation"), || {
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation.operation,
+                            update_operation_lock.clone(),
+                            update_tracker.clone(),
+                            max_segment_size_bytes,
+                        )
+                    })?;
                 }
             }
         };

@@ -11,7 +11,6 @@ use collection::operations::types::{CollectionError, CollectionResult, UpdateRes
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
@@ -150,6 +149,10 @@ impl StrictModeVerification for UpdateOperation {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -236,6 +239,10 @@ impl StrictModeVerification for CreateFieldIndex {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -309,7 +316,6 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc_provider: impl CheckedTocProvider,
     collection_name: String,
@@ -318,7 +324,6 @@ pub async fn do_upsert_points(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     use point_ops::UpdateMode;
     use segment::types::Filter;
@@ -413,7 +418,6 @@ pub async fn do_upsert_points(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await?;
 
@@ -436,7 +440,6 @@ pub async fn do_delete_points(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
@@ -461,12 +464,10 @@ pub async fn do_delete_points(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc_provider: impl CheckedTocProvider,
     collection_name: String,
@@ -475,7 +476,6 @@ pub async fn do_update_vectors(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -510,7 +510,6 @@ pub async fn do_update_vectors(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await?;
 
@@ -524,7 +523,6 @@ pub async fn do_delete_vectors(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -563,7 +561,6 @@ pub async fn do_delete_vectors(
                 params,
                 shard_key.clone(),
                 auth.clone(),
-                hw_measurement_acc.clone(),
             )
             .await?,
         );
@@ -582,7 +579,6 @@ pub async fn do_delete_vectors(
                 params,
                 shard_key,
                 auth,
-                hw_measurement_acc,
             )
             .await?,
         );
@@ -598,7 +594,6 @@ pub async fn do_set_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -633,7 +628,6 @@ pub async fn do_set_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -645,7 +639,6 @@ pub async fn do_overwrite_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -681,7 +674,6 @@ pub async fn do_overwrite_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -693,7 +685,6 @@ pub async fn do_delete_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -726,7 +717,6 @@ pub async fn do_delete_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -738,7 +728,6 @@ pub async fn do_clear_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
@@ -763,12 +752,10 @@ pub async fn do_clear_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc_provider: impl CheckedTocProvider + Clone,
     collection_name: String,
@@ -777,7 +764,6 @@ pub async fn do_batch_update_points(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
     // Check strict mode for all batch operations, *before applying* them
     let mut toc = None;
@@ -811,7 +797,6 @@ pub async fn do_batch_update_points(
                     params,
                     auth.clone(),
                     inference_params.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -826,7 +811,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -838,7 +822,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -850,7 +833,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -862,7 +844,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -874,7 +855,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -887,7 +867,6 @@ pub async fn do_batch_update_points(
                     params,
                     auth.clone(),
                     inference_params.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -902,7 +881,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -921,7 +899,6 @@ pub async fn do_create_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -936,19 +913,36 @@ pub async fn do_create_index(
     )
     .await?;
 
-    let Some(field_schema) = operation.field_schema else {
+    // Building an index consumes memory and disk, but arrives at the shards
+    // through consensus, past the check on the update path — a peer must not
+    // refuse what the cluster has already agreed to. So the quota is applied
+    // here, before the operation is proposed at all.
+    shard::quota::global().check_update()?;
+
+    let CreateFieldIndex {
+        field_name,
+        field_schema,
+    } = operation;
+
+    let Some(field_schema) = field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
     };
 
+    let toc = dispatcher.toc(&auth, &pass).clone();
+
+    check_nested(&toc, &field_name, &field_schema)?;
+
+    // Once, before the schema is proposed and applied: every node, and the
+    // direct index operation below, must see the same params.
+    let field_schema = field_schema.normalized();
+
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
         collection_name: collection_name.clone(),
-        field_name: operation.field_name.clone(),
+        field_name: field_name.clone(),
         field_schema: field_schema.clone(),
     });
-
-    let toc = dispatcher.toc(&auth, &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
@@ -958,13 +952,37 @@ pub async fn do_create_index(
     do_create_index_internal(
         toc,
         collection_name,
-        operation.field_name,
+        field_name,
         Some(field_schema),
         internal_params,
         params,
-        hw_measurement_acc,
     )
     .await
+}
+
+/// Refuse a per-element index that `field_name` can't have, or that some peer would not
+/// build per element.
+fn check_nested(
+    toc: &TableOfContent,
+    field_name: &JsonPath,
+    field_schema: &PayloadFieldSchema,
+) -> Result<(), StorageError> {
+    if field_schema.nested().is_none() {
+        return Ok(());
+    }
+    field_schema
+        .validate_for_field(field_name)
+        .map_err(StorageError::bad_request)?;
+    if !toc
+        .get_channel_service()
+        .all_peers_at_version(&NESTED_PAYLOAD_INDEX_FROM_VERSION)
+    {
+        return Err(StorageError::bad_request(format!(
+            "`nested` requires all peers to run version {} or later",
+            *NESTED_PAYLOAD_INDEX_FROM_VERSION,
+        )));
+    }
+    Ok(())
 }
 
 pub async fn do_create_index_internal(
@@ -974,7 +992,6 @@ pub async fn do_create_index_internal(
     field_schema: Option<PayloadFieldSchema>,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -991,7 +1008,6 @@ pub async fn do_create_index_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
@@ -1003,7 +1019,6 @@ pub async fn do_delete_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -1027,15 +1042,7 @@ pub async fn do_delete_index(
         )
         .await?;
 
-    do_delete_index_internal(
-        toc,
-        collection_name,
-        index_name,
-        internal_params,
-        params,
-        hw_measurement_acc,
-    )
-    .await
+    do_delete_index_internal(toc, collection_name, index_name, internal_params, params).await
 }
 
 pub async fn do_delete_index_internal(
@@ -1044,7 +1051,6 @@ pub async fn do_delete_index_internal(
     index_name: JsonPath,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -1058,12 +1064,10 @@ pub async fn do_delete_index_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_create_vector_name(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -1072,7 +1076,6 @@ pub async fn do_create_vector_name(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // Validate the vector name once at the single chokepoint that both REST and
     // gRPC entrypoints land in (REST also runs the same check via `VectorNamePath`).
@@ -1080,10 +1083,10 @@ pub async fn do_create_vector_name(
         StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
     })?;
 
-    // Reject before consensus submission if strict mode is violated — in
-    // particular, refuse creating a new named vector while process memory is
-    // already over the configured threshold, since this operation allocates
-    // storage for the new vector across every existing point.
+    // Reject before consensus submission — this operation allocates storage for
+    // the new vector across every existing point, and once proposed it reaches
+    // the shards past the check on the update path, where a peer must not refuse
+    // what the cluster has already agreed to.
     let operation = shard::operations::CreateVectorName {
         vector_name: vector_name.clone(),
         config: config.clone(),
@@ -1096,6 +1099,7 @@ pub async fn do_create_vector_name(
         &auth,
     )
     .await?;
+    shard::quota::global().check_update()?;
 
     let consensus_op = CreateNamedVector {
         collection_name: collection_name.clone(),
@@ -1120,7 +1124,6 @@ pub async fn do_create_vector_name(
         config,
         internal_params,
         params,
-        hw_measurement_acc,
     )
     .await
 }
@@ -1132,7 +1135,6 @@ pub async fn do_create_vector_name_internal(
     config: segment::data_types::vector_name_config::VectorNameConfig,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::VectorNameOperation(
         VectorNameOperations::CreateVectorName(CreateVectorName {
@@ -1149,7 +1151,6 @@ pub async fn do_create_vector_name_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
@@ -1161,7 +1162,6 @@ pub async fn do_delete_vector_name(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     use collection::operations::verification::new_unchecked_verification_pass;
 
@@ -1181,15 +1181,7 @@ pub async fn do_delete_vector_name(
         )
         .await?;
 
-    do_delete_vector_name_internal(
-        toc,
-        collection_name,
-        vector_name,
-        internal_params,
-        params,
-        hw_measurement_acc,
-    )
-    .await
+    do_delete_vector_name_internal(toc, collection_name, vector_name, internal_params, params).await
 }
 
 pub async fn do_delete_vector_name_internal(
@@ -1198,7 +1190,6 @@ pub async fn do_delete_vector_name_internal(
     vector_name: String,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::VectorNameOperation(
         VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
@@ -1212,12 +1203,10 @@ pub async fn do_delete_vector_name_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn update(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1226,7 +1215,6 @@ pub async fn update(
     params: UpdateParams,
     shard_key: Option<ShardKeySelector>,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let InternalUpdateParams {
         shard_id,
@@ -1249,16 +1237,23 @@ pub async fn update(
         wait_override.unwrap_or_else(|| collection::shards::shard_trait::WaitUntil::from(wait));
 
     let shard_selector = match operation {
-        CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {
+        CollectionUpdateOperations::PointOperation(
+            point_ops::PointOperations::SyncPoints(_)
+            | point_ops::PointOperations::SyncPointsRaw(_)
+            | point_ops::PointOperations::UpsertPointsRaw(_),
+        ) => {
             debug_assert_eq!(
                 shard_key, None,
-                "Sync points operations can't specify shard key"
+                "Sync points and raw point operations can't specify shard key"
             );
 
             match shard_id {
                 Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
                 None => {
-                    debug_assert!(false, "Sync operation is supposed to select shard directly");
+                    debug_assert!(
+                        false,
+                        "Sync and raw operations are supposed to select shard directly"
+                    );
                     ShardSelectorInternal::Empty
                 }
             }
@@ -1298,7 +1293,6 @@ pub async fn update(
         ordering,
         shard_selector,
         auth,
-        hw_measurement_acc,
     )
     .await
 }

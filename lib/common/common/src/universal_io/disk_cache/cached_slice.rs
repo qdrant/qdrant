@@ -66,9 +66,18 @@ impl CachedSlice {
             return Ok(ACow::Borrowed(&[]));
         }
 
+        // fast path: all required blocks are already in cache and allocated consecutively.
+        // Return a single borrowed slice without allocating.
+        if let Some(contiguous_slice) = self
+            .controller
+            .get_contiguous_from_cache(self.blocks_for(range.clone()))
+        {
+            return Ok(ACow::Borrowed(contiguous_slice));
+        }
+
         let mut blocks_iter = self.blocks_for(range.clone());
 
-        // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
+        // Single block fast path: avoids upfront allocation by exactly sizing `AVec` inside `on_miss`
         if blocks_iter.len() == 1 {
             let req = blocks_iter.next().expect("We just checked len() == 1");
             let result = self.controller.get_from_cache(req, |bytes| {
@@ -129,6 +138,23 @@ impl CachedSlice {
         Ok(())
     }
 
+    pub fn will_need(&self, byte_ranges: impl Iterator<Item = Range<usize>>) {
+        if !crate::mmap::advice::thread_faulted().unwrap_or(false) {
+            return;
+        }
+        for range in byte_ranges {
+            if range.is_empty() || range.end > self.len_bytes {
+                continue;
+            }
+            if let Some(slice) = self
+                .controller
+                .get_contiguous_from_cache(self.blocks_for(range))
+            {
+                crate::mmap::advice::will_need(slice);
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn get<T: bytemuck::Pod>(&self, idx: usize) -> io::Result<Cow<'_, T>> {
         let slice = self.get_range::<T>(idx..idx + 1)?;
@@ -143,6 +169,10 @@ impl CachedSlice {
 
     pub fn len<T>(&self) -> usize {
         self.len_bytes / size_of::<T>()
+    }
+
+    pub fn is_empty<T>(&self) -> bool {
+        self.len::<T>() == 0
     }
 
     /// Returns the block descriptor for the provided bytes range.

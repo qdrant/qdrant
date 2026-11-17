@@ -1,0 +1,141 @@
+use std::path::Path;
+
+use common::ambient;
+use common::types::PointOffsetType;
+use common::universal_io::{
+    MmapFile, MmapFs, Populate, ReadOnly, UniversalRead, UniversalReadFs as _,
+};
+use tempfile::TempDir;
+
+use super::UpdateOnlyPayloadStorage;
+use crate::payload_json;
+use crate::payload_storage::PayloadStorageRead as _;
+use crate::payload_storage::payload_storage_impl::PayloadStorageImpl;
+use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
+use crate::types::Payload;
+
+type Writer = UpdateOnlyPayloadStorage<MmapFile>;
+
+fn payload(n: u64) -> Payload {
+    payload_json! { "n": n, "text": format!("payload {n}") }
+}
+
+/// Read the segment's payload storage back through the read-only side, over a
+/// backend that cannot write.
+fn read_back(
+    segment_path: &Path,
+    slots: impl IntoIterator<Item = PointOffsetType>,
+) -> Vec<Payload> {
+    type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
+        ReadOnlyPayloadStorage::open(&fs, segment_path.to_path_buf(), Populate::No).unwrap();
+
+    slots
+        .into_iter()
+        .map(|slot| storage.get(slot).unwrap())
+        .collect()
+}
+
+/// A batch is durable once `append_many` returns, and a second writer resumes
+/// where the first one left off.
+#[test]
+fn batches_are_durable_and_resume() {
+    let dir = TempDir::with_prefix("update_only_payload").unwrap();
+    let _scope = ambient::test_guard();
+
+    let first: Vec<Payload> = (0..3).map(payload).collect();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    writer.append_many(&MmapFs, 0, &first).unwrap();
+    drop(writer);
+
+    assert_eq!(read_back(dir.path(), 0..3), first);
+
+    let second: Vec<Payload> = (10..13).map(payload).collect();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    writer.append_many(&MmapFs, 3, &second).unwrap();
+    drop(writer);
+
+    assert_eq!(
+        read_back(dir.path(), 0..6),
+        first.iter().chain(&second).cloned().collect::<Vec<_>>(),
+    );
+}
+
+/// Slots with an empty payload are not written at all, and read back empty.
+#[test]
+fn empty_payloads_read_back_empty() {
+    let dir = TempDir::with_prefix("update_only_payload").unwrap();
+    let _scope = ambient::test_guard();
+
+    let empty = Payload::default();
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            [&payload(0), &empty, &empty, &empty, &payload(4)],
+        )
+        .unwrap();
+    drop(writer);
+
+    assert_eq!(
+        read_back(dir.path(), 0..6),
+        vec![
+            payload(0),
+            empty.clone(),
+            empty.clone(),
+            empty.clone(),
+            payload(4),
+            empty,
+        ],
+    );
+}
+
+/// A slot far above everything the storage holds is written where it belongs,
+/// including on a storage that holds nothing at all.
+#[test]
+fn first_payload_may_land_on_a_high_slot() {
+    let dir = TempDir::with_prefix("update_only_payload").unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    writer
+        .append_many(&MmapFs, 1_000, [&payload(1_000)])
+        .unwrap();
+    drop(writer);
+
+    assert_eq!(
+        read_back(dir.path(), [0, 999, 1_000]),
+        vec![Payload::default(), Payload::default(), payload(1_000),]
+    );
+}
+
+/// The storage is append-only: a slot a previous writer already holds a
+/// payload for cannot be written a second time.
+#[test]
+fn rewriting_a_slot_is_rejected() {
+    let dir = TempDir::with_prefix("update_only_payload").unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    writer
+        .append_many(&MmapFs, 0, [&payload(0), &payload(1)])
+        .unwrap();
+    drop(writer);
+
+    let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
+    assert!(writer.append_many(&MmapFs, 0, [&payload(0)]).is_err());
+}
+
+/// A payload storage created in mutable mode is refused rather than opened.
+#[test]
+fn mutable_storage_is_refused() {
+    let dir = TempDir::with_prefix("update_only_payload").unwrap();
+
+    let storage: PayloadStorageImpl =
+        PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
+    drop(storage);
+
+    assert!(Writer::open(&MmapFs, dir.path()).is_err());
+}

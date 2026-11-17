@@ -11,9 +11,9 @@ use examples::TMP_DIR;
 use qdrant_edge::bm25_embed::{EdgeBm25, EdgeBm25Config};
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
-    EdgeConfig, EdgeShard, EdgeSparseVectorParams, Modifier, NamedQuery, PointInsertOperations,
-    PointOperations, PointStruct, QueryEnum, QueryRequest, ScoringQuery, UpdateOperation,
-    VectorInternal, Vectors, WithPayloadInterface, WithVector,
+    EdgeConfig, EdgeShard, EdgeSparseVectorParams, Memory, Modifier, NamedQuery,
+    PointInsertOperations, PointOperations, PointStruct, QueryEnum, QueryRequestBuilder,
+    ScoringQuery, UpdateOperation, VectorInternal, Vectors, WithPayloadInterface,
 };
 
 const SPARSE_VECTOR_NAME: &str = "text";
@@ -30,6 +30,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             SPARSE_VECTOR_NAME.to_string(),
             EdgeSparseVectorParams {
                 modifier: Some(Modifier::Idf),
+                // Keep the sparse index on the heap for fast lookups.
+                memory: Some(Memory::Pinned),
                 ..Default::default()
             },
         )]),
@@ -64,23 +66,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
     ))?;
     shard.optimize()?;
-    println!("Info: {:?}", shard.info());
+    println!("Info: {:?}", shard.info()?);
 
     let query = bm25.embed_query("clever fox");
-    let results = shard.query(QueryRequest {
-        prefetches: vec![],
-        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
-            query: VectorInternal::from(query),
-            using: Some(SPARSE_VECTOR_NAME.to_string()),
-        }))),
-        filter: None,
-        score_threshold: None,
-        limit: 3,
-        offset: 0,
-        params: None,
-        with_vector: WithVector::Bool(false),
-        with_payload: WithPayloadInterface::Bool(true),
-    })?;
+    let results = shard.query(
+        QueryRequestBuilder::new(3)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery {
+                query: VectorInternal::from(query),
+                using: Some(SPARSE_VECTOR_NAME.to_string()),
+            })))
+            .with_payload(WithPayloadInterface::Bool(true))
+            .build(),
+    )?;
 
     println!("Got {} results", results.len());
     for r in &results {

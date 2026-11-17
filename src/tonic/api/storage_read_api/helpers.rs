@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::shard::ShardId;
-use common::universal_io::{ReadRange, UniversalIoError, UniversalRead, UniversalReadFileOps};
+use common::universal_io::{
+    ReadRange, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
+};
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
@@ -13,7 +15,7 @@ use crate::tonic::api::storage_read_api::StorageReadService;
 
 impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S>
 where
-    <S::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    <S::Fs as UniversalReadFs>::ContextConfig: Default,
 {
     pub fn new(dispatcher: Arc<Dispatcher>) -> Result<Self, UniversalIoError> {
         let fs = S::Fs::from_context(Default::default())?;
@@ -205,7 +207,7 @@ fn canonicalize_existing_ancestor(path: &Path) -> std::io::Result<Option<PathBuf
 
 /// Validate a requested range against the file size using the same
 /// out-of-bounds semantics as `UniversalRead::read()`.
-pub fn validate_range(range: ReadRange, data_length: u64) -> common::universal_io::Result<()> {
+pub fn validate_range(range: ReadRange, data_length: u64) -> UioResult<()> {
     let end = range
         .byte_offset
         .checked_add(range.length)
@@ -260,11 +262,16 @@ pub fn io_error_to_status(e: UniversalIoError) -> Status {
         UniversalIoError::Uninitialized { description } => {
             Status::internal(format!("Uninitialized: {description}"))
         }
+        UniversalIoError::UnchangedOpen { .. } => Status::internal(e.to_string()),
         UniversalIoError::Bincode(e) => Status::internal(format!("Bincode error: {e}")),
         UniversalIoError::BytemuckCast(e) => Status::internal(format!("Bytemuck cast error: {e}")),
         UniversalIoError::ZerocopySize(e) => Status::internal(e),
         UniversalIoError::QueueIsFull => Status::internal(e.to_string()),
-        UniversalIoError::S3(_)
+        UniversalIoError::AppendOffsetConflict { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendRewriteRequired { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendEntityTooSmall { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::AppendEtagMismatch { .. } => Status::aborted(e.to_string()),
+        UniversalIoError::S3 { .. }
         | UniversalIoError::S3Config { .. }
         | UniversalIoError::TaskPanicked(_) => Status::internal(e.to_string()),
     }

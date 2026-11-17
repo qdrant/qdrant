@@ -1,14 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use fs_err as fs;
 
 use super::super::read_ops::BoolIndexRead;
 use super::{FALSES_DIRNAME, MutableBoolIndex, Storage, TRUES_DIRNAME};
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::roaring_flags::{RoaringFlags, RoaringFlagsRead};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
@@ -26,7 +25,6 @@ impl MutableBoolIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    /// - `is_on_disk` - If the index should be kept on disk. Memory will be populated if false.
     /// - `create_if_missing` - If true, creates the index if it doesn't exist.
     pub fn open(path: &Path, create_if_missing: bool) -> OperationResult<Option<Self>> {
         let falses_dir = path.join(FALSES_DIRNAME);
@@ -46,21 +44,29 @@ impl MutableBoolIndex {
             ))
         })?;
 
-        // Trues bitslice
-        let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicStoredFlags::open(&MmapFs, &trues_path, false)?;
-        let trues_flags = RoaringFlags::new(MmapFs, trues_slice)?;
+        // Trues flags
+        let trues_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(TRUES_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
-        // Falses bitslice
-        let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicStoredFlags::open(&MmapFs, &falses_path, false)?;
-        let falses_flags = RoaringFlags::new(MmapFs, falses_slice)?;
+        // Falses flags
+        let falses_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(FALSES_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
-        let trues_count = trues_flags.count_trues();
-        let falses_count = falses_flags.count_trues();
+        // Infallible for the writable variant: its bitmaps are materialized by
+        // `RoaringFlags::new` above.
+        let trues_count = trues_flags.count_trues()?;
+        let falses_count = falses_flags.count_trues()?;
         let indexed_count = {
-            let trues = trues_flags.get_bitmap();
-            let falses = falses_flags.get_bitmap();
+            let trues = trues_flags.get_bitmap()?;
+            let falses = falses_flags.get_bitmap()?;
             trues.union_len(falses) as usize
         };
 
@@ -182,7 +188,6 @@ impl ValueIndexer for MutableBoolIndex {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
@@ -246,7 +251,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new() // everything is mutable
+        BoolIndexRead::immutable_files(self)
     }
 }
 
@@ -264,9 +269,8 @@ impl FieldIndexBuilderTrait for MutableBoolIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+    ) -> OperationResult<bool> {
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

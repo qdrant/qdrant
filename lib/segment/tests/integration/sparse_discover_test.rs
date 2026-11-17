@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::types::TelemetryDetail;
+use common::universal_io::MmapFs;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -125,6 +127,7 @@ fn sparse_index_discover_test() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -134,6 +137,7 @@ fn sparse_index_discover_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     let dense_config = SegmentConfig {
         vector_data: HashMap::from([(
@@ -149,23 +153,24 @@ fn sparse_index_discover_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
         sparse_vector_data: Default::default(),
     };
 
-    let mut sparse_segment = build_segment(dir.path(), &sparse_config, None, true).unwrap();
-    let mut dense_segment = build_segment(dir.path(), &dense_config, None, true).unwrap();
+    let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
+    let (mut dense_segment, _) = build_segment(dir.path(), &dense_config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
         sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, sparse_vector)
             .unwrap();
         dense_segment
-            .upsert_point(n as SeqNumberType, idx, dense_vector, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, dense_vector)
             .unwrap();
     }
 
@@ -173,7 +178,9 @@ fn sparse_index_discover_test() {
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
+        fs: &MmapFs,
         config: SparseIndexConfig {
+            memory: None,
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
             datatype: Some(VectorStorageDatatype::Float32),
@@ -218,13 +225,14 @@ fn sparse_index_discover_test() {
 
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
-        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
+        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
 
-        let sparse_search_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &vector_context)
+        let sparse_search_result = query_context
+            .handoff()
+            .enter(|| sparse_index.search(&[&sparse_query], None, top, None, &vector_context))
             .unwrap();
 
-        let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+        let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
         assert!(cpu_usage > 0);
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
@@ -263,6 +271,7 @@ fn sparse_index_hardware_measurement_test() {
             SPARSE_VECTOR_NAME.to_owned(),
             SparseVectorDataConfig {
                 index: SparseIndexConfig {
+                    memory: None,
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
@@ -272,25 +281,28 @@ fn sparse_index_hardware_measurement_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
 
-    let mut sparse_segment = build_segment(dir.path(), &sparse_config, None, true).unwrap();
+    let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, _) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
         sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, sparse_vector)
             .unwrap();
     }
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
+        fs: &MmapFs,
         config: SparseIndexConfig {
+            memory: None,
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
             datatype: Some(VectorStorageDatatype::Float32),
@@ -310,19 +322,20 @@ fn sparse_index_hardware_measurement_test() {
 
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
-    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
+    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
 
-    let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+    let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
     assert_eq!(cpu_usage, 0);
 
     // Some filter so we do plain sparse search
     let ids: AHashSet<PointIdType> = (0..3).map(ExtendedPointId::NumId).collect();
     let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
-    sparse_index
-        .search(&[&query_vec], Some(&filter), 1, None, &vector_context)
+    query_context
+        .handoff()
+        .enter(|| sparse_index.search(&[&query_vec], Some(&filter), 1, None, &vector_context))
         .unwrap();
 
-    let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+    let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
     assert!(cpu_usage > 0);
 }

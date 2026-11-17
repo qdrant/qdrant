@@ -8,7 +8,9 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::index::{TextIndexParams, TextIndexType};
+use segment::data_types::index::{
+    KeywordIndexParams, KeywordIndexType, TextIndexParams, TextIndexType,
+};
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -240,6 +242,8 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Value(match_value) => infer_index_from_match_value(match_value),
             Match::Text(_match_text) => vec![FieldIndexType::Text],
             Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
+            Match::Prefix(_match_prefix) => vec![FieldIndexType::KeywordPrefix],
+            Match::Substring(_match_substring) => vec![FieldIndexType::KeywordPrefix],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
@@ -359,14 +363,11 @@ impl<'a> Extractor<'a> {
     }
 
     fn update_from_condition(&mut self, nested_prefix: Option<&JsonPath>, condition: &Condition) {
-        let key;
-        let required_index;
-
-        match condition {
-            Condition::Field(field_condition) => {
-                key = &field_condition.key;
-                required_index = infer_index_from_field_condition(field_condition);
-            }
+        let (key, required_index) = match condition {
+            Condition::Field(field_condition) => (
+                &field_condition.key,
+                infer_index_from_field_condition(field_condition),
+            ),
             Condition::Filter(filter) => {
                 self.update_from_filter(nested_prefix, filter);
                 return;
@@ -382,18 +383,14 @@ impl<'a> Extractor<'a> {
                 return;
             }
             // Any index will suffice to get the satellite null index
-            Condition::IsEmpty(is_empty) => {
-                key = &is_empty.is_empty.key;
-                required_index = all_indexes().collect();
-            }
-            Condition::IsNull(is_null) => {
-                key = &is_null.is_null.key;
-                required_index = all_indexes().collect();
-            }
+            Condition::IsEmpty(is_empty) => (&is_empty.is_empty.key, all_indexes().collect()),
+            Condition::IsNull(is_null) => (&is_null.is_null.key, all_indexes().collect()),
             // No index needed
             Condition::HasId(_) => return,
             Condition::CustomIdChecker(_) => return,
+            Condition::ResolvedPoints(_) => return,
             Condition::HasVector(_) => return,
+            Condition::Slice(_) => return,
         };
 
         // An empty required-index set means the condition is a no-op (e.g.
@@ -479,6 +476,13 @@ impl<'a> Extractor<'a> {
                 }
                 return;
             }
+            ExpressionInternal::Max(expression_internals)
+            | ExpressionInternal::Min(expression_internals) => {
+                for expr in expression_internals {
+                    self.update_from_expression(expr);
+                }
+                return;
+            }
             ExpressionInternal::Neg(expression_internal) => {
                 self.update_from_expression(expression_internal);
                 return;
@@ -510,6 +514,10 @@ impl<'a> Extractor<'a> {
                 return;
             }
             ExpressionInternal::Ln(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Acosh(expression_internal) => {
                 self.update_from_expression(expression_internal);
                 return;
             }
@@ -548,6 +556,8 @@ enum FieldIndexType {
     IntMatch,
     IntRange,
     KeywordMatch,
+    /// Keyword index with the `prefix` option enabled.
+    KeywordPrefix,
     FloatRange,
     Text,
     TextPhrase,
@@ -578,7 +588,12 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaType::Datetime => index_types.insert(FieldIndexType::DatetimeRange),
         },
         PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
-            PayloadSchemaParams::Keyword(_) => index_types.insert(FieldIndexType::KeywordMatch),
+            PayloadSchemaParams::Keyword(keyword_index_params) => {
+                if keyword_index_params.prefix.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::KeywordPrefix);
+                }
+                index_types.insert(FieldIndexType::KeywordMatch)
+            }
             PayloadSchemaParams::Integer(integer_index_params) => {
                 if integer_index_params.lookup.unwrap_or(true) {
                     index_types.insert(FieldIndexType::IntMatch);
@@ -623,6 +638,13 @@ impl From<FieldIndexType> for PayloadFieldSchema {
             FieldIndexType::KeywordMatch => {
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
             }
+            FieldIndexType::KeywordPrefix => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                    r#type: KeywordIndexType::Keyword,
+                    prefix: Some(true),
+                    ..Default::default()
+                }))
+            }
             FieldIndexType::FloatRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             FieldIndexType::Text => PayloadFieldSchema::FieldType(PayloadSchemaType::Text),
             FieldIndexType::TextPhrase => {
@@ -648,6 +670,119 @@ mod tests {
     use segment::data_types::index::IntegerIndexParams;
 
     use super::*;
+
+    #[test]
+    fn keyword_prefix_capabilities() {
+        // Plain keyword index (by type or by params) doesn't serve prefix.
+        let plain = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let index_types = schema_capabilities(&plain);
+        assert!(index_types.contains(&FieldIndexType::KeywordMatch));
+        assert!(!index_types.contains(&FieldIndexType::KeywordPrefix));
+
+        // Keyword index with `prefix` serves both exact and prefix match.
+        let with_prefix =
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                r#type: KeywordIndexType::Keyword,
+                prefix: Some(true),
+                ..Default::default()
+            }));
+        let index_types = schema_capabilities(&with_prefix);
+        assert!(index_types.contains(&FieldIndexType::KeywordMatch));
+        assert!(index_types.contains(&FieldIndexType::KeywordPrefix));
+
+        // A prefix condition requires the prefix capability.
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_prefix("https://"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordPrefix],
+        );
+    }
+
+    /// The walker shares one arm for `max` and `min`, so this pins down that `min` recurses too
+    /// rather than relying on the shared arm staying shared.
+    #[test]
+    fn min_operands_report_unindexed_payload_fields() {
+        let payload_schema = HashMap::new();
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_expression(&ExpressionInternal::Min(vec![
+            ExpressionInternal::Variable("$score".to_string()),
+            ExpressionInternal::Variable("popularity".to_string()),
+        ]));
+
+        let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
+        assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
+    }
+
+    /// Payload fields referenced inside `max` still need an index, so the walker must recurse
+    /// into its operands the same way it does for `sum` and `mult`. Missing this would silently
+    /// stop suggesting indexes for any field used under a max.
+    #[test]
+    fn max_operands_report_unindexed_payload_fields() {
+        let payload_schema = HashMap::new();
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_expression(&ExpressionInternal::Max(vec![
+            ExpressionInternal::Variable("$score".to_string()),
+            ExpressionInternal::Variable("popularity".to_string()),
+        ]));
+
+        let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
+        assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
+    }
+
+    /// The schema named in the strict-mode rejection is what the user has to
+    /// create, so pin how it renders.
+    #[test]
+    fn substring_on_plain_keyword_index_reports_prefix_schema() {
+        let payload_schema = HashMap::from([(
+            JsonPath::new("url"),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+        )]);
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("url"),
+            segment::types::Match::new_substring("qdrant"),
+        )));
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_filter_once(None, &filter);
+
+        let reported = extractor
+            .unindexed_schema()
+            .get(&JsonPath::new("url"))
+            .unwrap();
+        assert_eq!(
+            reported
+                .iter()
+                .map(|schema| schema.to_string())
+                .collect_vec(),
+            vec!["keyword (with prefix: true)"],
+        );
+    }
+
+    #[test]
+    fn substring_requires_keyword_prefix_index() {
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_substring("qdrant"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordPrefix],
+        );
+        // A keyword index without the `prefix` option has no key dictionary
+        // to scan, so it cannot serve the condition and does not satisfy
+        // strict mode. The same holds for a text index, which holds tokens
+        // rather than raw values. Without strict mode the condition still
+        // runs through the payload fallback.
+        let keyword = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        assert!(!schema_capabilities(&keyword).contains(&FieldIndexType::KeywordPrefix));
+        let text = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
+        assert!(!schema_capabilities(&text).contains(&FieldIndexType::KeywordPrefix));
+    }
 
     #[test]
     fn integer_index_capacities() {

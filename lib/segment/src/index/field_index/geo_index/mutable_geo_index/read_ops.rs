@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use super::super::read_ops::GeoIndexRead;
 use super::MutableGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
+use crate::index::field_index::utils::check_each_sequential;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
@@ -23,30 +24,29 @@ impl GeoIndexRead for MutableGeoIndex {
         self.in_memory_index.max_values_per_point()
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        self.in_memory_index.points_of_hash(hash, hw_counter)
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        self.in_memory_index.points_of_hash(hash)
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        self.in_memory_index.values_of_hash(hash, hw_counter)
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        self.in_memory_index.values_of_hash(hash)
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        self.in_memory_index
-            .check_values_any(idx, hw_counter, check_fn)
+    ) -> OperationResult<bool> {
+        self.in_memory_index.check_values_any(idx, check_fn)
+    }
+
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {
@@ -79,7 +79,7 @@ impl GeoIndexRead for MutableGeoIndex {
         self.in_memory_index.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

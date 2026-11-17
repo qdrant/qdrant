@@ -5,8 +5,8 @@ mod versions_storage;
 #[cfg(test)]
 pub(super) mod tests;
 
-#[allow(dead_code)]
 pub mod read_only;
+pub mod update_only;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,8 +29,12 @@ use self::versions_storage::{
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{
+    DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
+    default_external_ids_batch, default_internal_versions_batch,
+};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// Mutable in-memory ID tracker with simple file based backing storage
@@ -42,9 +46,6 @@ use crate::types::{PointIdType, SeqNumberType};
 /// This structure may grow forever by collecting changes. It therefore relies on the optimization
 /// processes in Qdrant to eventually vacuum the segment this ID tracker belongs to. Reoptimization
 /// will clear all collected changes and start from scratch.
-///
-/// This ID tracker primarily replaces [`SimpleIdTracker`], so that we can eliminate the use of
-/// RocksDB.
 #[derive(Debug)]
 pub struct MutableIdTracker {
     segment_path: PathBuf,
@@ -56,6 +57,10 @@ pub struct MutableIdTracker {
 
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
+
+    /// Whether deletes are persisted with their version, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions).
+    delete_versioning: DeleteVersioning,
 
     is_alive_lock: IsAliveLock,
 
@@ -73,6 +78,20 @@ impl MutableIdTracker {
     pub fn open(
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
+        Self::open_with_delete_versioning(
+            segment_path,
+            deferred_internal_id,
+            DeleteVersioning::from_feature_flags(),
+        )
+    }
+
+    /// Like [`open`](Self::open), with deletes persisted as `versioning` says rather than as the
+    /// feature flags do.
+    pub(crate) fn open_with_delete_versioning(
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        delete_versioning: DeleteVersioning,
     ) -> OperationResult<Self> {
         let segment_path = segment_path.into();
 
@@ -141,6 +160,7 @@ impl MutableIdTracker {
             mappings,
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
+            delete_versioning,
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
         })
@@ -154,6 +174,7 @@ impl MutableIdTracker {
             mappings,
             pending_versions: _, // transient, small
             pending_mappings: _, // transient, small
+            delete_versioning: _,
             is_alive_lock: _,
             mappings_expected_len: _,
         } = self;
@@ -168,11 +189,36 @@ impl MutableIdTracker {
             .filter(|path| path.is_file())
             .collect()
     }
+
+    /// The mapping change that persists the delete of `external_id`: with
+    /// [`DeleteVersioning::Versioned`], a versioned entry when the delete has a `version`.
+    fn delete_change(
+        &self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> MappingChange {
+        match (self.delete_versioning, version) {
+            (DeleteVersioning::Versioned, Some(version)) => {
+                MappingChange::DeleteVersioned(external_id, version)
+            }
+            (DeleteVersioning::Versioned, None) | (DeleteVersioning::Unversioned, _) => {
+                MappingChange::Delete(external_id)
+            }
+        }
+    }
 }
 
 impl IdTrackerRead for MutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
+    }
+
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
     }
 
     fn internal_id_with_behavior(
@@ -188,7 +234,17 @@ impl IdTrackerRead for MutableIdTracker {
         self.mappings.external_id(internal_id)
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
+    }
+
+    type Backend = common::universal_io::MmapFile;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
 
@@ -214,13 +270,13 @@ impl IdTrackerRead for MutableIdTracker {
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(
             self.internal_to_version
                 .iter()
                 .enumerate()
                 .map(|(i, version)| (i as PointOffsetType, *version)),
-        )
+        ))
     }
 
     fn name(&self) -> &'static str {
@@ -272,23 +328,31 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
-            .push(MappingChange::Delete(external_id));
+            .push(self.delete_change(external_id, version));
         if let Some(internal_id) = internal_id {
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
             self.pending_mappings
                 .lock()
-                .push(MappingChange::Delete(external_id));
+                .push(self.delete_change(external_id, version));
         }
 
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
@@ -396,6 +460,7 @@ impl IdTracker for MutableIdTracker {
             mappings: _,            // kept in RAM
             pending_versions: _,
             pending_mappings: _,
+            delete_versioning: _,
             is_alive_lock: _,
             mappings_expected_len: _,
         } = self;

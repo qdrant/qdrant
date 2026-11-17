@@ -8,13 +8,13 @@ use api::rest::models::{
     CollectionDescription, CollectionsResponse, ShardKeyDescription, ShardKeysResponse,
 };
 use collection::config::ShardingMethod;
-#[cfg(feature = "staging")]
-use collection::operations::cluster_ops::TestSlowDownOperation;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
     RestartTransfer, RestartTransferOperation, StartResharding,
 };
+#[cfg(feature = "staging")]
+use collection::operations::cluster_ops::{TestSlowDownOperation, TestTransientErrorOperation};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
@@ -32,12 +32,12 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
-#[cfg(feature = "staging")]
-use storage::content_manager::collection_meta_ops::TestSlowDown;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
 };
+#[cfg(feature = "staging")]
+use storage::content_manager::collection_meta_ops::{TestSlowDown, TestTransientError};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -111,14 +111,13 @@ pub async fn do_get_collection_shard_keys(
 
     let collection = toc.get_collection(&collection_pass).await?;
 
-    let state = collection.state().await;
-    let shard_keys = match state.config.params.sharding_method.unwrap_or_default() {
+    let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
+    let shard_keys = match sharding_method {
         ShardingMethod::Auto => None,
         ShardingMethod::Custom => Some(
-            state
-                .shards_key_mapping
-                .iter_shard_keys()
-                .map(|k| ShardKeyDescription { key: k.clone() })
+            shard_keys
+                .into_iter()
+                .map(|key| ShardKeyDescription { key })
                 .collect(),
         ),
     };
@@ -259,9 +258,7 @@ pub async fn do_update_collection_cluster(
     )?;
 
     if dispatcher.consensus_state().is_none() {
-        return Err(StorageError::bad_request(
-            "Distributed mode disabled".to_string(),
-        ));
+        return Err(StorageError::standalone_mode());
     }
     let consensus_state = dispatcher.consensus_state().unwrap();
 
@@ -485,6 +482,27 @@ pub async fn do_update_collection_cluster(
 
             validate_peer_exists(drop_replica.peer_id)?;
 
+            // Checked against this peer's state before proposing, so a replica may still die
+            // before the drop is applied. Not checked at apply time on purpose: the consensus
+            // operation stays a plain drop, which peers on older versions apply the same way.
+            if let Some(min) = drop_replica.min_active {
+                let state = collection.state().await;
+                let other_active = state.shards.get(&drop_replica.shard_id).map_or(0, |shard| {
+                    shard
+                        .replicas
+                        .iter()
+                        .filter(|&(&id, state)| id != drop_replica.peer_id && state.is_active())
+                        .count()
+                });
+                if other_active < min as usize {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {} has {other_active} other active replicas besides {}, but at \
+                         least {min} are required",
+                        drop_replica.shard_id, drop_replica.peer_id,
+                    )));
+                }
+            }
+
             let mut update_operation = UpdateCollectionOperation::new_empty(collection_name);
 
             update_operation.set_shard_replica_changes(vec![replica_set::Change::Remove(
@@ -605,9 +623,9 @@ pub async fn do_update_collection_cluster(
             // - proper sharding method is used
             // - key does exist
 
-            let state = collection.state().await;
+            let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
 
-            match state.config.params.sharding_method.unwrap_or_default() {
+            match sharding_method {
                 ShardingMethod::Auto => {
                     return Err(StorageError::bad_request(
                         "Shard Key cannot be created with Auto sharding method",
@@ -616,8 +634,7 @@ pub async fn do_update_collection_cluster(
                 ShardingMethod::Custom => {}
             }
 
-            let shard_keys_mapping = state.shards_key_mapping;
-            if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
+            if !shard_keys.contains(&drop_sharding_key.shard_key) {
                 return Err(StorageError::bad_request(format!(
                     "Sharding key {} does not exist for collection {collection_name}",
                     drop_sharding_key.shard_key,
@@ -968,6 +985,30 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::TestSlowDown(TestSlowDown {
                         peer_id: test_slow_down.peer_id,
                         duration_ms,
+                    }),
+                    auth,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        #[cfg(feature = "staging")]
+        ClusterOperations::TestTransientError(TestTransientErrorOperation {
+            test_transient_error,
+        }) => {
+            if let Some(peer_id) = test_transient_error.peer_id {
+                validate_peer_exists(peer_id)?;
+            }
+
+            // Convert probability (f64, 0.0-1.0) to percent (u8, 0-100)
+            let failure_probability_percent =
+                (test_transient_error.failure_probability * 100.0) as u8;
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TestTransientError(TestTransientError {
+                        peer_id: test_transient_error.peer_id,
+                        failure_probability_percent,
                     }),
                     auth,
                     wait_timeout,

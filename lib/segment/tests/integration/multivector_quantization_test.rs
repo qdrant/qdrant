@@ -1,10 +1,14 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -63,8 +67,14 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
         .count()
 }
 
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
+// `test_attr(ignore = ...)` (not just `ignore = ...`) is required for rstest
+// to forward the attribute to each generated per-case test function. See
+// `byte_storage_quantization_test.rs` for another use of this pattern.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 #[case::nearest_binary_dot(
     QueryVariant::Nearest,
     QuantizationVariant::Binary,
@@ -220,13 +230,14 @@ fn test_multivector_quantization_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
 
     let int_key = "int";
 
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();
@@ -236,41 +247,35 @@ fn test_multivector_quantization_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_multi_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_multi_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     segment
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let quantization_config = match quantization_variant {
         QuantizationVariant::Scalar => ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: Some(false),
         }
         .into(),
         QuantizationVariant::PQ => ProductQuantizationConfig {
+            memory: None,
             compression: CompressionRatio::X8,
             always_ram: Some(false),
         }
         .into(),
         QuantizationVariant::Binary => BinaryQuantizationConfig {
+            memory: None,
             always_ram: Some(false),
             encoding: None,
             query_encoding: None,
@@ -304,6 +309,7 @@ fn test_multivector_quantization_hnsw(
     });
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,
@@ -336,6 +342,7 @@ fn test_multivector_quantization_hnsw(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

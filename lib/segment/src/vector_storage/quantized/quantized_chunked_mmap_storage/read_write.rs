@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
-use common::mmap::{Advice, AdviceSetting, MmapFlusher};
+use common::ambient;
+use common::generic_consts::{AccessPattern, Random};
+use common::mmap::{Advice, AdviceSetting, Flusher};
+use common::reason::reason;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalWrite, UserData};
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
@@ -36,7 +37,7 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
             path,
             quantized_vector_size,
             advice,
-            Some(in_ram), // populate
+            Populate::from(in_ram),
         )?;
         Ok(Self { data })
     }
@@ -49,11 +50,72 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
         let Self { data } = self;
         data.clear_cache()
     }
+
+    /// Returns multiple continuous vectors given a start `index` and a `count` of vectors to return.
+    ///
+    /// This function returns `None` if the vector is out of bounds.
+    pub fn get_many<P>(&self, index: PointOffsetType, count: usize) -> Option<Cow<'_, [u8]>>
+    where
+        P: AccessPattern,
+    {
+        self.data.get_many::<P>(index as usize, count)
+    }
+
+    /// Batched counterpart of [`Self::get_many`]: invoke `callback` with the
+    /// concatenated records of each `(user_data, start, count)` range, batching
+    /// the underlying reads.
+    pub fn for_each_many<P, U>(
+        &self,
+        ranges: impl Iterator<Item = (U, PointOffsetType, u32)>,
+        callback: impl FnMut(U, Cow<'_, [u8]>) -> OperationResult<()>,
+    ) -> OperationResult<()>
+    where
+        P: AccessPattern,
+        U: UserData,
+    {
+        self.data.for_each_vector::<P, _>(ranges, callback)
+    }
+}
+
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
+    for QuantizedChunkedStorage<S>
+{
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
+        self.data
+            .insert(id as VectorOffsetType, vector)
+            .map_err(std::io::Error::other)
+    }
+
+    fn flusher(&self) -> Flusher {
+        let flusher = self.data.flusher();
+        Box::new(move || {
+            Ok(flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
+            })?)
+        })
+    }
 }
 
 impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
     for QuantizedChunkedStorage<S>
 {
+    fn is_in_ram_or_mmap() -> bool {
+        ChunkedVectors::<u8, S>::storage_kind().is_in_ram_or_mmap()
+    }
+
+    fn is_cold(&self) -> bool {
+        self.data.is_cold()
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.data.len()
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { data } = self;
+        data.heap_size_bytes()
+    }
+
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index).unwrap_or_default()
     }
@@ -62,48 +124,36 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
         self.data.get::<Random>(index as VectorOffsetType)
     }
 
-    fn iter_batch(
+    fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
         let offsets = offsets
             .iter()
             .enumerate()
             .map(|(index, &offset)| (index, offset, 1));
 
-        self.data.iter_vectors::<Random, _>(offsets)
-    }
-
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
         self.data
-            .insert(id as VectorOffsetType, vector, hw_counter)
+            .for_each_vector::<Random, _>(offsets, |index, vector| {
+                callback(index, vector);
+                Ok(())
+            })
             .map_err(std::io::Error::other)
     }
 
-    fn is_in_ram_or_mmap() -> bool {
-        ChunkedVectors::<u8, S>::storage_kind().is_in_ram_or_mmap()
-    }
-
-    fn is_on_disk(&self) -> bool {
-        self.data.is_on_disk()
-    }
-
-    fn vectors_count(&self) -> usize {
-        self.data.len()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        let flusher = self.data.flusher();
-        Box::new(move || {
-            Ok(flusher().map_err(|e| {
-                std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
-            })?)
-        })
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
+        for run in quantization::encoded_storage::consecutive_runs(offsets) {
+            let bytes = self
+                .get_many::<Random>(run.start, run.len)
+                .ok_or_else(|| run.unreadable())?;
+            callback(run.first, run.len, bytes);
+        }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -113,16 +163,10 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.data.immutable_files()
     }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self { data } = self;
-        data.heap_size_bytes()
-    }
 }
 
 pub struct QuantizedChunkedStorageBuilder<S: UniversalWrite + Send + 'static = MmapFile> {
     data: ChunkedVectors<u8, S>,
-    hw_counter: HardwareCounterCell,
 }
 
 impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
@@ -142,12 +186,9 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
             path,
             quantized_vector_size,
             advice,
-            Some(in_ram), // populate
+            Populate::from(in_ram),
         )?;
-        Ok(Self {
-            data,
-            hw_counter: HardwareCounterCell::disposable(),
-        })
+        Ok(Self { data })
     }
 }
 
@@ -158,10 +199,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<QuantizedChunkedStorage<S>> {
-        let Self {
-            data,
-            hw_counter: _,
-        } = self;
+        let Self { data } = self;
 
         data.flusher()().map_err(|e| {
             std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
@@ -171,8 +209,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
-        self.data
-            .push(other, &self.hw_counter)
+        ambient::unmeasured(reason("Internal operation"), || self.data.push(other))
             .map(|_| ())
             .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }

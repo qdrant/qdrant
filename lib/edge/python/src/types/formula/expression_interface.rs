@@ -42,6 +42,14 @@ pub enum PyExpressionInterface {
         exprs: Vec<PyExpression>,
     },
 
+    Max {
+        exprs: Vec<PyExpression>,
+    },
+
+    Min {
+        exprs: Vec<PyExpression>,
+    },
+
     Neg {
         expr: Boxed<PyExpression>,
     },
@@ -70,6 +78,10 @@ pub enum PyExpressionInterface {
     },
 
     Ln {
+        expr: Boxed<PyExpression>,
+    },
+
+    Acosh {
         expr: Boxed<PyExpression>,
     },
 
@@ -104,6 +116,8 @@ impl Repr for PyExpressionInterface {
             PyExpressionInterface::DatetimeKey { path } => ("DatetimeKey", &[("path", path)]),
             PyExpressionInterface::Mult { exprs } => ("Mult", &[("exprs", exprs)]),
             PyExpressionInterface::Sum { exprs } => ("Sum", &[("exprs", exprs)]),
+            PyExpressionInterface::Max { exprs } => ("Max", &[("exprs", exprs)]),
+            PyExpressionInterface::Min { exprs } => ("Min", &[("exprs", exprs)]),
             PyExpressionInterface::Neg { expr } => ("Neg", &[("expr", expr)]),
 
             PyExpressionInterface::Div {
@@ -128,6 +142,7 @@ impl Repr for PyExpressionInterface {
             PyExpressionInterface::Exp { expr } => ("Exp", &[("expr", expr)]),
             PyExpressionInterface::Log10 { expr } => ("Log10", &[("expr", expr)]),
             PyExpressionInterface::Ln { expr } => ("Ln", &[("expr", expr)]),
+            PyExpressionInterface::Acosh { expr } => ("Acosh", &[("expr", expr)]),
             PyExpressionInterface::Abs { expr } => ("Abs", &[("expr", expr)]),
 
             PyExpressionInterface::Decay {

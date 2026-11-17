@@ -2,8 +2,10 @@ use std::borrow::Cow;
 use std::{env, io};
 
 use api::grpc::transport_channel_pool::{
-    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_KEEPALIVE_INTERVAL,
+    DEFAULT_KEEPALIVE_TIMEOUT, DEFAULT_POOL_SIZE,
 };
+use collection::common::snapshots_manager::SnapshotsStorageConfig;
 use collection::operations::validation;
 use collection::shards::shard::PeerId;
 use common::flags::FeatureFlags;
@@ -65,11 +67,10 @@ pub struct ServiceConfig {
 
     /// Enforce API key / JWT authentication on the internal (p2p) gRPC API.
     ///
-    /// The regular API key is always forwarded on internal gRPC requests, but
-    /// the receiving side only verifies it when this flag is enabled. This is
-    /// opt-in to keep rolling upgrades safe: during an upgrade some nodes may
-    /// run a version that does not attach the key yet, so enabling enforcement
-    /// before every peer is upgraded would break intra-cluster communication.
+    /// Enabled by default. Peers forward `api_key` (or `alt_api_key` if
+    /// `api_key` is unset) on internal gRPC requests, and the receiving side
+    /// accepts `api_key` or `alt_api_key`.
+    /// Has no effect when no API key is configured.
     #[serde(default)]
     pub enforce_internal_auth: Option<bool>,
 
@@ -104,11 +105,21 @@ pub struct ServiceConfig {
     /// has access to internal resources that should not be reachable by users.
     #[serde(default = "default_snapshot_url_recovery")]
     pub enable_snapshot_url_recovery: bool,
+
+    /// Whether to enable `PATCH /cluster/consensus_state`, which changes consensus state
+    /// of a single peer without going through consensus.
+    /// Last resort tool to repair broken clusters. Disabled by default.
+    #[serde(default)]
+    pub enable_consensus_state_patch: bool,
 }
 
 impl ServiceConfig {
     pub fn hardware_reporting(&self) -> bool {
         self.hardware_reporting.unwrap_or_default()
+    }
+
+    pub fn enforce_internal_auth(&self) -> bool {
+        self.enforce_internal_auth.unwrap_or(true)
     }
 }
 
@@ -136,6 +147,13 @@ pub struct ClusterConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct P2pConfig {
+    /// Host or IP address to bind the internal (p2p) gRPC listener to.
+    /// Defaults to `service.host` when not set. Set this to an internal
+    /// interface to keep the internal port off the interface that serves
+    /// the public API.
+    #[validate(length(min = 1))]
+    #[serde(default)]
+    pub host: Option<String>,
     #[serde(default)]
     pub port: Option<u16>,
     #[serde(default = "default_connection_pool_size")]
@@ -143,14 +161,23 @@ pub struct P2pConfig {
     pub connection_pool_size: usize,
     #[serde(default)]
     pub enable_tls: bool,
+    #[serde(default = "default_keepalive_interval_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_interval_ms: u64,
+    #[serde(default = "default_keepalive_timeout_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_timeout_ms: u64,
 }
 
 impl Default for P2pConfig {
     fn default() -> Self {
         P2pConfig {
+            host: None,
             port: None,
             connection_pool_size: default_connection_pool_size(),
             enable_tls: false,
+            keepalive_interval_ms: default_keepalive_interval_ms(),
+            keepalive_timeout_ms: default_keepalive_timeout_ms(),
         }
     }
 }
@@ -346,6 +373,26 @@ impl Settings {
 
     pub fn validate_and_warn(&self) {
         //
+        // API keys
+        //
+        // An empty key is treated as unset (see `AuthKeys::try_create`), so a key
+        // that unexpectedly resolves to an empty string (e.g. an unset environment
+        // variable or a secret that resolved to nothing) silently disables that
+        // credential rather than enforcing it. Warn so the misconfiguration is visible.
+        for (name, key) in [
+            ("api_key", &self.service.api_key),
+            ("alt_api_key", &self.service.alt_api_key),
+            ("read_only_api_key", &self.service.read_only_api_key),
+        ] {
+            if key.as_deref().is_some_and(str::is_empty) {
+                log::warn!(
+                    "Service {name} is set but empty, it is treated as unset and \
+                     authentication may be disabled",
+                );
+            }
+        }
+
+        //
         // JWT RBAC
         //
         // Using HMAC-SHA256, recommended secret size is 32 bytes
@@ -385,6 +432,79 @@ impl Settings {
                 log::warn!(
                     "It is highly recommended to use an API key of {JWT_RECOMMENDED_SECRET_LENGTH} bytes when JWT RBAC is enabled",
                 )
+            }
+        }
+
+        //
+        // Internal (p2p) auth in distributed mode
+        //
+        // Peers forward `api_key` (or `alt_api_key` if unset) on internal gRPC
+        // requests, and the receiving side accepts `api_key` or `alt_api_key`
+        // only. Warn about every configuration that leaves the internal API
+        // open, or that enforces auth without a key for peers to send.
+        let read_only_key_set = !self
+            .service
+            .read_only_api_key
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty();
+        let enforce_internal_auth = self.service.enforce_internal_auth();
+        if self.cluster.enabled {
+            if all_keys_are_empty && enforce_internal_auth && read_only_key_set {
+                log::warn!(
+                    "`service.enforce_internal_auth` is enabled with only \
+                     `read_only_api_key` configured. The internal (p2p) gRPC API \
+                     accepts `api_key` or `alt_api_key` only, so peers will not be \
+                     able to reach each other. Configure `api_key`, or disable \
+                     `enforce_internal_auth`.",
+                );
+            } else if all_keys_are_empty {
+                log::warn!(
+                    "Running in distributed mode without an API key. The internal \
+                     (p2p) gRPC API is not authenticated, and \
+                     `service.enforce_internal_auth` has no effect without \
+                     `service.api_key`. Restrict the internal port to cluster \
+                     nodes and configure an API key.",
+                );
+            } else if !enforce_internal_auth {
+                log::warn!(
+                    "Running in distributed mode with an API key configured, but \
+                     `service.enforce_internal_auth` is disabled. The internal \
+                     (p2p) gRPC API is not authenticated. Enable \
+                     `enforce_internal_auth`.",
+                );
+            }
+        }
+
+        //
+        // Snapshot storage
+        //
+        // A config block for a backend other than the selected one is ignored,
+        // which usually means a typo in `snapshots_storage`.
+        let snapshots_config = &self.storage.snapshots_config;
+        let selected = snapshots_config.snapshots_storage;
+        for (name, present, backend) in [
+            (
+                "s3_config",
+                snapshots_config.s3_config.is_some(),
+                SnapshotsStorageConfig::S3,
+            ),
+            (
+                "gcs_config",
+                snapshots_config.gcs_config.is_some(),
+                SnapshotsStorageConfig::Gcs,
+            ),
+            (
+                "azure_config",
+                snapshots_config.azure_config.is_some(),
+                SnapshotsStorageConfig::Azure,
+            ),
+        ] {
+            if present && selected != backend {
+                log::warn!(
+                    "Snapshots {name} is set but snapshots_storage is {selected:?}, \
+                     the block is ignored",
+                );
             }
         }
 
@@ -473,6 +593,14 @@ const fn default_connection_pool_size() -> usize {
     DEFAULT_POOL_SIZE
 }
 
+const fn default_keepalive_interval_ms() -> u64 {
+    DEFAULT_KEEPALIVE_INTERVAL.as_millis() as u64
+}
+
+const fn default_keepalive_timeout_ms() -> u64 {
+    DEFAULT_KEEPALIVE_TIMEOUT.as_millis() as u64
+}
+
 const fn default_message_timeout_tics() -> u64 {
     10
 }
@@ -511,10 +639,10 @@ fn validate_metrics_prefix(prefix: &str) -> Result<(), ValidationError> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::path::Path;
 
     use fs_err as fs;
-    use sealed_test::prelude::*;
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -540,27 +668,31 @@ mod tests {
             config.service.http_client_disconnect_timeout_sec,
             default_http_client_disconnect_timeout_sec()
         );
+        assert_eq!(
+            config.cluster.p2p.keepalive_interval_ms,
+            default_keepalive_interval_ms()
+        );
+        assert_eq!(
+            config.cluster.p2p.keepalive_timeout_ms,
+            default_keepalive_timeout_ms()
+        );
 
         config
             .validate()
             .expect("failed to validate default config");
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "#[sealed_test] uses std::fs::copy"
-    )]
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
+    #[test]
     fn test_runtime_development_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         unsafe { env::set_var("RUN_MODE", "development") };
 
-        // `sealed_test` copies files into the same directory as the test runs in.
-        // We need them in a subdirectory.
-        fs::create_dir("config").expect("failed to create `config` subdirectory.");
-        fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
-        fs::copy("development.yaml", "config/development.yaml")
-            .expect("failed to copy `development.yaml`.");
+        for name in ["config.yaml", "development.yaml"] {
+            let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("config")
+                .join(name);
+            fs::copy(src, Path::new("config").join(name)).unwrap();
+        }
 
         // Read config
         let config = Settings::new(None).expect("failed to load development config at runtime");
@@ -572,9 +704,9 @@ mod tests {
         assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_no_config_files() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let non_existing_config_path = "config/non_existing_config".to_string();
 
         // Read config
@@ -588,18 +720,17 @@ mod tests {
         assert!(!config.load_errors.is_empty(), "must have load errors")
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_custom_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/custom.yaml";
-
-        // Create custom config file
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(&mut custom, "service:\n    http_port: 9999").unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_port: 9999\n\
+            ",
+        )
+        .unwrap();
 
         // Load settings with custom config
         let config = Settings::new(Some(path.into())).unwrap();
@@ -620,21 +751,19 @@ mod tests {
         );
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_custom_http_transport_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/custom_http_transport.yaml";
-
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(
-                &mut custom,
-                "service:\n    http_keep_alive_timeout_sec: 120\n    http_client_request_timeout_sec: 45\n    http_client_disconnect_timeout_sec: 60"
-            )
-            .unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_keep_alive_timeout_sec: 120\n\
+             \x20   http_client_request_timeout_sec: 45\n\
+             \x20   http_client_disconnect_timeout_sec: 60\n\
+            ",
+        )
+        .unwrap();
 
         let config = Settings::new(Some(path.into())).unwrap();
         config
@@ -646,26 +775,34 @@ mod tests {
         assert_eq!(config.service.http_client_disconnect_timeout_sec, 60);
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_invalid_http_transport_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/invalid_http_transport.yaml";
-
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(
-                &mut custom,
-                "service:\n    http_keep_alive_timeout_sec: 0\n    http_client_request_timeout_sec: 0\n    http_client_disconnect_timeout_sec: 0"
-            )
-            .unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_keep_alive_timeout_sec: 0\n\
+             \x20   http_client_request_timeout_sec: 0\n\
+             \x20   http_client_disconnect_timeout_sec: 0\n\
+            ",
+        )
+        .unwrap();
 
         let config = Settings::new(Some(path.into())).unwrap();
         assert!(
             config.validate().is_err(),
             "zero timeout values must fail validation"
         );
+    }
+
+    fn sealed_cwd() -> Option<TempDir> {
+        if !common::testing::is_process_isolated() {
+            return None; // set_current_dir is process-wide
+        }
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("config")).unwrap();
+        env::set_current_dir(dir.path()).unwrap();
+        Some(dir)
     }
 }

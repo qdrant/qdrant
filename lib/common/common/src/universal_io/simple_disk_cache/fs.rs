@@ -1,14 +1,18 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::DiskCacheRemote;
 use super::config::DiskCacheConfig;
-use super::file::{DiskCache, InitSource};
-use crate::mmap::AdviceSetting;
+use super::file::{DiskCache, State};
+use super::pipeline::REMOTE_READ_ALIGNMENT;
+use super::{DiskCacheRemote, block_aligned_fetch};
+use crate::generic_consts::Sequential;
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
+use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
-    OpenExtra, OpenOptions, OwnedReadPipeline, Populate, Result, UniversalIoError, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
+    UniversalRead, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -18,6 +22,38 @@ use crate::universal_io::{
 pub struct DiskCacheFsContext<C> {
     pub config: Arc<DiskCacheConfig>,
     pub remote: C,
+}
+
+#[derive(Default, Debug)]
+pub struct DiskCacheFsOpenExtra<RemoteExtra: OpenExtra> {
+    /// Extra options passed to the remote
+    pub(super) remote_extra: RemoteExtra,
+    /// The length of the file, if known
+    pub(super) known_len: Option<u64>,
+    /// Entity tag of the remote object, if known
+    pub(super) known_etag: Option<String>,
+}
+
+impl<RemoteExtra: OpenExtra> OpenExtra for DiskCacheFsOpenExtra<RemoteExtra> {
+    fn with_prevent_caching(self, _prevent_caching: bool) -> Self {
+        self
+    }
+
+    fn with_known_len(self, known_len: u64) -> Self {
+        Self {
+            remote_extra: self.remote_extra,
+            known_len: Some(known_len),
+            known_etag: self.known_etag,
+        }
+    }
+
+    fn with_known_etag(self, known_etag: Option<String>) -> Self {
+        Self {
+            remote_extra: self.remote_extra,
+            known_len: self.known_len,
+            known_etag,
+        }
+    }
 }
 
 /// Filesystem handle for the simple disk cache. Carries the remote-side
@@ -33,8 +69,8 @@ pub struct DiskCacheFs<R>
 where
     R: UniversalRead,
 {
-    config: Arc<DiskCacheConfig>,
-    remote_fs: R::Fs,
+    pub(super) config: Arc<DiskCacheConfig>,
+    pub(super) remote_fs: R::Fs,
 }
 
 impl<R> Clone for DiskCacheFs<R>
@@ -56,54 +92,56 @@ where
     R: UniversalRead,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { config, remote_fs } = self;
         f.debug_struct("DiskCacheFs")
-            .field("config", &self.config)
-            .field("remote_fs", &self.remote_fs)
+            .field("config", config)
+            .field("remote_fs", remote_fs)
             .finish()
     }
 }
 
-impl<R> UniversalReadFileOps for DiskCacheFs<R>
-where
-    R: UniversalRead,
-{
-    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
-
-    fn from_context(ctx: Self::ContextConfig) -> Result<Self> {
-        let DiskCacheFsContext { config, remote } = ctx;
-        Ok(Self {
-            config,
-            remote_fs: R::Fs::from_context(remote)?,
-        })
+impl<R: UniversalRead> DiskCacheFs<R> {
+    /// Wrap an already-built remote filesystem handle. The config-driven
+    /// path is [`UniversalReadFs::from_context`].
+    pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
+        Self { config, remote_fs }
     }
 
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        self.remote_fs.list_files(prefix_path)
+    /// The remote filesystem missing blocks are fetched from.
+    pub fn remote_fs(&self) -> &R::Fs {
+        &self.remote_fs
     }
 
-    fn exists(&self, path: &Path) -> Result<bool> {
-        self.remote_fs.exists(path)
+    pub(super) fn open_remote(
+        &self,
+        path: impl AsRef<Path>,
+        extra: <R::Fs as UniversalReadFs>::OpenExtra,
+    ) -> UioResult<R> {
+        self.remote_fs
+            .open(path.as_ref(), REMOTE_OPEN_OPTIONS, extra)
     }
+}
 
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
-        self.remote_fs.create(path, expected_length)
-    }
+// Deliberately no `UniversalWriteFs` impl: the disk cache is strictly
+// read-only, at the filesystem level as much as at the file level (see the
+// `assert_not_impl_any!` on `DiskCache`). Mutations — creating, removing and
+// appending to files — go straight to the backing storage, whose handle the
+// caller holds anyway to build this one.
 
-    fn create_dir(&self, path: &Path) -> Result<()> {
-        self.remote_fs.create_dir(path)
-    }
-
-    fn remove(&self, path: &Path) -> Result<()> {
-        self.remote_fs.remove(path)
-    }
-
-    fn remove_dir(&self, path: &Path) -> Result<()> {
-        self.remote_fs.remove_dir(path)
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
-        self.remote_fs.atomic_save(path, bytes)
-    }
+/// Make the mirror path unique per open, so concurrently-alive [`DiskCache`]
+/// instances for the same remote path never share (and truncate) each other's
+/// local mirror. This lets callers refresh a file by opening a fresh handle
+/// while the old one is still alive.
+///
+/// The name carries no state across opens: a mirror is truncated when its
+/// [`LocalState`] materializes and removed when its `DiskCache` is dropped.
+pub(super) fn unique_local_path(mut path: PathBuf) -> PathBuf {
+    static NEXT_MIRROR_ID: AtomicU64 = AtomicU64::new(0);
+    let id = NEXT_MIRROR_ID.fetch_add(1, Ordering::Relaxed);
+    // Process id disambiguates processes sharing a local cache dir.
+    path.as_mut_os_string()
+        .push(format!(".{:x}-{id:x}", std::process::id()));
+    path
 }
 
 impl<R> UniversalReadFs for DiskCacheFs<R>
@@ -111,14 +149,33 @@ where
     R: DiskCacheRemote,
 {
     type File = DiskCache<R>;
-    type OpenExtra = <R::Fs as UniversalReadFs>::OpenExtra;
+    type OpenExtra = DiskCacheFsOpenExtra<<R::Fs as UniversalReadFs>::OpenExtra>;
+    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFs>::ContextConfig>;
+
+    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
+        let DiskCacheFsContext { config, remote } = ctx;
+        Ok(Self {
+            config,
+            remote_fs: R::Fs::from_context(remote)?,
+        })
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> UioResult<bool> {
+        self.remote_fs.exists(path)
+    }
 
     fn open(
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
         extra: Self::OpenExtra,
-    ) -> Result<DiskCache<R>> {
+    ) -> UioResult<DiskCache<R>> {
+        // The cache is strictly read-only: appends (and any other writes)
+        // must go directly to the backing storage, not through the cache.
         if options.writeable {
             return Err(UniversalIoError::Uninitialized {
                 description:
@@ -127,8 +184,8 @@ where
             });
         }
 
-        let extra = extra.with_prevent_caching(true);
-        let local_path = self.config.local_path_for(path.as_ref())?;
+        let remote_extra = extra.remote_extra.with_prevent_caching(true);
+        let local_path = unique_local_path(self.config.local_path_for(path.as_ref())?);
 
         let populate = if crate::low_memory::low_memory_mode().skip_populate() {
             Populate::No
@@ -136,41 +193,80 @@ where
             options.populate
         };
 
-        let init_source = match populate {
-            Populate::Auto | Populate::No => InitSource::FromScratch,
-            Populate::Blocking | Populate::PreferBackground => {
-                let remote = self.remote_fs.open(
-                    path.as_ref(),
-                    OpenOptions {
-                        writeable: false,
-                        need_sequential: true,
-                        populate: Populate::No,
-                        advice: AdviceSetting::Global,
-                    },
-                    extra.clone(),
-                )?;
+        let state = match (extra.known_len, populate) {
+            (None, Populate::Auto | Populate::No) => State::Uninit,
+            // We know file length, initialize local state.
+            (Some(len), Populate::Auto | Populate::No) => {
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
 
-                let mut pipeline = R::OwnedReadPipeline::new(remote)?;
+                let local = LocalState::new(&local_path, len, options)?;
+
+                State::ready(remote, local)
+            }
+            // Even if we know length, we don't need it to do `schedule_whole`.
+            (None | Some(_), Populate::Blocking | Populate::PreferBackground) => {
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+
+                let mut pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
-                pipeline.schedule_whole(())?;
+                pipeline.schedule_whole((), 0)?;
 
-                InitSource::FromPrefiller(pipeline)
+                State::OpenPrefill { pipeline }
+            }
+            // Special case of no known length and empty range. Don't initialize.
+            (None, Populate::Partial(range)) if range.into_byte_range::<u8>().is_empty() => {
+                State::Uninit
+            }
+            // Schedule a partial block-aligned read.
+            (known_len, Populate::Partial(range)) => {
+                let remote = self.open_remote(path.as_ref(), remote_extra.clone())?;
+
+                // `Partial` must create the local file, so we need the length up front.
+                let file_len = match known_len {
+                    Some(len) => len,
+                    None => remote.len::<u8>()?,
+                };
+
+                let requested_byte_range = range.into_byte_range::<u8>();
+
+                if let Some((blocks_range, byte_range)) =
+                    block_aligned_fetch(requested_byte_range.clone(), file_len)
+                {
+                    let mut pipeline = OwnedPipeline::new(remote)?;
+
+                    // FIXME: check `can_schedule` in a loop first
+                    pipeline.schedule::<Sequential>(
+                        blocks_range,
+                        byte_range,
+                        REMOTE_READ_ALIGNMENT,
+                    )?;
+
+                    State::PartialPrefill {
+                        pipeline,
+                        len: file_len,
+                    }
+                } else {
+                    // empty byte range, just initialize with length.
+                    let local = LocalState::new(&local_path, file_len, options)?;
+                    State::ready(remote, local)
+                }
             }
         };
 
         let cache = DiskCache::new(
-            self.remote_fs.clone(),
-            extra,
+            self,
+            remote_extra,
             path.as_ref(),
             local_path,
             options,
-            init_source,
+            state,
+            extra.known_etag,
         );
 
         if matches!(populate, Populate::Blocking) {
             // Force the prefill to resolve before returning.
-            cache.local_state()?;
+            cache.state()?;
         }
 
         Ok(cache)

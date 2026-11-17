@@ -169,20 +169,6 @@ impl Buffer {
         self.buffer_type
     }
 
-    /// Download a value from the buffer to the RAM.
-    pub fn download<T>(&self, data: &mut T, offset: usize) -> GpuResult<()>
-    where
-        T: FromBytes + IntoBytes + ?Sized,
-    {
-        if self.buffer_type != BufferType::GpuToCpu {
-            return Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()));
-        }
-        let data_bytes = data.as_mut_bytes();
-        let end = checked_add(offset, data_bytes.len())?;
-        self.view(offset..end)?.copy_from_slice(data_bytes);
-        Ok(())
-    }
-
     /// Download a vector of `len` elements from the buffer to the RAM.
     pub fn download_vec<T>(&self, offset: usize, len: usize) -> GpuResult<Vec<T>>
     where

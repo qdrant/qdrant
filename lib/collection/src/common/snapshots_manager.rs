@@ -1,10 +1,16 @@
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use common::defaults::APP_USER_AGENT;
 use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
-use object_store::ObjectStoreExt;
-use object_store::aws::AmazonS3Builder;
+use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
+use object_store::gcp::{GoogleCloudStorageBuilder, GoogleConfigKey};
+use object_store::prefix::PrefixStore;
+use object_store::{ClientConfigKey, ObjectStoreExt, RetryConfig};
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -22,75 +28,369 @@ use crate::operations::types::{CollectionError, CollectionResult};
 pub struct SnapshotsConfig {
     pub snapshots_storage: SnapshotsStorageConfig,
     pub s3_config: Option<S3Config>,
+    pub gcs_config: Option<GcsConfig>,
+    pub azure_config: Option<AzureConfig>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapshotsStorageConfig {
     #[default]
     Local,
     S3,
+    #[serde(alias = "gcp")]
+    Gcs,
+    Azure,
 }
 
+/// Amazon S3 (or S3-compatible) connection parameters.
+///
+/// Every field except `bucket` is optional. Missing values are resolved from the
+/// `AWS_*` environment, so credentials may come from the default credential chain.
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct S3Config {
     pub bucket: String,
+    /// Key prefix inside the bucket, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
     pub region: Option<String>,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub endpoint_url: Option<String>,
+    /// Request timeout. Overrides `AWS_TIMEOUT`.
+    pub timeout_sec: Option<NonZeroU64>,
+    /// Connect timeout. Overrides `AWS_CONNECT_TIMEOUT`.
+    pub connect_timeout_sec: Option<NonZeroU64>,
+    /// Retries for a failed request. 0 disables retries.
+    pub max_retries: Option<usize>,
+    /// How long to keep retrying after the first attempt.
+    pub retry_timeout_sec: Option<u64>,
+}
+
+/// Google Cloud Storage connection parameters.
+///
+/// Every field except `bucket` is optional. Without explicit credentials the client
+/// resolves Application Default Credentials: `GOOGLE_*` environment variables, the
+/// gcloud credentials file, or the metadata server on GCE and GKE.
+#[derive(Clone, Deserialize, Debug, Default)]
+pub struct GcsConfig {
+    pub bucket: String,
+    /// Object name prefix inside the bucket, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
+    /// Path to a service account JSON key file.
+    pub service_account_path: Option<String>,
+    /// Inline contents of a service account JSON key.
+    pub service_account_key: Option<String>,
+    /// Path to an `application_default_credentials.json` file.
+    pub application_credentials_path: Option<String>,
+    /// Custom base URL, for emulators such as fake-gcs-server.
+    pub endpoint_url: Option<String>,
+    /// See [`S3Config::timeout_sec`]. Overrides `GOOGLE_TIMEOUT`.
+    pub timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::connect_timeout_sec`]. Overrides `GOOGLE_CONNECT_TIMEOUT`.
+    pub connect_timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::max_retries`].
+    pub max_retries: Option<usize>,
+    /// See [`S3Config::retry_timeout_sec`].
+    pub retry_timeout_sec: Option<u64>,
+}
+
+/// Azure Blob Storage connection parameters.
+///
+/// Every field except `account` and `container` is optional. Without explicit
+/// credentials the client resolves the default chain: `AZURE_*` environment
+/// variables, managed identity, or the Azure CLI.
+#[derive(Clone, Deserialize, Debug, Default)]
+pub struct AzureConfig {
+    /// Storage account name, without the `.blob.core.windows.net` suffix.
+    pub account: String,
+    pub container: String,
+    /// Blob name prefix inside the container, `<prefix>/snapshots/...`. Empty by default.
+    pub prefix: Option<String>,
+    /// Shared access key of the storage account.
+    pub access_key: Option<String>,
+    /// Shared access signature, as the query string issued by Azure.
+    pub sas_token: Option<String>,
+    /// Service principal client secret flow, all three fields go together.
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub tenant_id: Option<String>,
+    /// Custom endpoint URL, for emulators such as Azurite.
+    pub endpoint_url: Option<String>,
+    /// See [`S3Config::timeout_sec`]. Overrides `AZURE_TIMEOUT`.
+    pub timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::connect_timeout_sec`]. Overrides `AZURE_CONNECT_TIMEOUT`.
+    pub connect_timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::max_retries`].
+    pub max_retries: Option<usize>,
+    /// See [`S3Config::retry_timeout_sec`].
+    pub retry_timeout_sec: Option<u64>,
 }
 
 pub struct SnapshotStorageCloud {
     client: Box<dyn object_store::ObjectStore>,
 }
 
+impl SnapshotStorageCloud {
+    /// Wrap `store` so every object key lives under `prefix`.
+    ///
+    /// Leading, trailing and repeated slashes in the prefix are dropped, an empty
+    /// prefix leaves the store untouched.
+    fn new(store: impl object_store::ObjectStore, prefix: Option<&str>) -> Self {
+        let prefix = prefix.map(|prefix| {
+            let prefix = prefix
+                .split('/')
+                .filter(|component| !component.is_empty())
+                .collect::<Vec<_>>()
+                .join("/");
+            object_store::path::Path::from(prefix)
+        });
+        let client: Box<dyn object_store::ObjectStore> = match prefix {
+            Some(prefix) if !prefix.as_ref().is_empty() => {
+                Box::new(PrefixStore::new(store, prefix))
+            }
+            _ => Box::new(store),
+        };
+        Self { client }
+    }
+}
+
 pub struct SnapshotStorageLocalFS;
 
 pub enum SnapshotStorageManager {
     LocalFS(SnapshotStorageLocalFS),
-    // Assuming that we can have common operations for all cloud storages
-    S3(SnapshotStorageCloud),
-    // <TODO> : Implement other cloud storage
-    // GCS(SnapshotStorageCloud),
-    // AZURE(SnapshotStorageCloud),
+    /// Any `object_store` backend, all of them share the same operations.
+    Cloud(SnapshotStorageCloud),
+}
+
+/// HTTP client settings that every object store backend accepts.
+#[derive(Clone, Copy, Debug, Default)]
+struct ClientSettings<'a> {
+    endpoint_url: Option<&'a str>,
+    timeout_sec: Option<NonZeroU64>,
+    connect_timeout_sec: Option<NonZeroU64>,
+    max_retries: Option<usize>,
+    retry_timeout_sec: Option<u64>,
+}
+
+impl<'a> From<&'a S3Config> for ClientSettings<'a> {
+    fn from(config: &'a S3Config) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
+    }
+}
+
+impl<'a> From<&'a GcsConfig> for ClientSettings<'a> {
+    fn from(config: &'a GcsConfig) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
+    }
+}
+
+impl<'a> From<&'a AzureConfig> for ClientSettings<'a> {
+    fn from(config: &'a AzureConfig) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
+    }
+}
+
+impl ClientSettings<'_> {
+    /// HTTP client settings as config keys.
+    ///
+    /// Identifies Qdrant with its user agent so providers can attribute snapshot traffic.
+    /// Plain HTTP is allowed for explicitly configured `http://` endpoints, which are
+    /// typically local emulators.
+    ///
+    /// The settings are config keys rather than a `ClientOptions`, because
+    /// `with_client_options` would replace the client settings that `from_env` read
+    /// from the environment, such as `AWS_TIMEOUT`.
+    fn client_config(&self) -> Vec<(ClientConfigKey, String)> {
+        let mut config = vec![(ClientConfigKey::UserAgent, APP_USER_AGENT.clone())];
+        if self
+            .endpoint_url
+            .is_some_and(|url| url.starts_with("http://"))
+        {
+            config.push((ClientConfigKey::AllowHttp, true.to_string()));
+        }
+        if let Some(timeout_sec) = self.timeout_sec {
+            config.push((ClientConfigKey::Timeout, format!("{timeout_sec}s")));
+        }
+        if let Some(connect_timeout_sec) = self.connect_timeout_sec {
+            config.push((
+                ClientConfigKey::ConnectTimeout,
+                format!("{connect_timeout_sec}s"),
+            ));
+        }
+        config
+    }
+
+    /// Retry settings, with the `object_store` defaults for unset fields.
+    fn retry_config(&self) -> RetryConfig {
+        let mut retry = RetryConfig::default();
+        if let Some(max_retries) = self.max_retries {
+            retry.max_retries = max_retries;
+        }
+        if let Some(retry_timeout_sec) = self.retry_timeout_sec {
+            retry.retry_timeout = Duration::from_secs(retry_timeout_sec);
+        }
+        retry
+    }
+}
+
+fn build_s3_client(config: Option<&S3Config>) -> CollectionResult<object_store::aws::AmazonS3> {
+    s3_builder(AmazonS3Builder::from_env(), config)
+        .build()
+        .map_err(|e| CollectionError::service_error(format!("Failed to create S3 client: {e}")))
+}
+
+/// Apply `config` on top of `builder`, which normally comes from `AmazonS3Builder::from_env`.
+fn s3_builder(mut builder: AmazonS3Builder, config: Option<&S3Config>) -> AmazonS3Builder {
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
+    for (key, value) in settings.client_config() {
+        builder = builder.with_config(AmazonS3ConfigKey::Client(key), value);
+    }
+    builder = builder.with_retry(settings.retry_config());
+
+    if let Some(config) = config {
+        builder = builder.with_bucket_name(&config.bucket);
+        if let Some(access_key) = &config.access_key {
+            builder = builder.with_access_key_id(access_key);
+        }
+        if let Some(secret_key) = &config.secret_key {
+            builder = builder.with_secret_access_key(secret_key);
+        }
+        if let Some(region) = &config.region {
+            builder = builder.with_region(region);
+        }
+        if let Some(endpoint_url) = &config.endpoint_url {
+            builder = builder.with_endpoint(endpoint_url);
+        }
+    }
+
+    builder
+}
+
+fn build_gcs_client(
+    config: Option<&GcsConfig>,
+) -> CollectionResult<object_store::gcp::GoogleCloudStorage> {
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
+    let mut builder = GoogleCloudStorageBuilder::from_env();
+    for (key, value) in settings.client_config() {
+        builder = builder.with_config(GoogleConfigKey::Client(key), value);
+    }
+    builder = builder.with_retry(settings.retry_config());
+
+    if let Some(config) = config {
+        builder = builder.with_bucket_name(&config.bucket);
+        if let Some(path) = &config.service_account_path {
+            builder = builder.with_service_account_path(path);
+        }
+        if let Some(key) = &config.service_account_key {
+            builder = builder.with_service_account_key(key);
+        }
+        if let Some(path) = &config.application_credentials_path {
+            builder = builder.with_application_credentials(path);
+        }
+        if let Some(endpoint_url) = &config.endpoint_url {
+            builder = builder.with_base_url(endpoint_url);
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| CollectionError::service_error(format!("Failed to create GCS client: {e}")))
+}
+
+fn build_azure_client(
+    config: Option<&AzureConfig>,
+) -> CollectionResult<object_store::azure::MicrosoftAzure> {
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
+    let mut builder = MicrosoftAzureBuilder::from_env();
+    for (key, value) in settings.client_config() {
+        builder = builder.with_config(AzureConfigKey::Client(key), value);
+    }
+    builder = builder.with_retry(settings.retry_config());
+
+    if let Some(config) = config {
+        builder = builder
+            .with_account(&config.account)
+            .with_container_name(&config.container);
+        if let Some(access_key) = &config.access_key {
+            builder = builder.with_access_key(access_key);
+        }
+        if let Some(sas_token) = &config.sas_token {
+            builder = builder.with_config(AzureConfigKey::SasKey, sas_token);
+        }
+        if let Some(client_id) = &config.client_id {
+            builder = builder.with_client_id(client_id);
+        }
+        if let Some(client_secret) = &config.client_secret {
+            builder = builder.with_client_secret(client_secret);
+        }
+        if let Some(tenant_id) = &config.tenant_id {
+            builder = builder.with_tenant_id(tenant_id);
+        }
+        if let Some(endpoint_url) = &config.endpoint_url {
+            builder = builder.with_endpoint(endpoint_url.clone());
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| CollectionError::service_error(format!("Failed to create Azure client: {e}")))
+}
+
+/// Assert a snapshot name is a plain file name, not a path.
+///
+/// Backends join it onto a snapshots directory, and `Path::join` drops the base if it is absolute.
+fn validate_snapshot_name(snapshot_name: &str) -> CollectionResult<()> {
+    if Path::new(snapshot_name).file_name() != Some(snapshot_name.as_ref()) {
+        return Err(CollectionError::not_found(format!(
+            "Snapshot {snapshot_name}"
+        )));
+    }
+
+    Ok(())
 }
 
 impl SnapshotStorageManager {
+    /// Create a snapshot storage manager from the configured backend.
     pub fn new(snapshots_config: &SnapshotsConfig) -> CollectionResult<Self> {
-        match snapshots_config.snapshots_storage {
+        let cloud = match snapshots_config.snapshots_storage {
             SnapshotsStorageConfig::Local => {
-                Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
+                return Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS));
             }
             SnapshotsStorageConfig::S3 => {
-                let mut builder = AmazonS3Builder::from_env();
-                if let Some(s3_config) = &snapshots_config.s3_config {
-                    builder = builder.with_bucket_name(&s3_config.bucket);
-
-                    if let Some(access_key) = &s3_config.access_key {
-                        builder = builder.with_access_key_id(access_key);
-                    }
-                    if let Some(secret_key) = &s3_config.secret_key {
-                        builder = builder.with_secret_access_key(secret_key);
-                    }
-                    if let Some(region) = &s3_config.region {
-                        builder = builder.with_region(region);
-                    }
-                    if let Some(endpoint_url) = &s3_config.endpoint_url {
-                        builder = builder.with_endpoint(endpoint_url);
-                        if endpoint_url.starts_with("http://") {
-                            builder = builder.with_allow_http(true);
-                        }
-                    }
-                }
-                let client: Box<dyn object_store::ObjectStore> =
-                    Box::new(builder.build().map_err(|e| {
-                        CollectionError::service_error(format!("Failed to create S3 client: {e}"))
-                    })?);
-
-                Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
+                let config = snapshots_config.s3_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_s3_client(config)?, prefix)
             }
-        }
+            SnapshotsStorageConfig::Gcs => {
+                let config = snapshots_config.gcs_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_gcs_client(config)?, prefix)
+            }
+            SnapshotsStorageConfig::Azure => {
+                let config = snapshots_config.azure_config.as_ref();
+                let prefix = config.and_then(|config| config.prefix.as_deref());
+                SnapshotStorageCloud::new(build_azure_client(config)?, prefix)
+            }
+        };
+        Ok(SnapshotStorageManager::Cloud(cloud))
     }
 
     pub async fn delete_snapshot(&self, snapshot_name: &Path) -> CollectionResult<bool> {
@@ -98,7 +398,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.delete_snapshot(snapshot_name).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl.delete_snapshot(snapshot_name).await
             }
         }
@@ -112,7 +412,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.list_snapshots(directory).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl.list_snapshots(directory).await
             }
         }
@@ -133,7 +433,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.store_file(source_path, target_path).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl.store_file(source_path, target_path).await
             }
         }
@@ -148,37 +448,43 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.get_stored_file(storage_path, local_path).await
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl.get_stored_file(storage_path, local_path).await
             }
         }
     }
 
+    /// Get the storage path for a collection snapshot, confined to `snapshots_path`
     pub fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_path(snapshots_path, snapshot_name)
             }
-            SnapshotStorageManager::S3(_storage_impl) => Ok(
+            SnapshotStorageManager::Cloud(_storage_impl) => Ok(
                 SnapshotStorageCloud::get_snapshot_path(snapshots_path, snapshot_name),
             ),
         }
     }
 
+    /// Get the storage path for a full snapshot, confined to `snapshots_path`
     pub fn get_full_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
+        validate_snapshot_name(snapshot_name)?;
+
         match self {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_full_snapshot_path(snapshots_path, snapshot_name)
             }
-            SnapshotStorageManager::S3(_storage_impl) => Ok(
+            SnapshotStorageManager::Cloud(_storage_impl) => Ok(
                 SnapshotStorageCloud::get_full_snapshot_path(snapshots_path, snapshot_name),
             ),
         }
@@ -193,7 +499,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 SnapshotStorageLocalFS::get_snapshot_file(snapshot_path, temp_dir)
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl
                     .get_snapshot_file(snapshot_path, temp_dir)
                     .await
@@ -209,7 +515,7 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::LocalFS(_storage_impl) => {
                 Ok(SnapshotStorageLocalFS::get_snapshot_stream(snapshot_path))
             }
-            SnapshotStorageManager::S3(storage_impl) => {
+            SnapshotStorageManager::Cloud(storage_impl) => {
                 storage_impl.get_snapshot_stream(snapshot_path).await
             }
         }
@@ -436,11 +742,14 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first: unlike the local filesystem,
+    /// object storage has no `canonicalize` to confine the key afterwards.
     fn get_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
     }
 
+    /// `snapshot_name` must pass [`validate_snapshot_name`] first.
     fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
         let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
@@ -479,5 +788,613 @@ impl SnapshotStorageCloud {
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
         Ok(SnapshotStream::new_stream(download.into_stream(), None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use futures::TryStreamExt;
+    use object_store::ObjectStore;
+    use object_store::memory::InMemory;
+
+    use super::*;
+
+    /// Snapshot names that escape the snapshots directory.
+    const TRAVERSING_NAMES: &[&str] = &[
+        "/snapshots/other-collection/victim.snapshot",
+        "/etc/passwd",
+        "other-collection/victim.snapshot",
+        "../other-collection/victim.snapshot",
+        "./victim.snapshot",
+        "..",
+        ".",
+        "",
+    ];
+
+    fn s3_manager() -> SnapshotStorageManager {
+        SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::S3,
+            s3_config: Some(S3Config {
+                bucket: "test-bucket".into(),
+                prefix: None,
+                region: Some("us-east-1".into()),
+                access_key: Some("test-access-key".into()),
+                secret_key: Some("test-secret-key".into()),
+                endpoint_url: Some("http://localhost:9000".into()),
+                timeout_sec: None,
+                connect_timeout_sec: None,
+                max_retries: None,
+                retry_timeout_sec: None,
+            }),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    /// Azurite's well-known development account key.
+    const AZURITE_ACCOUNT_KEY: &str =
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==";
+
+    fn azure_manager() -> SnapshotStorageManager {
+        SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::Azure,
+            azure_config: Some(AzureConfig {
+                account: "devstoreaccount1".into(),
+                container: "test-container".into(),
+                access_key: Some(AZURITE_ACCOUNT_KEY.into()),
+                endpoint_url: Some("http://localhost:10000/devstoreaccount1".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn gcs_manager() -> SnapshotStorageManager {
+        let key_file = tempfile::NamedTempFile::new().unwrap();
+        // Only the shape matters, the key is never used to sign a request.
+        fs::write(
+            key_file.path(),
+            serde_json::json!({
+                "gcs_base_url": "http://localhost:4443",
+                "disable_oauth": true,
+                "client_email": "",
+                "private_key_id": "",
+                "private_key": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::Gcs,
+            gcs_config: Some(GcsConfig {
+                bucket: "test-bucket".into(),
+                service_account_path: Some(key_file.path().to_str().unwrap().into()),
+                endpoint_url: Some("http://localhost:4443".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    /// The legacy shape keeps parsing, and the new backends parse with their own blocks.
+    #[test]
+    fn snapshots_config_deserializes_all_backends() {
+        let legacy: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "s3",
+            "s3_config": { "bucket": "b", "region": "us-east-1" },
+        }))
+        .unwrap();
+        assert_eq!(legacy.snapshots_storage, SnapshotsStorageConfig::S3);
+        assert_eq!(legacy.s3_config.unwrap().bucket, "b");
+        assert!(legacy.gcs_config.is_none());
+        assert!(legacy.azure_config.is_none());
+
+        let local: SnapshotsConfig =
+            serde_json::from_value(serde_json::json!({ "snapshots_storage": "local" })).unwrap();
+        assert_eq!(local.snapshots_storage, SnapshotsStorageConfig::Local);
+
+        for storage in ["gcs", "gcp"] {
+            let gcs: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+                "snapshots_storage": storage,
+                "gcs_config": { "bucket": "b", "service_account_path": "/key.json" },
+            }))
+            .unwrap();
+            assert_eq!(gcs.snapshots_storage, SnapshotsStorageConfig::Gcs);
+            let gcs_config = gcs.gcs_config.unwrap();
+            assert_eq!(gcs_config.bucket, "b");
+            assert_eq!(
+                gcs_config.service_account_path.as_deref(),
+                Some("/key.json")
+            );
+        }
+
+        let azure: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "azure",
+            "azure_config": { "account": "a", "container": "c", "sas_token": "sv=1&sig=x" },
+        }))
+        .unwrap();
+        assert_eq!(azure.snapshots_storage, SnapshotsStorageConfig::Azure);
+        let azure_config = azure.azure_config.unwrap();
+        assert_eq!(azure_config.account, "a");
+        assert_eq!(azure_config.container, "c");
+        assert_eq!(azure_config.sas_token.as_deref(), Some("sv=1&sig=x"));
+    }
+
+    /// Every object the manager touches lives under the configured prefix, and the
+    /// prefix is invisible in the names the manager reports back.
+    #[tokio::test]
+    async fn object_storage_prefix_is_applied_to_every_key() {
+        let bucket = Arc::new(InMemory::new());
+        let manager = SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(
+            bucket.clone(),
+            Some("/team-a/qdrant/"),
+        ));
+
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+        let source = temp_dir.path().join("upload.snapshot");
+        fs::write(&source, b"snapshot bytes").unwrap();
+        let target = Path::new("./snapshots/my-collection/my.snapshot");
+
+        let stored = manager.store_file(&source, target).await.unwrap();
+        assert_eq!(stored.name, "my.snapshot");
+
+        let keys: Vec<String> = bucket
+            .list(None)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(keys, ["team-a/qdrant/snapshots/my-collection/my.snapshot"]);
+
+        let listed = manager
+            .list_snapshots(Path::new("./snapshots/my-collection"))
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "my.snapshot");
+
+        let restored = temp_dir.path().join("restored.snapshot");
+        manager.get_stored_file(target, &restored).await.unwrap();
+        assert_eq!(fs::read(&restored).unwrap(), b"snapshot bytes");
+
+        assert!(manager.delete_snapshot(target).await.unwrap());
+        assert!(matches!(
+            manager.delete_snapshot(target).await,
+            Err(CollectionError::NotFound { .. }),
+        ));
+    }
+
+    /// An empty or slash-only prefix leaves keys where they were.
+    #[tokio::test]
+    async fn object_storage_empty_prefix_is_a_no_op() {
+        for prefix in [None, Some(""), Some("/"), Some("//")] {
+            let bucket = Arc::new(InMemory::new());
+            let manager =
+                SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), prefix));
+
+            let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+            let source = temp_dir.path().join("upload.snapshot");
+            fs::write(&source, b"snapshot bytes").unwrap();
+            manager
+                .store_file(&source, Path::new("./snapshots/full.snapshot"))
+                .await
+                .unwrap();
+
+            let keys: Vec<String> = bucket
+                .list(None)
+                .map_ok(|meta| meta.location.to_string())
+                .try_collect()
+                .await
+                .unwrap();
+            assert_eq!(keys, ["snapshots/full.snapshot"], "prefix {prefix:?}");
+        }
+    }
+
+    #[test]
+    fn snapshots_config_deserializes_prefix() {
+        let config: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "s3",
+            "s3_config": { "bucket": "b", "prefix": "team-a/qdrant" },
+            "gcs_config": { "bucket": "b", "prefix": "team-a" },
+            "azure_config": { "account": "a", "container": "c", "prefix": "team-a" },
+        }))
+        .unwrap();
+        assert_eq!(
+            config.s3_config.unwrap().prefix.as_deref(),
+            Some("team-a/qdrant")
+        );
+        assert_eq!(config.gcs_config.unwrap().prefix.as_deref(), Some("team-a"));
+        assert_eq!(
+            config.azure_config.unwrap().prefix.as_deref(),
+            Some("team-a")
+        );
+
+        let legacy: SnapshotsConfig = serde_json::from_value(serde_json::json!({
+            "snapshots_storage": "s3",
+            "s3_config": { "bucket": "b" },
+        }))
+        .unwrap();
+        assert!(legacy.s3_config.unwrap().prefix.is_none());
+    }
+
+    /// Paths that try to leave the prefix, handed to the manager directly so that
+    /// `validate_snapshot_name` is out of the picture.
+    const ESCAPING_PATHS: &[&str] = &[
+        "../../escape.snapshot",
+        "/absolute/escape.snapshot",
+        "snapshots/../escape.snapshot",
+        "./snapshots/../../escape.snapshot",
+        "snapshots/..%2F..%2Fescape.snapshot",
+        "snapshots\\..\\escape.snapshot",
+        "..",
+        ".",
+        "/",
+        "",
+    ];
+
+    const PREFIX: &str = "team-a/qdrant";
+
+    fn is_under_prefix(key: &str) -> bool {
+        key.strip_prefix(PREFIX)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    }
+
+    async fn raw_keys(bucket: &InMemory) -> Vec<String> {
+        let mut keys: Vec<String> = bucket
+            .list(None)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect()
+            .await
+            .unwrap();
+        keys.sort();
+        keys
+    }
+
+    /// Whatever target a caller passes, the written key stays under the prefix.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_writes() {
+        let bucket = Arc::new(InMemory::new());
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        for target in ESCAPING_PATHS {
+            let source = temp_dir.path().join("upload.snapshot");
+            fs::write(&source, b"snapshot bytes").unwrap();
+            // Some of these are not valid file names, an error is as good as a
+            // contained write. Only a key outside the prefix is a failure.
+            let _ = manager.store_file(&source, Path::new(target)).await;
+        }
+
+        let keys = raw_keys(&bucket).await;
+        assert!(!keys.is_empty(), "expected at least one contained write");
+        for key in &keys {
+            assert!(is_under_prefix(key), "key {key:?} escaped the prefix");
+        }
+    }
+
+    /// Objects outside the prefix are invisible: not listed, not readable, not deletable.
+    #[tokio::test]
+    async fn object_storage_prefix_cannot_be_escaped_by_reads_lists_and_deletes() {
+        use object_store::PutPayload;
+
+        let bucket = Arc::new(InMemory::new());
+        // Two objects outside the prefix, one of them at the exact key a
+        // caller would reach without the prefix.
+        for key in ["escape.snapshot", "snapshots/c/x.snapshot"] {
+            bucket
+                .put(
+                    &object_store::path::Path::from(key),
+                    PutPayload::from_static(b"outside"),
+                )
+                .await
+                .unwrap();
+        }
+        let outside_before = raw_keys(&bucket).await;
+
+        let manager =
+            SnapshotStorageManager::Cloud(SnapshotStorageCloud::new(bucket.clone(), Some(PREFIX)));
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        let mut probes: Vec<&str> = ESCAPING_PATHS.to_vec();
+        probes.extend(["escape.snapshot", "snapshots/c/x.snapshot", "snapshots/c"]);
+
+        for probe in probes {
+            let path = Path::new(probe);
+
+            let listed = manager.list_snapshots(path).await.unwrap();
+            assert!(
+                listed.is_empty(),
+                "listing {probe:?} leaked {listed:?} from outside the prefix"
+            );
+
+            let download = temp_dir.path().join("download.snapshot");
+            assert!(
+                matches!(
+                    manager.get_stored_file(path, &download).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "download of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.get_snapshot_stream(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "stream of {probe:?} reached outside the prefix"
+            );
+            assert!(
+                matches!(
+                    manager.delete_snapshot(path).await,
+                    Err(CollectionError::NotFound { .. })
+                ),
+                "delete of {probe:?} reached outside the prefix"
+            );
+        }
+
+        assert_eq!(raw_keys(&bucket).await, outside_before);
+    }
+
+    /// Cloud backends without their config block still build, reading the environment.
+    #[test]
+    fn cloud_backends_build_without_config_block() {
+        for storage in [SnapshotsStorageConfig::Gcs, SnapshotsStorageConfig::Azure] {
+            let manager = SnapshotStorageManager::new(&SnapshotsConfig {
+                snapshots_storage: storage,
+                ..Default::default()
+            });
+            // Without a bucket or account the builder must fail, not panic.
+            assert!(
+                matches!(manager, Err(CollectionError::ServiceError { .. })),
+                "{storage:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_snapshot_name_accepts_plain_file_names() {
+        for name in ["my.snapshot", "collection-2024-01-01-00-00-00.snapshot"] {
+            validate_snapshot_name(name).unwrap();
+        }
+    }
+
+    #[test]
+    fn validate_snapshot_name_rejects_paths() {
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    validate_snapshot_name(name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the snapshots directory and must be rejected",
+            );
+        }
+    }
+
+    /// GHSA-p9c2-9vq2-gxh8: an unchecked name let a caller scoped to one collection read and
+    /// delete any object in the bucket.
+    #[test]
+    fn object_storage_rejects_traversing_snapshot_name() {
+        for manager in [s3_manager(), gcs_manager(), azure_manager()] {
+            object_storage_rejects_traversing_snapshot_name_for(&manager);
+        }
+    }
+
+    fn object_storage_rejects_traversing_snapshot_name_for(manager: &SnapshotStorageManager) {
+        let snapshots_path = Path::new("snapshots/my-collection");
+
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    manager.get_snapshot_path(snapshots_path, name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the collection prefix and must be rejected",
+            );
+            assert!(
+                matches!(
+                    manager.get_full_snapshot_path(Path::new("snapshots"), name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the snapshots prefix and must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn object_storage_keeps_plain_snapshot_name_under_prefix() {
+        let manager = s3_manager();
+        let snapshots_path = Path::new("snapshots/my-collection");
+
+        assert_eq!(
+            manager
+                .get_snapshot_path(snapshots_path, "my.snapshot")
+                .unwrap(),
+            Path::new("snapshots/my-collection/my.snapshot"),
+        );
+        assert_eq!(
+            manager
+                .get_full_snapshot_path(Path::new("snapshots"), "full.snapshot")
+                .unwrap(),
+            Path::new("snapshots/full.snapshot"),
+        );
+    }
+
+    #[test]
+    fn local_storage_rejects_traversing_snapshot_name() {
+        let manager = SnapshotStorageManager::new(&SnapshotsConfig {
+            snapshots_storage: SnapshotsStorageConfig::Local,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let snapshots_dir = tempfile::Builder::new().tempdir().unwrap();
+        let snapshots_path = snapshots_dir.path();
+
+        // Traversal target
+        let other_collection = snapshots_path.join("other-collection");
+        fs::create_dir_all(&other_collection).unwrap();
+        fs::write(other_collection.join("victim.snapshot"), b"victim").unwrap();
+
+        // The caller's own collection
+        let my_collection = snapshots_path.join("my-collection");
+        fs::create_dir_all(&my_collection).unwrap();
+        fs::write(my_collection.join("my.snapshot"), b"mine").unwrap();
+
+        for name in TRAVERSING_NAMES {
+            assert!(
+                matches!(
+                    manager.get_snapshot_path(&my_collection, name),
+                    Err(CollectionError::NotFound { .. }),
+                ),
+                "snapshot name {name:?} escapes the collection directory and must be rejected",
+            );
+        }
+
+        // Reaching into a collection directory is not a full snapshot either
+        assert!(matches!(
+            manager.get_full_snapshot_path(snapshots_path, "other-collection/victim.snapshot"),
+            Err(CollectionError::NotFound { .. }),
+        ));
+
+        // An ordinary name still resolves
+        assert_eq!(
+            manager
+                .get_snapshot_path(&my_collection, "my.snapshot")
+                .unwrap(),
+            fs::canonicalize(my_collection.join("my.snapshot")).unwrap(),
+        );
+    }
+
+    /// `from_env` maps `AWS_TIMEOUT` to the client timeout key. Building on top of it
+    /// must keep that value unless the config file sets its own.
+    #[test]
+    fn s3_builder_keeps_env_timeouts_unless_configured() {
+        let env_builder = || {
+            let key: AmazonS3ConfigKey = "aws_timeout".parse().unwrap();
+            assert_eq!(key, AmazonS3ConfigKey::Client(ClientConfigKey::Timeout));
+            AmazonS3Builder::new().with_config(key, "77s")
+        };
+        let timeout = |builder: &AmazonS3Builder| {
+            builder.get_config_value(&AmazonS3ConfigKey::Client(ClientConfigKey::Timeout))
+        };
+        let mut config = S3Config {
+            bucket: "test-bucket".into(),
+            prefix: None,
+            region: None,
+            access_key: None,
+            secret_key: None,
+            endpoint_url: None,
+            timeout_sec: None,
+            connect_timeout_sec: None,
+            max_retries: None,
+            retry_timeout_sec: None,
+        };
+
+        let builder = s3_builder(env_builder(), Some(&config));
+        assert_eq!(timeout(&builder).as_deref(), Some("77s"));
+        let builder = s3_builder(env_builder(), None);
+        assert_eq!(timeout(&builder).as_deref(), Some("77s"));
+
+        config.timeout_sec = NonZeroU64::new(120);
+        let builder = s3_builder(env_builder(), Some(&config));
+        assert_eq!(timeout(&builder).as_deref(), Some("120s"));
+    }
+
+    #[test]
+    fn retry_config_applies_limits() {
+        let retry = |max_retries, retry_timeout_sec| {
+            let settings = ClientSettings {
+                endpoint_url: None,
+                timeout_sec: None,
+                connect_timeout_sec: None,
+                max_retries,
+                retry_timeout_sec,
+            };
+            let retry = settings.retry_config();
+            (retry.max_retries, retry.retry_timeout)
+        };
+        let default = RetryConfig::default();
+
+        assert_eq!(
+            retry(None, None),
+            (default.max_retries, default.retry_timeout),
+        );
+        assert_eq!(retry(Some(3), Some(60)), (3, Duration::from_secs(60)));
+        // Each field overrides only its own default.
+        assert_eq!(retry(Some(0), None), (0, default.retry_timeout));
+        assert_eq!(
+            retry(None, Some(600)),
+            (default.max_retries, Duration::from_secs(600)),
+        );
+    }
+
+    #[test]
+    fn gcs_and_azure_configs_deserialize_client_settings() {
+        let gcs: GcsConfig = serde_json::from_value(serde_json::json!({
+            "bucket": "b",
+            "timeout_sec": 120,
+            "connect_timeout_sec": 10,
+            "max_retries": 20,
+            "retry_timeout_sec": 600,
+        }))
+        .unwrap();
+        let azure: AzureConfig = serde_json::from_value(serde_json::json!({
+            "account": "a",
+            "container": "c",
+            "timeout_sec": 120,
+            "connect_timeout_sec": 10,
+            "max_retries": 20,
+            "retry_timeout_sec": 600,
+        }))
+        .unwrap();
+
+        for settings in [ClientSettings::from(&gcs), ClientSettings::from(&azure)] {
+            assert_eq!(settings.timeout_sec, NonZeroU64::new(120));
+            assert_eq!(settings.connect_timeout_sec, NonZeroU64::new(10));
+            assert_eq!(settings.max_retries, Some(20));
+            assert_eq!(settings.retry_timeout_sec, Some(600));
+        }
+    }
+
+    #[test]
+    fn s3_builder_applies_client_settings() {
+        let config = S3Config {
+            bucket: "test-bucket".into(),
+            prefix: None,
+            region: None,
+            access_key: None,
+            secret_key: None,
+            endpoint_url: Some("http://localhost:9000".into()),
+            timeout_sec: NonZeroU64::new(120),
+            connect_timeout_sec: NonZeroU64::new(10),
+            max_retries: Some(3),
+            retry_timeout_sec: Some(60),
+        };
+        let builder = s3_builder(AmazonS3Builder::new(), Some(&config));
+        let client_value = |key| builder.get_config_value(&AmazonS3ConfigKey::Client(key));
+
+        assert_eq!(
+            client_value(ClientConfigKey::Timeout).as_deref(),
+            Some("120s")
+        );
+        assert_eq!(
+            client_value(ClientConfigKey::ConnectTimeout).as_deref(),
+            Some("10s"),
+        );
+        assert_eq!(
+            client_value(ClientConfigKey::AllowHttp).as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            client_value(ClientConfigKey::UserAgent),
+            Some(APP_USER_AGENT.clone()),
+        );
+        builder.build().unwrap();
     }
 }

@@ -12,7 +12,7 @@ pub struct FeatureFlags {
     /// Magic feature flag that enables all features.
     ///
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
-    all: bool,
+    pub all: bool,
 
     /// Use incremental HNSW building.
     ///
@@ -26,8 +26,97 @@ pub struct FeatureFlags {
 
     /// Use single-file mmap in-ram vector storage (InRamMmap)
     ///
-    /// Enabled by default in Qdrant 1.17.1+
+    /// Enabled by default in Qdrant 1.18.3+
     pub single_file_mmap_vector_storage: bool,
+
+    /// Allow the io_uring-based payload storage implementation.
+    /// When disabled, io_uring payload storage is *never* used.
+    /// When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.
+    pub async_payload_storage: bool,
+
+    /// Allow the batched io_uring-based HNSW graph search.
+    /// When disabled, the HNSW graph is *never* opened on io_uring.
+    /// When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.
+    pub async_hnsw_graph: bool,
+
+    /// Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory)
+    /// listing the shard's segments and their
+    /// state, so out-of-process readers can discover segments without scanning the filesystem.
+    pub write_segment_manifest: bool,
+
+    /// Build new segments in append-only mode: in-place point mutations become clone-and-tombstone
+    /// appends instead. Intended for testing the append-only storage path.
+    pub append_only_mutations: bool,
+
+    /// Persist write-once bitmasks in the compact `StoredBitmask` format instead of raw dense
+    /// bitslices. Only gates writing: both formats are always readable.
+    pub compact_bitmask: bool,
+
+    /// Create Blobstore-backed storages (payload storage, appendable field indexes, sparse
+    /// vectors) in the append-only Logstore mode. Gates creation only: an existing storage
+    /// keeps its persisted mode, and both modes are always readable.
+    ///
+    /// Implies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].
+    pub append_only_storages: bool,
+
+    /// In non-appendable segments built by the optimizer, store the tracker of an append-only
+    /// payload storage in the compacted format: read into RAM whole on open instead of one lookup
+    /// per value. Only has an effect together with [`Self::append_only_storages`]. Gates creation
+    /// only: both formats are always readable.
+    pub compact_logstore_tracker: bool,
+
+    /// Transfer points as storage-native bytes (raw points), for every collection rather than
+    /// only those whose vector storage would lose precision in a decode-encode round-trip
+    /// (TurboQuant).
+    ///
+    /// Read on the sending side only, where the transfer batch is prepared: nodes accept
+    /// raw points regardless.
+    pub transfer_raw_points: bool,
+
+    /// Send the payload of a raw point as the byte blob it is stored as, so the sending
+    /// node does not parse it and neither node builds a protobuf value tree for it. The
+    /// receiving node still parses the blob, once, when the operation is applied. Only has
+    /// an effect on points transferred raw, see [`Self::transfer_raw_points`].
+    ///
+    /// Read on the sending side only: nodes accept raw payloads regardless.
+    pub transfer_raw_payloads: bool,
+
+    /// Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are
+    /// open. Replays the persisted changes on startup to guarantee data consistency. Required for
+    /// serverless deployments where storage and compute is separated.
+    pub persist_proxy_segments: bool,
+
+    /// When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage
+    /// (aka inline-storage without standalone vector storage) for new segments.
+    ///
+    /// Existing `GraphInline` segments are always readable, regardless of this flag.
+    pub combined_vector_storage: bool,
+
+    /// Record the version of every delete, in formats older readers cannot parse: versioned
+    /// delete entries in appendable mappings logs, and a delete log next to the deleted mask of
+    /// immutable segments, which takes their deletes in place of the mask. Followers use the
+    /// versions to never apply the delete of a moved point before they see its new copy. Gates
+    /// writing only: both formats are always read, and the deletes of an immutable segment are the
+    /// union of its mask and its log.
+    pub versioned_deletes: bool,
+
+    /// Build the main HNSW graph of large segments with PiPNN instead of inserting point by
+    /// point. When disabled, PiPNN is *never* used and graphs are built with HNSW.
+    /// When enabled, PiPNN is used where it applies: segments that are large enough, have
+    /// no older graph to build from, and whose vectors support it. Only changes how graphs
+    /// are built: the resulting graph has the same format either way.
+    ///
+    /// Disabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large
+    /// segments can only be tuned through `m`.
+    pub pipnn_graph_building: bool,
+
+    /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
+    /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
+    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
+    /// [`Self::versioned_deletes`].
+    ///
+    /// Note that this will only be applied when passed into [`init_feature_flags`].
+    pub serverless_compatible: bool,
 }
 
 impl Default for FeatureFlags {
@@ -36,7 +125,21 @@ impl Default for FeatureFlags {
             all: false,
             incremental_hnsw_building: true,
             appendable_quantization: true,
-            single_file_mmap_vector_storage: false,
+            single_file_mmap_vector_storage: true,
+            async_payload_storage: true,
+            async_hnsw_graph: false,
+            write_segment_manifest: false,
+            append_only_mutations: false,
+            compact_bitmask: false,
+            append_only_storages: false,
+            compact_logstore_tracker: false,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
+            persist_proxy_segments: false,
+            combined_vector_storage: true,
+            versioned_deletes: false,
+            pipnn_graph_building: false,
+            serverless_compatible: false,
         }
     }
 }
@@ -46,24 +149,76 @@ impl FeatureFlags {
     pub fn is_default(self) -> bool {
         self == FeatureFlags::default()
     }
+
+    /// Whether segments should be produced in a serverless-compatible way (e.g.
+    /// the disk-resident id-tracker format). See the field docs for implications.
+    pub fn serverless_compatible(self) -> bool {
+        self.serverless_compatible
+    }
+
+    /// Turn on serverless-compatible mode. The implied sub-flags are applied
+    /// when the flags are passed to [`init_feature_flags`].
+    pub fn enable_serverless_compatible(&mut self) {
+        self.serverless_compatible = true;
+    }
+
+    fn all() -> Self {
+        Self {
+            all: true,
+            incremental_hnsw_building: true,
+            appendable_quantization: true,
+            single_file_mmap_vector_storage: true,
+            async_payload_storage: true,
+            async_hnsw_graph: true,
+            write_segment_manifest: true,
+            // Deliberately not enabled by `all`: these change mutation semantics and the
+            // persisted storage format, and `all` is enabled in dev and e2e configs.
+            append_only_mutations: false,
+            append_only_storages: false,
+            compact_logstore_tracker: false,
+            compact_bitmask: true,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
+            persist_proxy_segments: true,
+            combined_vector_storage: true,
+            // Deliberately not enabled by `all`: it changes the persisted storage format.
+            versioned_deletes: false,
+            pipnn_graph_building: true,
+            serverless_compatible: false,
+        }
+    }
+
+    fn normalize(mut self) -> Self {
+        let serverless_compatible = self.serverless_compatible;
+
+        if self.all {
+            self = Self::all();
+        }
+
+        if serverless_compatible {
+            self.serverless_compatible = true;
+            self.write_segment_manifest = true;
+            self.append_only_mutations = true;
+            self.compact_bitmask = true;
+            self.append_only_storages = true;
+            self.compact_logstore_tracker = true;
+            self.persist_proxy_segments = true;
+            self.versioned_deletes = true;
+        }
+
+        // Append-only storages cannot rewrite slots.
+        if self.append_only_storages {
+            self.append_only_mutations = true;
+        }
+
+        self
+    }
 }
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
-pub fn init_feature_flags(mut flags: FeatureFlags) {
-    let FeatureFlags {
-        all,
-        incremental_hnsw_building,
-        appendable_quantization,
-        single_file_mmap_vector_storage,
-    } = &mut flags;
-
-    // If all is set, explicitly set all feature flags
-    if *all {
-        *incremental_hnsw_building = true;
-        *appendable_quantization = true;
-        *single_file_mmap_vector_storage = true;
-    }
+pub fn init_feature_flags(flags: FeatureFlags) {
+    let flags = flags.normalize();
 
     let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {
@@ -94,5 +249,51 @@ mod tests {
 
         assert!(feature_flags().is_default());
         assert!(FeatureFlags::default().is_default());
+    }
+
+    #[test]
+    fn test_serverless_compatible_enables_sub_flags() {
+        let flags = FeatureFlags {
+            serverless_compatible: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.write_segment_manifest);
+        assert!(flags.append_only_mutations);
+        assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
+        assert!(flags.compact_logstore_tracker);
+        assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
+    }
+
+    #[test]
+    fn test_serverless_compatible_after_all() {
+        let flags = FeatureFlags {
+            all: true,
+            serverless_compatible: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.write_segment_manifest);
+        assert!(flags.append_only_mutations);
+        assert!(flags.compact_bitmask);
+        assert!(flags.append_only_storages);
+        assert!(flags.compact_logstore_tracker);
+        assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
+    }
+
+    #[test]
+    fn test_append_only_storages_forces_append_only_mutations() {
+        let flags = FeatureFlags {
+            append_only_storages: true,
+            ..Default::default()
+        }
+        .normalize();
+
+        assert!(flags.append_only_mutations);
     }
 }

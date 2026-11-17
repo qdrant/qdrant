@@ -3,10 +3,11 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use common::universal_io::{Result, UniversalIoError, UserData};
+use common::universal_io::{
+    UioResult, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -24,6 +25,23 @@ pub mod inverted_index_ram_builder;
 // `inverted_index.data` to `inverted_index.dat`.
 pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
+pub trait InvertedIndexReadOnly<S: UniversalRead>: InvertedIndex {
+    /// See [`InvertedIndex::open_ro`].
+    fn open_ro_impl<Fs: UniversalReadFs<File = S>>(fs: &Fs, path: &Path) -> UioResult<Self>;
+}
+
+pub trait InvertedIndexReadWrite<S: UniversalWrite>: InvertedIndex {
+    /// See [`InvertedIndex::open_rw`].
+    fn open_rw_impl(fs: &S::Fs, path: &Path) -> UioResult<Self>;
+
+    /// See [`InvertedIndex::from_ram_index`].
+    fn from_ram_index_impl<P: AsRef<Path>>(
+        fs: &S::Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> UioResult<Self>;
+}
+
 pub trait InvertedIndex: Sized + Debug + 'static {
     type Iter<'a>: PostingListIter + Clone
     where
@@ -31,22 +49,43 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     type Version: StorageVersion;
 
-    fn is_on_disk(&self) -> bool;
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
-    /// Open existing index based on path
-    fn open(path: &Path) -> Result<Self>;
+    /// Open existing index based on path.
+    fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
+    where
+        Self: InvertedIndexReadOnly<Fs::File>,
+    {
+        Self::open_ro_impl(fs, path)
+    }
+
+    /// Open existing index based on path.
+    ///
+    /// Unlike [`Self::open_ro`], it might perform migration-related writes.
+    ///
+    /// TODO(uio): probably, this can be refactored into a single `open` with
+    /// boolean parameter, if we add something like
+    /// `UniversalReadFs::try_write(&self) -> Option<&impl UniversalWriteFs>`.
+    fn open_rw<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
+    where
+        Self: InvertedIndexReadWrite<Fs::File>,
+        Fs::File: UniversalWrite<Fs = Fs>,
+    {
+        Self::open_rw_impl(fs, path)
+    }
 
     /// Save index
-    fn save(&self, path: &Path) -> Result<()>;
+    fn save(&self, path: &Path) -> UioResult<()>;
 
     /// Get the posting lists for the given dimension ids.
     fn get_batch<'a, U: UserData>(
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
-        callback: impl FnMut(U, Self::Iter<'a>) -> Result<()>,
-    ) -> Result<()>;
+        callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
+    ) -> UioResult<()>;
 
     /// Get number of posting lists
     fn len(&self) -> usize;
@@ -60,9 +99,8 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
-        callback: impl FnMut(U, usize) -> Result<()>,
-    ) -> Result<()>;
+        callback: impl FnMut(U, usize) -> UioResult<()>,
+    ) -> UioResult<()>;
 
     /// Files used by this index
     fn files(path: &Path) -> Vec<PathBuf>;
@@ -80,7 +118,17 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     );
 
     /// Create inverted index from ram index
-    fn from_ram_index<P: AsRef<Path>>(ram_index: Cow<InvertedIndexRam>, path: P) -> Result<Self>;
+    fn from_ram_index<P: AsRef<Path>, Fs: UniversalReadFs>(
+        fs: &Fs,
+        ram_index: Cow<InvertedIndexRam>,
+        path: P,
+    ) -> UioResult<Self>
+    where
+        Self: InvertedIndexReadWrite<Fs::File>,
+        Fs::File: UniversalWrite<Fs = Fs>,
+    {
+        Self::from_ram_index_impl(fs, ram_index, path)
+    }
 
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;
@@ -90,6 +138,20 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     /// Get max existed index
     fn max_index(&self) -> Option<DimOffset>;
+
+    /// Elements across all posting lists, i.e. the (dimension, weight) pairs of the indexed
+    /// vectors, independent of how the postings are stored. Reads only the posting list headers.
+    fn total_element_count(&self) -> UioResult<usize> {
+        let Some(max_index) = self.max_index() else {
+            return Ok(0);
+        };
+        let mut total = 0usize;
+        self.posting_list_len_batch((0..=max_index).map(|dim| ((), dim)), |(), len| {
+            total += len;
+            Ok(())
+        })?;
+        Ok(total)
+    }
 }
 
 /// Error returned from [`InvertedIndex::get_batch`] and [`InvertedIndex::posting_list_len_batch`].

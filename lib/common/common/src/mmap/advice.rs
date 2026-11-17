@@ -3,8 +3,11 @@
 
 use std::hint::black_box;
 use std::num::Wrapping;
+use std::path::Path;
 use std::{io, slice};
 
+#[cfg(unix)]
+use memmap2::UncheckedAdvice;
 use serde::Deserialize;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
@@ -144,8 +147,11 @@ pub trait Madviseable {
 
     /// Hint to the OS that pages backing this memory map can be reclaimed.
     ///
-    /// Uses `madvise(MADV_PAGEOUT)` on Linux 5.4+, which writes back any dirty
-    /// pages and frees the resident memory while keeping the mapping valid.
+    /// Uses `madvise(MADV_PAGEOUT)` on Linux 5.4+, which reclaims resident
+    /// memory while keeping the mapping valid. Not all pages are reclaimed:
+    /// dirty file-backed pages are kept (only kswapd may write them back, not
+    /// this direct-reclaim context), as are pages mapped by more than one page
+    /// table — see [`Madviseable::drop_page_tables`] for that case.
     /// On older kernels or non-Linux platforms this is a no-op, since there is
     /// no portable userspace equivalent.
     fn clear_cache(&self) {
@@ -172,6 +178,33 @@ pub trait Madviseable {
         }
     }
 
+    /// Zap this mapping's page-table entries with `madvise(MADV_DONTNEED)`.
+    /// Pages stay in the page cache, dirty ones included, and refault on the
+    /// next access.
+    ///
+    /// # Safety
+    ///
+    /// See [`UncheckedAdvice::DontNeed`]/[`memmap2::Mmap::unchecked_advise`].
+    /// The mapping must be `MAP_SHARED` and file-backed. On a private or
+    /// anonymous mapping this discards the data.
+    unsafe fn drop_page_tables(&self, diag_path: &Path) {
+        #[cfg(not(unix))]
+        let _ = diag_path;
+
+        #[cfg(unix)]
+        if let Err(e) = unsafe { self.unchecked_advise_impl(UncheckedAdvice::DontNeed) } {
+            log::warn!("Failed to call madvise(MADV_DONTNEED) for {diag_path:?}: {e}");
+        }
+    }
+
+    /// Like [`Madviseable::advise_impl`], but for [`UncheckedAdvice`] values.
+    ///
+    /// # Safety
+    ///
+    /// See [`UncheckedAdvice`]/[`memmap2::Mmap::unchecked_advise`].
+    #[cfg(unix)]
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()>;
+
     #[cfg(target_os = "linux")]
     fn pageout_impl(&self);
 }
@@ -179,8 +212,8 @@ pub trait Madviseable {
 /// Issue `madvise(MADV_PAGEOUT)` for the given memory region.
 ///
 /// Mmap base addresses are always page-aligned, so callers do not need to
-/// adjust the slice. The kernel will write back any dirty pages and reclaim
-/// the resident memory while keeping the mapping valid.
+/// adjust the slice. The kernel reclaims resident memory while keeping the
+/// mapping valid; dirty file-backed pages are skipped, not written back.
 #[cfg(target_os = "linux")]
 fn pageout_slice(slice: &[u8]) {
     if slice.is_empty() {
@@ -209,6 +242,11 @@ impl Madviseable for memmap2::Mmap {
         populate_simple(self);
     }
 
+    #[cfg(unix)]
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
+    }
+
     #[cfg(target_os = "linux")]
     fn pageout_impl(&self) {
         pageout_slice(self);
@@ -223,6 +261,11 @@ impl Madviseable for memmap2::MmapMut {
 
     fn populate_simple_impl(&self) {
         populate_simple(self);
+    }
+
+    #[cfg(unix)]
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
     }
 
     #[cfg(target_os = "linux")]
@@ -240,6 +283,11 @@ impl Madviseable for memmap2::MmapRaw {
     fn populate_simple_impl(&self) {
         let mmap = unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) };
         populate_simple(mmap);
+    }
+
+    #[cfg(unix)]
+    unsafe fn unchecked_advise_impl(&self, advice: UncheckedAdvice) -> io::Result<()> {
+        unsafe { self.unchecked_advise(advice) }
     }
 
     #[cfg(target_os = "linux")]
@@ -263,46 +311,103 @@ fn populate_simple(slice: &[u8]) {
     );
 }
 
-/// Trigger readahead for a memory-mapped region by calling
-/// `madvise(MADV_WILLNEED)` on it.
+/// Call [`will_need`] unless the region fits into a single page.
 ///
 /// Use-case: the `region` is inside `MADV_RANDOM` memory map, but it spans
 /// across more than one 4KiB page. If you read it in sequence, it will cause
 /// multiple page faults, thus multiple 4KiB I/O operations. Avoid this by
 /// calling this function before reading the region. It will prefetch the whole
 /// region in a single I/O operation. (if possible)
-///
-/// Note: if the region fits within a single page, this function is a no-op.
-#[cfg(unix)]
 pub fn will_need_multiple_pages(region: &[u8]) {
-    let Some(page_mask) = page_size().map(|s| s - 1) else {
-        return;
-    };
+    cfg_select! {
+        unix => {
+            let Some(page_mask) = page_size().map(|s| s - 1) else {
+                return;
+            };
 
-    // `madvise()` requires the address to be page-aligned.
-    let addr = region.as_ptr().map_addr(|addr| addr & !page_mask);
-    let length = region.len() + (region.as_ptr().addr() & page_mask);
+            let offset_in_page = region.as_ptr().addr() & page_mask;
+            if offset_in_page + region.len() <= page_mask {
+                // Data fits within a single page, do nothing.
+                return;
+            }
 
-    if length <= page_mask {
-        // Data fits within a single page, do nothing.
-        return;
-    }
-
-    // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
-    // (not file-baked mmap or even if it is an arbitrary invalid address), it
-    // will return an error, but it won't crash or cause an undefined behavior.
-    let res = unsafe { nix::libc::madvise(addr as *mut _, length, nix::libc::MADV_WILLNEED) };
-    if res != 0 {
-        #[cfg(debug_assertions)]
-        {
-            let err = io::Error::last_os_error();
-            panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+            will_need(region);
         }
+        _ => _ = region,
     }
 }
 
-#[cfg(not(unix))]
-pub fn will_need_multiple_pages(_region: &[u8]) {}
+/// Default Linux readahead window (`read_ahead_kb`). One `MADV_WILLNEED` call
+/// is truncated to this size, so [`will_need`] splits larger regions.
+#[cfg(unix)]
+const WILL_NEED_CHUNK_BYTES: usize = 128 * 1024;
+
+/// Trigger readahead for a memory-mapped region by calling
+/// `madvise(MADV_WILLNEED)` on it, one readahead window at a time.
+pub fn will_need(region: &[u8]) {
+    cfg_select! {
+        unix => {
+            let Some(page_mask) = page_size().map(|s| s - 1) else {
+                return;
+            };
+            // `madvise()` requires the address to be page-aligned.
+            let offset_in_page = region.as_ptr().addr() & page_mask;
+            let start = region.as_ptr().map_addr(|addr| addr - offset_in_page);
+            let length = offset_in_page + region.len();
+
+            // Linux reads at most one readahead window per `MADV_WILLNEED` call
+            // (`force_page_cache_ra` caps it at `max(io_pages, ra_pages)`, 128 KiB by
+            // default) and silently drops the rest. Issue one call per window so the
+            // whole region is requested.
+            for chunk_start in (0..length).step_by(WILL_NEED_CHUNK_BYTES) {
+                let addr = start.wrapping_add(chunk_start);
+                let chunk_len = WILL_NEED_CHUNK_BYTES.min(length - chunk_start);
+                // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
+                // (not file-baked mmap or even if it is an arbitrary invalid address), it
+                // will return an error, but it won't crash or cause an undefined behavior.
+                let res = unsafe {
+                    nix::libc::madvise(addr as *mut _, chunk_len, nix::libc::MADV_WILLNEED)
+                };
+                if res != 0 {
+                    #[cfg(debug_assertions)]
+                    {
+                        let err = io::Error::last_os_error();
+                        panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+                    }
+                }
+            }
+        }
+        _ => _ = region,
+    }
+}
+
+/// Whether this thread had page faults since the previous call to this function.
+///
+/// It's a heuristic on whether to call [`will_need`]: it gives us parallel
+/// prefetching, but it costs a syscall. No faults since last call mean that
+/// the file is already cached.
+///
+/// `None` means unknown/not supported/first call.
+pub fn thread_faulted() -> Option<bool> {
+    cfg_select! {
+        target_os = "linux" => {
+            use std::cell::Cell;
+
+            use nix::libc;
+            use nix::sys::resource::{UsageWho, getrusage};
+
+            thread_local! {
+                static FAULTS: Cell<Option<libc::c_long>> = const { Cell::new(None) };
+            }
+            let usage = getrusage(UsageWho::RUSAGE_THREAD).ok()?; // `None` on error
+            // Minor faults count: reading a page brought in by `will_need` is one.
+            let faults = usage.major_page_faults() + usage.minor_page_faults();
+            let previous = FAULTS.replace(Some(faults))?; // `None` on the first call
+            Some(previous != faults)
+        }
+        _ => None,
+    }
+}
 
 /// Returns the system page size in bytes, or `None` if it could not be determined.
 ///

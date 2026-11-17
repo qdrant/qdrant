@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -7,7 +11,9 @@ use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use segment::data_types::index::*;
 
+use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::types::json_path::PyJsonPath;
 
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -19,7 +25,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 impl PyTextIndexParams {
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None))]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None, scoring = None, nested = None))]
     pub fn new(
         tokenizer: Option<PyTokenizerType>,
         min_token_len: Option<usize>,
@@ -31,6 +37,9 @@ impl PyTextIndexParams {
         on_disk: Option<bool>,
         stemmer: Option<PyStemmingAlgorithm>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        scoring: Option<PyTextScoringInterface>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(TextIndexParams {
             r#type: Default::default(),
@@ -42,8 +51,11 @@ impl PyTextIndexParams {
             phrase_matching,
             stopwords: stopwords.map(StopwordsInterface::from),
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
+            scoring: scoring.and_then(PyTextScoringInterface::into_params),
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -84,7 +96,15 @@ impl PyTextIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
@@ -95,6 +115,16 @@ impl PyTextIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn scoring(&self) -> Option<PyTextScoringParams> {
+        self.0.scoring.clone().map(PyTextScoringParams)
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -109,11 +139,91 @@ impl PyTextIndexParams {
             lowercase: _,
             ascii_folding: _,
             phrase_matching: _,
+            memory: _,
             stopwords: _,
             on_disk: _,
             stemmer: _,
             enable_hnsw: _,
+            scoring: _,
+            nested: _,
         } = self.0;
+    }
+}
+
+/// `True` for the default ranking, `False` to disable it, or the parameters themselves.
+#[derive(FromPyObject)]
+pub enum PyTextScoringInterface {
+    Enabled(bool),
+    Params(PyTextScoringParams),
+}
+
+impl PyTextScoringInterface {
+    fn into_params(self) -> Option<TextScoringParams> {
+        match self {
+            Self::Enabled(enabled) => enabled.then(TextScoringParams::default),
+            Self::Params(params) => Some(params.0),
+        }
+    }
+}
+
+#[pyclass(name = "TextScoringParams", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyTextScoringParams(TextScoringParams);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyTextScoringParams {
+    #[new]
+    #[pyo3(signature = (r#type = PyTextScoringType::Bm25))]
+    pub fn new(r#type: PyTextScoringType) -> Self {
+        Self(TextScoringParams {
+            r#type: TextScoringType::from(r#type),
+        })
+    }
+
+    #[getter]
+    pub fn r#type(&self) -> PyTextScoringType {
+        PyTextScoringType::from(self.0.r#type)
+    }
+}
+
+impl PyTextScoringParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let TextScoringParams { r#type: _ } = self.0;
+    }
+}
+
+#[pyclass(name = "TextScoringType", from_py_object)]
+#[derive(Copy, Clone, Debug)]
+pub enum PyTextScoringType {
+    Bm25,
+}
+
+impl Repr for PyTextScoringType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Bm25 => "Bm25",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<TextScoringType> for PyTextScoringType {
+    fn from(scoring_type: TextScoringType) -> Self {
+        match scoring_type {
+            TextScoringType::Bm25 => PyTextScoringType::Bm25,
+        }
+    }
+}
+
+impl From<PyTextScoringType> for TextScoringType {
+    fn from(scoring_type: PyTextScoringType) -> Self {
+        match scoring_type {
+            PyTextScoringType::Bm25 => TextScoringType::Bm25,
+        }
     }
 }
 
@@ -124,6 +234,7 @@ pub enum PyTokenizerType {
     Whitespace,
     Word,
     Multilingual,
+    Code,
 }
 
 impl Repr for PyTokenizerType {
@@ -133,6 +244,7 @@ impl Repr for PyTokenizerType {
             Self::Whitespace => "Whitespace",
             Self::Word => "Word",
             Self::Multilingual => "Multilingual",
+            Self::Code => "Code",
         };
 
         f.simple_enum::<Self>(repr)
@@ -146,6 +258,7 @@ impl From<TokenizerType> for PyTokenizerType {
             TokenizerType::Whitespace => PyTokenizerType::Whitespace,
             TokenizerType::Word => PyTokenizerType::Word,
             TokenizerType::Multilingual => PyTokenizerType::Multilingual,
+            TokenizerType::Code => PyTokenizerType::Code,
         }
     }
 }
@@ -157,6 +270,7 @@ impl From<PyTokenizerType> for TokenizerType {
             PyTokenizerType::Whitespace => TokenizerType::Whitespace,
             PyTokenizerType::Word => TokenizerType::Word,
             PyTokenizerType::Multilingual => TokenizerType::Multilingual,
+            PyTokenizerType::Code => TokenizerType::Code,
         }
     }
 }
@@ -433,16 +547,19 @@ impl FromPyObject<'_, '_> for PyStemmingAlgorithm {
         #[derive(FromPyObject)]
         enum Helper {
             Snowball(PySnowballParams),
+            Disabled(PyDisabledStemmer),
         }
 
         fn _variants(algo: StemmingAlgorithm) {
             match algo {
                 StemmingAlgorithm::Snowball(_) => {}
+                StemmingAlgorithm::Disabled(_) => {}
             }
         }
 
         let algo = match algo.extract()? {
             Helper::Snowball(snowball) => StemmingAlgorithm::Snowball(snowball.into()),
+            Helper::Disabled(disabled) => StemmingAlgorithm::Disabled(disabled.into()),
         };
 
         Ok(Self(algo))
@@ -458,6 +575,9 @@ impl<'py> IntoPyObject<'py> for PyStemmingAlgorithm {
         match self.0 {
             StemmingAlgorithm::Snowball(snowball) => {
                 PySnowballParams(snowball).into_bound_py_any(py)
+            }
+            StemmingAlgorithm::Disabled(disabled) => {
+                PyDisabledStemmer(disabled).into_bound_py_any(py)
             }
         }
     }
@@ -477,6 +597,7 @@ impl Repr for PyStemmingAlgorithm {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.0 {
             StemmingAlgorithm::Snowball(snowball) => PySnowballParams::wrap_ref(snowball).fmt(f),
+            StemmingAlgorithm::Disabled(disabled) => PyDisabledStemmer::wrap_ref(disabled).fmt(f),
         }
     }
 }
@@ -509,6 +630,38 @@ impl PySnowballParams {
         let SnowballParams {
             r#type: _, // not relevant for Qdrant Edge
             language: _,
+        } = self.0;
+    }
+}
+
+/// Explicitly disable stemming, overriding the language default.
+#[pyclass(name = "DisabledStemmer", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyDisabledStemmer(DisabledStemmerParams);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyDisabledStemmer {
+    #[new]
+    pub fn new() -> Self {
+        Self(DisabledStemmerParams {
+            r#type: NoStemmer::None,
+        })
+    }
+}
+
+impl Default for PyDisabledStemmer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PyDisabledStemmer {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let DisabledStemmerParams {
+            r#type: _, // not relevant for Qdrant Edge
         } = self.0;
     }
 }

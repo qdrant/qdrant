@@ -5,8 +5,8 @@ mod versions_storage;
 #[cfg(test)]
 pub(super) mod tests;
 
-#[allow(dead_code)]
 pub mod read_only;
+pub mod update_only;
 
 use std::fmt::Debug;
 use std::io::{BufReader, BufWriter, Write};
@@ -24,25 +24,33 @@ use common::universal_io::{
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
-use self::deleted_storage::deleted_path;
+pub(crate) use self::deleted_storage::{deleted_path, tombstone_points_in_segment};
 pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
 use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
-use self::versions_storage::{mmap_size, version_mapping_path};
+use self::versions_storage::mmap_size;
+pub(crate) use self::versions_storage::version_mapping_path;
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
+use crate::id_tracker::delete_versions::{
+    BufferedDeletes, DeleteVersioning, existing_delete_log, read_delete_log,
+};
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{
+    DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
+    default_external_ids_batch, default_internal_versions_batch,
+};
 use crate::types::{PointIdType, SeqNumberType};
 
 #[derive(Debug)]
 pub struct ImmutableIdTracker<S: UniversalWrite> {
     path: PathBuf,
 
-    deleted_wrapper: BufferedUpdateBitSlice<S>,
+    /// The deletes made since the last flush, for the delete log or the mask. The segment's
+    /// deletes are the union of the two.
+    deleted_wrapper: BufferedDeletes<S>,
 
     pub(super) internal_to_version: CompressedVersions,
     internal_to_version_wrapper: SliceBufferedUpdateWrapper<S, SeqNumberType>,
@@ -84,6 +92,16 @@ where
     }
 
     pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+        Self::open_with_delete_versioning(fs, segment_path, DeleteVersioning::from_feature_flags())
+    }
+
+    /// Like [`open`](Self::open), with deletes written as `versioning` says rather than as the
+    /// feature flags do.
+    pub(crate) fn open_with_delete_versioning(
+        fs: &S::Fs,
+        segment_path: &Path,
+        versioning: DeleteVersioning,
+    ) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -98,8 +116,13 @@ where
 
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+        for slot in read_delete_log(fs, segment_path)? {
+            if let Some(mut bit) = deleted_bitvec.get_mut(slot as usize) {
+                *bit = true;
+            }
+        }
 
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted_wrapper = BufferedDeletes::new(deleted_storage, segment_path, versioning);
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
@@ -171,7 +194,11 @@ where
 
         deleted_storage.flusher()()?;
 
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted_wrapper = BufferedDeletes::new(
+            deleted_storage,
+            path,
+            DeleteVersioning::from_feature_flags(),
+        );
 
         // Create mmap file for internal-to-version list
         let version_filepath = version_mapping_path(path);
@@ -220,7 +247,6 @@ where
         let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
-        deleted_wrapper.flusher()()?;
         internal_to_version_wrapper.flusher()()?;
 
         Ok(Self {
@@ -238,6 +264,14 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         self.internal_to_version.get(internal_id)
     }
 
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
+    }
+
     fn internal_id_with_behavior(
         &self,
         external_id: PointIdType,
@@ -251,7 +285,17 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
         self.mappings.external_id(internal_id)
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
+    }
+
+    type Backend = S;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Compressed(&self.mappings)
     }
 
@@ -281,8 +325,8 @@ impl<S: UniversalWrite + Send + Sync + 'static> IdTrackerRead for ImmutableIdTra
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(self.internal_to_version.iter())
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(self.internal_to_version.iter()))
     }
 }
 
@@ -313,29 +357,38 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         panic!("Trying to call a mutating function (`set_link`) of an immutable id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
 
         if let Some(internal_id) = internal_id {
-            self.deleted_wrapper.set(internal_id as usize, true);
+            self.deleted_wrapper.delete(internal_id, version);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
 
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
 
-        self.deleted_wrapper.set(internal_id as usize, true);
+        self.deleted_wrapper.delete(internal_id, version);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
     }
 
-    /// Creates a flusher function, that writes the deleted points bitvec to disk.
+    /// Creates a flusher function, that writes the deleted points to the delete log, with the
+    /// version each was deleted at, or to the bitvec on disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
         self.deleted_wrapper.flusher()
@@ -348,11 +401,13 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             deleted_path(&self.path),
             mappings_path(&self.path),
             version_mapping_path(&self.path),
-        ]
+        ];
+        files.extend(existing_delete_log(&self.path));
+        files
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {

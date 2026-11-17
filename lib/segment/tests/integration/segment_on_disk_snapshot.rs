@@ -1,14 +1,22 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
+use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::tar_ext;
+use common::flags::FeatureFlags;
 use common::tar_unpack::tar_unpack_file;
+use common::{ambient, tar_ext};
 use fs_err as fs;
 use fs_err::File;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{
+    NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry as _,
+};
 use segment::entry::snapshot_entry::SnapshotEntry as _;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
@@ -17,8 +25,10 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType,
-    SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
+    QuantizationConfig, ScalarQuantizationConfig, ScalarType, SegmentConfig, SnapshotFormat,
+    VectorDataConfig, VectorStorageType,
 };
+use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -26,8 +36,10 @@ use uuid::Uuid;
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
-fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
-    use common::counter::hardware_counter::HardwareCounterCell;
+fn test_on_disk_segment_snapshot(
+    #[case] format: SnapshotFormat,
+    #[values(false, true)] inline_storage: bool,
+) {
     use segment::types::HnswGlobalConfig;
 
     let _ = env_logger::builder().is_test(true).try_init();
@@ -46,30 +58,20 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
 
     let mut segment = build_simple_segment(segment_builder_dir.path(), 2, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
         .unwrap();
     segment
-        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]), &hw_counter)
+        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]))
         .unwrap();
 
     segment
-        .set_full_payload(
-            2,
-            0.into(),
-            &serde_json::from_str(data).unwrap(),
-            &hw_counter,
-        )
+        .set_full_payload(2, 0.into(), &serde_json::from_str(data).unwrap())
         .unwrap();
     segment
-        .set_full_payload(
-            3,
-            0.into(),
-            &serde_json::from_str(data).unwrap(),
-            &hw_counter,
-        )
+        .set_full_payload(3, 0.into(), &serde_json::from_str(data).unwrap())
         .unwrap();
 
     segment
@@ -78,13 +80,15 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
             &JsonPath::new("names"),
             Some(&PayloadFieldSchema::FieldParams(
                 PayloadSchemaParams::Keyword(KeywordIndexParams {
+                    memory: None,
                     r#type: segment::data_types::index::KeywordIndexType::Keyword,
                     is_tenant: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
+                    prefix: None,
+                    nested: None,
                 }),
             )),
-            &hw_counter,
         )
         .unwrap();
     segment
@@ -93,15 +97,16 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
             &JsonPath::new("ages"),
             Some(&PayloadFieldSchema::FieldParams(
                 PayloadSchemaParams::Integer(IntegerIndexParams {
+                    memory: None,
                     r#type: segment::data_types::index::IntegerIndexType::Integer,
                     lookup: Some(true),
                     range: Some(true),
                     is_principal: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
+                    nested: None,
                 }),
             )),
-            &hw_counter,
         )
         .unwrap();
 
@@ -113,21 +118,30 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                 distance: Distance::Dot,
                 storage_type: VectorStorageType::Mmap, // mmap vectors
                 index: Indexes::Hnsw(HnswConfig {
+                    memory: None,
                     m: 4,
                     ef_construct: 16,
                     full_scan_threshold: 8,
                     max_indexing_threads: 2,
                     on_disk: Some(true), // mmap index
                     payload_m: None,
-                    inline_storage: None,
+                    inline_storage: inline_storage.then_some(true),
                 }),
-                quantization_config: None,
+                quantization_config: inline_storage.then(|| {
+                    QuantizationConfig::from(ScalarQuantizationConfig {
+                        r#type: ScalarType::Int8,
+                        quantile: None,
+                        always_ram: None,
+                        memory: None,
+                    })
+                }),
                 multivector_config: None,
                 datatype: None,
             },
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: PayloadStorageType::Mmap,
+        id_tracker_memory: None,
     };
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -136,13 +150,25 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         segment_builder_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
     )
     .unwrap();
-    let hw_counter = HardwareCounterCell::new();
-    segment_builder
-        .update(&[&segment], &false.into(), &hw_counter)
-        .unwrap();
-    let segment = segment_builder.build_for_test(segment_base_dir.path());
+    segment_builder.update(&[&segment], &false.into()).unwrap();
+    let mut segment = segment_builder.build_for_test(segment_base_dir.path());
+    let expected_storage_type = if inline_storage {
+        VectorStorageType::GraphInline
+    } else {
+        VectorStorageType::Mmap
+    };
+    assert_eq!(
+        segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].storage_type,
+        expected_storage_type,
+    );
+    assert_matches!(
+        segment.delete_vector(6, 1.into(), DEFAULT_VECTOR_NAME),
+        Ok(true)
+    );
+    segment.flush(true).unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -198,8 +224,14 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment =
-        load_segment(&entry.path(), Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let restored_segment = load_segment(
+        &entry.path(),
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(
@@ -214,16 +246,25 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         segment.deleted_point_count(),
         restored_segment.deleted_point_count(),
     );
-
-    let hw_counter = HardwareCounterCell::new();
+    assert_eq!(
+        restored_segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].storage_type,
+        expected_storage_type,
+    );
+    assert_eq!(
+        restored_segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow()
+            .deleted_vector_count(),
+        1,
+    );
 
     for id in segment.iter_points() {
-        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
-        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
+        let vectors = segment.all_vectors(id).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload(id, &hw_counter).unwrap();
-        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
+        let payload = segment.payload(id).unwrap();
+        let restored_payload = restored_segment.payload(id).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }

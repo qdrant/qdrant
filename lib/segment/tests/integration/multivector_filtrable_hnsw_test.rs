@@ -1,7 +1,12 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
@@ -26,23 +31,28 @@ use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 
 /// Check all cases with single vector per multi and several vectors per multi
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
+// `test_attr(ignore = ...)` (not just `ignore = ...`) is required for rstest
+// to forward the attribute to each generated per-case test function. See
+// `byte_storage_quantization_test.rs` for another use of this pattern.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 #[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
 #[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
 #[case::discover_eq(QueryVariant::Discover, 1, 128, 5)]
 #[case::discover_multi(QueryVariant::Discover, 3, 128, 20)]
-#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 5)]
+#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 10)]
 #[case::recobestscore_multi(QueryVariant::RecoBestScore, 2, 64, 10)]
 #[case::recosumscores_eq(QueryVariant::RecoSumScores, 1, 64, 5)]
-#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 10)]
+#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 20)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] max_num_vector_per_points: usize,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
@@ -78,13 +88,14 @@ fn test_multi_filterable_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
 
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
-    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
@@ -96,10 +107,10 @@ fn test_multi_filterable_hnsw(
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, named_vectors)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
     assert_eq!(
@@ -113,14 +124,11 @@ fn test_multi_filterable_hnsw(
     let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,
@@ -152,6 +160,7 @@ fn test_multi_filterable_hnsw(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

@@ -19,14 +19,19 @@ impl std::fmt::Debug for Stemmer {
 }
 
 impl Stemmer {
-    pub fn from_algorithm(config: &StemmingAlgorithm) -> Self {
+    /// Build a stemmer from a [`StemmingAlgorithm`].
+    ///
+    /// Returns `None` when stemming is explicitly disabled
+    /// ([`StemmingAlgorithm::Disabled`]).
+    pub fn from_algorithm(config: &StemmingAlgorithm) -> Option<Self> {
         match config {
             StemmingAlgorithm::Snowball(SnowballParams {
                 r#type: _,
                 language,
-            }) => Self::Snowball(Arc::new(rust_stemmers::Stemmer::create(Algorithm::from(
-                *language,
+            }) => Some(Self::Snowball(Arc::new(rust_stemmers::Stemmer::create(
+                Algorithm::from(*language),
             )))),
+            StemmingAlgorithm::Disabled(_) => None,
         }
     }
 

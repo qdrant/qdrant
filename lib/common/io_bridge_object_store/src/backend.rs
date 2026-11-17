@@ -2,8 +2,10 @@
 //! produce it. Implemented for AWS S3, GCS, and Azure (see [`crate::backends`])
 //! so the [`AsyncRead`](crate::AsyncRead) impl on `Arc<S>` stays free of `dyn`.
 
-use common::universal_io::{Result, UniversalKind};
+use common::universal_io::{UioResult, UniversalKind};
 use object_store::ObjectStore;
+
+use crate::append::AppendContext;
 
 /// A concrete object-store backend that can be built from a typed [`Config`].
 ///
@@ -17,7 +19,15 @@ use object_store::ObjectStore;
 pub trait BlobBackend: ObjectStore + Send + Sync + Sized + 'static {
     type Config: Clone + Send + Sync + 'static;
 
-    fn build_store(config: &Self::Config) -> Result<Self>;
+    fn build_store(config: &Self::Config) -> UioResult<Self>;
 
     fn kind() -> UniversalKind;
+
+    /// Context for the native single-request append RPC, for backends that
+    /// support it (see [`crate::append`]). The default — no append support —
+    /// leaves [`ObjectStoreSource`](crate::ObjectStoreSource) without its
+    /// `AsyncAppend` prerequisites for this backend.
+    fn append_context(_config: &Self::Config) -> UioResult<Option<AppendContext>> {
+        Ok(None)
+    }
 }

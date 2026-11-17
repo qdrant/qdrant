@@ -105,9 +105,7 @@ fn remove_peer(
                     )
                     .await
             }
-            None => Err(StorageError::bad_request(
-                "Distributed mode disabled.".to_string(),
-            )),
+            None => Err(StorageError::standalone_mode()),
         }
     })
 }
@@ -122,7 +120,7 @@ async fn get_cluster_metadata_keys(
 
         let keys = dispatcher
             .consensus_state()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .ok_or_else(StorageError::standalone_mode)?
             .persistent
             .read()
             .get_cluster_metadata_keys();
@@ -143,7 +141,7 @@ async fn get_cluster_metadata_key(
 
         let value = dispatcher
             .consensus_state()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .ok_or_else(StorageError::standalone_mode)?
             .persistent
             .read()
             .get_cluster_metadata_key(key.as_ref());

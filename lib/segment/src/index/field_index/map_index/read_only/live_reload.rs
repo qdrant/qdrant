@@ -1,0 +1,54 @@
+use blobstore::Blob;
+use common::persisted_hashmap::Key;
+use common::sorted_slice::SortedSlice;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
+
+use super::super::MapIndexKey;
+use super::ReadOnlyMapIndex;
+use crate::common::operation_error::OperationResult;
+use crate::index::field_index::LiveReload;
+
+impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> LiveReload for ReadOnlyMapIndex<N, S>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
+    type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        match self {
+            Self::Appendable(index) => index.live_preload(fs),
+            Self::Immutable(index) => index.live_preload(fs),
+            Self::OnDisk(index) => index.live_preload(fs),
+        }
+    }
+
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyMapIndex::Immutable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyMapIndex::OnDisk(index) => index.apply_deletions(deleted_points),
+        }
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyMapIndex::Appendable(index) => {
+                index.live_reload(fs, deleted_points, new_points)
+            }
+            ReadOnlyMapIndex::Immutable(index) => index.live_reload(fs, deleted_points, new_points),
+            ReadOnlyMapIndex::OnDisk(index) => index.live_reload(fs, deleted_points, new_points),
+        }
+    }
+}

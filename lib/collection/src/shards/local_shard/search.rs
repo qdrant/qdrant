@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use shard::common::stopping_guard::StoppingGuard;
 use shard::query::query_enum::QueryEnum;
@@ -32,7 +31,6 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
             return Ok(vec![]);
@@ -62,7 +60,6 @@ impl LocalShard {
                     core_request,
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc,
                     &is_stopped_guard,
                 )
                 .await;
@@ -81,7 +78,6 @@ impl LocalShard {
                     Arc::new(core_request),
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc.clone(),
                     &is_stopped_guard,
                 )
             })
@@ -101,11 +97,10 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = std::time::Instant::now();
-        let (query_context, collection_params) = {
+        let (query_context, distances) = {
             let collection_config = self.collection_config.read().await;
             let query_context_opt = SegmentsSearcher::prepare_query_context(
                 self.segments.clone(),
@@ -114,7 +109,6 @@ impl LocalShard {
                 timeout,
                 search_runtime_handle,
                 is_stopped_guard,
-                hw_counter_acc.clone(),
             )
             .await?;
 
@@ -123,7 +117,18 @@ impl LocalShard {
                 return Ok(vec![]);
             };
 
-            (query_context, collection_config.params.clone())
+            // Resolve the per-request distances now, rather than cloning all collection params
+            let distances = core_request
+                .searches
+                .iter()
+                .map(|req| {
+                    collection_config
+                        .params
+                        .get_distance(req.query.get_vector_name())
+                })
+                .collect::<Vec<_>>();
+
+            (query_context, distances)
         };
 
         // update timeout
@@ -149,9 +154,9 @@ impl LocalShard {
         let top_results = res
             .into_iter()
             .zip(core_request.searches.iter())
-            .map(|(vector_res, req)| {
-                let vector_name = req.query.get_vector_name();
-                let distance = collection_params.get_distance(vector_name).unwrap();
+            .zip(distances)
+            .map(|((vector_res, req), distance)| {
+                let distance = distance.unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     match req.query {
                         QueryEnum::Nearest(_) => {
@@ -168,9 +173,10 @@ impl LocalShard {
                 });
 
                 if let Some(threshold) = req.score_threshold {
+                    let order = req.query.score_order(distance);
                     processed_res
                         .take_while(|scored_point| {
-                            distance.check_threshold(scored_point.score, threshold)
+                            order.check_threshold(scored_point.score, threshold)
                         })
                         .collect()
                 } else {

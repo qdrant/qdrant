@@ -1,5 +1,6 @@
+use blobstore::Blob;
+use blobstore::error::BlobstoreError;
 use common::delta_pack::{delta_pack, delta_unpack};
-use gridstore::Blob;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{SparseVector, double_sort};
 use sparse::common::types::{DimId, DimId64, DimWeight};
@@ -15,6 +16,25 @@ pub struct StoredSparseVector {
 }
 
 impl StoredSparseVector {
+    /// Fallible counterpart of [`Blob::from_bytes`], for decoding bytes that
+    /// arrive from outside this storage (e.g. raw point relocation).
+    ///
+    /// Any failure is a user error (`MalformedVectorBlob`), not a
+    /// `ServiceError`: the blob is untrusted input, and a malformed blob that
+    /// reached the WAL is skipped on replay instead of crash-looping recovery.
+    /// Reads of already-stored data use `TryFrom` instead, where a failure is
+    /// genuine corruption (service error).
+    pub(crate) fn decode_untrusted_bytes(data: &[u8]) -> Result<SparseVector, OperationError> {
+        let stored: StoredSparseVector = bincode::deserialize(data).map_err(|err| {
+            OperationError::malformed_vector_blob(format!("Malformed sparse vector blob: {err}"))
+        })?;
+        SparseVector::try_from(stored).map_err(|_| {
+            OperationError::malformed_vector_blob(
+                "Malformed sparse vector blob: index out of u32 range",
+            )
+        })
+    }
+
     /// Convert indices into a byte array
     /// Use bitpacking and delta-encoding for additional compression
     fn serialize_indices(indices: &[DimId64]) -> Vec<u8> {
@@ -68,7 +88,9 @@ impl Blob for StoredSparseVector {
         bincode::serialize(&self).expect("Sparse vector serialization should not fail")
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        bincode::deserialize(data).expect("Sparse vector deserialization should not fail")
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        bincode::deserialize(data).map_err(|err| {
+            BlobstoreError::decode_error(format!("Failed to deserialize sparse vector: {err}"))
+        })
     }
 }

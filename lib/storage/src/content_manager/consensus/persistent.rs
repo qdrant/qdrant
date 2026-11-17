@@ -69,8 +69,8 @@ impl Persistent {
         &mut self,
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
-        mut metadata_by_id: PeerMetadataById,
-        new_cluster_metadata: HashMap<String, serde_json::Value>,
+        metadata_by_id: PeerMetadataById,
+        cluster_metadata: HashMap<String, serde_json::Value>,
     ) -> Result<(), StorageError> {
         // IF YOU ADD NEW DATA INTO `PERSISTENT` STATE, DON'T FORGET TO ALSO ADD IT INTO RAFT SNAPSHOT!
         let Self {
@@ -78,9 +78,10 @@ impl Persistent {
             latest_snapshot_meta,
             apply_progress_queue,
             first_voter: _,
-            peer_address_by_id,
-            peer_metadata_by_id,
-            cluster_metadata,
+            // Replaced by `replace_cluster_state` below
+            peer_address_by_id: _,
+            peer_metadata_by_id: _,
+            cluster_metadata: _,
             this_peer_id: _,
             path: _,
             dirty: _,
@@ -93,12 +94,6 @@ impl Persistent {
         apply_progress_queue.set_from_snapshot(meta.index);
         *latest_snapshot_meta = meta.into();
 
-        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
-
-        *peer_address_by_id.write() = address_by_id;
-        *peer_metadata_by_id.write() = metadata_by_id;
-        *cluster_metadata = new_cluster_metadata;
-
         // Last Raft commit and last snapshot index must be equal and persisted in one operation
         // Our `ConsensusManager::new` function relies on this for reconciling WAL clears
         debug_assert_eq!(
@@ -106,7 +101,33 @@ impl Persistent {
             "applied Raft commit and last snapshot index must be equal",
         );
 
+        self.replace_cluster_state(address_by_id, metadata_by_id, cluster_metadata);
+
         self.save()
+    }
+
+    /// Replace peer addresses, peer metadata and cluster metadata, without touching Raft state
+    pub fn update_cluster_state(
+        &mut self,
+        address_by_id: PeerAddressById,
+        metadata_by_id: PeerMetadataById,
+        cluster_metadata: HashMap<String, serde_json::Value>,
+    ) -> Result<(), StorageError> {
+        self.replace_cluster_state(address_by_id, metadata_by_id, cluster_metadata);
+        self.save()
+    }
+
+    fn replace_cluster_state(
+        &mut self,
+        address_by_id: PeerAddressById,
+        mut metadata_by_id: PeerMetadataById,
+        new_cluster_metadata: HashMap<String, serde_json::Value>,
+    ) {
+        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
+
+        *self.peer_address_by_id.write() = address_by_id;
+        *self.peer_metadata_by_id.write() = metadata_by_id;
+        self.cluster_metadata = new_cluster_metadata;
     }
 
     /// Returns state and if it was initialized for the first time
@@ -148,7 +169,30 @@ impl Persistent {
                 // so we can accept consensus operations.
                 state.state.conf_state.voters = vec![state.this_peer_id];
                 state.state.conf_state.learners = vec![];
+                // Clear joint consensus fields left over from a mid transition crash
+                // otherwise, Raft demands quorum from the stale outgoing voter set,
+                // deadlocking this peer by waiting for nodes that no longer exist.
+                state.state.conf_state.voters_outgoing = vec![];
+                state.state.conf_state.learners_next = vec![];
+                state.state.conf_state.auto_leave = false;
                 state.state.hard_state.vote = state.this_peer_id;
+                // If this peer was removed from the old cluster but killed before it
+                // applied `RemoveNode(self)`, `first_voter` and the address book still
+                // describe the old cluster. This peer now starts a brand-new cluster,
+                // of which it is the first voter and the only member. Both values are
+                // served to peers bootstrapping onto this cluster: a stale `first_voter`
+                // seeds their initial `conf_state` with a peer of the old cluster,
+                // permanently corrupting their voter set, and stale addresses make
+                // `/readyz` wait for the commit index of a foreign consensus.
+                // `first_voter` must be reset to this peer rather than cleared:
+                // `recover_first_voter` would re-derive the old first voter from the
+                // retained Raft log.
+                let this_peer_id = state.this_peer_id;
+                state.first_voter = Some(this_peer_id);
+                state
+                    .peer_address_by_id
+                    .write()
+                    .retain(|&peer_id, _| peer_id == this_peer_id);
                 state.save()?;
                 state
             } else {
@@ -468,4 +512,68 @@ struct ConfStateDef {
     voters_outgoing: Vec<u64>,
     learners_next: Vec<u64>,
     auto_leave: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reinitializing a removed peer as a first peer must drop every trace of the
+    /// old cluster: `conf_state`, `first_voter` and the address book. Peers
+    /// bootstrapping onto the new cluster seed their initial `conf_state` with
+    /// `first_voter` and their address book with the served addresses, so stale
+    /// values corrupt the new cluster's configuration.
+    #[test]
+    fn reinit_first_peer_forgets_old_cluster() {
+        let dir = tempfile::Builder::new()
+            .prefix("consensus_state")
+            .tempdir()
+            .unwrap();
+
+        let this_peer_id = 1;
+        let old_first_peer_id = 2;
+
+        // The peer as a member of the old cluster: it joined via `old_first_peer_id`
+        // and knows both addresses.
+        let mut state =
+            Persistent::load_or_init(dir.path(), false, false, Some(this_peer_id)).unwrap();
+        state
+            .insert_peer(this_peer_id, "http://127.0.0.1:6335".parse().unwrap())
+            .unwrap();
+        state
+            .insert_peer(old_first_peer_id, "http://127.0.0.1:7335".parse().unwrap())
+            .unwrap();
+        state.set_first_voter(old_first_peer_id).unwrap();
+        state
+            .apply_state_update(|state| {
+                state.conf_state.voters = vec![old_first_peer_id, this_peer_id];
+                // simulate the node going down mid membership change, all three
+                // joint consensus fields are non empty and must be wiped on reinit.
+                state.conf_state.voters_outgoing = vec![old_first_peer_id];
+                state.conf_state.learners_next = vec![this_peer_id];
+                state.conf_state.auto_leave = true;
+            })
+            .unwrap();
+        drop(state);
+
+        let state = Persistent::load_or_init(dir.path(), true, true, None).unwrap();
+
+        assert_eq!(state.this_peer_id(), this_peer_id);
+        assert_eq!(state.state().conf_state.voters, vec![this_peer_id]);
+        assert!(state.state().conf_state.learners.is_empty());
+        // all joint consensus fields must be zeroed, a non empty `voters_outgoing`
+        // forces Raft to require quorum from peers that no longer exist
+        assert!(state.state().conf_state.voters_outgoing.is_empty());
+        assert!(state.state().conf_state.learners_next.is_empty());
+        assert!(!state.state().conf_state.auto_leave);
+        assert_eq!(state.first_voter(), Some(this_peer_id));
+        assert_eq!(
+            state
+                .peer_address_by_id()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![this_peer_id],
+        );
+    }
 }

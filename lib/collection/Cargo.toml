@@ -12,16 +12,24 @@ edition = "2024"
 workspace = true
 
 [features]
-testing = []
+testing = ["common/testing", "segment/testing", "shard/testing"]
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
-staging = ["shard/staging"]
+# `edge?/staging` keeps feature-unified builds coherent: with `edge-verify` on, `shard/staging`
+# adds the `StagingOperation` variant, and edge's match over it is gated on its own `staging`.
+staging = ["shard/staging", "edge?/staging"]
+# Implies `testing`: the only consumer is the model_testing module, which is testing-gated.
+edge-verify = ["dep:edge", "edge/serverless", "testing"]
 
 [dev-dependencies]
+bm25 = { path = "../bm25" }
 criterion = { workspace = true }
+exhaustive = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
+rand_distr = { workspace = true }
 rstest = { workspace = true }
+serde_cbor = { workspace = true }
 tar = { workspace = true }
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }
@@ -39,16 +47,16 @@ fs-err = { workspace = true }
 parking_lot = { workspace = true }
 ahash = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
 tinyvec = { workspace = true }
 siphasher = "1.0.3"
 smallvec = { workspace = true }
-count-min-sketch = "0.1.8"
+count-min-sketch = "0.2.0"
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -57,7 +65,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = { workspace = true }
 async-trait = { workspace = true }
-arc-swap = "1.9.1"
+arc-swap = { workspace = true }
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { workspace = true }
@@ -72,6 +80,7 @@ cancel = { path = "../common/cancel" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false, features = ["api"] }
+edge = { path = "../edge", optional = true }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 wal = { path = "../wal" }
@@ -86,13 +95,11 @@ tempfile = { workspace = true }
 sha2 = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
-indexmap = { workspace = true }
 ringbuffer = "0.16.0"
 strum = { workspace = true }
 urlencoding = { workspace = true }
 
 tracing = { workspace = true, optional = true }
-fs4 = { workspace = true }
 
 # AWS S3 support
 object_store = { workspace = true }
@@ -108,4 +115,16 @@ harness = false
 
 [[bench]]
 name = "batch_query_bench"
+harness = false
+
+[[bench]]
+name = "memory_report"
+harness = false
+
+[[bench]]
+name = "bm25_sparse_bench"
+harness = false
+
+[[bench]]
+name = "bm25_text_bench"
 harness = false

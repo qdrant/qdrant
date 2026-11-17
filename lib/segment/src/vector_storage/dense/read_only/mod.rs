@@ -3,15 +3,18 @@ use common::universal_io::UniversalRead;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::Distance;
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
+mod immutable;
 mod lifecycle;
 mod live_reload;
 mod read_ops;
 
+pub use immutable::ReadOnlyImmutableDenseVectorStorage;
+
 #[derive(Debug)]
 pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
-    vectors: ChunkedVectorsRead<T, S>,
+    vectors: ReadOnlyChunkedVectors<T, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
@@ -19,12 +22,12 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -44,7 +47,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT)
             .map(|_| {
@@ -66,7 +69,7 @@ mod tests {
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             for id in 0..POINT_COUNT {
@@ -84,7 +87,7 @@ mod tests {
             DIM,
             Distance::Dot,
             AdviceSetting::Global,
-            false,
+            Populate::No,
         )
         .unwrap();
 
@@ -107,10 +110,24 @@ mod tests {
     /// After `live_reload`, the read-only view reflects appends and deletions.
     #[test]
     fn live_reload_picks_up_appends_and_deletions() {
+        reload_picks_up_appends_and_deletions(false);
+    }
+
+    /// Preload must stage every file the reload opens: after the preload the
+    /// backing files are deleted, so the reload can only succeed from the
+    /// prefetch pool (parked mmap handles keep reading deleted files on unix).
+    #[test]
+    fn live_preload_then_reload_picks_up_appends_and_deletions() {
+        reload_picks_up_appends_and_deletions(true);
+    }
+
+    fn reload_picks_up_appends_and_deletions(preload: bool) {
+        use common::universal_io::{CachedFs, CachedReadFs};
+
         const DIM: usize = 64;
         let dir = Builder::new().prefix("ro_dense_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let rand_vec = |rng: &mut StdRng| -> DenseVector {
             std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
@@ -130,7 +147,7 @@ mod tests {
         .unwrap();
         for (id, vector) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -141,7 +158,7 @@ mod tests {
             DIM,
             Distance::Dot,
             AdviceSetting::Global,
-            false,
+            Populate::No,
         )
         .unwrap();
         assert_eq!(reader.total_vector_count(), first.len());
@@ -152,7 +169,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(vector),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -161,18 +177,25 @@ mod tests {
             writer.delete_vector(id).unwrap();
         }
         writer.flusher()().unwrap();
+        drop(writer);
 
         let new_ids: Vec<PointOffsetType> = (first.len()..first.len() + second.len())
             .map(|offset| offset as PointOffsetType)
             .collect();
-        reader
-            .live_reload(
-                &MmapFs,
-                &SortedSlice::new(&deleted_ids).unwrap(),
-                &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
-            )
-            .unwrap();
+        let deleted = SortedSlice::new(&deleted_ids).unwrap();
+        let new = SortedSlice::new(&new_ids).unwrap();
+        if preload {
+            let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+            cached_fs.cache_file_info().unwrap();
+            reader.live_preload(&cached_fs).unwrap();
+            futures::executor::block_on(cached_fs.wait_all());
+
+            fs_err::remove_dir_all(dir.path()).unwrap();
+
+            reader.live_reload(&cached_fs, &deleted, &new).unwrap();
+        } else {
+            reader.live_reload(&MmapFs, &deleted, &new).unwrap();
+        }
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());
         assert_eq!(reader.deleted_vector_count(), deleted_ids.len());
@@ -190,5 +213,197 @@ mod tests {
             assert!(reader.is_deleted_vector(id));
         }
         assert!(!reader.is_deleted_vector(0));
+    }
+
+    #[test]
+    fn live_reload_picks_up_appended_vector_deletion() {
+        const DIM: usize = 4;
+        let dir = Builder::new()
+            .prefix("ro_dense_appended_deleted")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+
+        let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        writer
+            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]))
+            .unwrap();
+        writer.flusher()().unwrap();
+
+        let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        writer
+            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]))
+            .unwrap();
+        writer.delete_vector(1).unwrap();
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = vec![1];
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), 2);
+        assert!(reader.is_deleted_vector(1));
+    }
+
+    #[test]
+    fn live_reload_batches_appended_vector_deletions() {
+        const DIM: usize = 4;
+        let dir = Builder::new()
+            .prefix("ro_dense_appended_batch")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+
+        let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        for id in 0..3u32 {
+            writer
+                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
+                .unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let mut reader = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+
+        for id in 3..8u32 {
+            writer
+                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]))
+                .unwrap();
+        }
+        let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
+        for &id in &deleted_appended {
+            writer.delete_vector(id).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = (3..8).collect();
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), 8);
+        for id in 3..8 {
+            assert_eq!(
+                reader.is_deleted_vector(id),
+                deleted_appended.contains(&id),
+                "appended offset {id}",
+            );
+        }
+        assert!(!reader.is_deleted_vector(0));
+    }
+
+    /// A panic here takes down a rayon search worker instead of failing the query.
+    #[test]
+    fn score_stored_batch_reports_a_failed_read() {
+        use crate::spaces::simple::DotProductMetric;
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+
+        let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+        let storage = stored_vectors(dir.path());
+
+        let query: DenseVector = vec![1.0; DIM];
+        let scorer =
+            MetricQueryScorer::<VectorElementType, DotProductMetric, _>::new(query, &storage);
+
+        let mut scores = [0.0; 1];
+        assert!(
+            scorer
+                .score_stored_batch(&[POINT_COUNT + 8], &mut scores)
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
+
+    #[test]
+    fn read_vectors_reports_a_failed_read() {
+        let dir = Builder::new()
+            .prefix("ro_dense_read_err")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        let storage = stored_vectors(dir.path());
+
+        let keys = [((), 0), ((), POINT_COUNT + 8)];
+        assert!(
+            storage
+                .read_vectors::<Random, _>(keys, |_, _, _| {})
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
+
+    const POINT_COUNT: PointOffsetType = 64;
+    const DIM: usize = 16;
+
+    fn stored_vectors(
+        dir: &std::path::Path,
+    ) -> ReadOnlyChunkedDenseVectorStorage<VectorElementType, MmapFile> {
+        {
+            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+                dir,
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+            for id in 0..POINT_COUNT {
+                let vector: DenseVector = vec![id as VectorElementType; DIM];
+                storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+        ReadOnlyChunkedDenseVectorStorage::open(
+            &MmapFs,
+            dir,
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap()
     }
 }

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 pub mod api_keys;
 mod batch_processing;

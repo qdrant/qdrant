@@ -100,7 +100,13 @@ def test_cluster_queryable_during_shard_snapshot_transfer(tmp_path: pathlib.Path
     )
 
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait on the receiver as well: Finish can land on peer 0 a few hundred ms
+    # before peer 2 applies it, so asserting Active on peer 2 immediately after
+    # peer 0 reports all-Active races with that lag.
     wait_for_all_replicas_active(peer_api_uris[0], COLLECTION_NAME)
+    wait_for_all_replicas_active(
+        peer_api_uris[2], COLLECTION_NAME, min_local_replicas=3
+    )
 
     for uri in peer_api_uris:
         assert _count_points(uri) == baseline
@@ -112,6 +118,9 @@ def test_cluster_queryable_during_shard_snapshot_transfer(tmp_path: pathlib.Path
     assert any(
         s["shard_id"] == shard_id and s["state"] == "Active"
         for s in dst_info["local_shards"]
+    ), (
+        f"Expected transferred shard {shard_id} Active on destination; "
+        f"local_shards={dst_info['local_shards']}"
     )
 
 

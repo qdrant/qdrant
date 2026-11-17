@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
@@ -95,10 +97,12 @@ impl AuthKeys {
                 service_config
                     .api_key
                     .as_ref()
+                    .filter(|s| !s.is_empty())
                     .map(|secret| JwtParser::new(secret)),
                 service_config
                     .alt_api_key
                     .as_ref()
+                    .filter(|s| !s.is_empty())
                     .map(|secret| JwtParser::new(secret)),
             )
         } else {
@@ -110,10 +114,11 @@ impl AuthKeys {
     ///
     /// Returns None if no scheme is specified.
     pub fn try_create(service_config: &ServiceConfig, toc: Arc<TableOfContent>) -> Option<Self> {
+        let non_empty = |k: Option<String>| k.filter(|k| !k.is_empty());
         match (
-            service_config.api_key.clone(),
-            service_config.alt_api_key.clone(),
-            service_config.read_only_api_key.clone(),
+            non_empty(service_config.api_key.clone()),
+            non_empty(service_config.alt_api_key.clone()),
+            non_empty(service_config.read_only_api_key.clone()),
         ) {
             (None, None, None) => None,
             (read_write, alt_read_write, read_only) => {
@@ -138,9 +143,7 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
     ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
-        let Some(key) = get_header(HTTP_HEADER_API_KEY)
-            .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
-        else {
+        let Some(key) = Self::extract_key(&get_header) else {
             return Err(AuthError::Unauthorized(
                 "Must provide an API key or an Authorization bearer token".to_string(),
             ));
@@ -181,7 +184,17 @@ impl AuthKeys {
             } = claims;
 
             if let Some(value_exists) = value_exists {
-                self.validate_value_exists(&value_exists).await?;
+                // Route the stateful existence check with the caller's routing token
+                // (the same header used for their reads) so it lands on the same replica
+                // and stays consistent with what those reads see. Seeding from the claim
+                // instead would be useless when claims are shared across tokens — it would
+                // pin every validation to a single replica.
+                let routing_token = get_header(api::HTTP_HEADER_ROUTING_TOKEN)
+                    .filter(|token| !token.is_empty())
+                    .map(|token| RoutingToken::from_bytes(token.as_bytes()));
+
+                self.validate_value_exists(&value_exists, routing_token)
+                    .await?;
             }
 
             return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
@@ -198,7 +211,44 @@ impl AuthKeys {
         ))
     }
 
-    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), AuthError> {
+    /// Validate a request to the internal (p2p) API.
+    ///
+    /// Only the read-write API keys are accepted here. The internal API carries
+    /// consensus and shard traffic, so a read-only key or a JWT with narrowed
+    /// claims must never be able to reach it: `Raft` and other peer-to-peer
+    /// services do not check per-request `Access`, the key itself is the gate.
+    pub fn validate_internal_request<'a>(
+        &self,
+        get_header: impl Fn(&'a str) -> Option<&'a str>,
+    ) -> Result<(Access, AuthType), AuthError> {
+        let Some(key) = Self::extract_key(get_header) else {
+            return Err(AuthError::Unauthorized(
+                "Must provide an API key or an Authorization bearer token".to_string(),
+            ));
+        };
+
+        if self.can_write(key) {
+            return Ok((
+                Access::full("Read-write access by key on internal API"),
+                AuthType::ApiKey,
+            ));
+        }
+
+        Err(AuthError::Unauthorized(
+            "Internal API requires the read-write API key".to_string(),
+        ))
+    }
+
+    fn extract_key<'a>(get_header: impl Fn(&'a str) -> Option<&'a str>) -> Option<&'a str> {
+        get_header(HTTP_HEADER_API_KEY)
+            .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
+    }
+
+    async fn validate_value_exists(
+        &self,
+        value_exists: &ValueExists,
+        routing_token: Option<RoutingToken>,
+    ) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
             offset: None,
             limit: Some(1),
@@ -214,11 +264,12 @@ impl AuthKeys {
                 value_exists.get_collection(),
                 scroll_req,
                 None,
+                routing_token,
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),
-                HwMeasurementAcc::disposable(),
             )
+            .unmeasured(reason("Access checks aren't attributed to the request"))
             .await
             .map_err(|e| {
                 #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
@@ -259,5 +310,130 @@ impl AuthKeys {
             .as_ref()
             .is_some_and(|alt_rw_key| ct_eq(alt_rw_key, key));
         can_write || alt_can_write
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use collection::shards::channel_service::ChannelService;
+    use common::budget::ResourceBudget;
+    use storage::rbac::AccessRequirements;
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::settings::Settings;
+
+    /// Service config from the bundled defaults, with the given API keys set.
+    fn config(api_key: Option<&str>, alt: Option<&str>, read_only: Option<&str>) -> ServiceConfig {
+        let mut cfg = Settings::new(None).unwrap().service;
+        cfg.api_key = api_key.map(String::from);
+        cfg.alt_api_key = alt.map(String::from);
+        cfg.read_only_api_key = read_only.map(String::from);
+        cfg
+    }
+
+    /// An empty, temp-dir backed `TableOfContent`. `try_create` only stores it,
+    /// so this is enough to exercise key parsing. `TempDir` must outlive `toc`.
+    fn test_toc() -> (Arc<TableOfContent>, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Settings::new(None).unwrap().storage;
+        cfg.storage_path = dir.path().to_path_buf();
+        cfg.snapshots_path = dir.path().join("snapshots");
+        cfg.temp_path = None;
+        let toc = TableOfContent::new(
+            &cfg,
+            ResourceBudget::default(),
+            ChannelService::new(6333, false, None, None),
+            0,
+            None,
+        )
+        .unwrap();
+        (Arc::new(toc), dir)
+    }
+
+    #[test]
+    fn empty_api_keys_are_treated_as_unset() {
+        let (toc, _dir) = test_toc();
+        for cfg in [
+            config(Some(""), None, None),
+            config(None, None, Some("")),
+            config(Some(""), Some(""), Some("")),
+        ] {
+            assert!(AuthKeys::try_create(&cfg, toc.clone()).is_none());
+        }
+    }
+
+    #[test]
+    fn single_char_api_keys_are_used() {
+        let (toc, _dir) = test_toc();
+
+        let rw = AuthKeys::try_create(&config(Some("x"), None, None), toc.clone()).unwrap();
+        assert!(rw.can_write("x"));
+        assert!(!rw.can_write(""));
+        assert!(!rw.can_write("y"));
+
+        let ro = AuthKeys::try_create(&config(None, None, Some("r")), toc).unwrap();
+        assert!(ro.can_read("r"));
+        assert!(!ro.can_read(""));
+        assert!(!ro.can_write("r"));
+    }
+
+    #[test]
+    fn internal_api_accepts_only_read_write_keys() {
+        let (toc, _dir) = test_toc();
+        let mut cfg = config(Some("rw"), Some("alt"), Some("ro"));
+        cfg.jwt_rbac = Some(true);
+        let keys = AuthKeys::try_create(&cfg, toc).unwrap();
+
+        let header = |value: &'static str| move |name: &str| (name == "api-key").then_some(value);
+        let bearer =
+            |value: &'static str| move |name: &str| (name == "authorization").then_some(value);
+
+        assert!(keys.validate_internal_request(header("rw")).is_ok());
+        assert!(keys.validate_internal_request(header("alt")).is_ok());
+        assert!(keys.validate_internal_request(bearer("Bearer rw")).is_ok());
+
+        assert!(matches!(
+            keys.validate_internal_request(header("ro")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(bearer("Bearer ro")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(header("")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(|_| None),
+            Err(AuthError::Unauthorized(_)),
+        ));
+
+        let (access, auth_type) = keys.validate_internal_request(header("rw")).unwrap();
+        assert!(
+            access
+                .check_global_access(AccessRequirements::new().manage())
+                .is_ok()
+        );
+        assert!(matches!(auth_type, AuthType::ApiKey));
+    }
+
+    #[test]
+    fn empty_jwt_secret_is_treated_as_unset() {
+        let mut cfg = config(Some(""), Some(""), None);
+        cfg.jwt_rbac = Some(true);
+        let (parser, alt_parser) = AuthKeys::get_jwt_parser(&cfg);
+        assert!(parser.is_none());
+        assert!(alt_parser.is_none());
+    }
+
+    #[test]
+    fn single_char_jwt_secret_is_used() {
+        let mut cfg = config(Some("x"), None, None);
+        cfg.jwt_rbac = Some(true);
+        let (parser, alt_parser) = AuthKeys::get_jwt_parser(&cfg);
+        assert!(parser.is_some());
+        assert!(alt_parser.is_none());
     }
 }

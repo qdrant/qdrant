@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use crate::turboquant::simd::{Query1bitSimd, Query2bitSimd, Query4bitSimd};
+use crate::turboquant::simd::{
+    Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd, Query8bitSimd, Query16bitSimd,
+};
 
 pub mod encoding;
 pub mod lloyd_max;
 pub mod math;
+pub mod matrix;
 mod permutation;
 pub mod quantization;
 pub mod rotation;
@@ -13,6 +16,13 @@ pub mod simd;
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TQBits {
+    /// Uniform 8-bit grid with a per-vector scale instead of a Lloyd-Max
+    /// codebook; Normal mode only (no TQ+ error correction).
+    Bits8,
+    /// Uniform 16-bit grid `[−32767, 32767]` with a per-vector scale, stored
+    /// as little-endian `i16`; like [`TQBits::Bits8`], no codebook and Normal
+    /// mode only.
+    Bits16,
     Bits4,
     Bits2,
     Bits1_5,
@@ -20,9 +30,22 @@ pub enum TQBits {
 }
 
 impl TQBits {
+    /// Largest magnitude of the uniform-grid widths' integer grid, `None`
+    /// for the codebook widths.
+    #[inline]
+    pub(crate) fn grid_max(&self) -> Option<f64> {
+        match self {
+            TQBits::Bits8 => Some(127.0),
+            TQBits::Bits16 => Some(32767.0),
+            TQBits::Bits4 | TQBits::Bits2 | TQBits::Bits1_5 | TQBits::Bits1 => None,
+        }
+    }
+
     #[inline]
     fn bit_size(&self) -> u8 {
         match self {
+            TQBits::Bits16 => 16,
+            TQBits::Bits8 => 8,
             TQBits::Bits4 => 4,
             TQBits::Bits2 => 2,
             // 1.5 bits is implemented as 1 bit with x1.5 dimension padding
@@ -63,7 +86,7 @@ impl TQBits {
         match self {
             TQBits::Bits1 | TQBits::Bits1_5 => 2_048,
             TQBits::Bits2 => 4_096,
-            TQBits::Bits4 => 8_192,
+            TQBits::Bits4 | TQBits::Bits8 | TQBits::Bits16 => 8_192,
         }
     }
 }
@@ -73,6 +96,27 @@ impl TQBits {
 pub enum TQMode {
     Normal,
     Plus,
+}
+
+/// Which coordinates the Hadamard rotation spans.
+///
+/// WARNING: the choice is baked into the encoding of every quantized vector —
+/// changing it for an existing storage silently corrupts all stored vectors.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum TQRotation {
+    /// Rotate the whole zero-padded buffer (`padded_dim` coordinates). The
+    /// rotation spreads the input energy across the padding, so a dequantized
+    /// vector truncated back to `dim` loses the tail's share of energy.
+    /// Required for [`TQBits::Bits1_5`], whose extra precision comes exactly
+    /// from rotating into the x1.5 padding.
+    Padded,
+    /// Rotate only the original `dim` coordinates; the zero padding stays
+    /// exactly zero through both the rotation and its inverse. Used by the
+    /// TQ-as-datatype storages, where vectors are reconstructed from the codes
+    /// alone: the padding tail never mixes into the real coordinates, so
+    /// truncating it on read-back is lossless.
+    Unpadded,
 }
 
 /// Encoded query type for Turbo Quant.
@@ -102,15 +146,15 @@ pub struct EncodedQueryTQ {
 /// on architectures without a matching SIMD instruction set the scalar
 /// reference kernel inside each type takes over automatically.
 ///
-/// `Bits1Wide` is the same kernel as `Bits1` but with 16-bit query
-/// quantization instead of the default 8-bit (the kernel's max). Used in
+/// `Bits1Wide` is `Bits1` with a 16-bit query instead of 8-bit.  Used in
 /// TQ+ for 1-bit storage: the per-coord `D'` pre-scaling pushes some query
 /// coords into the bottom of the 8-bit integer range, where rounding noise
-/// is large relative to the signal — 16 bits gives the most headroom the
-/// existing kernel supports.
+/// is large relative to the signal.
 pub enum EncodedQueryTQData {
     Bits1(Query1bitSimd),
-    Bits1Wide(Query1bitSimd<16>),
+    Bits1Wide(Query1bitWideSimd),
     Bits2(Query2bitSimd),
     Bits4(Query4bitSimd),
+    Bits8(Query8bitSimd),
+    Bits16(Query16bitSimd),
 }

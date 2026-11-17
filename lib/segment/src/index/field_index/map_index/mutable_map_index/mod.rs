@@ -1,4 +1,4 @@
-use gridstore::{Blob, Gridstore};
+use blobstore::{Blob, Blobstore};
 
 use self::in_memory::InMemoryMapIndex;
 use super::MapIndexKey;
@@ -7,11 +7,12 @@ pub(super) mod in_memory;
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
 pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     pub(super) in_memory_index: InMemoryMapIndex<N>,
-    pub(super) storage: Gridstore<Vec<<N as MapIndexKey>::Owned>>,
+    pub(super) storage: Blobstore<Vec<<N as MapIndexKey>::Owned>>,
 }

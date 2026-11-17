@@ -1,214 +1,541 @@
+mod live_reload;
+
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use atomic_refcell::AtomicRefCell;
+use common::low_memory::low_memory_mode;
+use common::storage_version::VERSION_FILE;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use sparse::common::types::DimId;
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
+use half::f16;
+use sparse::common::types::{DimId, QuantizedU8};
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::{
+    self as inverted_index_compressed_mmap, InvertedIndexCompressedMmap,
+};
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
+use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::hnsw_index::hnsw::read_only::ReadOnlyHNSWIndex;
+use crate::index::plain_vector_index::read_only::ReadOnlyPlainVectorIndex;
+use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::sparse_index::indices_tracker::IndicesTracker;
+use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use crate::index::sparse_index::sparse_vector_index::read_only::{
+    ReadOnlySparseVectorIndex, ReadOnlySparseVectorIndexOpenArgs,
+};
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
 use crate::index::vector_index_base::VectorIndexRead;
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams};
+use crate::types::{
+    Filter, Indexes, Memory, SearchParams, SparseVectorDataConfig, VectorDataConfig,
+    VectorStorageDatatype,
+};
+use crate::vector_storage::quantized::quantized_vectors::ReadOnlyQuantizedVectors;
+use crate::vector_storage::read_only::VectorStorageReadEnum;
 
 /// Read-only counterpart of [`super::VectorIndexEnum`].
 ///
 /// Wraps each read-capable index type with its read-only newtype. The mutable
-/// RAM sparse index is intentionally absent because it has no persisted
-/// read-only representation.
-#[derive(Debug)]
-pub enum VectorIndexReadEnum {
-    // Plain(Box<ReadOnlyPlainVectorIndex>),
-    // Hnsw(Box<ReadOnlyHNSWIndex>),
-    // SparseCompressedImmutableRamF32(
-    //     Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>>>,
-    // ),
-    // SparseCompressedImmutableRamF16(
-    //     Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedImmutableRam<f16>>>,
-    // ),
-    // SparseCompressedImmutableRamU8(
-    //     Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedImmutableRam<QuantizedU8>>>,
-    // ),
-    // SparseCompressedMmapF32(Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedMmap<f32>>>),
-    // SparseCompressedMmapF16(Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedMmap<f16>>>),
-    // SparseCompressedMmapU8(
-    //     Box<ReadOnlySparseVectorIndex<InvertedIndexCompressedMmap<QuantizedU8>>>,
-    // ),
+/// RAM sparse index has no persisted representation, so its read-only variant
+/// is rebuilt from the vector storage at open time.
+pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
+    Plain(Box<ReadOnlyPlainVectorIndex<S>>),
+    Hnsw(Box<ReadOnlyHNSWIndex<S>>),
+    SparseMutableRam(Box<ReadOnlySparseVectorIndex<S, InvertedIndexRam>>),
+    SparseCompressedImmutableRamF32(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedImmutableRam<f32>>>,
+    ),
+    SparseCompressedImmutableRamF16(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedImmutableRam<f16>>>,
+    ),
+    SparseCompressedImmutableRamU8(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedImmutableRam<QuantizedU8>>>,
+    ),
+    SparseCompressedStoredF32(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f32, S>>>,
+    ),
+    SparseCompressedStoredF16(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<f16, S>>>,
+    ),
+    SparseCompressedStoredU8(
+        Box<ReadOnlySparseVectorIndex<S, InvertedIndexCompressedMmap<QuantizedU8, S>>>,
+    ),
 }
 
-impl VectorIndexReadEnum {
-    /// Returns true if underlying index files are configured to stay on disk.
-    pub fn is_on_disk(&self) -> bool {
-        // match self {
-        //     Self::Plain(_) => false,
-        //     Self::Hnsw(index) => index.is_on_disk(),
-        //     Self::SparseCompressedImmutableRamF32(index) => index.is_on_disk(),
-        //     Self::SparseCompressedImmutableRamF16(index) => index.is_on_disk(),
-        //     Self::SparseCompressedImmutableRamU8(index) => index.is_on_disk(),
-        //     Self::SparseCompressedMmapF32(index) => index.is_on_disk(),
-        //     Self::SparseCompressedMmapF16(index) => index.is_on_disk(),
-        //     Self::SparseCompressedMmapU8(index) => index.is_on_disk(),
-        // }
+/// Shared read-only backends plus the `fs`/`path` an index opens its files from.
+pub struct ReadOnlyVectorIndexOpenArgs<
+    'a,
+    S: UniversalReadExt + 'static,
+    Fs: UniversalReadFs<File = S>,
+> {
+    pub fs: &'a Fs,
+    pub path: &'a Path,
+    pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+    pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<ReadOnlyQuantizedVectors<S>>>>,
+}
 
-        todo!()
+impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
+    /// Schedule background prefetch of every file [`Self::open`] will read,
+    /// dispatching on `vector_config` the same way. The plain index opens no
+    /// files.
+    ///
+    /// A cold `populate_override` defers the HNSW graph load (see
+    /// [`Self::open`]), so only its config is prefetched.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        vector_config: &VectorDataConfig,
+        path: &Path,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<()> {
+        match &vector_config.index {
+            Indexes::Plain {} => Ok(()),
+            Indexes::Hnsw(hnsw_config) => {
+                ReadOnlyHNSWIndex::<S>::preopen(fs, path, hnsw_config, populate_override)
+            }
+        }
+    }
+
+    /// Schedule background prefetch of every file [`Self::open_sparse`] will
+    /// read: the sparse index config, the inverted index, its version file
+    /// and the indices tracker. All persisted variants share the
+    /// compressed-mmap on-disk format, so the datatype plays no role here;
+    /// the (effective) index type only decides whether the index data is
+    /// populated by the prefetch (the immutable-RAM open reads it in full) or
+    /// parked cold (the mmap open reads it lazily) — and it comes from the
+    /// segment config's `sparse_vector_config`, so nothing is read here.
+    /// `MutableRam` is never persisted — `open_sparse` rebuilds it from the
+    /// vector storage — so nothing is scheduled for it.
+    ///
+    /// An absent index config file means the index isn't persisted: nothing
+    /// is scheduled, and `open_sparse` is the one to report it.
+    pub fn preopen_sparse(
+        fs: &impl CachedReadFs<File = S>,
+        sparse_vector_config: &SparseVectorDataConfig,
+        path: &Path,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<()> {
+        // MutableRam has no persisted representation: `open_sparse` rebuilds
+        // it from the vector storage (prefetched separately), so there are no
+        // index files to schedule.
+        match sparse_vector_config.index.index_type {
+            SparseIndexType::MutableRam => return Ok(()),
+            SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {}
+        }
+
+        let config_path = SparseIndexConfig::get_config_path(path);
+        fs.schedule_open(&config_path, None, None);
+
+        // The effective placement (structural index type refined by the
+        // `memory` parameter, degraded by low-memory mode — which is also
+        // what downgrades the pinned immutable-RAM open to the lazy mmap
+        // one) decides whether the index data is warmed: the immutable-RAM
+        // open reads it in full, `cached` keeps it mmap-backed with the page
+        // cache primed, and `cold` reads lazily.
+        // A `populate_override` demotes the effective placement — including the
+        // pinned (immutable-RAM) one, which `open_sparse` downgrades to the
+        // lazy mmap open (same on-disk format, like the low-memory clamp).
+        let placement = sparse_vector_config
+            .index
+            .memory_placement()
+            .clamp_to_low_memory()
+            .with_populate_override(populate_override);
+        let populate = match placement {
+            Memory::Pinned | Memory::Cached => Populate::PreferBackground,
+            Memory::Cold => Populate::No,
+        };
+
+        // Inverted index
+        inverted_index_compressed_mmap::preopen(fs, path, populate)?;
+
+        // Version check
+        fs.schedule_open(&path.join(VERSION_FILE), None, None);
+
+        // Indices tracker
+        fs.schedule_open(&IndicesTracker::file_path(path), None, None);
+
+        Ok(())
+    }
+
+    /// Open the read-only dense vector index from its config (sparse: follow-up).
+    ///
+    /// A cold `populate_override` (a request-specific
+    /// [`LoadProfile`](crate::data_types::load_profile::LoadProfile) predicted
+    /// this vector is never scored) defers the HNSW graph load to first use,
+    /// through `raw_fs` — the segment's raw backend, which outlives the
+    /// caching `fs` of this open (see [`ReadOnlyHNSWIndex::open`]). The plain
+    /// index has no graph, so there is nothing to defer.
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        vector_config: &VectorDataConfig,
+        args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
+        raw_fs: &S::Fs,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<Self>
+    where
+        // The HNSW graph keeps its universal-IO storage handle alive behind a
+        // boxed trait object, which must outlive the index.
+        S: 'static,
+    {
+        let ReadOnlyVectorIndexOpenArgs {
+            fs,
+            path,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            quantized_vectors,
+        } = args;
+        Ok(match &vector_config.index {
+            Indexes::Plain {} => Self::Plain(Box::new(ReadOnlyPlainVectorIndex::open(
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
+            )?)),
+            Indexes::Hnsw(hnsw_config) => Self::Hnsw(Box::new(ReadOnlyHNSWIndex::open(
+                fs,
+                raw_fs,
+                path,
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
+                *hnsw_config,
+                populate_override,
+            )?)),
+        })
+    }
+
+    /// Open the read-only sparse vector index from its persisted [`SparseIndexConfig`],
+    /// mirroring `create_sparse_vector_index`'s `(index_type, datatype)` selection.
+    /// `MutableRam` is never persisted, so it is rebuilt from the vector storage
+    /// instead of loaded — `sparse_vector_config` (from the segment config) is
+    /// what says so, as the persisted config doesn't exist for it.
+    /// `populate_override` mirrors [`preopen_sparse`](Self::preopen_sparse): a cold
+    /// override downgrades `ImmutableRam` to the lazy `Mmap` open, like low-memory mode.
+    pub fn open_sparse<Fs: UniversalReadFs<File = S>>(
+        sparse_vector_config: &SparseVectorDataConfig,
+        args: ReadOnlyVectorIndexOpenArgs<'_, S, Fs>,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<Self> {
+        let ReadOnlyVectorIndexOpenArgs {
+            fs,
+            path,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            quantized_vectors: _,
+        } = args;
+
+        // MutableRam has no persisted representation: rebuild the RAM index
+        // from the (read-only) vector storage, mirroring
+        // `SparseVectorIndex::plan`'s non-persisted branch.
+        if !sparse_vector_config.index.index_type.is_persisted() {
+            return Ok(Self::SparseMutableRam(Box::new(
+                ReadOnlySparseVectorIndex::build_mutable_ram(
+                    sparse_vector_config.index,
+                    id_tracker,
+                    vector_storage,
+                    payload_index,
+                )?,
+            )));
+        }
+
+        let config =
+            SparseIndexConfig::load_universal(fs, &SparseIndexConfig::get_config_path(path))?;
+
+        // A cold populate override parks the index on disk, exactly like the
+        // low-memory downgrade below.
+        let demote_to_mmap = match populate_override {
+            Some(Populate::No | Populate::Auto | Populate::Partial(_)) => true,
+            Some(Populate::Blocking | Populate::PreferBackground) | None => false,
+        };
+
+        // Low-memory mode downgrades `ImmutableRam` to `Mmap` (same on-disk format).
+        let effective_index_type = match config.index_type {
+            SparseIndexType::ImmutableRam if low_memory_mode().prefer_disk() || demote_to_mmap => {
+                SparseIndexType::Mmap
+            }
+            SparseIndexType::ImmutableRam => SparseIndexType::ImmutableRam,
+            SparseIndexType::MutableRam => SparseIndexType::MutableRam,
+            SparseIndexType::Mmap => SparseIndexType::Mmap,
+        };
+
+        let args = ReadOnlySparseVectorIndexOpenArgs {
+            fs,
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+        };
+
+        fn open<S, Fs, TInvertedIndex>(
+            args: ReadOnlySparseVectorIndexOpenArgs<'_, S, Fs>,
+        ) -> OperationResult<Box<ReadOnlySparseVectorIndex<S, TInvertedIndex>>>
+        where
+            S: UniversalReadExt + 'static,
+            Fs: UniversalReadFs<File = S>,
+            TInvertedIndex: InvertedIndexReadOnly<S>,
+        {
+            Ok(Box::new(ReadOnlySparseVectorIndex::open(args)?))
+        }
+
+        let index = match (effective_index_type, config.datatype.unwrap_or_default()) {
+            (SparseIndexType::MutableRam, _) => {
+                return Err(OperationError::service_error(
+                    "MutableRam sparse index is never persisted, \
+                     but its config was found on disk",
+                ));
+            }
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32) => {
+                Self::SparseCompressedImmutableRamF32(open(args)?)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Float32) => {
+                Self::SparseCompressedStoredF32(open(args)?)
+            }
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16) => {
+                Self::SparseCompressedImmutableRamF16(open(args)?)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Float16) => {
+                Self::SparseCompressedStoredF16(open(args)?)
+            }
+            (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8) => {
+                Self::SparseCompressedImmutableRamU8(open(args)?)
+            }
+            (SparseIndexType::Mmap, VectorStorageDatatype::Uint8) => {
+                Self::SparseCompressedStoredU8(open(args)?)
+            }
+            (
+                SparseIndexType::ImmutableRam | SparseIndexType::Mmap,
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16,
+            ) => {
+                return Err(OperationError::service_error(
+                    "TurboQuant datatype storage is not yet supported",
+                ));
+            }
+        };
+        Ok(index)
+    }
+
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    pub fn is_cold(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::Hnsw(index) => index.is_cold(),
+            Self::SparseMutableRam(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().is_cold(),
+        }
     }
 
     pub fn populate(&self) -> OperationResult<()> {
-        // match self {
-        //     Self::Plain(_) => {}
-        //     Self::Hnsw(index) => index.populate()?,
-        //     Self::SparseCompressedImmutableRamF32(_) => {}
-        //     Self::SparseCompressedImmutableRamF16(_) => {}
-        //     Self::SparseCompressedImmutableRamU8(_) => {}
-        //     Self::SparseCompressedMmapF32(index) => index.inner().inverted_index().populate()?,
-        //     Self::SparseCompressedMmapF16(index) => index.inner().inverted_index().populate()?,
-        //     Self::SparseCompressedMmapU8(index) => index.inner().inverted_index().populate()?,
-        // };
-        // Ok(())
-
-        todo!()
+        match self {
+            Self::Plain(_) => {}
+            Self::Hnsw(index) => index.populate()?,
+            Self::SparseMutableRam(_) => {}
+            Self::SparseCompressedImmutableRamF32(_) => {}
+            Self::SparseCompressedImmutableRamF16(_) => {}
+            Self::SparseCompressedImmutableRamU8(_) => {}
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().populate()?,
+        };
+        Ok(())
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        // match self {
-        //     Self::Plain(_) => {}
-        //     Self::Hnsw(index) => index.clear_cache()?,
-        //     Self::SparseCompressedImmutableRamF32(_) => {}
-        //     Self::SparseCompressedImmutableRamF16(_) => {}
-        //     Self::SparseCompressedImmutableRamU8(_) => {}
-        //     Self::SparseCompressedMmapF32(index) => index.inner().inverted_index().clear_cache()?,
-        //     Self::SparseCompressedMmapF16(index) => index.inner().inverted_index().clear_cache()?,
-        //     Self::SparseCompressedMmapU8(index) => index.inner().inverted_index().clear_cache()?,
-        // };
-        // Ok(())
-
-        todo!()
+        match self {
+            Self::Plain(_) => {}
+            Self::Hnsw(index) => index.clear_cache()?,
+            Self::SparseMutableRam(_) => {}
+            Self::SparseCompressedImmutableRamF32(_) => {}
+            Self::SparseCompressedImmutableRamF16(_) => {}
+            Self::SparseCompressedImmutableRamU8(_) => {}
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().clear_cache()?,
+        };
+        Ok(())
     }
 }
 
-impl VectorIndexRead for VectorIndexReadEnum {
+impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
     fn search(
         &self,
-        _vectors: &[&QueryVector],
-        _filter: Option<&Filter>,
-        _top: usize,
-        _params: Option<&SearchParams>,
-        _query_context: &VectorQueryContext,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        // match self {
-        //     Self::Plain(index) => index.search(vectors, filter, top, params, query_context),
-        //     Self::Hnsw(index) => index.search(vectors, filter, top, params, query_context),
-        //     Self::SparseCompressedImmutableRamF32(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseCompressedImmutableRamF16(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseCompressedImmutableRamU8(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseCompressedMmapF32(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseCompressedMmapF16(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        //     Self::SparseCompressedMmapU8(index) => {
-        //         index.search(vectors, filter, top, params, query_context)
-        //     }
-        // }
-
-        todo!()
+        match self {
+            Self::Plain(index) => index.search(vectors, filter, top, params, query_context),
+            Self::Hnsw(index) => index.search(vectors, filter, top, params, query_context),
+            Self::SparseMutableRam(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedStoredF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+        }
     }
 
-    fn get_telemetry_data(&self, _detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
-        // match self {
-        //     Self::Plain(index) => index.get_telemetry_data(detail),
-        //     Self::Hnsw(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedMmapF32(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedMmapF16(index) => index.get_telemetry_data(detail),
-        //     Self::SparseCompressedMmapU8(index) => index.get_telemetry_data(detail),
-        // }
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        match self {
+            Self::Plain(index) => index.filter_checks(query_vectors, cardinality, top, params),
+            Self::Hnsw(index) => index.filter_checks(query_vectors, cardinality, top, params),
+            Self::SparseMutableRam(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedStoredF32(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+        }
+    }
 
-        todo!()
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        match self {
+            Self::Plain(index) => index.get_telemetry_data(detail),
+            Self::Hnsw(index) => index.get_telemetry_data(detail),
+            Self::SparseMutableRam(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredF32(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredF16(index) => index.get_telemetry_data(detail),
+            Self::SparseCompressedStoredU8(index) => index.get_telemetry_data(detail),
+        }
     }
 
     fn indexed_vector_count(&self) -> usize {
-        // match self {
-        //     Self::Plain(index) => index.indexed_vector_count(),
-        //     Self::Hnsw(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedMmapF32(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedMmapF16(index) => index.indexed_vector_count(),
-        //     Self::SparseCompressedMmapU8(index) => index.indexed_vector_count(),
-        // }
-
-        todo!()
+        match self {
+            Self::Plain(index) => index.indexed_vector_count(),
+            Self::Hnsw(index) => index.indexed_vector_count(),
+            Self::SparseMutableRam(index) => index.indexed_vector_count(),
+            Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
+            Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
+            Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredF32(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredF16(index) => index.indexed_vector_count(),
+            Self::SparseCompressedStoredU8(index) => index.indexed_vector_count(),
+        }
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        // match self {
-        //     Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::SparseCompressedImmutableRamF32(index) => {
-        //         index.size_of_searchable_vectors_in_bytes()
-        //     }
-        //     Self::SparseCompressedImmutableRamF16(index) => {
-        //         index.size_of_searchable_vectors_in_bytes()
-        //     }
-        //     Self::SparseCompressedImmutableRamU8(index) => {
-        //         index.size_of_searchable_vectors_in_bytes()
-        //     }
-        //     Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
-        //     Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
-        // }
-
-        todo!()
+        match self {
+            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseMutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedStoredF32(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredF16(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedStoredU8(index) => index.size_of_searchable_vectors_in_bytes(),
+        }
     }
 
     fn fill_idf_statistics(
         &self,
-        _idf: &mut HashMap<DimId, usize>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // match self {
-        //     Self::Plain(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::Hnsw(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::SparseCompressedImmutableRamF32(index) => {
-        //         index.fill_idf_statistics(idf, hw_counter)
-        //     }
-        //     Self::SparseCompressedImmutableRamF16(index) => {
-        //         index.fill_idf_statistics(idf, hw_counter)
-        //     }
-        //     Self::SparseCompressedImmutableRamU8(index) => {
-        //         index.fill_idf_statistics(idf, hw_counter)
-        //     }
-        //     Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
-        //     Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
-        // }
-
-        todo!()
+        idf: &mut HashMap<DimId, usize>,
+        corpus: Option<&Filter>,
+        is_stopped: &std::sync::atomic::AtomicBool,
+    ) -> OperationResult<usize> {
+        match self {
+            Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
+            Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
+            Self::SparseMutableRam(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+            Self::SparseCompressedStoredF32(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+            Self::SparseCompressedStoredF16(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+            Self::SparseCompressedStoredU8(index) => {
+                index.fill_idf_statistics(idf, corpus, is_stopped)
+            }
+        }
     }
 
     fn is_index(&self) -> bool {
-        // match self {
-        //     Self::Plain(index) => index.is_index(),
-        //     Self::Hnsw(index) => index.is_index(),
-        //     Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
-        //     Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
-        //     Self::SparseCompressedImmutableRamU8(index) => index.is_index(),
-        //     Self::SparseCompressedMmapF32(index) => index.is_index(),
-        //     Self::SparseCompressedMmapF16(index) => index.is_index(),
-        //     Self::SparseCompressedMmapU8(index) => index.is_index(),
-        // }
-
-        todo!()
+        match self {
+            Self::Plain(index) => index.is_index(),
+            Self::Hnsw(index) => index.is_index(),
+            Self::SparseMutableRam(index) => index.is_index(),
+            Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
+            Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
+            Self::SparseCompressedImmutableRamU8(index) => index.is_index(),
+            Self::SparseCompressedStoredF32(index) => index.is_index(),
+            Self::SparseCompressedStoredF16(index) => index.is_index(),
+            Self::SparseCompressedStoredU8(index) => index.is_index(),
+        }
     }
 }

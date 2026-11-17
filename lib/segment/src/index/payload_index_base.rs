@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
-use common::types::{DeferredBehavior, PointOffsetType, ScoreType};
+use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
 use serde_json::Value;
 
 use super::field_index::numeric_index::NumericFieldIndexRead;
@@ -14,9 +13,11 @@ use super::query_optimization::rescore_formula::FormulaScorer;
 use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
-use crate::payload_storage::FilterContext;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
@@ -42,18 +43,17 @@ pub trait PayloadIndexRead {
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
     /// A best estimation of the number of available points should be given.
-    fn estimate_cardinality(
-        &self,
-        query: &Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation>;
+    fn estimate_cardinality(&self, query: &Filter) -> OperationResult<CardinalityEstimation>;
+
+    /// Cost of materializing the filter of `estimation`, in filter checks of one point: the
+    /// points its primary clauses yield, or every point without primary clauses.
+    fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize>;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
         nested_path: &JsonPath,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
     /// Return list of all point ids, which satisfy filtering criteria
@@ -64,18 +64,28 @@ pub trait PayloadIndexRead {
     fn query_points(
         &self,
         filter: &Filter,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>>;
 
     /// Return number of points, indexed by this field
-    fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
+    ///
+    /// Fallible: see [`PayloadFieldIndexRead::count_indexed_points`].
+    ///
+    /// [`PayloadFieldIndexRead::count_indexed_points`]: crate::index::field_index::PayloadFieldIndexRead::count_indexed_points
+    fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize>;
 
-    fn filter_context<'a>(
+    fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
+
+    /// [`Self::filter_context`] for a consumer that checks points one at a time, waiting
+    /// for each check (graph walk, cardinality sampling), so conditions on cold indexes
+    /// can be read into point sets up front (see [`ExpectedChecks::Serial`]). Indexes that
+    /// can't materialize conditions return the plain filter context.
+    ///
+    /// [`ExpectedChecks::Serial`]: crate::index::query_optimization::expected_checks::ExpectedChecks::Serial
+    fn filter_context_for_serial_checks<'a>(
         &'a self,
         filter: &'a Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Box<dyn FilterContext + 'a>>;
+    ) -> OperationResult<OptimizedFilter<'a>>;
 
     /// Look up a numeric index for the given payload key, if one exists.
     ///
@@ -90,8 +100,32 @@ pub trait PayloadIndexRead {
     /// concrete facet-index type is opaque per implementation.
     fn facet_index_for(&self, key: &JsonPath) -> Option<impl FacetIndex + '_>;
 
+    /// Add this segment's contribution to the corpus statistics of a text
+    /// field: document frequency per seeded term, document count, and total
+    /// tokens, over the visible points matching `stats.corpus` when it is set.
+    /// A field with no text index contributes nothing.
+    fn fill_text_statistics(
+        &self,
+        field: PayloadKeyTypeRef,
+        stats: &mut TextFieldStats,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<()>;
+
+    /// Score `terms` by BM25 over the text index of `field` and return the
+    /// `limit` best documents, highest first. A field with no text index
+    /// scores nothing, as it contributes nothing to the statistics.
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        context: &TextQueryContext<'_>,
+        params: Bm25Params,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
+
     /// Per-field-index telemetry data.
-    fn get_telemetry_data(&self) -> Vec<PayloadIndexTelemetry>;
+    fn get_telemetry_data(&self) -> OperationResult<Vec<PayloadIndexTelemetry>>;
 
     /// Build a per-query formula scorer that evaluates the given parsed
     /// formula against this index's payload, using the prefetch scores as
@@ -100,7 +134,6 @@ pub trait PayloadIndexRead {
         &'q self,
         parsed_formula: &'q ParsedFormula,
         prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
-        hw_counter: &'q HardwareCounterCell,
     ) -> OperationResult<FormulaScorer<'q>>;
 
     /// Iterate point offsets that match the filter.
@@ -112,9 +145,29 @@ pub trait PayloadIndexRead {
         &'a self,
         filter: &'a Filter,
         query_cardinality: &'a CardinalityEstimation,
-        hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+        self.iter_filtered_points_first(
+            filter,
+            query_cardinality,
+            is_stopped,
+            deferred_behavior,
+            None,
+        )
+    }
+
+    /// Same as [`Self::iter_filtered_points`], but yields at most `first` matches.
+    ///
+    /// Impls that collect matches up front stop checking once they have `first`
+    /// of them, instead of checking every candidate.
+    fn iter_filtered_points_first<'a>(
+        &'a self,
+        filter: &'a Filter,
+        query_cardinality: &'a CardinalityEstimation,
+        is_stopped: &'a AtomicBool,
+        deferred_behavior: DeferredBehavior,
+        first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
@@ -127,24 +180,23 @@ pub trait PayloadIndexRead {
     ) -> OperationResult<()>;
 
     /// Get payload for point
-    fn get_payload(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
+    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Get payload for point with potential optimization for sequential access.
-    fn get_payload_sequential(
-        &self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
+    fn get_payload_sequential(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_ids: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Raw analogue of [`Self::read_payloads`], see
+    /// [`PayloadStorageRead::read_payloads_raw`](crate::payload_storage::PayloadStorageRead::read_payloads_raw).
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_ids: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
     ) -> OperationResult<()>;
 }
 
@@ -161,7 +213,6 @@ pub trait PayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult>;
 
     /// Apply already built indexes
@@ -177,13 +228,13 @@ pub trait PayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Remove index
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<bool>;
 
-    /// Remove index if incompatible with new payload schema
+    /// Remove index if incompatible with new payload schema.
+    /// A metadata-only schema change (e.g. `enable_hnsw`) is persisted in place instead.
     fn drop_index_if_incompatible(
         &mut self,
         field: PayloadKeyTypeRef,
@@ -195,7 +246,6 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
@@ -204,7 +254,6 @@ pub trait PayloadIndex {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Delete payload by key
@@ -212,15 +261,10 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
-    fn clear_payload(
-        &mut self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Payload>>;
+    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

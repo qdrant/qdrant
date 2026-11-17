@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
 
 
@@ -58,11 +58,11 @@ def test_validation_body_param(collection_name):
 def test_validation_search_hnsw_ef_zero(collection_name):
     # HNSW search ef must be a positive beam size.
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [0.2, 0.1, 0.9, 0.7],
+            "query": [0.2, 0.1, 0.9, 0.7],
             "limit": 3,
             "params": {"hnsw_ef": 0},
         }
@@ -199,6 +199,7 @@ def test_validation_positive_integer_zero(field):
     name = f"test_validation_{field}_zero"
     response = requests.put(
         f"{QDRANT_HOST}/collections/{name}",
+        headers=qdrant_host_headers(),
         json={
             "vectors": {"size": 4, "distance": "Dot"},
             field: 0,
@@ -220,6 +221,7 @@ def test_validation_positive_integer_negative(field):
     name = f"test_validation_{field}_neg"
     response = requests.put(
         f"{QDRANT_HOST}/collections/{name}",
+        headers=qdrant_host_headers(),
         json={
             "vectors": {"size": 4, "distance": "Dot"},
             field: -1,

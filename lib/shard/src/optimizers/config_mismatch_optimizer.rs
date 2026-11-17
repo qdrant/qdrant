@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::ReadSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, VectorName};
+use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, Memory, VectorName};
 
 use super::config::SegmentOptimizerConfig;
 use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};
@@ -48,32 +48,39 @@ impl ConfigMismatchOptimizer {
         }
     }
 
-    /// Check if current configuration requires vectors to be stored on disk
-    fn check_if_vectors_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
+    /// Memory placement the current configuration requests for original vectors, if configured
+    fn requested_vectors_memory(&self, vector_name: &VectorName) -> Option<Memory> {
         self.segment_optimizer_config
-            .dense_vector
+            .dense_vectors
             .get(vector_name)
-            .and_then(|cfg| cfg.on_disk)
+            .and_then(|cfg| cfg.memory_placement())
     }
 
-    /// Check if current configuration requires sparse vectors index to be stored on disk
-    fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
+    /// Memory placement the current configuration requests for the sparse vector index,
+    /// if configured
+    fn requested_sparse_index_memory(&self, vector_name: &VectorName) -> Option<Memory> {
         self.segment_optimizer_config
-            .sparse_vector
+            .sparse_vectors
             .get(vector_name)
-            .and_then(|cfg| cfg.on_disk)
+            .and_then(|cfg| cfg.memory_placement())
     }
 
     fn has_config_mismatch(&self, segment: &dyn ReadSegmentEntry) -> bool {
         let segment_config = segment.config();
 
-        if self
-            .segment_optimizer_config
-            .payload_storage_type
-            .is_on_disk()
-            != segment_config.payload_storage_type.is_on_disk()
+        if self.segment_optimizer_config.payload_storage_type.is_cold()
+            != segment_config.payload_storage_type.is_cold()
         {
             return true; // Optimize segment due to payload storage mismatch
+        }
+
+        // Appendable segments always use the mutable tracker; the placement only applies once
+        // they are indexed, which happens with the current configuration anyway.
+        if let Some(required_memory) = self.segment_optimizer_config.id_tracker_memory
+            && !segment_config.is_appendable()
+            && required_memory != segment_config.id_tracker_memory_placement()
+        {
+            return true; // Optimize segment due to id tracker placement mismatch
         }
 
         // Determine whether dense data in segment has mismatch
@@ -89,7 +96,7 @@ impl ConfigMismatchOptimizer {
                             // Select segment if we have an HNSW mismatch that requires rebuild
                             let target_hnsw = self
                                 .segment_optimizer_config
-                                .dense_vector
+                                .dense_vectors
                                 .get(vector_name)
                                 .map(|cfg| cfg.hnsw_config)
                                 .unwrap_or(self.global_hnsw_config);
@@ -99,10 +106,9 @@ impl ConfigMismatchOptimizer {
                         }
                     }
 
-                    if !vector_data.storage_type.is_empty()
-                        && let Some(is_required_on_disk) =
-                            self.check_if_vectors_on_disk(vector_name)
-                        && is_required_on_disk != vector_data.storage_type.is_on_disk()
+                    if let Some(required_memory) = self.requested_vectors_memory(vector_name)
+                        && let Some(memory) = vector_data.storage_type.memory()
+                        && required_memory.is_cold() != memory.is_cold()
                     {
                         return true;
                     }
@@ -110,7 +116,7 @@ impl ConfigMismatchOptimizer {
                     // Check quantization mismatch
                     let target_quantization = self
                         .segment_optimizer_config
-                        .dense_vector
+                        .dense_vectors
                         .get(vector_name)
                         .and_then(|cfg| cfg.quantization_config.as_ref());
 
@@ -148,16 +154,20 @@ impl ConfigMismatchOptimizer {
                 .sparse_vector_data
                 .iter()
                 .any(|(vector_name, vector_data)| {
-                    let Some(is_required_on_disk) =
-                        self.check_if_sparse_vectors_index_on_disk(vector_name)
+                    let Some(required_memory) = self.requested_sparse_index_memory(vector_name)
                     else {
                         return false; // Do nothing if not specified
                     };
 
                     match vector_data.index.index_type {
-                        SparseIndexType::MutableRam => false, // Do nothing for mutable RAM
-                        SparseIndexType::ImmutableRam => is_required_on_disk, // Rebuild if we require on disk
-                        SparseIndexType::Mmap => !is_required_on_disk, // Rebuild if we require in RAM
+                        // Do nothing for mutable RAM
+                        SparseIndexType::MutableRam => false,
+                        // Rebuild if the effective placement differs from the requested one
+                        // (e.g. pinned segment while cold/cached is required, or a cold/cached
+                        // mmap segment while another placement is required)
+                        SparseIndexType::ImmutableRam | SparseIndexType::Mmap => {
+                            required_memory != vector_data.index.memory_placement()
+                        }
                     }
                 });
 

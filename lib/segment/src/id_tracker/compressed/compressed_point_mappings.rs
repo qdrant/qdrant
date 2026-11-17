@@ -14,7 +14,7 @@ use itertools::Itertools;
 use rand::RngExt;
 use rand::distr::Distribution;
 #[cfg(test)]
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 #[cfg(test)]
 use rand::seq::SliceRandom as _;
 #[cfg(test)]
@@ -183,7 +183,7 @@ impl CompressedPointMappings {
 
     /// Generate a random [`PointMappings`].
     #[cfg(test)]
-    pub fn random(rand: &mut StdRng, total_size: u32) -> Self {
+    pub fn random(rand: &mut SmallRng, total_size: u32) -> Self {
         Self::random_with_params(rand, total_size, total_size, 128)
     }
 
@@ -198,7 +198,7 @@ impl CompressedPointMappings {
     ///   (256 uuids + 256 u64s)
     #[cfg(test)]
     pub fn random_with_params(
-        rand: &mut StdRng,
+        rand: &mut SmallRng,
         total_size: u32,
         preserved_size: u32,
         bits_in_id: u8,

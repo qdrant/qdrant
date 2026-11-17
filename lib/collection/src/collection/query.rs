@@ -2,8 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::{TryFutureExt, future};
+use futures::future;
 use itertools::{Either, Itertools};
 use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
@@ -16,13 +15,14 @@ use tokio::time::Instant;
 use super::Collection;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
-use crate::common::batching::batch_requests;
+use crate::common::batching::{batch_requests, empty_batch_results};
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
@@ -46,9 +46,9 @@ impl Collection {
         &self,
         request: ShardQueryRequest,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -57,16 +57,16 @@ impl Collection {
             .do_query_batch(
                 vec![request],
                 read_consistency,
+                routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
 
     /// If the query limit above this value, it will be a subject to undersampling.
-    const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
+    pub(crate) const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
 
     /// Give some more ensurance for undersampling,
     /// retrieve more points to prevent undersampling errors.
@@ -147,13 +147,15 @@ impl Collection {
         &self,
         batch_request: Arc<Vec<ShardQueryRequest>>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
-        // query all shards concurrently
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(shard_selection)?;
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         let num_unique_shard_keys = target_shards
             .iter()
@@ -171,29 +173,28 @@ impl Collection {
             is_auto_sharding,
         );
 
-        let all_searches = target_shards.iter().map(|(shard, shard_key)| {
-            let shard_key = shard_key.cloned();
+        // query all shards concurrently
+        let all_searches = target_shards.into_iter().map(|(shard, shard_key)| {
             let request_clone = Arc::clone(&batch_request);
-            shard
-                .query_batch(
-                    request_clone,
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                    hw_measurement_acc.clone(),
-                )
-                .and_then(move |mut shard_responses| async move {
-                    if shard_key.is_none() {
-                        return Ok(shard_responses);
-                    }
+            async move {
+                let mut shard_responses = shard
+                    .query_batch(
+                        request_clone,
+                        read_consistency,
+                        routing_token,
+                        shard_selection.is_shard_id(),
+                        timeout,
+                    )
+                    .await?;
+                if shard_key.is_some() {
                     shard_responses
                         .iter_mut()
                         .flatten()
                         .flatten()
                         .for_each(|point| point.shard_key.clone_from(&shard_key));
-
-                    Ok(shard_responses)
-                })
+                }
+                CollectionResult::Ok(shard_responses)
+            }
         });
         future::try_join_all(all_searches).await
     }
@@ -203,15 +204,15 @@ impl Collection {
         &self,
         requests_batch: Vec<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
 
         // shortcuts batch if all requests with limit=0
         if requests_batch.iter().all(|s| s.limit == 0) {
-            return Ok(vec![]);
+            return Ok(empty_batch_results(requests_batch.len()));
         }
 
         let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
@@ -256,9 +257,9 @@ impl Collection {
                 .do_query_batch_impl(
                     without_payload_batch,
                     read_consistency,
+                    routing_token,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
             // update timeout
@@ -270,9 +271,9 @@ impl Collection {
                         Some(req.with_payload),
                         req.with_vector,
                         read_consistency,
+                        routing_token,
                         &shard_selection,
                         timeout,
-                        hw_measurement_acc.clone(),
                     )
                 },
             );
@@ -281,9 +282,9 @@ impl Collection {
             self.do_query_batch_impl(
                 requests_batch,
                 read_consistency,
+                routing_token,
                 &shard_selection,
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await
         }
@@ -294,9 +295,9 @@ impl Collection {
         &self,
         requests_batch: Vec<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
@@ -306,9 +307,9 @@ impl Collection {
             .batch_query_shards_concurrently(
                 requests_batch.clone(),
                 read_consistency,
+                routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -326,7 +327,6 @@ impl Collection {
                         merged_intermediates,
                         request,
                         timeout.map(|timeout| timeout.saturating_sub(instant.elapsed())),
-                        hw_measurement_acc.clone(),
                     )
                     .await?;
 
@@ -351,7 +351,6 @@ impl Collection {
         mut intermediates: Vec<Vec<ScoredPoint>>,
         request: &ShardQueryRequest,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let ShardQueryRequest {
             prefetches: _,
@@ -391,15 +390,16 @@ impl Collection {
                 let collection_params = self.collection_config.read().await.params.clone();
                 let search_runtime_handle = &self.search_runtime;
                 let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+                // MMR runs before the offset is applied below, so it must select the whole page.
+                let mmr_limit = limit.saturating_add(*offset);
 
                 let mut mmr_result = mmr_from_points_with_vector(
                     &collection_params,
                     points_with_vector,
                     mmr.clone(),
-                    *limit,
+                    mmr_limit,
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await?;
 
@@ -423,7 +423,8 @@ impl Collection {
             | Some(ScoringQuery::Vector(_))
             | Some(ScoringQuery::OrderBy(_))
             | Some(ScoringQuery::Formula(_))
-            | Some(ScoringQuery::Sample(_)) => {
+            | Some(ScoringQuery::Sample(_))
+            | Some(ScoringQuery::Text(_)) => {
                 // Otherwise, it will be a list with a single list of scored points.
                 debug_assert_eq!(intermediates.len(), 1);
                 intermediates.pop().ok_or_else(|| {
@@ -439,6 +440,15 @@ impl Collection {
         Ok(result)
     }
 
+    /// Check the text queries of `request` against this collection's payload
+    /// schema, see [`CollectionQueryRequest::check_text_queries`].
+    pub(crate) fn check_text_queries(
+        &self,
+        request: &CollectionQueryRequest,
+    ) -> CollectionResult<()> {
+        request.check_text_queries(&self.payload_index_schema.read())
+    }
+
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
@@ -447,14 +457,18 @@ impl Collection {
         requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<Arc<Collection>>>,
     {
         let start = Instant::now();
+
+        for (request, _) in &requests_batch {
+            self.check_text_queries(request)?;
+        }
 
         // Lift nested prefetches to root queries for vector resolution
         let resolver_requests = build_vector_resolver_queries(&requests_batch);
@@ -465,8 +479,8 @@ impl Collection {
             self,
             collection_by_name,
             read_consistency,
+            routing_token,
             timeout,
-            hw_measurement_acc.clone(),
         )
         .await?;
 
@@ -507,9 +521,9 @@ impl Collection {
                 futures.push(self.do_query_batch(
                     shard_requests,
                     read_consistency,
+                    routing_token,
                     shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
                 ));
 
                 Ok(())
@@ -534,7 +548,6 @@ impl Collection {
         requests: Vec<ShardQueryRequest>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let requests_arc = Arc::new(requests);
 
@@ -544,9 +557,10 @@ impl Collection {
             .batch_query_shards_concurrently(
                 Arc::clone(&requests_arc),
                 None,
+                // Internal node-to-node call: routing was already resolved by the coordinator.
+                None,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 
@@ -736,7 +750,8 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
         | Some(ScoringQuery::Vector(_))
         | Some(ScoringQuery::OrderBy(_))
         | Some(ScoringQuery::Formula(_))
-        | Some(ScoringQuery::Sample(_)) => {
+        | Some(ScoringQuery::Sample(_))
+        | Some(ScoringQuery::Text(_)) => {
             // Otherwise, we expect the root result
             vec![IntermediateQueryInfo {
                 scoring_query: request.query.as_ref(),

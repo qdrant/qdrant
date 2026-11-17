@@ -25,11 +25,6 @@ impl InferenceApiKeys {
         }
     }
 
-    /// Get the token as a string slice
-    pub fn token_as_str(&self) -> Option<&str> {
-        self.token.as_deref()
-    }
-
     /// Single source of truth: extracts API keys from any iterator of (key, value) string pairs
     fn extract_keys_from_pairs<'a>(&mut self, iter: impl Iterator<Item = (&'a str, &'a str)>) {
         for (k, v) in iter {

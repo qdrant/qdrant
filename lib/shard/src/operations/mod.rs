@@ -61,6 +61,53 @@ impl CollectionUpdateOperations {
         }
     }
 
+    /// Whether applying this operation grows what the node holds, which is what
+    /// [`crate::quota`] caps.
+    ///
+    /// Only deleting whole points is excluded, and it has to be: it is the one
+    /// way out of a node that has hit its limit. Deleting a vector or a payload
+    /// key is not — copy-on-write rewrites the point to drop a field, so it
+    /// grows storage before anything is reclaimed.
+    ///
+    /// Shard-transfer syncs are excluded as well: a transfer is sized up once
+    /// before it starts, and refusing its batches partway would abandon work
+    /// that is nearly done, only for the whole transfer to be retried from the
+    /// beginning.
+    pub fn consumes_quota(&self) -> bool {
+        match self {
+            Self::PointOperation(op) => match op {
+                PointOperations::UpsertPoints(_)
+                | PointOperations::UpsertPointsConditional(_)
+                | PointOperations::UpsertPointsRaw(_) => true,
+                PointOperations::DeletePoints { .. } | PointOperations::DeletePointsByFilter(_) => {
+                    false
+                }
+                PointOperations::SyncPoints(_) | PointOperations::SyncPointsRaw(_) => false,
+            },
+            Self::VectorOperation(op) => match op {
+                vector_ops::VectorOperations::UpdateVectors(_) => true,
+                // With CoW all modifications to points create more load.
+                vector_ops::VectorOperations::DeleteVectors(..)
+                | vector_ops::VectorOperations::DeleteVectorsByFilter(..) => true,
+            },
+            Self::PayloadOperation(op) => match op {
+                payload_ops::PayloadOps::SetPayload(_)
+                | payload_ops::PayloadOps::OverwritePayload(_) => true,
+                // With CoW all modifications to points create more load.
+                payload_ops::PayloadOps::DeletePayload(_)
+                | payload_ops::PayloadOps::ClearPayload { .. }
+                | payload_ops::PayloadOps::ClearPayloadByFilter(_) => true,
+            },
+            // Both arrive already committed through consensus, on a path that
+            // does not go past a quota check — they are gated before the
+            // proposal instead, so that a peer cannot refuse what the cluster
+            // has already agreed to.
+            Self::FieldIndexOperation(_) | Self::VectorNameOperation(_) => false,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => false,
+        }
+    }
+
     /// List point IDs that can be created during the operation.
     /// Do not list IDs that are deleted or modified.
     pub fn upsert_point_ids(&self) -> Option<Vec<PointIdType>> {
@@ -71,6 +118,12 @@ impl CollectionUpdateOperations {
                 PointOperations::DeletePoints { .. } => None,
                 PointOperations::DeletePointsByFilter(_) => None,
                 PointOperations::SyncPoints(op) => {
+                    Some(op.points.iter().map(|point| point.id).collect())
+                }
+                PointOperations::UpsertPointsRaw(points) => {
+                    Some(points.iter().map(|point| point.id).collect())
+                }
+                PointOperations::SyncPointsRaw(op) => {
                     Some(op.points.iter().map(|point| point.id).collect())
                 }
             },
@@ -379,11 +432,32 @@ mod tests {
                 points: Vec::new(),
             });
 
+            // Use a non-empty raw point, with a payload blob, so both byte-blob paths
+            // are actually exercised
+            let raw_point = PointStructRawPersisted {
+                id: 1.into(),
+                vectors: vec![("dense".to_string(), vec![0, 1, 2, 3, 255])].into(),
+                payload: None,
+                payload_raw: Some(segment::types::RawPayload::from_storage_bytes(
+                    br#"{"city":"Berlin"}"#.to_vec(),
+                )),
+            };
+
+            let upsert_raw = Self::UpsertPointsRaw(vec![raw_point.clone()]);
+
+            let sync_raw = Self::SyncPointsRaw(PointSyncRawOperation {
+                from_id: Some(1.into()),
+                to_id: None,
+                points: vec![raw_point],
+            });
+
             prop_oneof![
                 Just(upsert),
                 Just(delete),
                 Just(delete_by_filter),
                 Just(sync),
+                Just(upsert_raw),
+                Just(sync_raw),
             ]
             .boxed()
         }

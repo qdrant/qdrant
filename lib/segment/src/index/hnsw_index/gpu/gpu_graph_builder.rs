@@ -16,8 +16,8 @@ pub static GPU_MAX_VISITED_FLAGS_FACTOR: usize = 32;
 
 /// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
-pub fn build_hnsw_on_gpu<'a, 'b>(
-    gpu_insert_context: &mut GpuInsertContext<'b>,
+pub fn build_hnsw_on_gpu<'a>(
+    gpu_insert_context: &mut GpuInsertContext,
     // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
     // Parallel inserts count.
@@ -103,6 +103,9 @@ pub fn build_hnsw_on_gpu<'a, 'b>(
 #[cfg(test)]
 mod tests {
     use std::borrow::Borrow;
+    use std::sync::Arc;
+
+    use common::ambient;
 
     use super::*;
     use crate::index::hnsw_index::HnswM;
@@ -123,17 +126,19 @@ mod tests {
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let gpu_vector_storage = GpuVectorStorage::new(
-            device.clone(),
-            test.vector_storage.borrow(),
-            None,
-            false,
-            &false.into(),
-        )
-        .unwrap();
+        let gpu_vector_storage = Arc::new(
+            GpuVectorStorage::new(
+                device.clone(),
+                test.vector_storage.borrow(),
+                None,
+                false,
+                &false.into(),
+            )
+            .unwrap(),
+        );
 
         let mut gpu_search_context = GpuInsertContext::new(
-            &gpu_vector_storage,
+            gpu_vector_storage,
             groups_count,
             test.graph_layers_builder.hnsw_m(),
             test.graph_layers_builder.ef_construct(),
@@ -163,6 +168,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -184,6 +190,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality_exact() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -208,6 +215,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)

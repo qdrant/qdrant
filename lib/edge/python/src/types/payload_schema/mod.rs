@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 pub mod text_index;
 
 use std::fmt;
@@ -10,7 +14,9 @@ use segment::data_types::index::*;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 
 pub use self::text_index::*;
+use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::types::json_path::PyJsonPath;
 
 #[derive(Clone, Debug, Into)]
 pub struct PyPayloadFieldSchema(PayloadFieldSchema);
@@ -208,13 +214,23 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pymethods]
 impl PyKeywordIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None))]
-    pub fn new(is_tenant: Option<bool>, on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None, nested = None))]
+    pub fn new(
+        is_tenant: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        prefix: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(KeywordIndexParams {
             r#type: Default::default(),
             is_tenant,
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            prefix,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -225,12 +241,30 @@ impl PyKeywordIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn prefix(&self) -> Option<bool> {
+        self.0.prefix
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -241,7 +275,10 @@ impl PyKeywordIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            prefix: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -255,13 +292,15 @@ pub struct PyIntegerIndexParams(IntegerIndexParams);
 #[pymethods]
 impl PyIntegerIndexParams {
     #[new]
-    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None))]
+    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         lookup: Option<bool>,
         range: Option<bool>,
         is_principal: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(IntegerIndexParams {
             r#type: Default::default(),
@@ -269,7 +308,9 @@ impl PyIntegerIndexParams {
             range,
             is_principal,
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -290,12 +331,25 @@ impl PyIntegerIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -308,7 +362,9 @@ impl PyIntegerIndexParams {
             range: _,
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -322,17 +378,21 @@ pub struct PyFloatIndexParams(FloatIndexParams);
 #[pymethods]
 impl PyFloatIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(FloatIndexParams {
             r#type: Default::default(),
             is_principal,
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -343,12 +403,25 @@ impl PyFloatIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -359,7 +432,9 @@ impl PyFloatIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -373,23 +448,43 @@ pub struct PyGeoIndexParams(GeoIndexParams);
 #[pymethods]
 impl PyGeoIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, enable_hnsw = None))]
-    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None, nested = None))]
+    pub fn new(
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(GeoIndexParams {
             r#type: Default::default(),
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -399,7 +494,9 @@ impl PyGeoIndexParams {
         let GeoIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -413,23 +510,43 @@ pub struct PyBoolIndexParams(BoolIndexParams);
 #[pymethods]
 impl PyBoolIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, enable_hnsw = None))]
-    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None, nested = None))]
+    pub fn new(
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(BoolIndexParams {
             r#type: Default::default(),
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -439,7 +556,9 @@ impl PyBoolIndexParams {
         let BoolIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -453,17 +572,21 @@ pub struct PyDatetimeIndexParams(DatetimeIndexParams);
 #[pymethods]
 impl PyDatetimeIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(DatetimeIndexParams {
             r#type: Default::default(),
             is_principal,
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -474,12 +597,25 @@ impl PyDatetimeIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -490,7 +626,9 @@ impl PyDatetimeIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -504,13 +642,21 @@ pub struct PyUuidIndexParams(UuidIndexParams);
 #[pymethods]
 impl PyUuidIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None))]
-    pub fn new(is_tenant: Option<bool>, on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
+    pub fn new(
+        is_tenant: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(UuidIndexParams {
             r#type: Default::default(),
             is_tenant,
             on_disk,
+            memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -521,12 +667,25 @@ impl PyUuidIndexParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -537,7 +696,9 @@ impl PyUuidIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }

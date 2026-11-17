@@ -1,0 +1,72 @@
+use common::sorted_slice::SortedSlice;
+use common::universal_io::{CachedReadFs, UniversalReadFsAsync};
+
+use super::LookupSegment;
+use crate::common::live_reload::LiveReload as _;
+use crate::common::operation_error::OperationResult;
+
+impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
+    /// Refresh every component to the current on-disk state (id-tracker
+    /// delta → payload storage and vector storages) without re-opening the
+    /// segment — the mirror of [`ReadOnlySegment::live_reload`], over the
+    /// components a lookup holds.
+    ///
+    /// Unlike the read-only segment there is no retained delta: an error
+    /// leaves the components out of step with the changes already drained
+    /// from the id tracker, and the segment must be discarded rather than
+    /// reloaded again.
+    ///
+    /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
+    pub fn live_reload(&mut self) -> OperationResult<()> {
+        let Self {
+            fs,
+            segment_path: _,
+            id_tracker,
+            payload_storage,
+            vector_data,
+            segment_config: _,
+            appendable: _,
+        } = self;
+
+        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+        let max_committed_id = probe.max_committed_id();
+
+        // Prepare new LIST snapshot
+        fs.cache_file_info()?;
+
+        // Live preload: schedule everything
+        let mut futs = id_tracker.borrow().live_preload(fs)?;
+        futs.extend(payload_storage.borrow_mut().live_preload(fs)?);
+        for vector_storage in vector_data.values() {
+            futs.extend(vector_storage.borrow_mut().live_preload(fs)?);
+        }
+
+        // Wait for preload
+        futures::executor::block_on(async {
+            futures::join!(fs.wait_all(), futures::future::join_all(futs))
+        });
+
+        // Live reload: apply updates
+        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+
+        // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
+        let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };
+        let inserted = unsafe { SortedSlice::new_unchecked(&delta.inserted) };
+
+        payload_storage
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)?;
+        for vector_storage in vector_data.values() {
+            vector_storage
+                .borrow_mut()
+                .live_reload(fs, &deleted, &inserted)?;
+        }
+
+        id_tracker.borrow_mut().publish_staged();
+        fs.rotate_cache_file_info();
+        Ok(())
+    }
+}

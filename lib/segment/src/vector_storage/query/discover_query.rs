@@ -42,24 +42,21 @@ impl<T> DiscoverQuery<T> {
     }
 
     fn rank_by(&self, similarity: impl Fn(&T) -> ScoreType) -> RankType {
-        self.pairs
-            .iter()
-            .map(|pair| pair.rank_by(&similarity))
-            // get overall rank
-            .sum()
+        let mut rank = 0;
+        for pair in &self.pairs {
+            rank += pair.rank_by(&similarity);
+        }
+        rank
     }
 }
 
 impl<T, U> TransformInto<DiscoverQuery<U>, T, U> for DiscoverQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<DiscoverQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<DiscoverQuery<U>> {
         Ok(DiscoverQuery::new(
             f(self.target)?,
             self.pairs
                 .into_iter()
-                .map(|pair| pair.transform(&mut f))
+                .map(|pair| pair.transform(f))
                 .try_collect()?,
         ))
     }

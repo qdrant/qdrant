@@ -1,5 +1,5 @@
+use blobstore::Blob;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use crate::index::field_index::map_index::MapIndexKey;
 use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
@@ -7,6 +7,7 @@ use crate::index::field_index::map_index::mutable_map_index::read_only::ReadOnly
 use crate::index::field_index::map_index::on_disk_map_index::OnDiskMapIndex;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`MapIndex`][1], parameterised by a
@@ -40,9 +41,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
+    use common::bitvec::BitSlice;
     use common::types::PointOffsetType;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
     use serde_json::Value;
     use tempfile::TempDir;
@@ -61,12 +63,12 @@ mod tests {
     #[test]
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_map_parent_gridstore").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Build via the writable gridstore builder (matches the existing map
         // tests' `IndexType::MutableGridstore` path).
         {
-            let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf());
+            let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf(), false);
             builder.init().unwrap();
             let entries: &[(PointOffsetType, &[&str])] = &[
                 (0, &["red", "green"]),
@@ -76,7 +78,7 @@ mod tests {
             for (idx, values) in entries {
                 let values: Vec<Value> = values.iter().map(|v| Value::from(*v)).collect();
                 let values_ref: Vec<_> = values.iter().collect();
-                builder.add_point(*idx, &values_ref, &hw_counter).unwrap();
+                builder.add_point(*idx, &values_ref).unwrap();
             }
             builder.finalize().unwrap();
         }
@@ -86,10 +88,14 @@ mod tests {
         // The read-only filesystem context is `Default`.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf())
-                .unwrap()
-                .unwrap();
+        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> = ReadOnlyMapIndex::open_appendable(
+            &fs,
+            dir.path().to_path_buf(),
+            PointOffsetType::MAX,
+            BitSlice::empty(),
+        )
+        .unwrap()
+        .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyMapIndex::Appendable(_)));
@@ -97,27 +103,16 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every point with at least one value is counted, and `red` matches
         // the two that contain it while `blue` matches only the third.
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         let key = JsonPath::new("color");
         let red = FieldCondition::new_match(key.clone(), Match::from("red".to_string()));
         let blue = FieldCondition::new_match(key, Match::from("blue".to_string()));
 
         assert_eq!(
-            index
-                .filter(&red, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&red).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
-        assert_eq!(
-            index
-                .filter(&blue, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
-            vec![2],
-        );
+        assert_eq!(index.filter(&blue).unwrap().unwrap().collect_vec(), vec![2]);
     }
 }

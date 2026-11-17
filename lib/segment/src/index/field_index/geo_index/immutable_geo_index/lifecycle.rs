@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::bitvec::BitSliceExt;
+use ahash::AHashSet;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
-use common::universal_io::{ReadRange, UniversalRead};
+use common::universal_io::{ReadRange, UioResult, UniversalRead};
 
 use super::super::on_disk_geo_index::OnDiskGeoIndex;
 use super::{Counts, DELETED_SENTINEL, ImmutableGeoIndex};
@@ -12,7 +12,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> ImmutableGeoIndex<S> {
@@ -34,7 +34,7 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         let mut points_map_offsets = Vec::with_capacity(num_entries + 1);
         let mut points_map_ids = Vec::new();
 
-        index.storage.points_map_ids.read_batch::<Random, _>(
+        index.storage.points_map_ids.read_batch(
             points_map_entries
                 .iter()
                 .map(|item| ReadRange {
@@ -42,20 +42,16 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
                     length: u64::from(item.ids_end.saturating_sub(item.ids_start)),
                 })
                 .enumerate(),
+            Random,
             |i, ids| {
                 points_map_hashes.push(points_map_entries[i].hash.normalize());
                 points_map_offsets.push(points_map_ids.len() as u32);
                 for &id in ids {
-                    if !index
-                        .storage
-                        .deleted
-                        .get_bit(id as usize)
-                        .unwrap_or_default()
-                    {
+                    if index.storage.deleted.is_active(id) {
                         points_map_ids.push(id);
                     }
                 }
-                Ok(())
+                UioResult::Ok(())
             },
         )?;
         points_map_offsets.push(points_map_ids.len() as u32);
@@ -64,35 +60,23 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
         // Get point values and filter deleted points
         // Track deleted points to adjust point and value counts after loading
         let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
-            Vec::with_capacity(index.deleted_count);
-        let collected = index
+            Vec::with_capacity(index.storage.deleted.deleted_count());
+        // Batched reads only report non-empty points and may arrive out of
+        // order, so we pre-fill with empty value lists and index by point id.
+        let mut point_to_values: Vec<Vec<GeoPoint>> =
+            vec![Vec::new(); index.storage.point_to_values.len()];
+        index
             .storage
             .point_to_values
-            .iter()
-            .map(|id_values| {
-                let (id, values) = id_values?;
-                let is_deleted = index
-                    .storage
-                    .deleted
-                    .get_bit(id as usize)
-                    .unwrap_or_default();
-                let values = match (is_deleted, values) {
-                    (false, Some(values)) => values.map(Cow::into_owned).collect(),
-                    (false, None) => vec![],
-                    (true, Some(values)) => {
-                        let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
-                        deleted_points.push((id, geo_points));
-                        vec![]
-                    }
-                    (true, None) => {
-                        deleted_points.push((id, vec![]));
-                        vec![]
-                    }
-                };
-                Ok(values)
-            })
-            .collect::<OperationResult<Vec<_>>>();
-        let point_to_values = ImmutablePointToValues::new(collected?);
+            .for_all_points_values(|id, values| {
+                let geo_points: Vec<GeoPoint> = values.map(Cow::into_owned).collect();
+                if !index.storage.deleted.is_active(id) {
+                    deleted_points.push((id, geo_points));
+                } else {
+                    point_to_values[id as usize] = geo_points;
+                }
+            })?;
+        let point_to_values = ImmutablePointToValues::new(point_to_values);
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
@@ -306,14 +290,13 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
     }
 
     pub(super) fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: Vec<GeoHash> = Vec::new();
+        let mut seen_hashes: AHashSet<GeoHash> = AHashSet::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);
-                if seen_hashes.contains(&sub_geo_hash) {
+                if !seen_hashes.insert(sub_geo_hash) {
                     continue;
                 }
-                seen_hashes.push(sub_geo_hash);
                 if let Ok(index) = self
                     .counts_per_hash
                     .binary_search_by(|x| x.hash.cmp(&sub_geo_hash))
@@ -335,7 +318,9 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
     }
 
     pub fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Heap,
+        }
     }
 
     /// Approximate RAM usage in bytes (cached at construction).

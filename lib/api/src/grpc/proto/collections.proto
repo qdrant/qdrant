@@ -3,6 +3,7 @@ package qdrant;
 
 import "json_with_int.proto";
 import "qdrant_common.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
@@ -12,6 +13,21 @@ enum Datatype {
   Uint8 = 2;
   Float16 = 3;
   Turbo4 = 4;
+  Turbo8 = 5;
+  Turbo16 = 6;
+}
+
+// Memory placement of a component's data.
+// Data is always persisted on disk regardless of this setting;
+// it only controls how the data is held in RAM.
+enum Memory {
+  MemoryUnknown = 0;
+  // Data is not pre-loaded from disk to RAM; cached with usage.
+  Cold = 1;
+  // Data is pre-loaded into disk-cache RAM on start, but may be evicted under memory pressure.
+  Cached = 2;
+  // Data is loaded in RAM and never evicted.
+  Pinned = 3;
 }
 
 // ---------------------------------------------
@@ -29,13 +45,18 @@ message VectorParams {
   // Configuration of vector quantization config.
   // If omitted - the collection configuration will be used
   optional QuantizationConfig quantization_config = 4;
+  // Deprecated: use `memory` instead.
   // If true - serve vectors from disk.
   // If set to false, the vectors will be loaded in RAM.
-  optional bool on_disk = 5;
+  optional bool on_disk = 5 [deprecated = true];
   // Data type of the vectors
   optional Datatype datatype = 6;
   // Configuration for multi-vector search
   optional MultiVectorConfig multivector_config = 7;
+  // Memory placement of the original vector storage.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  // `Pinned` is not supported for dense vector storage.
+  optional Memory memory = 8;
 }
 
 message VectorParamsDiff {
@@ -44,9 +65,14 @@ message VectorParamsDiff {
   optional HnswConfigDiff hnsw_config = 1;
   // Update quantization params. If none - it is left unchanged.
   optional QuantizationConfigDiff quantization_config = 2;
+  // Deprecated: use `memory` instead.
   // If true - serve vectors from disk.
   // If set to false, the vectors will be loaded in RAM.
-  optional bool on_disk = 3;
+  optional bool on_disk = 3 [deprecated = true];
+  // Memory placement of the original vector storage.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  // `Pinned` is not supported for dense vector storage.
+  optional Memory memory = 4;
 }
 
 message VectorParamsMap {
@@ -203,6 +229,9 @@ message CollectionWarning {
 message HnswConfigDiff {
   // Number of edges per node in the index graph.
   // Larger the value - more accurate the search, more space required.
+  // Set to 0 to disable the main HNSW graph. Additional payload-aware links
+  // may still be built when the effective payload M is positive (see payload_m).
+  // This setting alone does not guarantee exact search.
   optional uint64 m = 1;
   // Number of neighbours to consider during the index building.
   // Larger the value - more accurate the search, more time required to build the index.
@@ -219,26 +248,35 @@ message HnswConfigDiff {
   // Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
   // On small CPUs, less threads are used.
   optional uint64 max_indexing_threads = 4;
+  // Deprecated: use `memory` instead.
   // Store HNSW index on disk. If set to false, the index will be stored in RAM.
-  optional bool on_disk = 5;
-  // Number of additional payload-aware links per node in the index graph.
-  // If not set - regular M parameter will be used.
+  optional bool on_disk = 5 [deprecated = true];
+  // Number of additional payload-aware links per node. If unset, the value of m is used.
+  // An effective value of 0 disables these additional links. A positive value allows
+  // them for indexed payload fields with HNSW enabled, even when m is 0.
   optional uint64 payload_m = 6;
   // Store copies of original and quantized vectors within the HNSW index file. Default: false.
   // Enabling this option will trade the search speed for disk usage by reducing amount of
   // random seeks during the search.
   // Requires quantized vectors to be enabled. Multi-vectors are not supported.
   optional bool inline_storage = 7;
+  // Memory placement of the HNSW graph.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 8;
 }
 
 message SparseIndexConfig {
   // Prefer a full scan search upto (excluding) this number of vectors.
   // Note: this is number of vectors, not KiloBytes.
   optional uint64 full_scan_threshold = 1;
+  // Deprecated: use `memory` instead.
   // Store inverted index on disk. If set to false, the index will be stored in RAM.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Datatype used to store weights in the index.
   optional Datatype datatype = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message WalConfigDiff {
@@ -268,7 +306,7 @@ message OptimizersConfigDiff {
   optional uint64 default_segment_number = 3;
   // Deprecated:
   //
-  // Do not create segments larger this size (in kilobytes).
+  // Do not create segments larger than this size (in kilobytes).
   // Large segments might require disproportionately long indexation times,
   // therefore it makes sense to limit the size of segments.
   //
@@ -325,15 +363,23 @@ message ScalarQuantization {
   QuantizationType type = 1;
   // Number of bits to use for quantization
   optional float quantile = 2;
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 3;
+  optional bool always_ram = 3 [deprecated = true];
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message ProductQuantization {
   // Compression ratio
   CompressionRatio compression = 1;
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 2;
+  optional bool always_ram = 2 [deprecated = true];
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 3;
 }
 
 enum BinaryQuantizationEncoding {
@@ -356,19 +402,27 @@ message BinaryQuantizationQueryEncoding {
 }
 
 message BinaryQuantization {
+  // Deprecated: use `memory` instead.
   // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
-  optional bool always_ram = 1;
+  optional bool always_ram = 1 [deprecated = true];
   // Binary quantization encoding method
   optional BinaryQuantizationEncoding encoding = 2;
   // Asymmetric quantization configuration allows a query to have different
   // quantization than stored vectors.
   // It can increase the accuracy of search at the cost of performance.
   optional BinaryQuantizationQueryEncoding query_encoding = 3;
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 4;
 }
 
 message TurboQuantization{
-  optional bool always_ram = 1;
+  // Deprecated: use `memory` instead.
+  optional bool always_ram = 1 [deprecated = true];
   optional TurboQuantBitSize bits = 2;
+  // Memory placement of quantized vectors.
+  // Overrides the deprecated `always_ram` flag if both are set.
+  optional Memory memory = 3;
 }
 
 enum TurboQuantBitSize{
@@ -376,6 +430,7 @@ enum TurboQuantBitSize{
   Bits1_5 = 1;
   Bits2 = 2;
   Bits4 = 3;
+  Bits8 = 4;
 }
 
 message QuantizationConfig {
@@ -447,12 +502,16 @@ message StrictModeConfig {
   optional uint64 max_points_count = 18;
   // Max number of payload indexes in a collection
   optional uint64 max_payload_index_count = 19;
+  // Deprecated: memory is node-wide, use the global quota config instead. Removal planned for 1.21.
   // Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
   // Delete-style operations are still allowed so memory can be freed.
-  optional uint32 max_resident_memory_percent = 21;
-  // Reject disk-consuming update operations when the filesystem hosting Qdrant storage exceeds this percentage of total capacity (1-100).
-  // Free space is sampled with a small TTL cache so the gate may take a few seconds to react. Delete-style operations are still allowed so disk can be freed.
-  optional uint32 max_disk_usage_percent = 22;
+  optional uint32 max_resident_memory_percent = 21 [deprecated = true];
+  // 22 was `max_disk_usage_percent`, superseded by the global quota config
+  reserved 22;
+  // Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants.
+  // Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must`
+  // of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys.
+  optional bool require_tenant_filter = 23;
 }
 
 message StrictModeSparseConfig {
@@ -473,6 +532,21 @@ message StrictModeMultivector {
   optional uint64 max_vectors = 1;
 }
 
+// Params of the payload storage
+message PayloadStorageParams {
+  // Memory placement of the payload storage.
+  // Overrides the deprecated `on_disk_payload` flag if both are set.
+  // `Pinned` is not supported for payload storage.
+  optional Memory memory = 1;
+}
+
+message IdTrackerParams {
+  // Memory placement of the point id mapping in indexed segments:
+  // `Cold` keeps it on disk and reads it on demand, `Cached` keeps it on disk
+  // but primes the page cache with it on load, `Pinned` keeps it in RAM.
+  optional Memory memory = 1;
+}
+
 message CreateCollection {
   // Name of the collection
   string collection_name = 1;
@@ -486,11 +560,12 @@ message CreateCollection {
   optional WalConfigDiff wal_config = 5;
   // Configuration of the optimizers
   optional OptimizersConfigDiff optimizers_config = 6;
-  // Number of shards in the collection, default is 1 for standalone, otherwise
-  // equal to the number of nodes. Minimum is 1
+  // Number of shards in the collection. If not specified, selected
+  // automatically. Minimum is 1
   optional uint32 shard_number = 7;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  optional bool on_disk_payload = 8;
+  optional bool on_disk_payload = 8 [deprecated = true];
   // Wait timeout for operation commit in seconds, if not specified - default
   // value will be supplied
   optional uint64 timeout = 9;
@@ -512,6 +587,10 @@ message CreateCollection {
   optional StrictModeConfig strict_mode_config = 17;
   // Arbitrary JSON metadata for the collection
   map<string, Value> metadata = 18;
+  // Configuration of the payload storage
+  optional PayloadStorageParams payload = 19;
+  // Configuration of the point id tracker
+  optional IdTrackerParams id_tracker = 20;
 }
 
 message UpdateCollection {
@@ -563,8 +642,9 @@ message CollectionParams {
   reserved 2;
   // Number of shards in collection
   uint32 shard_number = 3;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  bool on_disk_payload = 4;
+  bool on_disk_payload = 4 [deprecated = true];
   // Configuration for vectors
   optional VectorsConfig vectors_config = 5;
   // Number of replicas of each shard that network tries to maintain
@@ -579,6 +659,10 @@ message CollectionParams {
   optional SparseVectorConfig sparse_vectors_config = 10;
   // Define number of milliseconds to wait before attempting to read from another replica.
   optional uint64 read_fan_out_delay_ms = 11;
+  // Configuration of the payload storage
+  optional PayloadStorageParams payload = 12;
+  // Configuration of the point id tracker
+  optional IdTrackerParams id_tracker = 13;
 }
 
 message CollectionParamsDiff {
@@ -586,12 +670,17 @@ message CollectionParamsDiff {
   optional uint32 replication_factor = 1;
   // How many replicas should apply the operation for us to consider it successful
   optional uint32 write_consistency_factor = 2;
+  // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
-  optional bool on_disk_payload = 3;
+  optional bool on_disk_payload = 3 [deprecated = true];
   // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional uint32 read_fan_out_factor = 4;
   // Define number of milliseconds to wait before attempting to read from another replica.
   optional uint64 read_fan_out_delay_ms = 5;
+  // Update params of the payload storage
+  optional PayloadStorageParams payload = 6;
+  // Update params of the point id tracker
+  optional IdTrackerParams id_tracker = 7;
 }
 
 message CollectionConfig {
@@ -617,17 +706,33 @@ enum TokenizerType {
   Whitespace = 2;
   Word = 3;
   Multilingual = 4;
+  Code = 5;
 }
 
 message KeywordIndexParams {
   // If true - used for tenant optimization.
   optional bool is_tenant = 1;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
+  optional KeywordPrefixParams prefix = 4;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 5;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 6;
+}
+
+// Prefix matching options for the keyword index. Has no options yet:
+// presence of this message enables prefix matching.
+message KeywordPrefixParams {
 }
 
 message IntegerIndexParams {
@@ -639,17 +744,26 @@ message IntegerIndexParams {
   // This option assumes that this key will be used in majority of filtered requests.
   // Default is false.
   optional bool is_principal = 3;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk. Default is false.
-  optional bool on_disk = 4;
+  optional bool on_disk = 4 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 5;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 6;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 7;
 }
 
 message FloatIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
@@ -657,15 +771,30 @@ message FloatIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message GeoIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 2;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message StopwordsSet {
@@ -684,8 +813,9 @@ message TextIndexParams {
   optional uint64 min_token_len = 3;
   // Maximal token length
   optional uint64 max_token_len = 4;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 5;
+  optional bool on_disk = 5 [deprecated = true];
   // Stopwords for the text index
   optional StopwordsSet stopwords = 6;
   // If true - support phrase matching.
@@ -699,12 +829,36 @@ message TextIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 10;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 11;
+  // Enable ranking points by BM25 over this field.
+  // Changing it rebuilds the index.
+  // Default: disabled.
+  optional TextScoringParams scoring = 12;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`.
+  // The field must be inside the array's elements. Every query on the field, not only nested filters,
+  // treats each element as its own document: a condition matches a point when a single element
+  // matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when
+  // one of its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 13;
+}
+
+enum TextScoringType {
+  Bm25 = 0;
+}
+
+message TextScoringParams {
+  // How documents are ranked
+  TextScoringType type = 1;
 }
 
 message StemmingAlgorithm {
   oneof stemming_params {
     // Parameters for snowball stemming
     SnowballParams snowball = 1;
+    // Explicitly disable stemming (overrides the language default)
+    DisabledStemmer disabled = 2;
   }
 }
 
@@ -713,18 +867,30 @@ message SnowballParams {
   string language = 1;
 }
 
+// Marker selecting the "no stemming" algorithm.
+message DisabledStemmer {}
+
 message BoolIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 2;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message DatetimeIndexParams {
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 1;
+  optional bool on_disk = 1 [deprecated = true];
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
@@ -732,17 +898,32 @@ message DatetimeIndexParams {
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message UuidIndexParams {
   // If true - used for tenant optimization.
   optional bool is_tenant = 1;
+  // Deprecated: use `memory` instead.
   // If true - store index on disk.
-  optional bool on_disk = 2;
+  optional bool on_disk = 2 [deprecated = true];
   // Enable HNSW graph building for this payload field.
   // If true, builds additional HNSW links (Need payload_m > 0).
   // Default: true.
   optional bool enable_hnsw = 3;
+  // Memory placement of the index.
+  // Overrides the deprecated `on_disk` flag if both are set.
+  optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message PayloadIndexParams {
@@ -808,6 +989,8 @@ message CollectionInfo {
   repeated CollectionWarning warnings = 11;
   // Update queue info
   UpdateQueueInfo update_queue = 12;
+  // Time of the collection creation, absent for collections created before it was recorded
+  optional google.protobuf.Timestamp created_at = 13;
 }
 
 message ChangeAliases {
@@ -972,6 +1155,8 @@ message CollectionClusterInfoResponse {
   repeated ShardTransferInfo shard_transfers = 5;
   // Resharding operations
   repeated ReshardingInfo resharding_operations = 6;
+  // Time spent to process
+  double time = 7;
 }
 
 message MoveShard {
@@ -1072,6 +1257,8 @@ message UpdateCollectionClusterSetupRequest {
 
 message UpdateCollectionClusterSetupResponse {
   bool result = 1;
+  // Time spent to process
+  double time = 2;
 }
 
 message CreateShardKeyRequest {
@@ -1101,10 +1288,14 @@ message ListShardKeysRequest {
 
 message CreateShardKeyResponse {
   bool result = 1;
+  // Time spent to process
+  double time = 2;
 }
 
 message DeleteShardKeyResponse {
   bool result = 1;
+  // Time spent to process
+  double time = 2;
 }
 
 message ShardKeyDescription {

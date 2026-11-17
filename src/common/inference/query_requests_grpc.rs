@@ -5,7 +5,8 @@ use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, TextQueryInternal, TextQueryParams,
+    VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -99,7 +100,7 @@ pub async fn convert_query_point_groups_from_grpc(
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(From::from),
+        params: params.map(TryFrom::try_from).transpose()?,
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
     };
 
@@ -168,7 +169,7 @@ pub async fn convert_query_points_from_grpc(
             offset: offset
                 .map(|o| o as usize)
                 .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
-            params: params.map(From::from),
+            params: params.map(TryFrom::try_from).transpose()?,
             with_vector: with_vectors
                 .map(From::from)
                 .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
@@ -215,7 +216,7 @@ fn convert_prefetch_with_inferred(
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(SearchParams::from),
+        params: params.map(SearchParams::try_from).transpose()?,
         lookup_from: lookup_from.map(LookupLocation::try_from).transpose()?,
     })
 }
@@ -296,6 +297,17 @@ fn convert_query_with_inferred(
         Variant::Rrf(rrf) => Query::Fusion(FusionInternal::try_from(rrf)?),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
+        Variant::Text(grpc::TextQuery { query, scoring }) => {
+            let params = scoring.map(|scoring| match scoring {
+                grpc::text_query::Scoring::Bm25(grpc::Bm25Params { k, b }) => {
+                    TextQueryParams::bm25(k, b)
+                }
+            });
+            Query::Text(TextQueryInternal {
+                text: query,
+                params,
+            })
+        }
         Variant::NearestWithMmr(grpc::NearestInputWithMmr { nearest, mmr }) => {
             let nearest =
                 nearest.ok_or_else(|| Status::invalid_argument("nearest vector is missing"))?;

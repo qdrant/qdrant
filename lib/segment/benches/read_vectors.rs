@@ -3,12 +3,12 @@ use std::hint::black_box;
 use std::ops::Deref as _;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::prelude::{SliceRandom, StdRng};
+use rand::prelude::{SliceRandom, SmallRng};
 use rand::{RngExt, SeedableRng};
 use segment::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use segment::types::{Distance, MultiVectorConfig};
@@ -42,7 +42,7 @@ fn bench(c: &mut Criterion) {
     let sequential_keys: Vec<_> = (0..READ_BATCH_SIZE as PointOffsetType).collect();
 
     let mut random_keys: Vec<_> = (0..POINT_COUNT as PointOffsetType).collect();
-    random_keys.shuffle(&mut StdRng::seed_from_u64(RNG_SEED));
+    random_keys.shuffle(&mut SmallRng::seed_from_u64(RNG_SEED));
     random_keys.truncate(READ_BATCH_SIZE);
 
     let mut group = c.benchmark_group("read-vectors");
@@ -106,15 +106,15 @@ fn storage_dense(path: &Path) -> AppendableMmapDenseVectorStorage<VectorElementT
     )
     .expect("appendable mmap dense storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; VECTOR_DIM];
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vector = random_vector(&mut rng, &mut vector_buffer, VECTOR_DIM);
 
         storage
-            .insert_vector(point_id, VectorRef::from(vector), &hw_counter)
+            .insert_vector(point_id, VectorRef::from(vector))
             .expect("vector inserted");
     }
 
@@ -135,9 +135,9 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
     )
     .expect("appendable mmap multi dense storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; MAX_VECTORS_PER_POINT * VECTOR_DIM];
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vectors_count = rng.random_range(1..=MAX_VECTORS_PER_POINT);
@@ -145,7 +145,7 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
         let vector = TypedMultiDenseVectorRef::new(vector, VECTOR_DIM);
 
         storage
-            .insert_vector(point_id, VectorRef::from(vector), &hw_counter)
+            .insert_vector(point_id, VectorRef::from(vector))
             .expect("vector inserted");
     }
 
@@ -159,14 +159,14 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
     let mut storage =
         MmapSparseVectorStorage::open_or_create(path).expect("mmap sparse storage opened");
 
-    let mut rng = StdRng::seed_from_u64(RNG_SEED);
-    let hw_counter = HardwareCounterCell::disposable();
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vector = random_sparse_vector(&mut rng, SPARSE_MAX_DIM);
 
         storage
-            .insert_vector(point_id, VectorRef::from(&vector), &hw_counter)
+            .insert_vector(point_id, VectorRef::from(&vector))
             .expect("vector inserted");
     }
 
@@ -177,7 +177,7 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
 }
 
 fn random_vector<'a>(
-    rng: &mut StdRng,
+    rng: &mut SmallRng,
     buffer: &'a mut [VectorElementType],
     dim: usize,
 ) -> &'a [VectorElementType] {
@@ -194,9 +194,11 @@ where
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
 
     let mut bytes_read = 0;
-    storage.read_vectors::<P, _>(point_offsets, |_, _, vector| {
-        bytes_read += vector.estimate_size_in_bytes();
-    });
+    storage
+        .read_vectors::<P, _>(point_offsets, |_, _, vector| {
+            bytes_read += vector.estimate_size_in_bytes();
+        })
+        .unwrap();
 
     black_box(bytes_read)
 }

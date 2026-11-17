@@ -1,6 +1,6 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::types::SeqNumberType;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
@@ -44,7 +44,7 @@ impl CollectionUpdater {
         operation: CollectionUpdateOperations,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-        hw_counter: &HardwareCounterCell,
+        max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -62,26 +62,31 @@ impl CollectionUpdater {
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(&segments_guard, op_num, point_operation, hw_counter)
+                    process_point_operation(
+                        &segments_guard,
+                        op_num,
+                        point_operation,
+                        max_segment_size_bytes,
+                    )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(&segments_guard, op_num, vector_operation, hw_counter)
+                    process_vector_operation(
+                        &segments_guard,
+                        op_num,
+                        vector_operation,
+                        max_segment_size_bytes,
+                    )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(
                         &segments_guard,
                         op_num,
                         payload_operation,
-                        hw_counter,
+                        max_segment_size_bytes,
                     )
                 }
                 CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                    process_field_index_operation(
-                        &segments_guard,
-                        op_num,
-                        &index_operation,
-                        hw_counter,
-                    )
+                    process_field_index_operation(&segments_guard, op_num, &index_operation)
                 }
                 CollectionUpdateOperations::VectorNameOperation(vector_name_operation) => {
                     process_vector_name_operation(&segments_guard, op_num, &vector_name_operation)
@@ -108,7 +113,7 @@ mod tests {
     use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::ambient;
     use common::types::DeferredBehavior;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
@@ -174,17 +179,10 @@ mod tests {
             },
         ];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
-        let (num_deleted, num_new, num_updated) = sync_points(
-            &segments.read(),
-            100,
-            Some(10.into()),
-            None,
-            &points,
-            &hw_counter,
-        )
-        .unwrap();
+        let (num_deleted, num_new, num_updated) =
+            sync_points(&segments.read(), 100, Some(10.into()), None, &points, None).unwrap();
 
         assert_eq!(num_deleted, 1); // delete point 15
         assert_eq!(num_new, 1); // insert point 500
@@ -211,9 +209,9 @@ mod tests {
             },
         ];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
-        let res = upsert_points(&segments.read(), 100, &points, &hw_counter);
+        let res = upsert_points(&segments.read(), 100, &points, None);
         assert_matches!(res, Ok(1));
 
         let records = retrieve_blocking(
@@ -223,7 +221,6 @@ mod tests {
             &true.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -251,7 +248,7 @@ mod tests {
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
             },
-            &hw_counter,
+            None,
         )
         .unwrap();
 
@@ -262,7 +259,6 @@ mod tests {
             &true.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -284,7 +280,7 @@ mod tests {
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         process_payload_operation(
             &segments.read(),
@@ -295,7 +291,7 @@ mod tests {
                 filter: None,
                 key: None,
             }),
-            &hw_counter,
+            None,
         )
         .unwrap();
 
@@ -306,7 +302,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -334,7 +329,7 @@ mod tests {
                 keys: vec!["color".parse().unwrap(), "empty".parse().unwrap()],
                 filter: None,
             }),
-            &hw_counter,
+            None,
         )
         .unwrap();
 
@@ -345,7 +340,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -364,7 +358,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -380,7 +373,7 @@ mod tests {
             PayloadOps::ClearPayload {
                 points: vec![2.into()],
             },
-            &hw_counter,
+            None,
         )
         .unwrap();
         let res = retrieve_blocking(
@@ -390,7 +383,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -409,7 +401,7 @@ mod tests {
         let meta_key_path = JsonPath::new("meta");
         let nested_key_path: JsonPath = JsonPath::new("meta.color");
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut segment1 = build_segment_1(path);
         segment1
@@ -417,7 +409,6 @@ mod tests {
                 100,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
-                &hw_counter,
             )
             .unwrap();
 
@@ -427,7 +418,6 @@ mod tests {
                 101,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
-                &hw_counter,
             )
             .unwrap();
 
@@ -452,7 +442,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
-            &hw_counter,
+            None,
         )
         .unwrap();
 
@@ -463,7 +453,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -516,7 +505,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
-            &hw_counter,
+            None,
         )
         .unwrap();
 
@@ -527,7 +516,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()

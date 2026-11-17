@@ -7,7 +7,8 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, Usage};
 use collection::operations::types::CollectionError;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::reason::{Reason, reason};
 use serde::Serialize;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
@@ -21,8 +22,9 @@ pub fn get_request_hardware_counter(
 ) -> RequestHwCounter {
     let report_to_api = report_to_api && wait != Some(false);
     RequestHwCounter::new(
-        HwMeasurementAcc::new_with_metrics_drain(
-            dispatcher.get_collection_hw_metrics(collection_name),
+        AmbientContext::request(
+            &collection_name,
+            dispatcher.get_collection_hw_metrics(collection_name.clone()),
         ),
         report_to_api,
     )
@@ -143,7 +145,7 @@ where
     Fut: Future<Output = StorageResult<T>>,
     T: serde::Serialize,
 {
-    time_impl(async { future.await.map(Some) }).await
+    time_impl(async { future.unmeasured(NO_HARDWARE_USAGE).await.map(Some) }).await
 }
 
 /// Response wrapper for a `Future` returning `Result`.
@@ -153,6 +155,7 @@ where
     Fut: Future<Output = StorageResult<T>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
+    let future = future.unmeasured(NO_HARDWARE_USAGE);
     let future = async move {
         let handle = tokio::task::spawn(async move {
             let result = future.await;
@@ -173,6 +176,8 @@ where
 
     time_impl(future).await
 }
+
+const NO_HARDWARE_USAGE: Reason = reason("The response reports no hardware usage");
 
 /// # Cancel safety
 ///
@@ -226,6 +231,7 @@ impl HttpError {
             StorageError::NotFound { .. } => {}
             StorageError::ServiceError { .. } => {}
             StorageError::BadRequest { .. } => {}
+            StorageError::StandaloneMode { .. } => {}
             StorageError::Locked { .. } => {}
             StorageError::Timeout { .. } => {}
             StorageError::ChecksumMismatch { .. } => {}
@@ -234,6 +240,7 @@ impl HttpError {
             StorageError::InferenceError { .. } => {}
             StorageError::ShardUnavailable { .. } => {}
             StorageError::EmptyPartialSnapshot { .. } => {}
+            StorageError::InsufficientStorage { .. } => {}
         }
         headers
     }
@@ -246,6 +253,7 @@ impl ResponseError for HttpError {
             StorageError::NotFound { .. } => http::StatusCode::NOT_FOUND,
             StorageError::ServiceError { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
             StorageError::BadRequest { .. } => http::StatusCode::BAD_REQUEST,
+            StorageError::StandaloneMode { .. } => http::StatusCode::METHOD_NOT_ALLOWED,
             StorageError::Locked { .. } => http::StatusCode::FORBIDDEN,
             StorageError::Timeout { .. } => http::StatusCode::REQUEST_TIMEOUT,
             StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
@@ -256,6 +264,7 @@ impl ResponseError for HttpError {
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
             StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
             StorageError::EmptyPartialSnapshot { .. } => http::StatusCode::NOT_MODIFIED,
+            StorageError::InsufficientStorage { .. } => http::StatusCode::INSUFFICIENT_STORAGE,
         }
     }
 }

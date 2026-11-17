@@ -1,81 +1,106 @@
+mod async_io;
+#[cfg(unix)]
+mod memory_stats;
 mod pipeline;
 
 use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::{fs, io, slice};
 
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
 
-use self::pipeline::{BorrowedMmapReadPipeline, OwnedMmapReadPipeline};
-use super::traits::{UniversalReadFileOps, UniversalReadFs};
+use self::pipeline::MmapReadPipeline;
+use super::traits::{UniversalReadFs, UniversalWriteFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::AccessPattern;
+use crate::generic_consts::{AccessPattern, Random};
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
 /// Filesystem handle for local mmap-backed files. Stateless.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MmapFs;
 
-impl UniversalReadFileOps for MmapFs {
-    type ContextConfig = ();
-
-    fn from_context(_: ()) -> Result<Self> {
-        Ok(MmapFs)
-    }
-
-    fn list_files(&self, prefix_path: &Path) -> Result<Vec<PathBuf>> {
-        local_file_ops::local_list_files(prefix_path)
-    }
-
-    fn exists(&self, path: &Path) -> Result<bool> {
-        fs_err::exists(path).map_err(UniversalIoError::from)
-    }
-
-    fn create(&self, path: &Path, expected_length: usize) -> Result<()> {
-        local_file_ops::local_create(path, expected_length)
-    }
-
-    fn create_dir(&self, path: &Path) -> Result<()> {
-        local_file_ops::local_create_dir(path)
-    }
-
-    fn remove(&self, path: &Path) -> Result<()> {
-        local_file_ops::local_remove(path)
-    }
-
-    fn remove_dir(&self, path: &Path) -> Result<()> {
-        local_file_ops::local_remove_dir(path)
-    }
-
-    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> Result<()> {
-        local_file_ops::local_atomic_save(path, bytes)
-    }
-}
-
 impl UniversalReadFs for MmapFs {
     type File = MmapFile;
     type OpenExtra = ();
+    type ContextConfig = ();
 
-    fn open(&self, path: impl AsRef<Path>, options: OpenOptions, _extra: ()) -> Result<MmapFile> {
+    fn from_context(_: ()) -> UioResult<Self> {
+        Ok(MmapFs)
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        local_file_ops::local_list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> UioResult<bool> {
+        fs_err::exists(path).map_err(UniversalIoError::from)
+    }
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        _extra: (),
+    ) -> UioResult<MmapFile> {
         MmapFile::open_inner(path, options)
     }
 }
 
-#[derive(Debug, Clone)]
+impl UniversalWriteFs for MmapFs {
+    type AppendFile = MmapFile;
+
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
+        local_file_ops::local_create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
+        local_file_ops::local_create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> UioResult<()> {
+        local_file_ops::local_remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
+        local_file_ops::local_remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        local_file_ops::local_atomic_save(path, bytes)
+    }
+
+    /// The very handle [`UniversalReadFs::open`] hands out: an [`MmapFile`]
+    /// appends through a dedicated `O_APPEND` fd of its own.
+    fn open_append(&self, path: impl AsRef<Path>, options: OpenOptions) -> UioResult<MmapFile> {
+        MmapFile::open_inner(path, options.for_append())
+    }
+}
+
+/// A memory-mapped local file handle.
+///
+/// `Clone` is deliberately not implemented because it's unsound to `reopen`
+/// while a clone is still in use.
+#[derive(Debug)]
 pub struct MmapFile {
     path: PathBuf,
 
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
     writeable: bool,
-    #[cfg_attr(target_os = "linux", expect(dead_code))]
-    populate: bool,
+    /// The whole mapping was faulted into RAM.
+    /// Lets `will_need` skip its per-batch `thread_faulted` syscall.
+    resident: AtomicBool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
+
+    /// Dedicated `O_APPEND` fd, lazily opened on the first
+    /// [`UniversalAppend::append`]. Kept separate from the mmap so appends
+    /// cannot disturb the mapping.
+    append_file: Arc<OnceLock<fs_err::File>>,
 
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<Mutex<MmapRaw>>,
@@ -98,7 +123,7 @@ unsafe impl Sync for SendSyncPtr {}
 
 impl MmapFile {
     /// Internal open helper, used by `MmapFs::open`.
-    pub(super) fn open_inner(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+    pub(super) fn open_inner(path: impl AsRef<Path>, options: OpenOptions) -> UioResult<Self> {
         let OpenOptions {
             writeable,
             need_sequential,
@@ -107,7 +132,9 @@ impl MmapFile {
         } = options;
 
         let populate = match populate {
-            Populate::Auto | Populate::No => false, // don't populate by default
+            Populate::Auto => Self::populate_auto(),
+            Populate::Partial(_) | // mmap does not support partial populate
+            Populate::No => false,
             Populate::PreferBackground | // mmap does not yet implement background populate
             Populate::Blocking => true,
         };
@@ -115,32 +142,27 @@ impl MmapFile {
         let mmap = open_mmap(path.as_ref(), writeable, populate, advice)?;
         let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
-        let mmap_seq;
-        let len;
-        let ptr_seq;
-
-        if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
-            let mmap_seq_ = open_mmap(
+        let (mmap_seq, len, ptr_seq) = if need_sequential && *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq = open_mmap(
                 path.as_ref(),
                 false,
                 false,
                 AdviceSetting::Advice(Advice::Sequential),
             )?;
 
-            len = std::cmp::min(mmap.len(), mmap_seq_.len());
-            ptr_seq = SendSyncPtr(mmap_seq_.as_mut_ptr());
-            mmap_seq = Some(mmap_seq_);
+            let len = std::cmp::min(mmap.len(), mmap_seq.len());
+            let ptr_seq = SendSyncPtr(mmap_seq.as_mut_ptr());
+            (Some(mmap_seq), len, ptr_seq)
         } else {
-            len = mmap.len();
-            ptr_seq = ptr;
-            mmap_seq = None;
+            (None, mmap.len(), ptr)
         };
 
         let mmap = Self {
             path: path.as_ref().into(),
             writeable,
-            populate,
+            resident: AtomicBool::new(populate),
             advice,
+            append_file: Arc::new(OnceLock::new()),
             mmap: Arc::new(Mutex::new(mmap)),
             mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
@@ -155,20 +177,18 @@ impl MmapFile {
 impl UniversalRead for MmapFile {
     type Fs = MmapFs;
 
-    type BorrowedReadPipeline<'a, U>
-        = BorrowedMmapReadPipeline<'a, U>
+    type ReadPipeline<'a, U>
+        = MmapReadPipeline<'a, U>
     where
         Self: 'a,
         U: UserData;
 
-    type OwnedReadPipeline<U>
-        = OwnedMmapReadPipeline<U>
-    where
-        U: UserData;
-
-    fn reopen(&mut self) -> Result<()> {
+    fn live_reload(&mut self) -> UioResult<()> {
         let old_len = self.len as u64;
-        let new_len = fs_err::File::open(self.path())?.metadata()?.len();
+        let new_len = fs_err::File::open(self.path())
+            .map_err(|err| UniversalIoError::extract_not_found(err, self.path()))?
+            .metadata()?
+            .len();
         if new_len < old_len {
             return Err(UniversalIoError::Io(io::Error::new(
                 ErrorKind::UnexpectedEof,
@@ -181,33 +201,257 @@ impl UniversalRead for MmapFile {
             return Ok(());
         }
 
+        let populate = *self.resident.get_mut();
+        self.remap_to(new_len as usize, populate)
+    }
+
+    fn read_bytes<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        _access_pattern: P,
+        _align: usize,
+    ) -> UioResult<ACow<'_>> {
+        let mmap = self.as_bytes::<P>();
+        let bytes = read_bytes(mmap, range)?;
+        Ok(ACow::Borrowed(bytes))
+    }
+
+    /// Override the default pipeline-based for better performance.
+    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
+        &self,
+        ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>> {
+        let bytes = self.as_bytes::<P>();
+        Ok(ranges.into_iter().map(move |(user_data, range)| {
+            let items = read_bytemuck::<T>(bytes, range)?;
+            Ok((user_data, Cow::Borrowed(items)))
+        }))
+    }
+
+    /// Override the default pipeline-based for better performance.
+    fn read_batch<P: AccessPattern, T: Item, U: UserData, E: From<UniversalIoError>>(
+        &self,
+        ranges: impl IntoIterator<Item = (U, ReadRange)>,
+        _access_pattern: P,
+        mut callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let bytes = self.as_bytes::<P>();
+        for (user_data, range) in ranges {
+            let items = read_bytemuck::<T>(bytes, range)?;
+            callback(user_data, items)?;
+        }
+        Ok(())
+    }
+
+    fn len<T>(&self) -> UioResult<u64> {
+        let len = self.len / size_of::<T>();
+        Ok(len as u64)
+    }
+
+    fn populate(&self) -> UioResult<()> {
+        self.mmap.lock().populate();
+        self.resident.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn populate_auto() -> bool {
+        false
+    }
+
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        if self.resident.load(Ordering::Relaxed) {
+            // Already in RAM
+            return;
+        }
+        if !crate::mmap::advice::thread_faulted().unwrap_or(false) {
+            return;
+        }
+        let bytes = self.as_bytes::<Random>();
+        for range in byte_ranges {
+            if let Ok(region) = read_bytes(bytes, range) {
+                crate::mmap::advice::will_need(region);
+            }
+        }
+    }
+
+    fn clear_ram_cache(&self) -> UioResult<()> {
+        self.resident.store(false, Ordering::Relaxed);
+        // `MADV_PAGEOUT` skips pages with more than one page-table reference,
+        // `POSIX_FADV_DONTNEED` skips pages with any: with `need_sequential`'s two
+        // mappings, pages faulted through both survive either call. Zapping the PTEs
+        // first leaves the page cache evictable — the mappings stay valid and refault
+        // on access. Dirty pages are kept, not lost; flushing first evicts them too.
+        //
+        // SAFETY: `open_mmap` only creates `MAP_SHARED` file-backed mappings
+        // (`map_raw`/`map_raw_read_only`), for which `MADV_DONTNEED` only drops
+        // the page-table entries and never discards data.
+        unsafe {
+            self.mmap.lock().drop_page_tables(&self.path);
+            if let Some(mmap_seq) = &self.mmap_seq {
+                mmap_seq.lock().drop_page_tables(&self.path);
+            }
+        }
+        crate::fs::clear_disk_cache(&self.path)?;
+        Ok(())
+    }
+
+    fn kind() -> UniversalKind {
+        UniversalKind::Mmap
+    }
+}
+
+impl UniversalWrite for MmapFile {
+    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> UioResult<()> {
+        let mmap = self.as_bytes_mut();
+        write(mmap, byte_offset, items)?;
+        Ok(())
+    }
+
+    fn write_batch<'a, T: bytemuck::Pod>(
+        &mut self,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+    ) -> UioResult<()> {
+        let mmap = self.as_bytes_mut();
+
+        for (byte_offset, items) in offset_data {
+            write(mmap, byte_offset, items)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl UniversalFlush for MmapFile {
+    fn flusher(&self) -> Flusher {
+        let mmap = self.mmap.clone();
+        let append_file = self.append_file.clone();
+        let flusher = move || {
+            {
+                // flushing empty mmap returns error on some platforms
+                let mmap = mmap.lock();
+                if mmap.len() > 0 {
+                    mmap.flush()?;
+                }
+            }
+
+            // Appends change the file size, and `msync` alone does not
+            // persist size metadata — also fdatasync when any handle of
+            // this file has appended. The shared cell is read at flush
+            // time, so appends through clones, or appends made after this
+            // flusher was created, are covered too.
+            if let Some(file) = append_file.get() {
+                file.sync_data()?;
+            }
+
+            Ok(())
+        };
+
+        Box::new(flusher)
+    }
+}
+
+impl UniversalAppend for MmapFile {
+    fn append<T: bytemuck::Pod>(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
+            io::Write::write_all(&mut fd, bytes)?;
+        }
+
+        // Remap so reads and `len` through this handle see the growth.
+        self.grow_mapping(offset + bytes.len() as u64)?;
+
+        Ok(())
+    }
+
+    fn append_batch<'a, T: bytemuck::Pod>(
+        &mut self,
+        offset: ByteOffset,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> UioResult<()> {
+        let (mut slices, total) = local_file_ops::collect_append_slices(items);
+        if total == 0 {
+            return Ok(());
+        }
+
+        {
+            let fd = self.append_fd()?;
+            self.check_append_offset(fd, offset)?;
+            local_file_ops::write_all_vectored(fd, &mut slices)?;
+        }
+
+        self.grow_mapping(offset + total as u64)?;
+
+        Ok(())
+    }
+}
+
+impl MmapFile {
+    /// Grow the mapping to `new_len` without consulting the filesystem: the
+    /// caller already knows the file's new length (an append it just made,
+    /// or a `set_len` it just issued), so the `open`+`fstat`+`close` of a
+    /// full [`live_reload`](UniversalRead::live_reload) is skipped. Unlike a reopen,
+    /// the non-Linux re-mmap never re-populates: growth is mapping
+    /// maintenance, and re-faulting the whole file would make each append
+    /// O(file size) for handles opened with [`Populate::Blocking`].
+    pub(crate) fn grow_mapping(&mut self, new_len: u64) -> UioResult<()> {
+        debug_assert!(new_len as usize >= self.len, "grow_mapping cannot shrink");
+        if new_len as usize == self.len {
+            return Ok(());
+        }
+
+        self.remap_to(new_len as usize, false)
+    }
+
+    /// Remap both mmaps to `new_len` and refresh the cached pointers.
+    ///
+    /// `populate` only applies to the non-Linux path, which rebuilds the
+    /// mapping from scratch; the Linux `mremap` keeps residency as is.
+    fn remap_to(&mut self, new_len: usize, populate: bool) -> UioResult<()> {
         let mut mmap = self.mmap.lock();
         let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
         cfg_select! {
             // in linux, we can use `MmapRaw::remap`
             target_os = "linux" => {
+                let _ = populate;
+
                 // SAFETY:
                 // We use may_move = true, since `remap` can fail if we don't allow it.
-                // It is safe to allow moving since we are holding `&mut self`
+                // Moving is sound for *this* handle: `&mut self` keeps its reads out
+                // while the cached pointers below are refreshed. Clones share this
+                // mapping but keep their own pointer copies — per the contract
+                // documented on `MmapFile` they must `reopen()` before reading after
+                // any growth, so no live reference into the old location exists.
                 let remap_options = memmap2::RemapOptions::new().may_move(true);
                 unsafe {
-                    mmap.remap(new_len as usize, remap_options)?;
-                    mmap_seq.as_mut().map(|m| m.remap(new_len as usize, remap_options)).transpose()?;
+                    mmap.remap(new_len, remap_options)?;
+                    mmap_seq
+                        .as_mut()
+                        .map(|m| m.remap(new_len, remap_options))
+                        .transpose()?;
                 };
 
                 // Whether or not `remap` moved the memory region let's update the pointers
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
-                let ptr_seq = mmap_seq.as_ref().map(|m| SendSyncPtr(m.as_mut_ptr())).unwrap_or(ptr);
-                let len = new_len as usize;
+                let ptr_seq = mmap_seq
+                    .as_ref()
+                    .map(|m| SendSyncPtr(m.as_mut_ptr()))
+                    .unwrap_or(ptr);
+                let len = new_len;
+                // `mremap` doesn't fault in the grown tail.
+                let resident = false;
             }
             // otherwise, let's open again
             _ => {
-                *mmap = open_mmap(
-                    self.path.as_ref(),
-                    self.writeable,
-                    self.populate,
-                    self.advice,
-                )?;
+                let _ = new_len; // suppress unused variable lint.
+                *mmap = open_mmap(self.path.as_ref(), self.writeable, populate, self.advice)?;
+                let resident = populate;
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
                 let ptr_seq;
@@ -233,101 +477,60 @@ impl UniversalRead for MmapFile {
         self.ptr = ptr;
         self.ptr_seq = ptr_seq;
         self.len = len;
+        *self.resident.get_mut() = resident;
 
         Ok(())
     }
 
-    fn read_bytes<P: AccessPattern>(&self, range: Range<u64>, _align: usize) -> Result<ACow<'_>> {
-        let mmap = self.as_bytes::<P>();
-        let bytes = read_bytes(mmap, range)?;
-        Ok(ACow::Borrowed(bytes))
-    }
-
-    /// Override the default pipeline-based for better performance.
-    fn read_iter<P: AccessPattern, T: Item, U: UserData>(
-        &self,
-        ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>> {
-        let bytes = self.as_bytes::<P>();
-        Ok(ranges.into_iter().map(move |(user_data, range)| {
-            let items = read_bytemuck::<T>(bytes, range)?;
-            Ok((user_data, Cow::Borrowed(items)))
-        }))
-    }
-
-    /// Override the default pipeline-based for better performance.
-    fn read_multi_iter<'a, P: AccessPattern, T: Item, U: UserData>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        Self: 'a,
-    {
-        Ok(reads.into_iter().map(|(user_data, file, range)| {
-            let bytes = file.as_bytes::<P>();
-            let items = read_bytemuck::<T>(bytes, range)?;
-            Ok((user_data, Cow::Borrowed(items)))
-        }))
-    }
-
-    fn len<T>(&self) -> Result<u64> {
-        let len = self.len / size_of::<T>();
-        Ok(len as u64)
-    }
-
-    fn populate(&self) -> Result<()> {
-        self.mmap.lock().populate();
-        Ok(())
-    }
-
-    fn clear_ram_cache(&self) -> Result<()> {
-        self.mmap.lock().clear_cache();
-        if let Some(mmap_seq) = &self.mmap_seq {
-            mmap_seq.lock().clear_cache();
-        }
-        Ok(())
-    }
-
-    fn kind() -> UniversalKind {
-        UniversalKind::Mmap
-    }
-}
-impl UniversalWrite for MmapFile {
-    fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> Result<()> {
-        let mmap = self.as_bytes_mut();
-        write(mmap, byte_offset, items)?;
-        Ok(())
-    }
-
-    fn write_batch<'a, T: bytemuck::Pod>(
-        &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()> {
-        let mmap = self.as_bytes_mut();
-
-        for (byte_offset, items) in offset_data {
-            write(mmap, byte_offset, items)?;
+    /// The append precondition: the file must currently end at `offset`.
+    /// The fd is statted — not the mapping length, which can be stale when
+    /// the file grew externally — so a stale handle gets a clean conflict.
+    fn check_append_offset(&self, fd: &fs_err::File, offset: ByteOffset) -> UioResult<()> {
+        let file_len = fd.metadata()?.len();
+        if file_len != offset {
+            return Err(UniversalIoError::AppendOffsetConflict {
+                path: self.path.clone(),
+                offset,
+            });
         }
 
         Ok(())
     }
 
-    fn flusher(&self) -> Flusher {
-        let mmap = self.mmap.clone();
-        let flusher = move || {
-            // flushing empty mmap returns error on some platforms
-            let mmap = mmap.lock();
-            if mmap.len() > 0 {
-                mmap.flush()?;
-            }
+    /// Lazily open (and cache) a dedicated `O_APPEND` fd used exclusively for
+    /// appends. Every `write(2)`/`writev(2)` through it is an atomic
+    /// grow+write at the file's current end, so growth cannot leave a
+    /// zero-filled window behind.
+    fn append_fd(&self) -> UioResult<&fs_err::File> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "append requires a handle opened with writeable=true",
+            )));
+        }
 
-            Ok(())
-        };
+        if let Some(file) = self.append_file.get() {
+            return Ok(file);
+        }
 
-        Box::new(flusher)
+        let file = fs_err::OpenOptions::new()
+            .append(true)
+            .open(&self.path)
+            .map_err(|err| UniversalIoError::extract_not_found(err, &self.path))?;
+
+        // A clone may have raced the initialization (concurrent appenders
+        // are out of contract, but stay sound): exactly one fd is kept, a
+        // losing one is dropped.
+        Ok(self.append_file.get_or_init(|| file))
     }
 }
 
-fn open_mmap(path: &Path, write: bool, populate: bool, advice: AdviceSetting) -> Result<MmapRaw> {
+fn open_mmap(
+    path: &Path,
+    write: bool,
+    populate: bool,
+    advice: AdviceSetting,
+) -> UioResult<MmapRaw> {
     // TODO: `fs_err` can cause panic when run on a single-threaded Tokio runtime
     #[expect(clippy::disallowed_types)]
     let file = fs::OpenOptions::new()
@@ -397,22 +600,7 @@ impl MmapFile {
     /// ensuring all measurements go through the same mmap path.
     #[cfg(unix)]
     pub fn probe_memory_stats(path: impl AsRef<Path>) -> std::io::Result<(u64, u64)> {
-        let fs = MmapFs;
-        let file = fs
-            .open(
-                path,
-                OpenOptions {
-                    writeable: false,
-                    need_sequential: false,
-                    populate: Populate::No,
-                    advice: AdviceSetting::Advice(Advice::Normal),
-                },
-                (),
-            )
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let disk_bytes = file.disk_bytes()?;
-        let resident_bytes = file.resident_bytes()?;
-        Ok((disk_bytes, resident_bytes))
+        memory_stats::probe_memory_stats(path)
     }
 }
 
@@ -423,16 +611,20 @@ impl MmapFile {
         } else {
             self.ptr
         };
+        // SAFETY: `ptr`/`len` match the shared mapping unless this handle
+        // missed a growth through a sibling clone — excluded by the
+        // reopen-before-read contract documented on `MmapFile`.
         unsafe { slice::from_raw_parts(ptr.0, self.len) }
     }
 
     fn as_bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: see `as_bytes`.
         unsafe { slice::from_raw_parts_mut(self.ptr.0, self.len) }
     }
 }
 
 #[inline]
-pub(crate) fn read_bytes(bytes: &[u8], range: Range<u64>) -> Result<&[u8]> {
+pub(crate) fn read_bytes(bytes: &[u8], range: Range<u64>) -> UioResult<&[u8]> {
     bytes
         .get(range.start as usize..range.end as usize)
         .ok_or_else(|| UniversalIoError::OutOfBounds {
@@ -443,7 +635,7 @@ pub(crate) fn read_bytes(bytes: &[u8], range: Range<u64>) -> Result<&[u8]> {
 }
 
 #[inline]
-pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> Result<&[T]> {
+pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> UioResult<&[T]> {
     let ReadRange {
         byte_offset,
         length: items,
@@ -466,7 +658,7 @@ pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> Result<&
 }
 
 #[inline]
-fn write<T>(mmap: &mut [u8], byte_offset: ByteOffset, items: &[T]) -> Result<()>
+fn write<T>(mmap: &mut [u8], byte_offset: ByteOffset, items: &[T]) -> UioResult<()>
 where
     T: bytemuck::Pod,
 {
@@ -487,4 +679,101 @@ where
     mmap.copy_from_slice(bytes);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "linux")]
+    use super::*;
+
+    /// `populate` marks the file resident until its RAM cache is cleared or it grows.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn populate_after_open_is_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("populated.dat");
+        fs_err::write(&path, vec![1u8; 64 * 1024]).unwrap();
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mut mmap = MmapFs.open(&path, options, ()).unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+
+        mmap.populate().unwrap();
+        assert!(mmap.resident.load(Ordering::Relaxed));
+
+        mmap.clear_ram_cache().unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+
+        mmap.populate().unwrap();
+        let mut file = fs_err::OpenOptions::new().append(true).open(&path).unwrap();
+        io::Write::write_all(&mut file, &[1u8; 64 * 1024]).unwrap();
+        mmap.live_reload().unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+    }
+
+    /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages
+    /// carrying more than one page-table reference. Without zapping the page tables
+    /// first, every page touched through both mappings stays cached forever.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn clear_ram_cache_evicts_dual_mapped_file() {
+        use std::io::Write as _;
+
+        use crate::generic_consts::{Random, Sequential};
+
+        const LEN: u64 = 8 * 1024 * 1024;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dual.dat");
+
+        // On tmpfs the page cache is the backing store, so
+        // `POSIX_FADV_DONTNEED` cannot evict anything and the assertion below
+        // is unobservable (e.g. `/tmp` on Ubuntu 24.10+). Skip there.
+        let fs_type = nix::sys::statfs::statfs(dir.path())
+            .unwrap()
+            .filesystem_type();
+        if fs_type == nix::sys::statfs::TMPFS_MAGIC {
+            eprintln!("skipping: tempdir is on tmpfs, fadvise cannot evict its pages");
+            return;
+        }
+
+        // Synced: only clean pages are evictable.
+        let mut file = fs_err::File::create(&path).unwrap();
+        file.write_all(&vec![7u8; LEN as usize]).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: true,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mmap = MmapFs.open(&path, options, ()).unwrap();
+
+        // Fault every page through both the random and the sequential mapping.
+        for bytes in [
+            mmap.read_bytes(0..LEN, Random, 1).unwrap(),
+            mmap.read_bytes(0..LEN, Sequential, 1).unwrap(),
+        ] {
+            assert_eq!(
+                bytes.iter().map(|byte| u64::from(*byte)).sum::<u64>(),
+                7 * LEN
+            );
+        }
+
+        let (size, resident) = MmapFile::probe_memory_stats(&path).unwrap();
+        assert_eq!(size, LEN);
+        assert!(resident > LEN / 2, "not cached: {resident} of {size}");
+
+        mmap.clear_ram_cache().unwrap();
+
+        let (_, resident) = MmapFile::probe_memory_stats(&path).unwrap();
+        assert!(resident < LEN / 10, "not evicted: {resident} of {size}");
+    }
 }

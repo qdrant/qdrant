@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::mmap::Flusher;
 use common::typelevel::TBool;
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
@@ -42,38 +41,44 @@ pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
     fn is_in_ram_or_mmap() -> bool;
-    fn is_on_disk(&self) -> bool;
+    /// Whether the encoded data was opened cold, see [`EncodedStorage::is_cold`].
+    ///
+    /// [`EncodedStorage::is_cold`]: crate::encoded_storage::EncodedStorage::is_cold
+    fn is_cold(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
     /// This function is expected to:
     /// - be implemented by non-multivector storages
     /// - be used by multivector storages
-    fn iter_batch(
+    fn for_each_batch(
         &self,
         offsets: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)>;
+        callback: impl FnMut(usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()>;
 
-    fn score(
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
+
+    /// Score a batch: `scores[i]` ← score of `query` against point
+    /// `offsets[i]`.
+    ///
+    /// The default is the per-vector loop the scorers have always run.
+    /// Implementations can batch harder — resolve contiguous storage runs
+    /// once and score each run with a single kernel call instead of paying
+    /// the per-point machinery for every vector.
+    fn score_points(
         &self,
         query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
+        offsets: &[PointOffsetType],
+        scores: &mut [f32],
+    ) -> std::io::Result<()> {
+        debug_assert_eq!(offsets.len(), scores.len());
+        self.for_each_batch(offsets, |i, vector| {
+            scores[i] = self.score(query, &vector);
+        })
+    }
 
-    fn score_point(
-        &self,
-        query: &Self::EncodedQuery,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
-
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32;
 
     /// Return size in bytes of a quantized vector
     fn quantized_vector_size(&self) -> usize;
@@ -82,16 +87,7 @@ pub trait EncodedVectors: Sized {
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>;
-
     fn vectors_count(&self) -> usize;
-
-    fn flusher(&self) -> MmapFlusher;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -111,8 +107,17 @@ pub trait EncodedVectors: Sized {
         enabled: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
     ) -> f32;
+}
+
+/// [`EncodedVectors`] that accept new vectors: quantizations that can encode a vector on its own,
+/// over an [`EncodedStorageWrite`].
+///
+/// [`EncodedStorageWrite`]: crate::encoded_storage::EncodedStorageWrite
+pub trait EncodedVectorsWrite: EncodedVectors {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()>;
+
+    fn flusher(&self) -> Flusher;
 }
 
 impl DistanceType {
@@ -123,6 +128,25 @@ impl DistanceType {
             DistanceType::L2 => a.iter().zip(b).map(|(a, b)| (a - b) * (a - b)).sum(),
         }
     }
+}
+
+/// The vectors of `data` to fit the quantization parameters on, and how many there are.
+///
+/// `keep` holds one flag per vector of `data`, set for the vectors to fit on.
+pub(crate) fn calibration_vectors<V>(
+    data: impl Iterator<Item = V> + Clone,
+    keep: impl Iterator<Item = bool> + Clone,
+) -> (impl Iterator<Item = V> + Clone, usize) {
+    debug_assert_eq!(
+        keep.clone().count(),
+        data.clone().count(),
+        "calibration mask must have one flag per vector",
+    );
+    let count = keep.clone().filter(|&keep| keep).count();
+    let vectors = data
+        .zip(keep)
+        .filter_map(|(vector, keep)| keep.then_some(vector));
+    (vectors, count)
 }
 
 pub(crate) fn validate_vector_parameters<'a>(
@@ -149,4 +173,35 @@ pub(crate) fn validate_vector_parameters<'a>(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calibration_vectors() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, count) = calibration_vectors(data.iter(), [true, false, true].into_iter());
+        assert_eq!(count, 2);
+        assert_eq!(vectors.collect::<Vec<_>>(), [&[1.0], &[3.0]]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "calibration mask must have one flag per vector")]
+    fn test_calibration_vectors_rejects_short_mask() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, _) = calibration_vectors(data.iter(), [true, true].into_iter());
+        vectors.for_each(drop);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "calibration mask must have one flag per vector")]
+    fn test_calibration_vectors_rejects_long_mask() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, _) = calibration_vectors(data.iter(), [true; 4].into_iter());
+        vectors.for_each(drop);
+    }
 }

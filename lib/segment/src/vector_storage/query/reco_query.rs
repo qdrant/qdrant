@@ -1,13 +1,17 @@
 use std::hash::Hash;
+use std::iter::Peekable;
 
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 use itertools::Itertools;
 use serde::Serialize;
+use sparse::common::sparse_vector::SparseVector;
 
 use super::{Query, TransformInto};
-use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, VectorInternal};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::vectors::{
+    DenseVector, QueryVector, TypedMultiDenseVector, VectorElementType, VectorInternal, VectorRef,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
 pub struct RecoQuery<T> {
@@ -29,14 +33,10 @@ impl<T> RecoQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<RecoQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
-        Ok(RecoQuery::new(
-            self.positives.into_iter().map(&mut f).try_collect()?,
-            self.negatives.into_iter().map(&mut f).try_collect()?,
-        ))
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<RecoQuery<U>> {
+        let positives = self.positives.into_iter().map(f).try_collect()?;
+        let negatives = self.negatives.into_iter().map(f).try_collect()?;
+        Ok(RecoQuery::new(positives, negatives))
     }
 }
 
@@ -50,10 +50,10 @@ impl<T> From<RecoQuery<T>> for RecoBestScoreQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoBestScoreQuery<U>, T, U> for RecoBestScoreQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoBestScoreQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoBestScoreQuery<U>> {
         Ok(RecoBestScoreQuery(self.0.transform(f)?))
     }
 }
@@ -67,19 +67,22 @@ impl From<RecoBestScoreQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoBestScoreQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
-        let positive_similarities = self.0.positives.iter().map(&similarity);
+        let mut max_positive = ScoreType::NEG_INFINITY;
+        for vector in &self.0.positives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_positive).is_gt() {
+                max_positive = score;
+            }
+        }
 
         // and all negatives
-        let negative_similarities = self.0.negatives.iter().map(&similarity);
-
-        // get max similarity to positives and max to negatives
-        let max_positive = positive_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
-
-        let max_negative = negative_similarities
-            .max_by(|a, b| a.total_cmp(b))
-            .unwrap_or(ScoreType::NEG_INFINITY);
+        let mut max_negative = ScoreType::NEG_INFINITY;
+        for vector in &self.0.negatives {
+            let score = similarity(vector);
+            if score.total_cmp(&max_negative).is_gt() {
+                max_negative = score;
+            }
+        }
 
         if max_positive > max_negative {
             scaled_fast_sigmoid(max_positive)
@@ -99,10 +102,10 @@ impl<T> From<RecoQuery<T>> for RecoSumScoresQuery<T> {
 }
 
 impl<T, U> TransformInto<RecoSumScoresQuery<U>, T, U> for RecoSumScoresQuery<T> {
-    fn transform<F>(self, f: F) -> OperationResult<RecoSumScoresQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<RecoSumScoresQuery<U>> {
         Ok(RecoSumScoresQuery(self.0.transform(f)?))
     }
 }
@@ -116,13 +119,147 @@ impl From<RecoSumScoresQuery<VectorInternal>> for QueryVector {
 impl<T> Query<T> for RecoSumScoresQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // Sum all positive vectors scores
-        let positive_score: ScoreType = self.0.positives.iter().map(&similarity).sum();
+        let mut positive_score: ScoreType = 0.0;
+        for vector in &self.0.positives {
+            positive_score += similarity(vector);
+        }
 
         // Sum all negative vectors scores
-        let negative_score: ScoreType = self.0.negatives.iter().map(&similarity).sum();
+        let mut negative_score: ScoreType = 0.0;
+        for vector in &self.0.negatives {
+            negative_score += similarity(vector);
+        }
 
         // Subtract
         positive_score - negative_score
+    }
+}
+
+/// The query vector of the `average_vector` recommend strategy:
+/// `avg(positives)` when there are no negatives, else
+/// `avg(positives) + (avg(positives) - avg(negatives))`.
+///
+/// All examples must be of one kind (all dense, all sparse or all multi); an
+/// empty positive set or mixed kinds is a validation error.
+pub fn avg_vector_for_recommendation<'a>(
+    positive: impl IntoIterator<Item = VectorRef<'a>>,
+    mut negative: Peekable<impl Iterator<Item = VectorRef<'a>>>,
+) -> OperationResult<VectorInternal> {
+    let avg_positive = avg_vectors(positive)?;
+
+    let search_vector = if negative.peek().is_none() {
+        avg_positive
+    } else {
+        let avg_negative = avg_vectors(negative)?;
+        merge_positive_and_negative_avg(avg_positive, avg_negative)?
+    };
+
+    Ok(search_vector)
+}
+
+fn avg_vectors<'a>(
+    vectors: impl IntoIterator<Item = VectorRef<'a>>,
+) -> OperationResult<VectorInternal> {
+    let mut avg_dense = DenseVector::default();
+    let mut avg_sparse = SparseVector::default();
+    let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
+    let mut dense_count = 0;
+    let mut sparse_count = 0;
+    let mut multi_count = 0;
+    for vector in vectors {
+        match vector {
+            VectorRef::Dense(vector) => {
+                dense_count += 1;
+                for i in 0..vector.len() {
+                    if i >= avg_dense.len() {
+                        avg_dense.push(vector[i])
+                    } else {
+                        avg_dense[i] += vector[i];
+                    }
+                }
+            }
+            VectorRef::Sparse(vector) => {
+                sparse_count += 1;
+                avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
+            }
+            VectorRef::MultiDense(vector) => {
+                multi_count += 1;
+                avg_multi = Some(avg_multi.map_or_else(
+                    || vector.to_owned(),
+                    |mut avg_multi| {
+                        avg_multi
+                            .flattened_vectors
+                            .extend_from_slice(vector.flattened_vectors);
+                        avg_multi
+                    },
+                ));
+            }
+        }
+    }
+
+    match (dense_count, sparse_count, multi_count) {
+        // TODO(sparse): what if vectors iterator is empty? We return a validation error,
+        // but it's not clear if it's the best solution.
+        // Currently it's hard to return an zeroed vector, because we don't know its type: dense or sparse.
+        (0, 0, 0) => Err(OperationError::validation_error(
+            "Positive vectors should not be empty with `average` strategy",
+        )),
+        (_, 0, 0) => {
+            for item in &mut avg_dense {
+                *item /= dense_count as VectorElementType;
+            }
+            Ok(VectorInternal::from(avg_dense))
+        }
+        (0, _, 0) => {
+            for item in &mut avg_sparse.values {
+                *item /= sparse_count as VectorElementType;
+            }
+            Ok(VectorInternal::from(avg_sparse))
+        }
+        (0, 0, _) => match avg_multi {
+            Some(avg_multi) => Ok(VectorInternal::from(avg_multi)),
+            None => Err(OperationError::validation_error(
+                "Positive vectors should not be empty with `average` strategy",
+            )),
+        },
+        (_, _, _) => Err(OperationError::validation_error(
+            "Can't average vectors with different types",
+        )),
+    }
+}
+
+fn merge_positive_and_negative_avg(
+    positive: VectorInternal,
+    negative: VectorInternal,
+) -> OperationResult<VectorInternal> {
+    match (positive, negative) {
+        (VectorInternal::Dense(positive), VectorInternal::Dense(negative)) => {
+            if positive.len() != negative.len() {
+                return Err(OperationError::WrongVectorDimension {
+                    expected_dim: positive.len(),
+                    received_dim: negative.len(),
+                });
+            }
+            let vector: DenseVector = positive
+                .iter()
+                .zip(negative.iter())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect();
+            Ok(vector.into())
+        }
+        (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => Ok(positive
+            .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
+            .into()),
+        (VectorInternal::MultiDense(mut positive), VectorInternal::MultiDense(negative)) => {
+            // merge positive and negative vectors as concatenated vectors with negative vectors negated
+            positive
+                .flattened_vectors
+                .extend(negative.flattened_vectors.into_iter().map(|x| -x));
+            Ok(VectorInternal::MultiDense(positive))
+        }
+        _ => Err(OperationError::validation_error(
+            "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi",
+        )),
     }
 }
 
@@ -134,7 +271,11 @@ mod test {
     use common::types::ScoreType;
     use proptest::prelude::*;
     use rstest::rstest;
+    use sparse::common::sparse_vector::SparseVector;
 
+    use super::{avg_vector_for_recommendation, avg_vectors};
+    use crate::common::operation_error::OperationError;
+    use crate::data_types::vectors::{VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
     enum Chosen {
@@ -256,5 +397,77 @@ mod test {
 
             assert_ne!(ordering, std::cmp::Ordering::Less);
         }
+    }
+
+    #[test]
+    fn test_avg_vectors() {
+        let vectors: Vec<VectorInternal> = vec![
+            vec![1.0, 2.0, 3.0].into(),
+            vec![1.0, 2.0, 3.0].into(),
+            vec![1.0, 2.0, 3.0].into(),
+        ];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            vec![1.0, 2.0, 3.0].into(),
+        );
+
+        let vectors: Vec<VectorInternal> = vec![
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                .unwrap()
+                .into(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
+                .unwrap()
+                .into(),
+        ];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
+                .unwrap()
+                .into(),
+        );
+
+        let vectors: Vec<VectorInternal> = vec![
+            vec![1.0, 2.0, 3.0].into(),
+            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                .unwrap()
+                .into(),
+        ];
+        assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
+    }
+
+    #[test]
+    fn test_avg_vector_for_recommendation() {
+        let positives: Vec<VectorInternal> = vec![vec![1.0, 0.0].into(), vec![0.0, 1.0].into()];
+        let negatives: Vec<VectorInternal> = vec![vec![0.0, 1.0].into()];
+
+        // No negatives: the plain average.
+        let vector = avg_vector_for_recommendation(
+            positives.iter().map(VectorRef::from),
+            std::iter::empty().peekable(),
+        )
+        .unwrap();
+        assert_eq!(vector, vec![0.5, 0.5].into());
+
+        // With negatives: avg_pos + (avg_pos - avg_neg) = [0.5, 0.5] + ([0.5, 0.5] - [0, 1]).
+        let vector = avg_vector_for_recommendation(
+            positives.iter().map(VectorRef::from),
+            negatives.iter().map(VectorRef::from).peekable(),
+        )
+        .unwrap();
+        assert_eq!(vector, vec![1.0, 0.0].into());
+
+        // Negative average with a different dimension is rejected, not truncated by zip.
+        let negatives: Vec<VectorInternal> = vec![vec![0.0, 1.0, 2.0].into()];
+        let result = avg_vector_for_recommendation(
+            positives.iter().map(VectorRef::from),
+            negatives.iter().map(VectorRef::from).peekable(),
+        );
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
     }
 }

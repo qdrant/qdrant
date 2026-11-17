@@ -1,14 +1,13 @@
-use std::borrow::Cow;
-
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::ChunkedVectorsRead;
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
 
 mod lifecycle;
 mod live_reload;
@@ -16,55 +15,60 @@ mod read_ops;
 
 #[derive(Debug)]
 pub struct ReadOnlyChunkedMultiDenseVectorStorage<T: PrimitiveVectorElement, S: UniversalRead> {
-    vectors: ChunkedVectorsRead<T, S>,
-    offsets: ChunkedVectorsRead<MultivectorMmapOffset, S>,
+    vectors: ReadOnlyChunkedVectors<T, S>,
+    offsets: ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
 }
 
-pub fn iter_vectors<'a, P, T, U, S>(
-    offsets: &'a ChunkedVectorsRead<MultivectorMmapOffset, S>,
-    vectors: &'a ChunkedVectorsRead<T, S>,
+pub fn for_each_vector<P, T, U, S>(
+    offsets: &ReadOnlyChunkedVectors<MultivectorMmapOffset, S>,
+    vectors: &ReadOnlyChunkedVectors<T, S>,
     keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-) -> impl Iterator<Item = (U, Cow<'a, [T]>)>
+    mut callback: impl FnMut(U, &[T]) -> OperationResult<()>,
+) -> OperationResult<()>
 where
     P: AccessPattern,
     T: PrimitiveVectorElement,
+    U: UserData,
     S: UniversalRead,
 {
     let point_offsets = keys
         .into_iter()
         .map(|(user_data, point_offset)| (user_data, point_offset as _, 1));
 
-    let vector_offsets =
-        offsets
-            .iter_vectors::<P, _>(point_offsets)
-            .map(|(user_data, multi_offset)| {
-                let &[multi_offset] = multi_offset.as_ref() else {
-                    unreachable!("multi-vector offsets are stored as vectors of length 1");
-                };
+    // Resolve the per-point multi-vector offsets first, then read the flattened
+    // vectors in a single batched pass over `vectors`.
+    let mut vector_offsets = Vec::new();
+    offsets.for_each_vector::<P, _>(point_offsets, |user_data, multi_offset| {
+        let &[multi_offset] = multi_offset.as_ref() else {
+            unreachable!("multi-vector offsets are stored as vectors of length 1");
+        };
 
-                let MultivectorMmapOffset {
-                    offset,
-                    count,
-                    capacity: _,
-                } = multi_offset;
+        let MultivectorMmapOffset {
+            offset,
+            count,
+            capacity: _,
+        } = multi_offset;
 
-                (user_data, offset, count)
-            });
+        vector_offsets.push((user_data, offset, count));
+        Ok(())
+    })?;
 
-    vectors.iter_vectors::<P, _>(vector_offsets)
+    vectors.for_each_vector::<P, _>(vector_offsets.into_iter(), |user_data, vector| {
+        callback(user_data, vector.as_ref())
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, MmapFs};
+    use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -89,7 +93,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_multi_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let multivectors: Vec<MultiDenseVectorInternal> = (0..POINT_COUNT)
             .map(|_| {
@@ -119,7 +123,7 @@ mod tests {
                 .unwrap();
             for (id, multivec) in multivectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                     .unwrap();
             }
             for id in 0..POINT_COUNT {
@@ -138,7 +142,7 @@ mod tests {
             Distance::Dot,
             MultiVectorConfig::default(),
             AdviceSetting::Global,
-            false,
+            Populate::No,
         )
         .unwrap();
 
@@ -166,7 +170,7 @@ mod tests {
         const DIM: usize = 48;
         let dir = Builder::new().prefix("ro_multi_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(11);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let rand_multi = |rng: &mut StdRng| -> MultiDenseVectorInternal {
             let inner = rng.random_range(1..=3);
@@ -194,7 +198,7 @@ mod tests {
         .unwrap();
         for (id, multivec) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -207,7 +211,7 @@ mod tests {
                 Distance::Dot,
                 MultiVectorConfig::default(),
                 AdviceSetting::Global,
-                false,
+                Populate::No,
             )
             .unwrap();
         assert_eq!(reader.total_vector_count(), first.len());
@@ -217,7 +221,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(multivec),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -235,7 +238,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -252,5 +254,64 @@ mod tests {
             assert!(reader.is_deleted_vector(id));
         }
         assert!(!reader.is_deleted_vector(0));
+    }
+
+    #[test]
+    fn live_reload_picks_up_appended_vector_deletion() {
+        const DIM: usize = 8;
+        let dir = Builder::new()
+            .prefix("ro_multi_appended_deleted")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+
+        let multi = |value: VectorElementType| {
+            MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()
+        };
+
+        let mut writer = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
+        writer
+            .insert_vector(0, VectorRef::from(&multi(1.0)))
+            .unwrap();
+        writer.flusher()().unwrap();
+
+        let mut reader =
+            ReadOnlyChunkedMultiDenseVectorStorage::<VectorElementType, MmapFile>::open(
+                &MmapFs,
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                MultiVectorConfig::default(),
+                AdviceSetting::Global,
+                Populate::No,
+            )
+            .unwrap();
+
+        writer
+            .insert_vector(1, VectorRef::from(&multi(0.0)))
+            .unwrap();
+        writer.delete_vector(1).unwrap();
+        writer.flusher()().unwrap();
+
+        let deleted_ids: Vec<PointOffsetType> = vec![];
+        let new_ids: Vec<PointOffsetType> = vec![1];
+        reader
+            .live_reload(
+                &MmapFs,
+                &SortedSlice::new(&deleted_ids).unwrap(),
+                &SortedSlice::new(&new_ids).unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(reader.total_vector_count(), 2);
+        assert!(reader.is_deleted_vector(1));
     }
 }

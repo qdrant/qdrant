@@ -10,6 +10,9 @@ workspace = true
 
 [features]
 staging = ["shard/staging"]
+# The read-only, update-only and delete-only shards, for deployments that
+# depend on edge from git. Never enabled in the published qdrant-edge crate.
+serverless = []
 
 [dependencies]
 bm25 = { path = "../bm25" }
@@ -20,16 +23,22 @@ sparse = { path = "../sparse" }
 wal = { path = "../wal" }
 
 ahash = { workspace = true }
+core_affinity = { workspace = true }
 fs-err = { workspace = true }
+futures = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 uuid = { workspace = true }
+walkdir = { workspace = true }
 
 [dev-dependencies]
+common = { path = "../common/common", features = ["testing"] }
 fs-err = { workspace = true, features = ["debug"] }
 tempfile = { workspace = true }

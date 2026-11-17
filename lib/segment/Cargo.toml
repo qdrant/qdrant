@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 default = []
-testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
+testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing", "dep:exhaustive"]
 gpu = ["gpu/gpu"]
 
 [build-dependencies]
@@ -29,19 +29,26 @@ humantime = { workspace = true }
 indicatif = { workspace = true }
 ndarray = "0.17.2"
 ndarray-npy = { version = "0.10.0", default-features = false }
-rmp-serde = { workspace = true }
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
 rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
+bm25 = { path = "../bm25" }
+object_store = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+tap = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
 
 [dependencies]
+io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
+futures = { workspace = true }
+bitpacking = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }
@@ -62,14 +69,16 @@ ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = { workspace = true }
+memchr = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.33.1"
+geo = { version = "0.33.1", default-features = false }
 geohash = "0.13.2"
 num-traits = { workspace = true }
-num-derive = "0.4.2"
+num-derive = "0.5.1"
 num-cmp = "0.1.0"
+once_cell = "1.21"
 rand = { workspace = true }
 bitvec = { workspace = true }
 fs_extra = { workspace = true }
@@ -82,15 +91,21 @@ indexmap = { workspace = true }
 ahash = { workspace = true }
 self_cell.workspace = true
 sha2 = { workspace = true }
+siphasher = "1.0.3"
 smallvec = { workspace = true }
 strum = { workspace = true }
+tokio = { workspace = true }
 byteorder = { workspace = true }
-tap = { workspace = true }
+crc32c = "0.6.8"
+stumpalo = { workspace = true }
 zerocopy = { workspace = true }
-vaporetto = { version = "0.6.5" }
-rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
-sysinfo = "0.38"
-charabia = { version = "0.9.9", default-features = false, features = [
+zstd = { workspace = true }
+vaporetto = { version = "0.7.0" }
+rust-stemmers = { package = "qdrant-rust-stemmers", version = "~1.2.3" }
+# Memory only; disable `user` so macOS does not pull objc2 via open-directory
+# (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
+sysinfo = { workspace = true }
+charabia = { version = "0.10.0", default-features = false, features = [
     "greek",
     "hebrew",
     "thai",
@@ -98,9 +113,10 @@ charabia = { version = "0.9.9", default-features = false, features = [
     "chinese-normalization",
 ] }
 
-gridstore = { path = "../gridstore" }
+blobstore = { path = "../blobstore" }
 
 common = { path = "../common/common" }
+pairwise = { path = "../common/pairwise" }
 macros = { path = "../macros" }
 posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
@@ -112,15 +128,22 @@ macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
-duplicate = "2.0.1"
+duplicate = { workspace = true }
+exhaustive = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cgroups-rs = "0.5"
 procfs = { version = "0.18", default-features = false }
-io-uring = "0.7.12"
 
 [[bench]]
 name = "vector_search"
+harness = false
+
+[[bench]]
+name = "turbo_vector_search"
+harness = false
+
+[[bench]]
+name = "turbo_full_scan"
 harness = false
 
 [[bench]]
@@ -178,12 +201,10 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
-bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "sparse_vector_storage"
 harness = false
-bench = false # TODO(rocksdb): fix and re-enable (or just remove)
 
 [[bench]]
 name = "multi_vector_search"
@@ -195,6 +216,10 @@ harness = false
 
 [[bench]]
 name = "range_filtering"
+harness = false
+
+[[bench]]
+name = "nested_filtering"
 harness = false
 
 [[bench]]
@@ -211,4 +236,12 @@ harness = false
 
 [[bench]]
 name = "hnsw_incremental_build"
+harness = false
+
+[[bench]]
+name = "facets"
+harness = false
+
+[[bench]]
+name = "tokenizers"
 harness = false

@@ -19,7 +19,6 @@ pub struct ImmutableBoolIndex(pub(super) MutableBoolIndex);
 #[cfg(test)]
 mod tests {
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -31,32 +30,30 @@ mod tests {
     fn test_remove_idempotent() {
         let dir = TempDir::with_prefix("test_immutable_bool_index").unwrap();
         let mut builder = ImmutableBoolIndex::builder(dir.path()).unwrap();
-        let hw_counter = HardwareCounterCell::new();
-        builder.add_point(0, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
+        builder.add_point(0, &[&json!(true)]).unwrap();
+        builder.add_point(1, &[&json!(true)]).unwrap();
+        builder.add_point(2, &[&json!(false)]).unwrap();
 
         let mut index = builder.finalize().unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 1]);
-        assert_eq!(index.count_indexed_points(), 3);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 1]);
+        assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         index.remove_point(1).unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 0]);
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
 
         index.remove_point(1).unwrap();
-        assert_eq!(index.get_point_values(1), vec![true; 0]);
-        assert_eq!(index.count_indexed_points(), 2);
+        assert_eq!(index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(index.count_indexed_points().unwrap(), 2);
     }
 
     #[test]
     fn test_remove_reopen() {
         let dir = TempDir::with_prefix("test_immutable_bool_index").unwrap();
         let mut builder = ImmutableBoolIndex::builder(dir.path()).unwrap();
-        let hw_counter = HardwareCounterCell::new();
-        builder.add_point(0, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
+        builder.add_point(0, &[&json!(true)]).unwrap();
+        builder.add_point(1, &[&json!(true)]).unwrap();
+        builder.add_point(2, &[&json!(false)]).unwrap();
 
         let mut index = builder.finalize().unwrap();
 
@@ -68,7 +65,7 @@ mod tests {
         let opened_index = ImmutableBoolIndex::open(dir.path(), &deleted)
             .unwrap()
             .unwrap();
-        assert_eq!(opened_index.get_point_values(1), vec![true; 0]);
-        assert_eq!(opened_index.count_indexed_points(), 2);
+        assert_eq!(opened_index.get_point_values(1).unwrap(), vec![true; 0]);
+        assert_eq!(opened_index.count_indexed_points().unwrap(), 2);
     }
 }

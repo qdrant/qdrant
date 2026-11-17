@@ -2,15 +2,16 @@
 
 use std::assert_matches;
 use std::path::Path;
-use std::sync::Arc;
 
-use common::universal_io::{ReadRange, UniversalIoError, UniversalRead};
+use bytes::Bytes;
+use common::ambient;
+use common::generic_consts::Random;
+use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError, UniversalRead};
+use io_bridge::{AsyncRead, BridgeRuntime};
 use object_store::aws::AmazonS3;
 
-use crate::BlobFile;
-use crate::read::AsyncRead;
-use crate::runtime::BridgeRuntime;
 use crate::tests::rustfs::{rustfs_aws_config, rustfs_enabled, setup_bucket};
+use crate::{BlobFile, ObjectStoreSource};
 
 fn maybe_skip() -> bool {
     if !rustfs_enabled() {
@@ -21,9 +22,25 @@ fn maybe_skip() -> bool {
     }
 }
 
+/// The native append RPC needs a store implementing the write-offset
+/// `PutObject` API (S3 Express One Zone / MinIO AiStor); RustFS and plain S3
+/// buckets reject it, hence the separate opt-in.
+fn maybe_skip_append() -> bool {
+    if std::env::var("S3_APPEND_INTEGRATION_TEST").as_deref() != Ok("1") {
+        eprintln!(
+            "skipping append integration test; set S3_APPEND_INTEGRATION_TEST=1 (and the \
+             RUSTFS_* endpoint vars) to run against an append-capable store"
+        );
+        true
+    } else {
+        false
+    }
+}
+
 #[test]
 #[ignore]
 fn test_open_and_read_whole() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -31,7 +48,8 @@ fn test_open_and_read_whole() {
     setup_bucket(&runtime, &[("hello.bin", b"hello rustfs")]);
 
     let file =
-        BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "hello.bin").expect("open");
+        BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "hello.bin")
+            .expect("open");
     let bytes = file.read_whole::<u8>().expect("read_whole");
     assert_eq!(&bytes[..], b"hello rustfs");
 }
@@ -39,6 +57,7 @@ fn test_open_and_read_whole() {
 #[test]
 #[ignore]
 fn test_read_range() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -49,9 +68,10 @@ fn test_read_range() {
     );
 
     let file =
-        BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin").expect("open");
+        BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "ranged.bin")
+            .expect("open");
     let bytes = file
-        .read::<common::generic_consts::Random, u8>(ReadRange::new(16, 16))
+        .read::<_, u8>(ReadRange::new(16, 16), Random)
         .expect("read");
     assert_eq!(bytes.len(), 16);
     assert_eq!(bytes[0], 16);
@@ -61,21 +81,22 @@ fn test_read_range() {
 #[test]
 #[ignore]
 fn test_read_batch_parallel() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
     let runtime = BridgeRuntime::global();
     setup_bucket(&runtime, &[("blob", &(0u8..=255u8).collect::<Vec<u8>>())]);
 
-    let file =
-        BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "blob").expect("open");
+    let file = BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, "blob")
+        .expect("open");
     let inputs: Vec<(u32, ReadRange)> = (0u32..16)
         .map(|i| (i, ReadRange::new(u64::from(i) * 16, 16)))
         .collect();
     let mut got: std::collections::HashMap<u32, Vec<u8>> = Default::default();
-    file.read_batch::<common::generic_consts::Random, u8, _>(inputs, |user_data, slice| {
+    file.read_batch(inputs, Random, |user_data, slice| {
         got.insert(user_data, slice.to_vec());
-        Ok(())
+        UioResult::Ok(())
     })
     .expect("read_batch");
     assert_eq!(got.len(), 16);
@@ -89,6 +110,7 @@ fn test_read_batch_parallel() {
 #[test]
 #[ignore]
 fn test_not_found() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -97,15 +119,74 @@ fn test_not_found() {
 
     // `open` no longer touches the network, so the missing object only surfaces
     // when we actually read it (the `len` HEAD inside `read_whole`).
-    let file = BlobFile::<Arc<AmazonS3>>::open(&rustfs_aws_config(), runtime, "does-not-exist")
-        .expect("open builds the store without IO");
+    let file = BlobFile::<ObjectStoreSource<AmazonS3>>::open(
+        &rustfs_aws_config(),
+        runtime,
+        "does-not-exist",
+    )
+    .expect("open builds the store without IO");
     let err = file.read_whole::<u8>().unwrap_err();
     assert_matches!(err, UniversalIoError::NotFound { .. });
+}
+
+/// End-to-end native append flow against a real append-capable store:
+/// create-on-first-append at offset 0, sequential appends, read-back, and a
+/// stale-offset conflict that writes nothing, recovered by re-deriving the
+/// offset from the actual length.
+#[test]
+#[ignore]
+fn test_native_append_flow() {
+    let _scope = ambient::test_guard();
+    if maybe_skip_append() {
+        return;
+    }
+    let runtime = BridgeRuntime::global();
+    let _ = setup_bucket(&runtime, &[]);
+
+    // Fresh key per run so reruns do not collide with leftover objects.
+    let key = format!("append-{}.log", std::process::id());
+
+    let file = BlobFile::<ObjectStoreSource<AmazonS3>>::open(
+        &rustfs_aws_config(),
+        runtime.clone(),
+        key.as_str(),
+    )
+    .expect("open");
+    file.append_bytes(0, Bytes::from_static(b"hello "), None)
+        .expect("first append creates the object");
+    file.append_bytes(6, Bytes::from_static(b"world"), None)
+        .expect("append");
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], b"hello world");
+
+    // A second handle appends behind this handle's back...
+    let interloper =
+        BlobFile::<ObjectStoreSource<AmazonS3>>::open(&rustfs_aws_config(), runtime, key.as_str())
+            .expect("open");
+    interloper
+        .append_bytes(11, Bytes::from_static(b"A"), None)
+        .expect("append");
+
+    // ...so an append at the stale offset conflicts without writing, and
+    // re-deriving the offset from the actual length recovers.
+    let err = file
+        .append_bytes(11, Bytes::from_static(b"B"), None)
+        .unwrap_err();
+    assert_matches!(err, UniversalIoError::AppendOffsetConflict { .. });
+    let eof = file.len::<u8>().expect("len");
+    assert_eq!(eof, 12);
+    file.append_bytes(eof, Bytes::from_static(b"B"), None)
+        .expect("append");
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], b"hello worldAB");
 }
 
 #[test]
 #[ignore]
 fn test_list_files() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -120,12 +201,20 @@ fn test_list_files() {
         ],
     );
 
-    let store = <Arc<AmazonS3> as AsyncRead>::open(&rustfs_aws_config()).expect("build store");
+    let store = <ObjectStoreSource<AmazonS3> as AsyncRead>::open(&rustfs_aws_config())
+        .expect("build store");
     let files = runtime
         .block_on(store.list_files(Path::new("listed")))
         .expect("list_files");
     assert_eq!(files.len(), 3);
-    for f in &files {
-        assert!(f.to_string_lossy().starts_with("listed/"));
+    for ListedFile {
+        path,
+        size,
+        last_modified: _,
+        etag: _,
+    } in &files
+    {
+        assert!(path.to_string_lossy().starts_with("listed/"));
+        assert_eq!(*size, 1);
     }
 }

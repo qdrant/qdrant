@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::bytes::bytes_to_human;
 use parking_lot::Mutex;
 
 use crate::common::eta_calculator::EtaCalculator;
@@ -101,6 +102,10 @@ impl TransferTaskProgress {
 pub struct RecoveryProgress {
     current_stage: Option<RecoveryStage>,
     stage_started: Option<Instant>,
+    /// Number of snapshot bytes downloaded
+    bytes_transferred: usize,
+    /// Measures the current download rate
+    transfer_rate: EtaCalculator,
 }
 
 impl RecoveryProgress {
@@ -108,13 +113,22 @@ impl RecoveryProgress {
         Self {
             current_stage: None,
             stage_started: None,
+            bytes_transferred: 0,
+            transfer_rate: EtaCalculator::new(),
         }
     }
 
-    /// Set the current recovery stage (resets stage elapsed time)
+    /// Set the current recovery stage (resets stage elapsed time and transfer rate)
     pub fn set_stage(&mut self, stage: RecoveryStage) {
         self.current_stage = Some(stage);
         self.stage_started = Some(Instant::now());
+        self.transfer_rate = EtaCalculator::new();
+    }
+
+    /// Count downloaded snapshot bytes
+    pub fn add_bytes(&mut self, bytes: usize) {
+        self.bytes_transferred += bytes;
+        self.transfer_rate.set_progress(self.bytes_transferred);
     }
 
     /// Get the current recovery stage
@@ -127,11 +141,23 @@ impl RecoveryProgress {
         self.stage_started.map(|t| t.elapsed().as_secs_f64())
     }
 
-    /// Format a comment string showing current stage and elapsed time
+    /// Format a comment string showing current stage and elapsed time, and the transferred bytes
+    /// and rate while downloading
     pub fn format_comment(&self) -> Option<String> {
         let stage = self.current_stage?;
         let elapsed = self.stage_elapsed_secs().unwrap_or(0.0);
-        Some(format!("{} ({:.2}s)", stage.as_str(), elapsed))
+        let mut comment = format!("{} ({:.2}s)", stage.as_str(), elapsed);
+        if stage == RecoveryStage::Downloading {
+            let rate = self.transfer_rate.rate().unwrap_or(0.0);
+            write!(
+                comment,
+                " | {} transferred, {}/s",
+                bytes_to_human(self.bytes_transferred),
+                bytes_to_human(rate as usize),
+            )
+            .unwrap();
+        }
+        Some(comment)
     }
 }
 

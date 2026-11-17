@@ -1,0 +1,241 @@
+mod read;
+
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use atomic_refcell::AtomicRefCell;
+use common::generic_consts::Sequential;
+use common::sorted_slice::SortedSlice;
+use common::storage_version::StorageVersion as _;
+use common::types::PointOffsetType;
+use common::universal_io::UniversalReadFs;
+use sparse::SearchScratchPool;
+use sparse::common::sparse_vector::SparseVector;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
+
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::IdTrackerRead;
+use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
+use crate::index::UniversalReadExt;
+use crate::index::field_index::ReadOnlyFieldIndex;
+use crate::index::sparse_index::indices_tracker::IndicesTracker;
+use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
+use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
+use crate::index::sparse_index::sparse_vector_index::read_view::SparseVectorIndexReadView;
+use crate::index::struct_payload_index::StructPayloadIndexReadView;
+use crate::index::struct_payload_index::read_only::ReadOnlyStructPayloadIndex;
+use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
+use crate::vector_storage::VectorStorageRead;
+use crate::vector_storage::read_only::VectorStorageReadEnum;
+
+/// Read-only, generic-over-storage counterpart of [`SparseVectorIndex`].
+///
+/// The id tracker and vector storage are parameterized by the backing storage
+/// `S`, while the inverted index (`TInvertedIndex`) is whichever persisted layout
+/// was loaded — an immutable-ram or an `S`-backed mmap variant.
+///
+/// [`SparseVectorIndex`]: super::SparseVectorIndex
+pub struct ReadOnlySparseVectorIndex<S: UniversalReadExt, TInvertedIndex: InvertedIndex> {
+    config: SparseIndexConfig,
+    id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+    payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    inverted_index: TInvertedIndex,
+    searches_telemetry: SparseSearchesTelemetry,
+    indices_tracker: IndicesTracker,
+    search_scratch_pool: SearchScratchPool,
+}
+
+/// Read-only view over a [`ReadOnlySparseVectorIndex`]: all backends are read-only.
+type ReadView<'a, S, TInvertedIndex> = SparseVectorIndexReadView<
+    'a,
+    ReadOnlyIdTrackerEnum<S>,
+    VectorStorageReadEnum<S>,
+    StructPayloadIndexReadView<
+        'a,
+        ReadOnlyPayloadStorage<S>,
+        ReadOnlyIdTrackerEnum<S>,
+        VectorStorageReadEnum<S>,
+        ReadOnlyFieldIndex<S>,
+    >,
+    TInvertedIndex,
+>;
+
+pub struct ReadOnlySparseVectorIndexOpenArgs<'a, S: UniversalReadExt, Fs: UniversalReadFs<File = S>>
+{
+    pub fs: &'a Fs,
+    pub config: SparseIndexConfig,
+    pub id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+    pub payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    pub path: &'a Path,
+}
+
+impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex>
+    ReadOnlySparseVectorIndex<S, TInvertedIndex>
+{
+    /// Similar to [`super::SparseVectorIndex::open`].
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        args: ReadOnlySparseVectorIndexOpenArgs<S, Fs>,
+    ) -> OperationResult<Self>
+    where
+        TInvertedIndex: InvertedIndexReadOnly<S>,
+    {
+        let ReadOnlySparseVectorIndexOpenArgs {
+            fs,
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+        } = args;
+
+        let inverted_index = TInvertedIndex::open_ro(fs, path)?;
+
+        let stored_version = TInvertedIndex::Version::load_universal(fs, path)?;
+        if stored_version != Some(TInvertedIndex::Version::current()) {
+            return Err(OperationError::service_error_light(format!(
+                "Sparse index version mismatch, expected {}, found {}",
+                TInvertedIndex::Version::current(),
+                stored_version.map_or_else(|| "none".to_string(), |v| v.to_string()),
+            )));
+        }
+
+        let indices_tracker = IndicesTracker::open_universal(fs, path)?;
+
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
+        })
+    }
+
+    pub fn inverted_index(&self) -> &TInvertedIndex {
+        &self.inverted_index
+    }
+
+    /// Borrow all backing storages and hand a read view to `f`, mirroring
+    /// [`SparseVectorIndex::with_view`].
+    ///
+    /// [`SparseVectorIndex::with_view`]: super::SparseVectorIndex::with_view
+    pub fn with_view<R>(&self, f: impl FnOnce(ReadView<'_, S, TInvertedIndex>) -> R) -> R {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let payload_index = self.payload_index.borrow();
+
+        payload_index.with_view(|payload_index_view| {
+            let read_view = SparseVectorIndexReadView {
+                config: self.config,
+                id_tracker: &*id_tracker,
+                vector_storage: &*vector_storage,
+                payload_index: payload_index_view,
+                inverted_index: &self.inverted_index,
+                searches_telemetry: &self.searches_telemetry,
+                indices_tracker: &self.indices_tracker,
+                search_scratch_pool: &self.search_scratch_pool,
+            };
+            f(read_view)
+        })
+    }
+}
+
+impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
+    /// Build the mutable-RAM variant in place from the read-only id tracker and
+    /// vector storage, mirroring [`SparseVectorIndex::plan`]'s non-persisted
+    /// branch: `MutableRam` has no persisted representation, so its inverted
+    /// index is rebuilt from the vector storage on every open.
+    ///
+    /// [`SparseVectorIndex::plan`]: super::SparseVectorIndex::plan
+    pub fn build_mutable_ram(
+        config: SparseIndexConfig,
+        id_tracker: Arc<AtomicRefCell<ReadOnlyIdTrackerEnum<S>>>,
+        vector_storage: Arc<AtomicRefCell<VectorStorageReadEnum<S>>>,
+        payload_index: Arc<AtomicRefCell<ReadOnlyStructPayloadIndex<S>>>,
+    ) -> OperationResult<Self> {
+        // The read-only open path carries no cancellation flag.
+        let stopped = AtomicBool::new(false);
+        let (inverted_index, indices_tracker) = super::build_ram_index(
+            &*id_tracker.borrow(),
+            &*vector_storage.borrow(),
+            &stopped,
+            || (),
+        )?;
+        Ok(Self {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            inverted_index,
+            searches_telemetry: SparseSearchesTelemetry::new(),
+            indices_tracker,
+            search_scratch_pool: SearchScratchPool::new(),
+        })
+    }
+
+    /// Fold a live-reload delta into the rebuilt RAM index, mirroring
+    /// [`SparseVectorIndex::update_vector`]'s mutable-RAM path.
+    ///
+    /// Deleted points need no index surgery: their stale postings are filtered
+    /// at search time via the deleted bitslices, which the id-tracker and
+    /// storage reloads refresh.
+    ///
+    /// [`SparseVectorIndex::update_vector`]: super::SparseVectorIndex
+    pub fn live_reload(
+        &mut self,
+        inserted: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let id_tracker = self.id_tracker.borrow();
+        let vector_storage = self.vector_storage.borrow();
+        let deferred_internal_id = id_tracker.deferred_internal_id();
+
+        // Split borrows for the read callback: it mutates the tracker and the
+        // index while the storage stays borrowed.
+        let indices_tracker = &mut self.indices_tracker;
+        let inverted_index = &mut self.inverted_index;
+
+        let ids = inserted
+            .iter()
+            .copied()
+            .filter(|&id| deferred_internal_id.is_none_or(|deferred| id < deferred))
+            .map(|id| ((), id));
+
+        // One batched, ascending pass (appended offsets are contiguous): the
+        // storage coalesces the reads, so a cold cache costs block reads
+        // instead of a round-trip per point. A point without a vector for
+        // this sparse name is skipped by the storage.
+        let mut result = Ok(());
+        vector_storage.read_vectors::<Sequential, _>(ids, |(), id, vector| {
+            if result.is_err() {
+                return;
+            }
+            let vector: &SparseVector = match vector.as_vec_ref().try_into() {
+                Ok(vector) => vector,
+                Err(err) => {
+                    result = Err(err);
+                    return;
+                }
+            };
+            // do not index empty vectors
+            if vector.is_empty() {
+                return;
+            }
+            indices_tracker.register_indices(vector);
+            let vector = indices_tracker.remap_vector(vector.to_owned());
+            // A retried reload replays offsets an earlier, failed attempt already
+            // indexed (an appended offset never changes its vector): replay those
+            // as an update of the same vector, so the vector count (IDF's N) and
+            // total size are not counted twice.
+            let indexed = inverted_index.contains(id, &vector);
+            let old_vector = indexed.then(|| vector.clone());
+            inverted_index.upsert(id, vector, old_vector);
+        })?;
+        result
+    }
+}

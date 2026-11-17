@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -84,7 +83,7 @@ pub struct Wal {
 
     /// The directory which contains the write ahead log. Used to hold an open
     /// file lock for the lifetime of the log.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     dir: File,
 
     /// The directory path.
@@ -187,9 +186,12 @@ impl Wal {
         {
             match start_index.cmp(&next_start_index) {
                 Ordering::Less => {
-                    // TODO: figure out what to do here.
-                    // Current thinking is the previous segment should be truncated.
-                    unimplemented!()
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "overlapping segments: segment at {start_index} overlaps with already-covered range up to {next_start_index}"
+                        ),
+                    ));
                 }
                 Ordering::Equal => {
                     next_start_index = start_index + segment.len() as u64;
@@ -499,51 +501,6 @@ impl Wal {
         self.truncate(self.first_index())
     }
 
-    /// Copy all files to the given path directory. directory should exist and be empty
-    pub fn copy_to_path<P>(&self, path: P) -> Result<()>
-    where
-        P: AsRef<Path>,
-    {
-        if fs::read_dir(path.as_ref())?.next().is_some() {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                format!("path {:?} not empty", path.as_ref()),
-            ));
-        };
-
-        let open_segment_file = self.open_segment.segment.path().file_name().unwrap();
-        let close_segment_files: HashMap<_, _> = self
-            .closed_segments
-            .iter()
-            .map(|segment| {
-                (
-                    segment.segment.path().file_name().unwrap(),
-                    &segment.segment,
-                )
-            })
-            .collect();
-
-        for entry in fs::read_dir(self.path())? {
-            let entry = entry?;
-            if !entry.metadata()?.is_file() {
-                continue;
-            }
-
-            // if file is locked by any Segment, call copy_to_path on it
-            let entry_file_name = entry.file_name();
-            let dst_path = path.as_ref().to_owned().join(entry_file_name.clone());
-            if entry_file_name == open_segment_file {
-                self.open_segment.segment.copy_to_path(&dst_path)?;
-            } else if let Some(segment) = close_segment_files.get(entry_file_name.as_os_str()) {
-                segment.copy_to_path(&dst_path)?;
-            } else {
-                // if file is not locked by any Segment, just copy it
-                fs::copy(entry.path(), &dst_path)?;
-            }
-        }
-        Ok(())
-    }
-
     /// Set how many segments closed segments to retain on prefix truncation.
     ///
     /// Can't be less than 1. If 0 is provided, it will be set to 1.
@@ -554,19 +511,24 @@ impl Wal {
 
 impl fmt::Debug for Wal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let start_index = self
-            .closed_segments
+        let Self {
+            open_segment,
+            closed_segments,
+            path,
+            creator: _,
+            retain_closed: _,
+            dir: _,
+            flush: _,
+        } = self;
+        let start_index = closed_segments
             .first()
             .map_or(0, |segment| segment.start_index);
-        let end_index = self.open_segment_start_index() + self.open_segment.segment.len() as u64;
-        write!(
-            f,
-            "Wal {{ path: {:?}, segment-count: {}, entries: [{}, {})  }}",
-            &self.path,
-            self.closed_segments.len() + 1,
-            start_index,
-            end_index
-        )
+        let end_index = self.open_segment_start_index() + open_segment.segment.len() as u64;
+        f.debug_struct("Wal")
+            .field("path", path)
+            .field("segment-count", &(closed_segments.len() + 1))
+            .field("entries", &format_args!("[{start_index}, {end_index})"))
+            .finish_non_exhaustive()
     }
 }
 

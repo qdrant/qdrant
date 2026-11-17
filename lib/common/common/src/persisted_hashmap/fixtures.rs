@@ -4,21 +4,21 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use rand::RngExt;
 use rand::distr::StandardUniform;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::persisted_hashmap::Key;
 
 pub trait TestKey: Key + Ord + PartialEq<Self::Owned> {
     type Owned: Clone + Ord + Hash + Debug;
-    fn gen_key(rng: &mut StdRng, large: bool) -> Self::Owned;
+    fn gen_key(rng: &mut SmallRng, large: bool) -> Self::Owned;
     fn as_ref(owned: &Self::Owned) -> &Self;
     fn from_ref(this: &Self) -> Self::Owned;
 }
 
 impl TestKey for str {
     type Owned = String;
-    fn gen_key(rng: &mut StdRng, large: bool) -> Self::Owned {
+    fn gen_key(rng: &mut SmallRng, large: bool) -> Self::Owned {
         let range = if large { 5_000..=10_000 } else { 5..=32 };
         (0..rng.random_range(range))
             .map(|_| rng.random_range(b'a'..=b'z') as char)
@@ -34,7 +34,7 @@ impl TestKey for str {
 
 impl TestKey for i64 {
     type Owned = i64;
-    fn gen_key(rng: &mut StdRng, large: bool) -> Self::Owned {
+    fn gen_key(rng: &mut SmallRng, large: bool) -> Self::Owned {
         assert!(!large);
         rng.random()
     }
@@ -48,7 +48,7 @@ impl TestKey for i64 {
 
 impl TestKey for u128 {
     type Owned = u128;
-    fn gen_key(rng: &mut StdRng, large: bool) -> Self::Owned {
+    fn gen_key(rng: &mut SmallRng, large: bool) -> Self::Owned {
         assert!(!large);
         rng.random()
     }
@@ -63,14 +63,14 @@ impl TestKey for u128 {
 pub trait TestValue:
     Copy + Ord + Debug + FromBytes + IntoBytes + Immutable + KnownLayout + Sized
 {
-    fn gen_value(rng: &mut StdRng) -> Self;
+    fn gen_value(rng: &mut SmallRng) -> Self;
 }
 impl<T> TestValue for T
 where
     T: Copy + Ord + Debug + FromBytes + IntoBytes + Immutable + KnownLayout,
     StandardUniform: rand::distr::Distribution<T>,
 {
-    fn gen_value(rng: &mut StdRng) -> T {
+    fn gen_value(rng: &mut SmallRng) -> T {
         rng.random()
     }
 }

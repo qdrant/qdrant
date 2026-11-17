@@ -13,6 +13,10 @@ mod read_view;
 #[cfg(test)]
 mod tests;
 
+pub mod read_only;
+
+pub mod update_only;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -84,9 +88,11 @@ pub struct Segment {
     /// vector and payload storages are never written in place. Intended for
     /// S3-backed storages that prefer pure appends.
     ///
-    /// Runtime-only — not persisted in the segment state file. Only takes
-    /// effect when [`Segment::is_appendable`] is also true, see
-    /// [`Segment::is_append_only`].
+    /// Runtime-only — not persisted in the segment state file. Clone-based
+    /// mutations only take effect when [`Segment::is_appendable`] is also
+    /// true (see [`Segment::is_append_only`]); point *deletions* are
+    /// tombstone-only regardless of appendability (see
+    /// [`Segment::is_append_only_delete`]).
     pub append_only_mutations: bool,
     /// Shows what kind of indexes and storages are used in this segment
     pub segment_type: SegmentType,
@@ -94,6 +100,9 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
+    /// Pending changes log files found in the segment directory on load, part of this segment's
+    /// state until removed, see [`crate::pending_changes::recover_pending_changes`]
+    pub pending_changes_logs: Vec<PathBuf>,
 }
 
 pub struct VectorData {

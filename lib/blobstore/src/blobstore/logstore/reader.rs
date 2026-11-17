@@ -1,0 +1,281 @@
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+
+use common::ambient::hw::HwMetric;
+use common::generic_consts::AccessPattern;
+use common::universal_io::{
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+};
+
+use super::page::AppendOnlyPages;
+use super::view::LogstoreView;
+use crate::Result;
+use crate::blob::Blob;
+use crate::blobstore::ITER_BATCH_SIZE;
+use crate::blobstore::reader::CONFIG_FILENAME;
+use crate::config::LogstoreConfig;
+use crate::error::BlobstoreError;
+use crate::tracker::tracker_enum::TrackerEnum;
+use crate::tracker::{PointOffset, TrackerRead};
+
+/// Read-only storage for values of type `V`, operating in append-only mode.
+///
+/// Holds the tracker and pages directly (no locks) since it provides only read access.
+/// For read-write access, use [`Logstore`].
+///
+/// Value data is read through the universal IO backend `S`, mappings through the tracker `T`.
+/// Reads work with any [`TrackerRead`], opening and reloading are specific to the
+/// tracker type.
+#[derive(Debug)]
+pub struct LogstoreReader<V, S: UniversalRead, T> {
+    config: LogstoreConfig,
+    tracker: T,
+    pages: AppendOnlyPages<S>,
+    base_path: PathBuf,
+    /// How to populate the files on open, and pages adopted on live reload
+    populate: Populate,
+    _phantom: PhantomData<V>,
+}
+
+impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
+    /// Schedule prefetches for the files a subsequent [`open`](Self::open) reads: the tracker
+    /// file and the page files.
+    ///
+    /// The config file is scheduled by the mode dispatching reader, which reads it first to
+    /// select the operating mode.
+    pub(crate) fn preopen<Fs: CachedReadFs<File = S>>(
+        fs: &Fs,
+        base_path: &Path,
+        populate: Populate,
+    ) -> Result<()> {
+        TrackerEnum::<S>::preopen(fs, base_path, populate)?;
+        AppendOnlyPages::<S>::preopen(fs, base_path, populate)
+    }
+
+    /// Open an existing read-only storage at the given path, with the already read config.
+    ///
+    /// Unlike the writable open, doesn't validate the most recent mappings against the page
+    /// files: that check reads the tracker tail, a blocking round trip on remote storage that no
+    /// prefetch covers. A dangling mapping surfaces as an error when its value is read instead.
+    pub(crate) fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        base_path: PathBuf,
+        config: LogstoreConfig,
+        populate: Populate,
+    ) -> Result<Self> {
+        let tracker = TrackerEnum::open_read_only(fs, &base_path, populate)?;
+        let pages = AppendOnlyPages::open(fs, &base_path, false, populate)?;
+
+        Ok(Self {
+            config,
+            tracker,
+            pages,
+            base_path,
+            populate,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// List all files belonging to this reader (tracker, pages, config).
+    pub(crate) fn files(&self) -> Vec<PathBuf> {
+        let mut paths = self.tracker.files();
+        paths.extend(self.pages.files());
+        paths.push(self.base_path.join(CONFIG_FILENAME));
+        paths
+    }
+
+    pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> Result<Vec<PreloadFuture>> {
+        match &self.tracker {
+            TrackerEnum::AppendOnly(tracker) => {
+                let mut futs = vec![tracker.live_preload(fs)?];
+                futs.extend(self.pages.live_preload(fs, self.populate)?);
+                Ok(futs)
+            }
+            // Nothing changes on disk, see `live_reload`
+            TrackerEnum::Compacted(_) => Ok(Vec::new()),
+        }
+    }
+
+    /// This method reloads the storage from "disk", so that it makes newly appended data
+    /// readable.
+    ///
+    /// Mappings only become visible once the pages holding their value data are loaded, so a
+    /// failure leaves the reader serving its previous, consistent state instead of a half
+    /// reloaded one.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Data is append-only, existing mappings and value data never change.
+    /// - Partial writes are possible, but ignored: a trailing partial tracker entry is not
+    ///   counted.
+    ///
+    /// A storage with a compacted tracker is complete and never changes, reloading it is a no-op.
+    pub(crate) fn live_reload<Fs: UniversalReadFs<File = S>>(&mut self, fs: &Fs) -> Result<()> {
+        let tracker = match &mut self.tracker {
+            TrackerEnum::AppendOnly(tracker) => tracker,
+            TrackerEnum::Compacted(_) => return Ok(()),
+        };
+
+        // A writer always updates the pages before the tracker, and it is not synchronized with
+        // readers. Observe the tracker first, so that the mappings counted here are backed by
+        // page data that the page reload below is guaranteed to see. Observing the pages first
+        // would let the tracker name value data appended after the pages were read.
+        let reload = tracker.reload_count()?;
+
+        self.pages.live_reload(fs, self.populate)?;
+
+        // Publish the mappings last: until this point a failure above is harmless, as pages
+        // running ahead of the tracker is the safe direction — the extra value data is simply
+        // unreferenced.
+        tracker.commit_reload(reload);
+
+        Ok(())
+    }
+
+    /// Ask to evict the tracker and all pages from the RAM cache.
+    pub(crate) fn clear_cache(&self) -> crate::Result<()> {
+        let Self {
+            config: _,
+            tracker,
+            pages,
+            base_path: _,
+            populate: _,
+            _phantom,
+        } = self;
+        tracker.clear_cache()?;
+        pages.clear_cache()?;
+        Ok(())
+    }
+}
+
+impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
+    /// Create an [`LogstoreView`] borrowing this reader's data.
+    pub(crate) fn view(&self) -> LogstoreView<'_, V, S, T> {
+        LogstoreView::new(&self.config, &self.tracker, &self.pages)
+    }
+
+    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
+    }
+
+    pub(crate) fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        self.view().get_value::<P>(point_offset, hw_metric)
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub(crate) fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<Vec<u8>>> {
+        let view = self.view();
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
+        Ok(bytes.map(std::borrow::Cow::into_owned))
+    }
+
+    /// Iterate over all values with point offsets below `max_id` and execute callback for each
+    /// one. Missing values are skipped.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub(crate) fn iter<F, E>(
+        &self,
+        max_id: PointOffset,
+        mut callback: F,
+        hw_metric: HwMetric,
+    ) -> Result<(), E>
+    where
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
+        E: From<BlobstoreError>,
+    {
+        let max_id = max_id.min(self.max_point_offset()?);
+        let view = self.view();
+
+        // Iterate in batches to bound the size of the tracker reads
+        let mut batch = Vec::new();
+        let mut current_offset = 0;
+        while current_offset < max_id {
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
+
+            if !view.iter_range(
+                current_offset..end_offset,
+                &mut batch,
+                &mut callback,
+                hw_metric,
+            )? {
+                return Ok(());
+            }
+
+            current_offset = end_offset;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.view().read_values::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, value| -> Result<_, E> {
+                callback(user_data, point_offset, value)?;
+                Ok(true)
+            },
+            hw_metric,
+        )?;
+
+        Ok(())
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`].
+    pub(crate) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.view().read_values_bytes::<P, _, _>(
+            point_offsets,
+            move |user_data, point_offset, bytes| -> Result<_, E> {
+                callback(user_data, point_offset, bytes)?;
+                Ok(true)
+            },
+            hw_metric,
+        )?;
+
+        Ok(())
+    }
+
+    /// Return the storage size in bytes (precise, the exact amount of appended value data).
+    pub(crate) fn get_storage_size_bytes(&self) -> usize {
+        self.view().get_storage_size_bytes()
+    }
+}
+
+impl<V, S: UniversalRead, T> LogstoreReader<V, S, T> {
+    /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
+    pub(crate) fn is_cold(&self) -> bool {
+        !self.populate.to_bool::<S>()
+    }
+}

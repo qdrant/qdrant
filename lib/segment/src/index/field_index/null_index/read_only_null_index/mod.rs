@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use common::universal_io::UniversalRead;
 
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::index::payload_config::IndexMutability;
 
 mod lifecycle;
@@ -11,14 +11,14 @@ mod read_ops;
 
 /// Read-only counterpart of [`MutableNullIndex`][1] / [`ImmutableNullIndex`][2].
 ///
-/// All flags are loaded into in-memory roaring bitmaps on open. The backing
-/// storage is bound to [`UniversalRead`][3] only — no buffer, no flusher,
-/// no write path. Query logic (filter / cardinality / condition checker) is
+/// Flags are materialized into in-memory roaring bitmaps on first use, not on
+/// open — nothing this index needs at open touches them. The backing storage is
+/// bound to [`UniversalRead`][3] only — no buffer, no flusher, no write path. Query logic (filter / cardinality / condition checker) is
 /// shared with the writable variant via the [`NullIndexRead`][4] trait.
 ///
-/// Each [`ReadOnlyRoaringFlags`] retains its backend `S` so a [`LiveReload`][5]
-/// can reopen the bitslice and apply only the changed positions on reload,
-/// instead of re-materializing the bitmaps from scratch.
+/// Each [`ReadOnlyFlags`] retains its backend `S` so a [`LiveReload`][5]
+/// can reopen the backing files and resync on reload, instead of
+/// re-materializing the bitmaps from scratch.
 ///
 /// [1]: super::mutable_null_index::MutableNullIndex
 /// [2]: super::immutable_null_index::ImmutableNullIndex
@@ -33,9 +33,9 @@ pub struct ReadOnlyNullIndex<S: UniversalRead> {
 
 pub(super) struct ReadOnlyStorage<S: UniversalRead> {
     /// Points which have at least one value
-    pub(super) has_values_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) has_values_flags: ReadOnlyFlags<S>,
     /// Points which have null values
-    pub(super) is_null_flags: ReadOnlyRoaringFlags<S>,
+    pub(super) is_null_flags: ReadOnlyFlags<S>,
 }
 
 impl<S: UniversalRead> ReadOnlyNullIndex<S> {
@@ -62,9 +62,9 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -84,16 +84,14 @@ mod tests {
     #[test]
     fn read_only_null_index_round_trip() {
         let dir = TempDir::with_prefix("read_only_null_index").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
         let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
-        builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
-        builder
-            .add_point(1, &[&null_in_array], &hw_counter)
-            .unwrap(); // null + values
-        builder.add_point(2, &[], &hw_counter).unwrap(); // empty
-        builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
+        builder.add_point(0, &[&Value::Null]).unwrap(); // null, no values
+        builder.add_point(1, &[&null_in_array]).unwrap(); // null + values
+        builder.add_point(2, &[]).unwrap(); // empty
+        builder.add_point(3, &[&json!(true)]).unwrap(); // values, not null
         let total = 4;
         builder.finalize().unwrap();
 
@@ -134,42 +132,30 @@ mod tests {
 
         // Bitmap-driven branches: the set positions came back intact.
         assert_eq!(
-            index
-                .filter(&is_null, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_null).unwrap().unwrap().collect_vec(),
             vec![0, 1],
         );
         assert_eq!(
-            index
-                .filter(&is_not_empty, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_not_empty).unwrap().unwrap().collect_vec(),
             vec![1, 3],
         );
         // `len`-driven branch: iter_falses over [0, len) chained with [len, total).
         // Wrong `len` (e.g. 0) would wrongly include points 1 and 3 here.
         assert_eq!(
-            index
-                .filter(&is_empty, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_empty).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
         // Length read straight from the status file.
-        assert_eq!(index.count_indexed_points(), 4);
+        assert_eq!(index.count_indexed_points().unwrap(), 4);
 
-        assert!(index.values_is_empty(0));
-        assert!(!index.values_is_empty(1));
-        assert!(index.values_is_empty(2));
-        assert!(!index.values_is_empty(3));
+        assert!(index.values_is_empty(0).unwrap());
+        assert!(!index.values_is_empty(1).unwrap());
+        assert!(index.values_is_empty(2).unwrap());
+        assert!(!index.values_is_empty(3).unwrap());
 
-        assert!(index.values_is_null(0));
-        assert!(index.values_is_null(1));
-        assert!(!index.values_is_null(3));
+        assert!(index.values_is_null(0).unwrap());
+        assert!(index.values_is_null(1).unwrap());
+        assert!(!index.values_is_null(3).unwrap());
     }
 
     /// The incremental `LiveReload` path must land on exactly the same in-memory
@@ -180,20 +166,31 @@ mod tests {
     /// null point is appended. `live_reload` is handed only that delta, yet its
     /// bitmaps and the `total_point_count`-driven `is_empty` results must match
     /// the authoritative re-open.
+    /// The bitmaps are lazy, so `live_reload` has two distinct paths: patch the
+    /// in-memory bitmap in place, or — when nothing has materialized it yet —
+    /// leave it alone and let the eventual scan read the updated file. Both must
+    /// land on the same state, so both are exercised.
     #[test]
-    fn live_reload_matches_fresh_open() {
+    fn live_reload_matches_fresh_open_materialized() {
+        live_reload_matches_fresh_open(true);
+    }
+
+    #[test]
+    fn live_reload_matches_fresh_open_lazy() {
+        live_reload_matches_fresh_open(false);
+    }
+
+    fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_null_index_live_reload").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Initial on-disk state: points 0..=3 (total 4).
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
         let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
-        builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
-        builder
-            .add_point(1, &[&null_in_array], &hw_counter)
-            .unwrap(); // null + values
-        builder.add_point(2, &[], &hw_counter).unwrap(); // empty
-        builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
+        builder.add_point(0, &[&Value::Null]).unwrap(); // null, no values
+        builder.add_point(1, &[&null_in_array]).unwrap(); // null + values
+        builder.add_point(2, &[]).unwrap(); // empty
+        builder.add_point(3, &[&json!(true)]).unwrap(); // values, not null
         let mut index = builder.finalize().unwrap();
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -204,11 +201,18 @@ mod tests {
             .unwrap()
             .unwrap();
 
+        if materialize_before_reload {
+            // Pull both bitmaps into memory, so the reload below takes its
+            // in-place delta path rather than deferring to a later scan.
+            reloaded.values_is_null(0).unwrap();
+            reloaded.values_is_empty(0).unwrap();
+        }
+
         // Writer's delta: drop point 1, flip point 2 (empty -> value), append a
         // null point 4 (which grows `total_point_count` to 5).
         index.remove_point(1).unwrap();
-        index.add_point(2, &[&json!(true)], &hw_counter).unwrap();
-        index.add_point(4, &[&Value::Null], &hw_counter).unwrap();
+        index.add_point(2, &[&json!(true)]).unwrap();
+        index.add_point(4, &[&Value::Null]).unwrap();
         index.flusher()().unwrap();
         let total = 5;
 
@@ -217,7 +221,6 @@ mod tests {
                 &fs,
                 &SortedSlice::new(&[1]).unwrap(),
                 &SortedSlice::new(&[2, 4]).unwrap(),
-                &hw_counter,
             )
             .unwrap();
 
@@ -250,44 +253,24 @@ mod tests {
             is_null: None,
         };
 
-        let reloaded_null = reloaded
-            .filter(&is_null, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let reloaded_null = reloaded.filter(&is_null).unwrap().unwrap().collect_vec();
         let reloaded_not_empty = reloaded
-            .filter(&is_not_empty, &hw_counter)
+            .filter(&is_not_empty)
             .unwrap()
             .unwrap()
             .collect_vec();
-        let reloaded_empty = reloaded
-            .filter(&is_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_null = fresh
-            .filter(&is_null, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_not_empty = fresh
-            .filter(&is_not_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_empty = fresh
-            .filter(&is_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let reloaded_empty = reloaded.filter(&is_empty).unwrap().unwrap().collect_vec();
+        let fresh_null = fresh.filter(&is_null).unwrap().unwrap().collect_vec();
+        let fresh_not_empty = fresh.filter(&is_not_empty).unwrap().unwrap().collect_vec();
+        let fresh_empty = fresh.filter(&is_empty).unwrap().unwrap().collect_vec();
 
         // Parity with the authoritative re-open …
         assert_eq!(reloaded_null, fresh_null);
         assert_eq!(reloaded_not_empty, fresh_not_empty);
         assert_eq!(reloaded_empty, fresh_empty);
         assert_eq!(
-            reloaded.count_indexed_points(),
-            fresh.count_indexed_points()
+            reloaded.count_indexed_points().unwrap(),
+            fresh.count_indexed_points().unwrap()
         );
 
         // … and the concrete expected sets. Point 2's flip moves it from empty
@@ -296,7 +279,7 @@ mod tests {
         assert_eq!(reloaded_null, vec![0, 4]);
         assert_eq!(reloaded_not_empty, vec![2, 3]);
         assert_eq!(reloaded_empty, vec![0, 1, 4]);
-        assert_eq!(reloaded.count_indexed_points(), 5);
+        assert_eq!(reloaded.count_indexed_points().unwrap(), 5);
     }
 
     /// A partial on-disk layout — exactly one of the `has_values` / `is_null`
@@ -309,10 +292,10 @@ mod tests {
 
         let build = || {
             let dir = TempDir::with_prefix("read_only_null_inconsistent").unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
             let value = json!(true);
-            builder.add_point(0, &[&value], &hw_counter).unwrap();
+            builder.add_point(0, &[&value]).unwrap();
             builder.finalize().unwrap();
             dir
         };

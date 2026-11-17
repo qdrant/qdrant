@@ -7,9 +7,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{
-    OpenOptions, Populate, StoredStruct, UniversalReadFileOps, UniversalWrite,
-};
+use common::universal_io::{OpenOptions, Populate, StoredStruct, UniversalReadFs, UniversalWrite};
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -21,7 +19,7 @@ const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
 pub(super) const FLAGS_FILE: &str = "flags_a.dat";
-const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
+pub(super) const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
 
 pub(super) const STATUS_FILE_NAME: &str = "status.dat";
 
@@ -70,11 +68,16 @@ pub struct DynamicStoredFlags<S> {
 
 impl<S: fmt::Debug> fmt::Debug for DynamicStoredFlags<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DynamicMmapFlags")
-            .field("flags", &self.flags)
-            .field("status", &self.status)
-            .field("directory", &self.directory)
-            .finish_non_exhaustive()
+        let Self {
+            flags,
+            status,
+            directory,
+        } = self;
+        f.debug_struct("DynamicStoredFlags")
+            .field("flags", flags)
+            .field("status", status)
+            .field("directory", directory)
+            .finish()
     }
 }
 
@@ -101,13 +104,13 @@ where
         let status_file = status_file(directory);
         if !fs.exists(&status_file)? {
             let length = std::mem::size_of::<DynamicFlagsStatus>();
-            //TODO(uio): migrate when UniversalWriteFileOps is available
+            //TODO(uio): migrate when UniversalWriteFs is available
             create_and_ensure_length(&status_file, length)?;
         }
         Ok(status_file)
     }
 
-    pub fn open(fs: &S::Fs, directory: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open(fs: &S::Fs, directory: &Path, populate: Populate) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_path = Self::ensure_status_file(fs, directory)?;
 
@@ -146,7 +149,7 @@ where
         fs: &S::Fs,
         num_flags: usize,
         directory: &Path,
-        populate: bool,
+        populate: Populate,
     ) -> OperationResult<StoredBitSlice<S>> {
         let capacity_bytes = file_size_for(num_flags);
         let path = directory.join(FLAGS_FILE);
@@ -163,7 +166,7 @@ where
         let options = OpenOptions {
             writeable: true,
             need_sequential: false,
-            populate: Populate::from(populate),
+            populate,
             advice: AdviceSetting::Global,
         };
         let flags = StoredBitSlice::open(fs, &path, options, Default::default())?;
@@ -197,8 +200,8 @@ where
             self.flags.flusher()()?;
 
             // Don't read the whole file on resize
-            let populate = false;
-            // TODO: consider using UniversalRead::reopen
+            let populate = Populate::No;
+            // TODO(uio): consider using UniversalRead::live_reload
             let flags = Self::open_storage(fs, new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
@@ -282,9 +285,12 @@ where
 
     /// Iterate over all "true" flags
     pub fn iter_trues(&self) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
-        // Unused capacity past `len` is always cleared, so iterating set bits
-        // over the whole storage yields exactly the "true" positions.
-        Ok(self.flags.iter_ones()?.map(|i| i as PointOffsetType))
+        // Only scan up to `len`: capacity past it is always cleared, and can be much
+        // larger (at least `MINIMAL_MMAP_SIZE`), so scanning it faults in zero pages.
+        Ok(self
+            .flags
+            .iter_ones_up_to(self.len() as u64)?
+            .map(|i| i as PointOffsetType))
     }
 
     /// Populate all pages in the mmap.
@@ -335,7 +341,7 @@ mod tests_mod {
 
         {
             let mut dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), false).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::No).unwrap();
             dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
             random_flags
                 .iter()
@@ -357,7 +363,8 @@ mod tests_mod {
 
         {
             let dynamic_flags =
-                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+                DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking)
+                    .unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i).unwrap(), *flag);
@@ -374,7 +381,7 @@ mod tests_mod {
 
         // Create randomized dynamic mmap flags to test counting
         let mut dynamic_flags =
-            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), true).unwrap();
+            DynamicStoredFlags::<S>::open(&Fs::default(), dir.path(), Populate::Blocking).unwrap();
         dynamic_flags.set_len(&Fs::default(), num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags

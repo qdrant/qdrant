@@ -1,16 +1,18 @@
 use std::path::{Path, PathBuf};
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::reason::reason;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
+use common::universal_io::{MmapFs, Populate};
 use fs_err as fs;
 use serde_json::Value;
 
 use super::super::read_ops::NullIndexRead;
 use super::{HAS_VALUES_DIRNAME, IS_NULL_DIRNAME, MutableNullIndex, Storage};
 use crate::common::Flusher;
-use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
+use crate::common::flags::FlagsMode;
 use crate::common::flags::roaring_flags::RoaringFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex};
@@ -76,13 +78,19 @@ impl MutableNullIndex {
             ))
         })?;
 
-        let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_mmap = DynamicStoredFlags::open(&MmapFs, &has_values_path, false)?;
-        let has_values_flags = RoaringFlags::new(MmapFs, has_values_mmap)?;
+        let has_values_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(HAS_VALUES_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
-        let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_mmap = DynamicStoredFlags::open(&MmapFs, &is_null_path, false)?;
-        let is_null_flags = RoaringFlags::new(MmapFs, is_null_mmap)?;
+        let is_null_flags = RoaringFlags::open_or_create(
+            MmapFs,
+            &path.join(IS_NULL_DIRNAME),
+            FlagsMode::from_feature_flags(),
+            Populate::No,
+        )?;
 
         let storage = Storage {
             has_values_flags,
@@ -96,45 +104,8 @@ impl MutableNullIndex {
         })
     }
 
-    pub fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let mut is_null = false;
-        let mut has_values = false;
-
-        for value in payload {
-            match value {
-                Value::Null => {
-                    is_null = true;
-                }
-                Value::Bool(_) => {
-                    has_values = true;
-                }
-                Value::Number(_) => {
-                    has_values = true;
-                }
-                Value::String(_) => {
-                    has_values = true;
-                }
-                Value::Array(array) => {
-                    if array.iter().any(|v| v.is_null()) {
-                        is_null = true;
-                    }
-                    if !array.is_empty() {
-                        has_values = true;
-                    }
-                }
-                Value::Object(_) => {
-                    has_values = true;
-                }
-            }
-            if is_null && has_values {
-                break;
-            }
-        }
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
+        let (has_values, is_null) = classify_payload(payload);
 
         self.storage.has_values_flags.set(id, has_values);
         self.storage.is_null_flags.set(id, is_null);
@@ -143,9 +114,9 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        hw_counter.payload_index_io_write_counter().incr_delta(2);
+        HwMetric::PayloadIndexIoWrite.bump(2);
 
-        Ok(())
+        Ok(has_values)
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -161,8 +132,8 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        let hw_counter = HardwareCounterCell::disposable();
-        hw_counter.payload_index_io_write_counter().incr_delta(2);
+        let _scope = ambient::unmeasured_guard(reason("TODO: attribute to the caller's operation"));
+        HwMetric::PayloadIndexIoWrite.bump(2);
 
         Ok(())
     }
@@ -172,7 +143,7 @@ impl MutableNullIndex {
         self.storage.has_values_flags.set_immutable(id, false);
         self.storage.is_null_flags.set_immutable(id, false);
 
-        // N.B. We do not update total_point_count because it comes from the id tracker and is not not changed
+        // N.B. We do not update total_point_count because it comes from the id tracker and is not changed
         // in non-appendable segments.
 
         // N.B. No I/O, do not update hw_counter.
@@ -210,7 +181,7 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new() // everything is mutable
+        NullIndexRead::immutable_files(self)
     }
 }
 
@@ -228,9 +199,8 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+    ) -> OperationResult<bool> {
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -238,4 +208,47 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         self.0.flusher()()?;
         Ok(self.0)
     }
+}
+
+/// What the null index records about a point: whether its field holds any
+/// value at all, and whether any of those values is null.
+///
+/// An array counts as holding values when it is non-empty, and as null when any
+/// of its elements is; both can be true at once.
+pub(super) fn classify_payload(payload: &[&Value]) -> (bool, bool) {
+    let mut is_null = false;
+    let mut has_values = false;
+
+    for value in payload {
+        match value {
+            Value::Null => {
+                is_null = true;
+            }
+            Value::Bool(_) => {
+                has_values = true;
+            }
+            Value::Number(_) => {
+                has_values = true;
+            }
+            Value::String(_) => {
+                has_values = true;
+            }
+            Value::Array(array) => {
+                if array.iter().any(|v| v.is_null()) {
+                    is_null = true;
+                }
+                if !array.is_empty() {
+                    has_values = true;
+                }
+            }
+            Value::Object(_) => {
+                has_values = true;
+            }
+        }
+        if is_null && has_values {
+            break;
+        }
+    }
+
+    (has_values, is_null)
 }

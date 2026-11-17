@@ -1,0 +1,217 @@
+use std::borrow::Cow;
+
+use common::ambient::hw::HwMetric;
+use common::generic_consts::{AccessPattern, Random};
+use common::universal_io::{UniversalRead, UserData};
+
+use super::pages::Pages;
+use crate::Result;
+use crate::blob::Blob;
+use crate::config::{GridstoreConfig, decompressed_len};
+use crate::error::BlobstoreError;
+use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
+
+/// A non-owning view into gridstore data.
+///
+/// Holds borrowed references to pages and tracker, and contains all reading logic.
+/// Generic over the storage backend `S` (same as [`Pages<S>`]) and over the
+/// tracker type `T` — the writable [`Tracker`](crate::tracker::Tracker) for
+/// [`crate::Blobstore`], the [`ReadOnlyTracker`](crate::tracker::ReadOnlyTracker)
+/// for [`crate::BlobstoreReader`].
+pub(crate) struct GridstoreView<'a, V, S: UniversalRead, T: TrackerRead> {
+    config: &'a GridstoreConfig,
+    tracker: &'a T,
+    pages: &'a Pages<S>,
+    _value_type: std::marker::PhantomData<V>,
+}
+
+impl<'a, V, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
+    pub(super) fn new(config: &'a GridstoreConfig, tracker: &'a T, pages: &'a Pages<S>) -> Self {
+        Self {
+            config,
+            tracker,
+            pages,
+            _value_type: std::marker::PhantomData,
+        }
+    }
+
+    /// Exclusive upper bound of point offsets that may have a value.
+    ///
+    /// Exact for the writable tracker; the stored header count as of the last
+    /// reload for the read-only one — see [`TrackerRead::max_point_offset`].
+    pub fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
+    }
+
+    fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        self.tracker.get::<Random>(point_offset)
+    }
+
+    /// Return the storage size in bytes (approximate: total page capacity).
+    pub fn get_storage_size_bytes(&self) -> usize {
+        self.pages.num_pages() * self.config.page_size_bytes
+    }
+
+    /// Read raw value from the pages, considering that values can span more than one page.
+    pub fn read_from_pages<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+    ) -> Result<Cow<'_, [u8]>> {
+        self.pages.read_from_pages::<P>(pointer, self.config)
+    }
+
+    /// Decompressed length of each value; reads at most its length prefix.
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+        let mut pointers = Vec::new();
+        for result in self.tracker.iter(point_offsets)? {
+            let ((user_data, point_offset), pointer) = result?;
+            match pointer {
+                PointerItem::Valid(pointer) => pointers.push(((user_data, point_offset), pointer)),
+                PointerItem::Empty | PointerItem::OutOfRange => {
+                    if !callback(user_data, point_offset, None)? {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
+        let Some(prefix) = self.config.compression.len_prefix() else {
+            for ((user_data, point_offset), pointer) in pointers {
+                if !callback(user_data, point_offset, Some(pointer.length as usize))? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
+        };
+        self.pages.read_batch_from_pages::<P, _, _>(
+            self.config,
+            pointers.into_iter().map(|(key, pointer)| {
+                let length = pointer.length.min(prefix);
+                (key, ValuePointer { length, ..pointer })
+            }),
+            |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
+                callback(user_data, point_offset, Some(decompressed_len(&bytes)?))
+            },
+        )
+    }
+}
+
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
+    pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
+        self.config.compression.compress(value)
+    }
+
+    pub(super) fn decompress<'val>(&self, value: Cow<'val, [u8]>) -> Result<Cow<'val, [u8]>> {
+        self.config.compression.decompress(value)
+    }
+
+    /// Get the value for a given point offset.
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_metric)?;
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<Cow<'_, [u8]>>> {
+        let Some(pointer) = self.get_pointer(point_offset)? else {
+            return Ok(None);
+        };
+
+        let raw = self.read_from_pages::<P>(pointer)?;
+        hw_metric.bump(raw.len());
+
+        Ok(Some(self.decompress(raw)?))
+    }
+
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, point_offset, bytes| {
+                let value = bytes.map(V::from_bytes).transpose()?;
+                callback(user_data, point_offset, value)
+            },
+            hw_metric,
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce.
+    pub fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        let mut pointers = Vec::new();
+
+        for result in self.tracker.iter(point_offsets)? {
+            let ((user_data, point_offset), pointer) = result?;
+
+            let PointerItem::Valid(pointer) = pointer else {
+                if !callback(user_data, point_offset, None)? {
+                    return Ok(false);
+                }
+
+                continue;
+            };
+
+            pointers.push(((user_data, point_offset), pointer));
+        }
+
+        self.pages.read_batch_from_pages::<P, _, _>(
+            self.config,
+            pointers.into_iter(),
+            |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
+
+                let decompressed = self.decompress(bytes)?;
+                callback(user_data, point_offset, Some(&decompressed))
+            },
+        )
+    }
+}

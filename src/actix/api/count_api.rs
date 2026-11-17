@@ -2,11 +2,13 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;
+use common::ambient::AmbientFutureExt;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use super::CollectionPath;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
@@ -21,6 +23,7 @@ async fn count_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let CountRequest {
         count_request,
@@ -59,11 +62,12 @@ async fn count_points(
         &collection.collection_name,
         count_request,
         params.consistency,
+        routing_token,
         params.timeout(),
         shard_selector,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())

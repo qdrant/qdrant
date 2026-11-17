@@ -72,11 +72,12 @@ impl CollectionsInternal for CollectionsInternalService {
         let InitiateShardTransferRequest {
             collection_name,
             shard_id,
+            from_peer_id,
         } = request.into_inner();
 
         // TODO: Ensure cancel safety!
         self.toc
-            .initiate_receiving_shard(collection_name, shard_id)
+            .initiate_receiving_shard(collection_name, shard_id, from_peer_id)
             .await?;
 
         let response = CollectionOperationResponse {

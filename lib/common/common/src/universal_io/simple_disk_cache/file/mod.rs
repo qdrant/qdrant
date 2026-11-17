@@ -1,0 +1,259 @@
+//! [`DiskCache`]: a lazily-populated local mirror of an append-only remote
+//! file.
+
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use aligned_vec::{AVec, RuntimeAlign};
+use futures::FutureExt;
+use futures::channel::oneshot::Receiver;
+use futures::future::{BoxFuture, Shared};
+use parking_lot::Mutex;
+
+use super::local_state::LocalState;
+use super::{DiskCacheFs, DiskCacheRemote};
+use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
+use crate::universal_io::{
+    OpenOptions, OwnedPipeline, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
+};
+
+mod init;
+mod read;
+mod reopen;
+
+/// A staged tail fetch, shared by every waiter. Resolves to a copy of the
+/// fetch error, while the owned result travels to the apply through the
+/// staged `data` receiver.
+type SharedFetch = Shared<BoxFuture<'static, Result<(), Arc<UniversalIoError>>>>;
+
+/// A lazily-populated local mirror of an append-only remote file.
+///
+/// The remote's existing bytes are assumed to be immutable for the lifetime
+/// of the file: it may grow externally (picked up by [`live_reload`]), but never
+/// shrink or change in place. This type implements [`UniversalRead`] only —
+/// appends are deliberately not supported through the cache (append
+/// directly to the backing storage instead), and random-offset writes stay
+/// unsupported. It is important to respect immutability, since with current
+/// architecture random-offset writes can cause UB or data races, as described
+/// in Security Advisory [GHSA-hwvf-r68q-v2g7](https://github.com/qdrant/qdrant/security/advisories/GHSA-hwvf-r68q-v2g7)
+///
+/// The local mirror can either be initialized lazily on first read (filling
+/// blocks on demand from the remote) or eagerly if populate is set. See
+/// [`init`] for the precise lifecycle.
+///
+/// Every instance mirrors into its own uniquely-named local file (see
+/// [`unique_local_path`](super::fs)), so multiple instances per remote path
+/// are safe — e.g. a live-reload can open a fresh handle while the old one is
+/// still alive. Each instance fetches from the remote independently though,
+/// so per-path handles should not be multiplied without reason. The mirror
+/// file is removed on drop.
+#[derive(Debug)]
+pub struct DiskCache<R>
+where
+    R: UniversalRead + 'static,
+{
+    /// Clone of the remote filesystem handle, used to lazily open `remote`.
+    remote_fs: R::Fs,
+    /// Backend-specific per-open extras for the remote.
+    remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
+    /// Path to the remote file. Used to lazily open `remote`.
+    remote_path: PathBuf,
+    /// Open options for when the local mmap is initialized.
+    pub(super) open_options: OpenOptions,
+    /// Path to the local mmap file.
+    pub(super) local_path: PathBuf,
+    /// The cache's lifecycle state, initialized lazily on first use.
+    pub(super) state: Mutex<State<R>>,
+    /// Fast-path gate: `true` when `state` is [`State::Ready`].
+    pub(super) is_ready: AtomicBool,
+    /// Entity tag of the remote object, as last known: seeded from the open
+    /// extras, refreshed by [`live_preload`] and [`set_etag`](Self::set_etag).
+    ///
+    /// [`live_preload`]: UniversalRead::live_preload
+    etag: Mutex<Option<String>>,
+}
+
+/// The lifecycle of a [`DiskCache`]'s local mirror, from "not yet materialized"
+/// through to the live [`Ready`](Self::Ready) mirror.
+#[derive(Debug)]
+pub(crate) enum State<R: UniversalRead + 'static> {
+    /// Uninitialized start. Chosen for `Populate::No` / `Auto`.
+    Uninit,
+    /// The live mirror: the opened `remote` handle paired with its local mmap.
+    Ready {
+        remote: R,
+        local: LocalState,
+        /// What the next [`live_reload`] must do. Staged by [`live_preload`],
+        /// consumed (reset to [`ScheduledReopen::No`]) by [`live_reload`]. Only
+        /// touched under `&mut self`, and `ReadyRef` borrows just
+        /// `remote`/`local`, so staging never disturbs the served state.
+        ///
+        /// [`live_reload`]: UniversalRead::live_reload
+        /// [`live_preload`]: UniversalRead::live_preload
+        scheduled_reopen: Option<ScheduledReopen<R>>,
+    },
+    /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
+    /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
+    /// `PreferBackground`.
+    OpenPrefill { pipeline: OwnedPipeline<R, ()> },
+    /// Open-time partial prefill
+    PartialPrefill {
+        pipeline: OwnedPipeline<R, Range<u32>>,
+        len: u64,
+    },
+}
+
+/// The obligation of the next [`live_reload`](UniversalRead::live_reload), staged ahead
+/// of time by [`live_preload`](UniversalRead::live_preload).
+///
+/// Staging deliberately leaves the mirror alone: its length keeps matching its
+/// persisted content until the apply, so readers observe nothing in between
+/// and components keep `len()` as their growth signal. Nothing else remembers
+/// the staged targets, hence the `target_len` on every variant.
+#[derive(Debug)]
+#[expect(clippy::type_complexity)]
+pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
+    /// File size has not changed.
+    Unchanged,
+    /// Resize mirror to `target_len`; new blocks fault in on demand.
+    Resize { target_len: u64 },
+    /// Bounded tail fetch for populated files with known length.
+    Tail {
+        future: SharedFetch,
+        data: Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
+        blocks_range: Range<u32>,
+        target_len: u64,
+    },
+    /// Unbounded tail fetch for populated files with unknown length.
+    UnboundedTail {
+        future: SharedFetch,
+        data: Receiver<UioResult<(R, u64, AVec<u8, RuntimeAlign>)>>,
+        from: u64,
+    },
+}
+
+impl<R: UniversalRead + 'static> ScheduledReopen<R> {
+    /// Length the scheduled reopen would bring the mirror to, if anything is
+    /// staged with a known length.
+    pub(super) fn target_len(&self) -> Option<u64> {
+        match self {
+            ScheduledReopen::Unchanged
+            | ScheduledReopen::UnboundedTail {
+                future: _,
+                data: _,
+                from: _,
+            } => None,
+            ScheduledReopen::Resize { target_len }
+            | ScheduledReopen::Tail {
+                target_len,
+                data: _,
+                future: _,
+                blocks_range: _,
+            } => Some(*target_len),
+        }
+    }
+
+    pub(super) fn future(&self) -> SharedFetch {
+        match self {
+            ScheduledReopen::Tail { future, .. }
+            | ScheduledReopen::UnboundedTail { future, .. } => future.clone(),
+            ScheduledReopen::Unchanged | ScheduledReopen::Resize { .. } => {
+                async { Ok(()) }.boxed().shared()
+            }
+        }
+    }
+
+    /// `true` if a staged fetch already completed with an error. Such a
+    /// reopen can only fail, so the next `live_preload` stages it again.
+    pub(super) fn has_failed(&self) -> bool {
+        self.future().peek().is_some_and(Result::is_err)
+    }
+}
+
+impl<R: UniversalRead + 'static> State<R> {
+    /// A live mirror with nothing staged — the default at every construction
+    /// site.
+    pub fn ready(remote: R, local: LocalState) -> Self {
+        State::Ready {
+            remote,
+            local,
+            scheduled_reopen: None,
+        }
+    }
+
+    #[inline]
+    pub fn is_ready(&self) -> bool {
+        match self {
+            State::Ready { .. } => true,
+            State::Uninit | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_uninit(&self) -> bool {
+        match self {
+            State::Uninit => true,
+            State::Ready { .. } | State::OpenPrefill { .. } | State::PartialPrefill { .. } => false,
+        }
+    }
+}
+
+impl<R> DiskCache<R>
+where
+    R: DiskCacheRemote,
+{
+    pub(super) fn new(
+        fs: &DiskCacheFs<R>,
+        remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
+        remote_path: impl AsRef<Path>,
+        local_path: PathBuf,
+        options: OpenOptions,
+        state: State<R>,
+        etag: Option<String>,
+    ) -> Self {
+        let is_ready = state.is_ready();
+        Self {
+            remote_fs: fs.remote_fs.clone(),
+            remote_extra,
+            remote_path: remote_path.as_ref().to_owned(),
+            open_options: options,
+            local_path,
+            state: Mutex::new(state),
+            is_ready: AtomicBool::new(is_ready),
+            etag: Mutex::new(etag),
+        }
+    }
+
+    /// Entity tag of the remote object, as last known.
+    pub fn etag(&self) -> Option<String> {
+        self.etag.lock().clone()
+    }
+
+    /// Record a fresh entity tag for the remote object, e.g. after mutating
+    /// it directly on the backing storage.
+    pub fn set_etag(&self, etag: Option<String>) {
+        *self.etag.lock() = etag;
+    }
+
+    pub(super) fn open_remote(&self) -> UioResult<R> {
+        self.remote_fs.open(
+            &self.remote_path,
+            REMOTE_OPEN_OPTIONS,
+            self.remote_extra.clone(),
+        )
+    }
+}
+
+impl<R> Drop for DiskCache<R>
+where
+    R: UniversalRead + 'static,
+{
+    fn drop(&mut self) {
+        // Best-effort mirror cleanup: mirror names are unique per open, so a
+        // file left behind would never be reused. Absent (`Err`) when the
+        // state never materialized a local mirror.
+        let _ = fs_err::remove_file(&self.local_path);
+    }
+}

@@ -1,5 +1,5 @@
 import pytest
-from math import isclose
+from math import acosh, isclose
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
@@ -44,6 +44,33 @@ def setup(on_disk_vectors, collection_name):
                 ],
             },
             lambda score, price: score + (price / (1.0 + abs(price))),
+        ),
+        (
+            {"acosh": {"sum": [1.0, {"abs": "price"}]}},
+            lambda score, price: acosh(1.0 + abs(price)),
+        ),
+        (
+            {"max": ["$score", "price"]},
+            lambda score, price: max(score, price),
+        ),
+        # More than two operands, and nested sub-expressions
+        (
+            {"max": [{"mult": ["$score", 3.0]}, "price", 0.0]},
+            lambda score, price: max(3.0 * score, price, 0.0),
+        ),
+        (
+            {"min": ["$score", "price"]},
+            lambda score, price: min(score, price),
+        ),
+        # More than two operands, and nested sub-expressions
+        (
+            {"min": [{"mult": ["$score", 3.0]}, "price", 0.0]},
+            lambda score, price: min(3.0 * score, price, 0.0),
+        ),
+        # max and min of the same operands bracket the operands from both sides
+        (
+            {"sum": [{"max": ["$score", "price"]}, {"min": ["$score", "price"]}]},
+            lambda score, price: max(score, price) + min(score, price),
         ),
     ],
 )
@@ -159,4 +186,134 @@ def test_formula_with_score_threshold(collection_name):
     for p in points_resp:
         assert p.get("score") >= threshold - 1e-8, (
             f"Point {p.get('id')} with score {p.get('score')} is below threshold {threshold}"
+        )
+
+
+def test_max_matches_the_arithmetic_workaround(collection_name):
+    """Before `max` existed, users had to spell it as (a + b + |a - b|) / 2.
+
+    Both forms must produce identical scores, otherwise `max` is not a drop-in replacement
+    for the formulas already in the wild.
+    """
+    point_id = 8
+    boosted = {"mult": [3.0, "$score"]}
+
+    workaround = {
+        "mult": [
+            0.5,
+            {
+                "sum": [
+                    boosted,
+                    "price",
+                    {"abs": {"sum": [boosted, {"neg": "price"}]}},
+                ]
+            },
+        ]
+    }
+    direct = {"max": [boosted, "price"]}
+
+    def scores_for(formula):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/query",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "prefetch": {"query": point_id},
+                "query": {"formula": formula, "defaults": {"price": 0.0}},
+                "limit": 10,
+            },
+        )
+        assert response.ok, response.json()
+        return {
+            point["id"]: point["score"] for point in response.json()["result"]["points"]
+        }
+
+    workaround_scores = scores_for(workaround)
+    direct_scores = scores_for(direct)
+
+    assert workaround_scores.keys() == direct_scores.keys()
+    for point_id, expected in workaround_scores.items():
+        assert isclose(direct_scores[point_id], expected, rel_tol=1e-5), (
+            f"point {point_id}: max gave {direct_scores[point_id]}, workaround gave {expected}"
+        )
+
+
+def test_empty_max_is_rejected(collection_name):
+    """`sum: []` is 0 and `mult: []` is 1, but the max of nothing has no sensible value,
+    so it must be rejected rather than silently scoring every point as -infinity."""
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": {"query": 8},
+            "query": {"formula": {"max": []}},
+        },
+    )
+    assert not response.ok, response.json()
+    assert response.status_code == 400, response.json()
+
+
+def test_empty_min_is_rejected(collection_name):
+    """Same as the empty `max` case: no identity element, so it must be rejected rather than
+    silently scoring every point as +infinity."""
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": {"query": 8},
+            "query": {"formula": {"min": []}},
+        },
+    )
+    assert not response.ok, response.json()
+    assert response.status_code == 400, response.json()
+
+
+def test_min_matches_the_arithmetic_workaround(collection_name):
+    """The identity for a minimum is (a + b - |a - b|) / 2, the sign flip of the max one.
+
+    Same reasoning as the `max` case: `min` must be a drop-in replacement for formulas
+    already written out by hand.
+    """
+    point_id = 8
+    boosted = {"mult": [3.0, "$score"]}
+
+    workaround = {
+        "mult": [
+            0.5,
+            {
+                "sum": [
+                    boosted,
+                    "price",
+                    {"neg": {"abs": {"sum": [boosted, {"neg": "price"}]}}},
+                ]
+            },
+        ]
+    }
+    direct = {"min": [boosted, "price"]}
+
+    def scores_for(formula):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/query",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "prefetch": {"query": point_id},
+                "query": {"formula": formula, "defaults": {"price": 0.0}},
+                "limit": 10,
+            },
+        )
+        assert response.ok, response.json()
+        return {
+            point["id"]: point["score"] for point in response.json()["result"]["points"]
+        }
+
+    workaround_scores = scores_for(workaround)
+    direct_scores = scores_for(direct)
+
+    assert workaround_scores.keys() == direct_scores.keys()
+    for point_id, expected in workaround_scores.items():
+        assert isclose(direct_scores[point_id], expected, rel_tol=1e-5), (
+            f"point {point_id}: min gave {direct_scores[point_id]}, workaround gave {expected}"
         )

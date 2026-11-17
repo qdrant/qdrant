@@ -90,7 +90,6 @@ fn create_graph_layers_builder(
 #[cfg(test)]
 mod tests {
     use ahash::HashSet;
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::types::PointOffsetType;
     use rand::SeedableRng;
@@ -133,9 +132,7 @@ mod tests {
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
         for idx in 0..num_vectors as PointOffsetType {
             let v = vector_holder.storage().get_vector::<Random>(idx);
-            storage
-                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
-                .unwrap();
+            storage.insert_vector(idx, v.as_vec_ref()).unwrap();
         }
 
         // Build HNSW index
@@ -211,28 +208,28 @@ mod tests {
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();
         for search_vector in &test.search_vectors {
-            let scorer = test.vector_holder.scorer(search_vector.clone());
+            let mut scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_gpu = graph
                 .search(
                     top,
                     ef,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    &graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();
 
-            let scorer = test.vector_holder.scorer(search_vector.clone());
+            let mut scorer = test.vector_holder.scorer(search_vector.clone());
 
             let search_result_cpu = ref_graph
                 .search(
                     top,
                     ef,
                     SearchAlgorithm::Hnsw,
-                    scorer,
-                    None,
+                    &mut scorer,
+                    &ref_graph.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap();

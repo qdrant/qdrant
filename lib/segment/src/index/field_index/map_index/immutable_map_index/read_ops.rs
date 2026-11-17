@@ -1,41 +1,43 @@
 use std::borrow::{Borrow as _, Cow};
 use std::iter;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::Blob;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
-use gridstore::Blob;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::operation_error::OperationResult;
-use crate::index::payload_config::StorageType;
+use crate::index::field_index::utils::check_each_sequential;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
-impl<N, S> MapIndexRead<N> for ImmutableMapIndex<N, S>
+impl<'a, N, S> MapIndexRead<'a, N> for ImmutableMapIndex<N, S>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-    N: MapIndexKey + ?Sized,
+    N: MapIndexKey + ?Sized + 'a,
     S: UniversalRead,
 {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        self.point_to_values
-            .check_values_any(idx, |v| check_fn(v.borrow()))
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
+            .check_values_any(idx, |v| check_fn(v.borrow())))
     }
 
-    fn get_values<'a>(
-        &'a self,
-        idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&N) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
+    }
+
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get_values(idx)?
@@ -59,13 +61,13 @@ where
         self.value_to_points.len()
     }
 
-    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.value_to_points
             .get(value)
             .map(|entry| entry.count as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
         if let Some(entry) = self.value_to_points.get(value) {
             Box::new(self.get_entry_iterator(entry))
         } else {
@@ -93,7 +95,6 @@ where
 
     fn for_each_value_map(
         &self,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.value_to_points
@@ -102,7 +103,9 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Heap,
+        }
     }
 
     /// Approximate RAM usage in bytes (cached at construction).
@@ -159,11 +162,17 @@ where
             value_to_points_container,
             deleted_value_to_points_container,
             point_to_values,
+            sorted_keys,
             indexed_points: _,
             values_count: _,
             storage: _,
             cached_ram_usage_bytes: _,
         } = self;
+
+        let sorted_keys_bytes = sorted_keys.as_ref().map_or(0, |keys| {
+            keys.capacity() * size_of::<<N as MapIndexKey>::Owned>()
+                + keys.iter().map(|k| N::owned_heap_bytes(k)).sum::<usize>()
+        });
 
         let hashmap_entry_overhead = size_of::<u64>() + size_of::<usize>();
         let vtp_base_bytes: usize = value_to_points.capacity()
@@ -180,6 +189,7 @@ where
             + vtp_heap_bytes
             + container_bytes
             + deleted_bytes
+            + sorted_keys_bytes
             + point_to_values.ram_usage_bytes()
     }
 }

@@ -1,14 +1,17 @@
+mod test_facets;
 mod test_immutable_payload_index_files;
+mod test_max_available_vectors_size;
 mod test_vector_name_ops;
 
 use std::assert_matches;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashSet;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::tar_ext;
+use ahash::{AHashMap, AHashSet};
+use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
 use common::types::{DeferredBehavior, PointOffsetType};
+use common::{ambient, tar_ext};
 use fs_err as fs;
 use fs_err::File;
 use ordered_float::OrderedFloat;
@@ -26,8 +29,10 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
 use crate::data_types::query_context::QueryContext;
+use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, VectorRef, only_default_vector,
+    DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, VectorInternal, VectorRef,
+    only_default_multi_vector, only_default_vector,
 };
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
@@ -37,17 +42,25 @@ use crate::id_tracker::{IdTracker, IdTrackerRead};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
-    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
+    VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
+    BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, CompressionRatio,
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
-    Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType, PointIdType, SearchParams,
-    SnapshotFormat, SparseVectorDataConfig, SparseVectorStorageType, ValueVariants,
-    VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
+    PointAtOffset, PointIdType, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SnapshotFormat,
+    SparseVectorDataConfig, SparseVectorStorageType, TurboQuantBitSize,
+    TurboQuantQuantizationConfig, TurboQuantization, ValueVariants, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType, WithPayload, WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
+use crate::vector_storage::{VectorStorageRead as _, new_raw_scorer};
 
 fn init_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -61,17 +74,17 @@ fn test_search_batch_equivalence_single() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
+        .upsert_point(100, 4.into(), only_default_vector(&vec4))
         .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
+        .upsert_point(101, 6.into(), only_default_vector(&vec6))
         .unwrap();
-    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
+    segment.delete_point(102, 1.into()).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = segment
@@ -124,18 +137,16 @@ fn test_from_filter_attributes() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
         .unwrap();
 
     let payload: Payload = serde_json::from_str(data).unwrap();
 
-    segment
-        .set_full_payload(0, 0.into(), &payload, &hw_counter)
-        .unwrap();
+    segment.set_full_payload(0, 0.into(), &payload).unwrap();
 
     let filter_valid_str = r#"
         {
@@ -190,6 +201,69 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
+/// A `must_not` condition equal to a primary `must` clause must still exclude its points.
+///
+/// This is the filter a proxy segment builds when it is read with `HasId` of exactly the points
+/// it has deleted: `must: HasId(ids)` plus `must_not: HasId(ids)`.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filtered_must_not_equal_to_primary_clause() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let _scope = ambient::test_guard();
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for id in 0..20u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let color = if id < 2 { "red" } else { "blue" };
+        let payload: Payload =
+            serde_json::from_value(serde_json::json!({ "color": color })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+    segment
+        .create_field_index(
+            20,
+            &JsonPath::new("color"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let read = |filter: &Filter| {
+        segment
+            .read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+    let must_and_must_not = |condition: Condition| Filter {
+        must: Some(vec![condition.clone()]),
+        must_not: Some(vec![condition]),
+        ..Default::default()
+    };
+
+    let has_id = Condition::HasId(HasIdCondition::from_iter([PointIdType::from(1)]));
+    let red = Condition::Field(FieldCondition::new_match(
+        JsonPath::new("color"),
+        "red".to_string().into(),
+    ));
+
+    // Primary `HasId` clause, and primary clause from the keyword index
+    assert_eq!(
+        (
+            read(&must_and_must_not(has_id)),
+            read(&must_and_must_not(red)),
+        ),
+        (vec![], vec![]),
+    );
+}
+
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
@@ -210,21 +284,16 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
         .unwrap();
 
     segment
-        .set_full_payload(
-            1,
-            0.into(),
-            &serde_json::from_str(data).unwrap(),
-            &hw_counter,
-        )
+        .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
         .unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
@@ -282,8 +351,14 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment =
-        load_segment(&entry.path(), Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
+    let restored_segment = load_segment(
+        &entry.path(),
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(
@@ -300,12 +375,119 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     );
 
     for id in segment.iter_points() {
-        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
-        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
+        let vectors = segment.all_vectors(id).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload(id, &hw_counter).unwrap();
-        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
+        let payload = segment.payload(id).unwrap();
+        let restored_payload = restored_segment.payload(id).unwrap();
+        assert_eq!(payload, restored_payload);
+    }
+}
+
+/// Streamable snapshots historically wrap all segment files in a nested `files/` directory.
+/// Recovery must also support streamable snapshots where the files are placed directly in the
+/// segment directory, without the `files/` wrapper.
+#[test]
+fn test_snapshot_streamable_without_files_wrapper() {
+    use crate::entry::StorageSegmentEntry as _;
+
+    init_logger();
+
+    let data = r#"
+        {
+            "name": "John Doe",
+            "age": 43,
+            "metadata": {
+                "height": 50,
+                "width": 60
+            }
+        }"#;
+
+    let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let _scope = ambient::test_guard();
+
+    let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
+
+    segment
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .unwrap();
+
+    segment
+        .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
+        .unwrap();
+
+    let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let parent_snapshot_tar = Builder::new()
+        .prefix("parent_snapshot")
+        .suffix(".tar")
+        .tempfile()
+        .unwrap();
+    let segment_id = segment
+        .segment_path
+        .file_stem()
+        .and_then(|f| f.to_str())
+        .unwrap()
+        .to_string();
+
+    segment.flush(true).unwrap();
+
+    // Take a streamable snapshot, which produces a `<segment_id>/files/...` layout.
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    segment
+        .take_snapshot(temp_dir.path(), &tar, SnapshotFormat::Streamable, None)
+        .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
+    tar_unpack_file(parent_snapshot_tar.path(), parent_snapshot_unpacked.path()).unwrap();
+
+    let segment_path = parent_snapshot_unpacked.path().join(&segment_id);
+    assert!(segment_path.is_dir());
+
+    // Simulate a streamable snapshot without the nested `files/` wrapper by hoisting the files
+    // out of `files/` and removing it.
+    let files_path = segment_path.join("files");
+    assert!(files_path.is_dir(), "expected nested `files/` directory");
+    crate::utils::fs::move_all(&files_path, &segment_path).unwrap();
+    fs::remove_dir(&files_path).unwrap();
+
+    // Restore snapshot from the flattened layout.
+    Segment::restore_snapshot_in_place(&segment_path).unwrap();
+
+    assert!(segment_path.is_dir());
+
+    let restored_segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(
+        segment.total_point_count(),
+        restored_segment.total_point_count(),
+    );
+    assert_eq!(
+        segment.available_point_count(),
+        restored_segment.available_point_count(),
+    );
+    assert_eq!(
+        segment.deleted_point_count(),
+        restored_segment.deleted_point_count(),
+    );
+
+    for id in segment.iter_points() {
+        let vectors = segment.all_vectors(id).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id).unwrap();
+        assert_eq!(vectors, restored_vectors);
+
+        let payload = segment.payload(id).unwrap();
+        let restored_payload = restored_segment.payload(id).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }
@@ -318,15 +500,15 @@ fn test_check_consistency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
+        .upsert_point(100, 4.into(), only_default_vector(&vec4))
         .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
+        .upsert_point(101, 6.into(), only_default_vector(&vec6))
         .unwrap();
 
     // first pass on consistent data
@@ -349,18 +531,18 @@ fn test_check_consistency() {
     assert_eq!(search_result[0].id, 6.into());
     assert_eq!(search_result[1].id, 4.into());
 
-    assert!(
-        segment
-            .vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter)
-            .is_ok()
-    );
+    assert!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()).is_ok());
 
     let internal_id = segment
         .with_view(|v| v.lookup_internal_id(6.into(), DeferredBehavior::VisibleOnly))
         .unwrap();
 
     // make id_tracker inconsistent
-    segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
+    segment
+        .id_tracker
+        .borrow_mut()
+        .drop(6.into(), None)
+        .unwrap();
 
     let search_result = segment
         .search(
@@ -380,13 +562,13 @@ fn test_check_consistency() {
 
     // querying by external id is broken
     assert_matches!(
-        segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter),
+        segment.vector(DEFAULT_VECTOR_NAME, 6.into()),
         Err(PointIdError { missed_point_id }) if missed_point_id == 6.into(),
     );
 
     // but querying by internal id still works
     matches!(
-        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id)),
         Ok(Some(_))
     );
 
@@ -395,7 +577,7 @@ fn test_check_consistency() {
 
     // querying by internal id now consistent
     matches!(
-        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter)),
+        segment.with_view(|v| v.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id)),
         Ok(None)
     );
 }
@@ -408,28 +590,28 @@ fn test_point_vector_count() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6, assert counts
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&[0.4]), &hw_counter)
+        .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
         .unwrap();
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&[0.6]), &hw_counter)
+        .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    segment.delete_point(102, 1.into()).unwrap();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(103, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    segment.delete_point(103, 4.into()).unwrap();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
 
@@ -437,7 +619,7 @@ fn test_point_vector_count() {
     // segment
     //     .delete_vector(104, 6.into(), DEFAULT_VECTOR_NAME)
     //     .unwrap();
-    // let segment_info = segment.info();
+    // let segment_info = segment.info().unwrap();
     // assert_eq!(segment_info.num_points, 1);
     // assert_eq!(segment_info.num_vectors, 1);
 }
@@ -448,9 +630,10 @@ fn test_point_vector_count_multivec() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
-    let mut segment = build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+    let mut segment =
+        build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
     segment
@@ -461,7 +644,6 @@ fn test_point_vector_count_multivec() {
                 (VECTOR1_NAME.into(), vec![0.4]),
                 (VECTOR2_NAME.into(), vec![0.5]),
             ]),
-            &hw_counter,
         )
         .unwrap();
     segment
@@ -472,7 +654,6 @@ fn test_point_vector_count_multivec() {
                 (VECTOR1_NAME.into(), vec![0.6]),
                 (VECTOR2_NAME.into(), vec![0.7]),
             ]),
-            &hw_counter,
         )
         .unwrap();
     segment
@@ -480,7 +661,6 @@ fn test_point_vector_count_multivec() {
             102,
             8.into(),
             NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
-            &hw_counter,
         )
         .unwrap();
     segment
@@ -488,34 +668,33 @@ fn test_point_vector_count_multivec() {
             103,
             10.into(),
             NamedVectors::from_pairs([(VECTOR2_NAME.into(), vec![1.0])]),
-            &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(104, 1.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    segment.delete_point(104, 1.into()).unwrap();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(105, 4.into(), &hw_counter).unwrap();
-    let segment_info = segment.info();
+    segment.delete_point(105, 4.into()).unwrap();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
     segment.delete_vector(106, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Deleting it again shouldn't chain anything
     segment.delete_vector(107, 6.into(), VECTOR1_NAME).unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
@@ -528,10 +707,9 @@ fn test_point_vector_count_multivec() {
             internal_8,
             0,
             &NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.1])]),
-            &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
@@ -544,12 +722,1276 @@ fn test_point_vector_count_multivec() {
                 (VECTOR1_NAME.into(), vec![0.1]),
                 (VECTOR2_NAME.into(), vec![0.1]),
             ]),
-            &hw_counter,
         )
         .unwrap();
-    let segment_info = segment.info();
+    let segment_info = segment.info().unwrap();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6);
+}
+
+/// `retrieve_raw` on a plain dense segment must return the verbatim f32 bytes
+/// of the stored vector (zero-copy `bytemuck` cast), with payload untouched.
+#[test]
+fn test_retrieve_raw_dense_bytes() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let _scope = ambient::test_guard();
+
+    let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[7.into()],
+            &true.into(),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == DEFAULT_VECTOR_NAME)
+        .expect("default vector must be present");
+
+    let expected: &[u8] = bytemuck::cast_slice(&vec);
+    assert_eq!(bytes.as_slice(), expected);
+}
+
+/// `retrieve_raw` over a multi-dense (ColBERT-style) storage must return the
+/// flattened inner vectors as raw bytes; the inner count is derived from the
+/// byte length, so the blob must cover all inner vectors, not just the first.
+#[test]
+fn test_retrieve_raw_multivec_bytes() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 3;
+
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: Some(MultiVectorConfig::default()),
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    let _scope = ambient::test_guard();
+
+    // Two inner vectors of `dim` elements each, flattened.
+    let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
+    let multi_vec = MultiDenseVectorInternal::new(flattened.clone(), dim);
+    segment
+        .upsert_point(100, 4.into(), only_default_multi_vector(&multi_vec))
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[4.into()],
+            &true.into(),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&4.into()).expect("point 4 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == DEFAULT_VECTOR_NAME)
+        .expect("default vector must be present");
+
+    let expected: &[u8] = bytemuck::cast_slice(&flattened);
+    assert_eq!(bytes.as_slice(), expected);
+}
+
+/// `retrieve_raw` over a sparse storage must return the on-disk
+/// `StoredSparseVector` bincode form, which decodes back to the original vector.
+#[test]
+fn test_retrieve_raw_sparse_bytes() {
+    use blobstore::Blob;
+
+    use crate::vector_storage::sparse::StoredSparseVector;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let sparse_name = "sparse";
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::new(),
+            sparse_vector_data: HashMap::from_iter([(
+                sparse_name.to_string(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
+                    storage_type: SparseVectorStorageType::Mmap,
+                    modifier: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+
+    let _scope = ambient::test_guard();
+    let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(
+        sparse_name.to_string(),
+        VectorInternal::Sparse(sparse.clone()),
+    );
+    segment.upsert_point(100, 7.into(), vectors).unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[7.into()],
+            &true.into(),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    let record = raw.get(&7.into()).expect("point 7 must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    let (_, bytes) = vectors
+        .iter()
+        .find(|(name, _)| name == sparse_name)
+        .expect("sparse vector must be present");
+
+    let decoded = SparseVector::try_from(StoredSparseVector::from_bytes(bytes).unwrap()).unwrap();
+    assert_eq!(decoded, sparse);
+}
+
+/// Fetch one named vector of one point via `retrieve_raw`.
+fn retrieve_raw_vector(segment: &Segment, point_id: PointIdType, name: &str) -> Vec<u8> {
+    let is_stopped = AtomicBool::new(false);
+    let raw = segment
+        .retrieve_raw(
+            &[point_id],
+            &true.into(),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let record = raw.get(&point_id).expect("point must be retrieved");
+    let vectors = record.vectors.as_ref().expect("vectors requested");
+    vectors
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, bytes)| bytes.clone())
+        .expect("vector must be present")
+}
+
+/// `upsert_point_raw` with `retrieve_raw` bytes must reproduce the point: the
+/// destination decodes to the original vector and re-serializes to identical
+/// bytes. Also covers the replace path (raw upsert over an existing point).
+#[test]
+fn test_upsert_raw_dense_roundtrip() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    let _scope = ambient::test_guard();
+
+    let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    src.upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    // Insert path: the point does not exist in the destination yet.
+    dst.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+    )
+    .unwrap();
+
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+
+    // Replace path: raw upsert over the existing point with different bytes.
+    let vec2 = vec![1.0_f32, 2.0, 3.0, 4.0];
+    src.upsert_point(101, 8.into(), only_default_vector(&vec2))
+        .unwrap();
+    let bytes2 = retrieve_raw_vector(&src, 8.into(), DEFAULT_VECTOR_NAME);
+    dst.upsert_point_raw(101, 7.into(), &[(DEFAULT_VECTOR_NAME.to_owned(), bytes2)])
+        .unwrap();
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(vec2)),
+    );
+}
+
+/// Raw upsert over an existing point on an append-only segment must go
+/// through the clone-and-tombstone path: vectors are replaced from the raw
+/// bytes at a fresh internal id, the payload survives the move.
+#[test]
+fn test_upsert_raw_append_only_replace() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    dst.append_only_mutations = true;
+    let _scope = ambient::test_guard();
+
+    let old_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    dst.upsert_point(100, 7.into(), only_default_vector(&old_vec))
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    dst.set_full_payload(101, 7.into(), &payload).unwrap();
+    let old_internal_id = dst
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
+
+    let new_vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    src.upsert_point(100, 7.into(), only_default_vector(&new_vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        102,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+    )
+    .unwrap();
+
+    // The point moved to a fresh internal id (old slot tombstoned)...
+    let new_internal_id = dst
+        .with_view(|v| v.lookup_internal_id(7.into(), DeferredBehavior::VisibleOnly))
+        .unwrap();
+    assert_ne!(old_internal_id, new_internal_id);
+    // ...carrying the replaced vector (byte-identical) and the old payload.
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(new_vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    assert_eq!(dst.payload(7.into()).unwrap(), payload);
+}
+
+/// Clone-based mutations rewrite the point's payload row at a fresh internal
+/// id, mutating payload storage even when the triggering operation is
+/// vectors-only — the snapshot version stamp must move, or partial snapshots
+/// skip the changed payload files. Payload operations must stamp exactly
+/// once: a same-version double bump collapses the tracked version to `None`.
+#[test]
+fn test_append_only_clone_stamps_payload_version() {
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut segment = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    segment.append_only_mutations = true;
+    let _scope = ambient::test_guard();
+
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    // A fresh insert writes no payload row.
+    assert_eq!(segment.version_tracker.get_payload(), None);
+
+    // A payload operation stamps exactly once (clone arm only, no
+    // caller-side double bump that would collapse the version to `None`).
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment.set_full_payload(101, 7.into(), &payload).unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(101));
+
+    // A vectors-only update clones the point, rewriting its payload row at
+    // the fresh id: the stamp must follow.
+    let vec2 = vec![0.1_f32, 0.2, 0.3, 0.4];
+    segment
+        .upsert_point(102, 7.into(), only_default_vector(&vec2))
+        .unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(102));
+
+    // Same for the raw clone path.
+    src.upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+    segment
+        .upsert_point_raw(103, 7.into(), &[(DEFAULT_VECTOR_NAME.to_owned(), bytes)])
+        .unwrap();
+    assert_eq!(segment.version_tracker.get_payload(), Some(103));
+    assert_eq!(segment.payload(7.into()).unwrap(), payload);
+
+    // In-place payload operations (append-only off) still stamp.
+    let plain_dir = Builder::new().prefix("segment_plain").tempdir().unwrap();
+    let mut plain = build_simple_segment(plain_dir.path(), dim, Distance::Dot).unwrap();
+    plain
+        .upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    plain.set_full_payload(101, 7.into(), &payload).unwrap();
+    assert_eq!(plain.version_tracker.get_payload(), Some(101));
+}
+
+/// In append-only mode a point deletion must be tombstone-only even on a
+/// non-appendable segment: clearing the payload row mutates committed state
+/// of an offset that stays visible to live-reload followers until the
+/// id-tracker drop is flushed — a follower refreshing in that window
+/// observes the point alive with an empty payload. Observed 2026-07-13 on
+/// the CoW-update path, which deletes the old copy from a non-appendable
+/// segment.
+#[test]
+fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
+    use crate::id_tracker::IdTrackerRead as _;
+    use crate::index::PayloadIndexRead as _;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    let _scope = ambient::test_guard();
+
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    segment
+        .upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment.set_full_payload(101, 7.into(), &payload).unwrap();
+
+    let internal_id = segment.get_internal_id(7.into()).unwrap();
+
+    // Emulate a non-appendable segment in an append-only deployment.
+    segment.appendable_flag = false;
+    segment.append_only_mutations = true;
+
+    assert!(segment.delete_point(102, 7.into()).unwrap());
+
+    // The point is masked via the id tracker...
+    assert!(segment.id_tracker.borrow().is_deleted_point(internal_id));
+    // ...but its payload row is untouched: committed state of the old offset
+    // must not be mutated in place while readers may still resolve to it.
+    let stored = segment
+        .payload_index
+        .borrow()
+        .with_view(|view| view.get_payload(internal_id))
+        .unwrap();
+    assert_eq!(stored, payload);
+}
+
+/// `upsert_moved_point` writes the whole point — raw bytes, decoded overlay,
+/// payload — in one operation, allocating exactly one internal slot where the
+/// separate `upsert_point_raw` + `update_vectors` + `set_full_payload` steps
+/// would clone the point once per step on an append-only segment.
+#[test]
+fn test_upsert_moved_point_single_slot() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    init_logger();
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let dim = 4;
+
+    let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
+    let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
+    dst.append_only_mutations = true;
+    let _scope = ambient::test_guard();
+
+    let raw_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    src.upsert_point(100, 7.into(), only_default_vector(&raw_vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+
+    // Insert path: raw bytes only, exactly one slot.
+    dst.upsert_moved_point(
+        101,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        NamedVectors::default(),
+        &payload,
+    )
+    .unwrap();
+    assert_eq!(dst.id_tracker.borrow().total_point_count(), 1);
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(raw_vec)),
+    );
+    assert_eq!(dst.payload(7.into()).unwrap(), payload);
+    // Payload storage was mutated: its snapshot version stamp must move to
+    // this op, or partial snapshots would skip the changed payload files.
+    assert_eq!(dst.version_tracker.get_payload(), Some(101));
+
+    // Replace path with a decoded overlay shadowing the raw bytes: exactly
+    // one fresh slot (the clone), and the overlay wins over the raw bytes.
+    let new_vec = vec![0.1_f32, 0.2, 0.3, 0.4];
+    let payload2: Payload = serde_json::from_str(r#"{"color": "blue"}"#).unwrap();
+    dst.upsert_moved_point(
+        102,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes)],
+        only_default_vector(&new_vec),
+        &payload2,
+    )
+    .unwrap();
+    assert_eq!(dst.id_tracker.borrow().total_point_count(), 2);
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(new_vec)),
+    );
+    assert_eq!(dst.payload(7.into()).unwrap(), payload2);
+    assert_eq!(dst.version_tracker.get_payload(), Some(102));
+}
+
+/// On an append-only segment a slot is never mutated once written: every
+/// mutating step clones the point to a fresh slot, including steps of the same
+/// operation. Whole points are written in one step by `upsert_moved_point`,
+/// which is what the shard's upsert path uses.
+#[test]
+fn test_append_only_every_step_clones() {
+    use crate::id_tracker::IdTrackerRead as _;
+
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
+    segment.append_only_mutations = true;
+    let _scope = ambient::test_guard();
+
+    // A whole point in one operation: one slot.
+    let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+    segment
+        .upsert_moved_point(100, 7.into(), &[], only_default_vector(&vec), &payload)
+        .unwrap();
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 1);
+
+    // The same as two steps of one operation: a slot per step.
+    let vec2 = vec![0.1_f32, 0.2, 0.3, 0.4];
+    let payload2: Payload = serde_json::from_str(r#"{"color": "blue"}"#).unwrap();
+    segment
+        .upsert_point(101, 7.into(), only_default_vector(&vec2))
+        .unwrap();
+    segment.set_full_payload(101, 7.into(), &payload2).unwrap();
+    assert_eq!(segment.id_tracker.borrow().total_point_count(), 3);
+    assert_eq!(
+        segment.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        Some(VectorInternal::Dense(vec2)),
+    );
+    assert_eq!(segment.payload(7.into()).unwrap(), payload2);
+}
+
+#[test]
+fn test_upsert_raw_multivec_roundtrip() {
+    init_logger();
+    let dim = 3;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: Some(MultiVectorConfig::default()),
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    // Two inner vectors of `dim` elements each, flattened.
+    let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
+    let multi_vec = MultiDenseVectorInternal::new(flattened, dim);
+    src.upsert_point(100, 4.into(), only_default_multi_vector(&multi_vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 4.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        4.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+    )
+    .unwrap();
+
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 4.into()).unwrap(),
+        Some(VectorInternal::MultiDense(multi_vec)),
+    );
+    assert_eq!(
+        retrieve_raw_vector(&dst, 4.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+}
+
+/// Sparse raw round-trip: the `StoredSparseVector` bincode blob must insert
+/// back and decode to the original sparse vector.
+#[test]
+fn test_upsert_raw_sparse_roundtrip() {
+    init_logger();
+    let sparse_name = "sparse";
+    let config = SegmentConfig {
+        vector_data: HashMap::new(),
+        sparse_vector_data: HashMap::from_iter([(
+            sparse_name.to_string(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
+                storage_type: SparseVectorStorageType::Mmap,
+                modifier: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(
+        sparse_name.to_string(),
+        VectorInternal::Sparse(sparse.clone()),
+    );
+    src.upsert_point(100, 7.into(), vectors).unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), sparse_name);
+
+    dst.upsert_point_raw(100, 7.into(), &[(sparse_name.to_string(), bytes.clone())])
+        .unwrap();
+
+    assert_eq!(
+        dst.vector(sparse_name, 7.into()).unwrap(),
+        Some(VectorInternal::Sparse(sparse)),
+    );
+    assert_eq!(retrieve_raw_vector(&dst, 7.into(), sparse_name), bytes);
+}
+
+/// Byte/half dense raw round-trip: the packed `[T]` blob must survive
+/// `retrieve_raw` → `upsert_point_raw` byte-identically for the narrow
+/// element types too — the `T` → `f32` → `T` hop through the regular insert
+/// path is lossless.
+#[test]
+fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
+    init_logger();
+    let dim = 4;
+    for datatype in [VectorStorageDatatype::Uint8, VectorStorageDatatype::Float16] {
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: Some(datatype),
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        };
+        let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+        let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+        let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+        let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+        let _scope = ambient::test_guard();
+
+        // Values exactly representable in both u8 and f16.
+        let vec = vec![0.0_f32, 1.0, 128.0, 255.0];
+        src.upsert_point(100, 7.into(), only_default_vector(&vec))
+            .unwrap();
+        let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+        dst.upsert_point_raw(
+            100,
+            7.into(),
+            &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+        )
+        .unwrap();
+
+        assert_eq!(
+            retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+            bytes,
+            "raw bytes must round-trip for {datatype:?}",
+        );
+        assert_eq!(
+            dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+            src.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+            "decoded vector must round-trip for {datatype:?}",
+        );
+    }
+}
+
+/// A raw blob whose size doesn't match the storage layout must be rejected
+/// with an error, not silently mis-written.
+#[test]
+fn test_upsert_raw_malformed_blob_rejected() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+
+    // 3 bytes is not a valid packed-[f32; 4] blob.
+    let result = segment.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), vec![0_u8, 1, 2])],
+    );
+    // Must be a user error (`MalformedVectorBlob`), not a `ServiceError`: a
+    // malformed blob that reached the WAL is skipped on replay instead of
+    // crash-looping recovery.
+    assert!(
+        matches!(
+            result,
+            Err(crate::common::operation_error::OperationError::MalformedVectorBlob { .. })
+        ),
+        "malformed blob must be rejected as MalformedVectorBlob, got {result:?}",
+    );
+}
+
+/// Appendable segments quantize with TurboQuant too: the quantized storage is created empty
+/// with the segment, every upsert is encoded into it, and it is reopened on load. `Bits8` has
+/// no TQ+, so it takes the Normal-mode path.
+#[rstest]
+#[case::bits4(TurboQuantBitSize::Bits4)]
+#[case::bits8(TurboQuantBitSize::Bits8)]
+fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
+    init_logger();
+    let dim = 64;
+    let num_points = 50;
+    #[allow(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    let quantization_config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: None,
+            memory: None,
+            bits: Some(bits),
+        },
+    });
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Cosine,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: Some(quantization_config.clone()),
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut rng = StdRng::seed_from_u64(42);
+    for i in 0..num_points {
+        let vector: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        segment
+            .upsert_point(100, i.into(), only_default_vector(&vector))
+            .unwrap();
+    }
+    let query: QueryVector = (0..dim)
+        .map(|_| rng.random_range(-1.0..1.0))
+        .collect::<Vec<f32>>()
+        .into();
+
+    let check_quantized_scores = |segment: &Segment| {
+        let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
+        let quantized_vectors = vector_data.quantized_vectors.borrow();
+        let quantized_vectors = quantized_vectors
+            .as_ref()
+            .expect("appendable segment must have quantized vectors");
+        assert_eq!(
+            quantized_vectors.config().quantization_config,
+            quantization_config,
+        );
+        let vector_storage = vector_data.vector_storage.borrow();
+        let quantized_scorer = quantized_vectors.raw_scorer(query.clone()).unwrap();
+        let original_scorer = new_raw_scorer(query.clone(), &vector_storage).unwrap();
+        for i in 0..num_points as PointOffsetType {
+            let quantized = quantized_scorer.score_point(i).unwrap();
+            let original = original_scorer.score_point(i).unwrap();
+            assert!(
+                (quantized - original).abs() < 0.05,
+                "point {i}: quantized score {quantized} vs original {original}",
+            );
+        }
+    };
+
+    check_quantized_scores(&segment);
+
+    segment.flush(true).unwrap();
+    let segment_path = segment.segment_path.clone();
+    drop(segment);
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    check_quantized_scores(&segment);
+}
+
+fn quantization_case(case: &str) -> QuantizationConfig {
+    #![allow(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    let scalar = |quantile| {
+        QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: ScalarQuantizationConfig {
+                r#type: ScalarType::Int8,
+                quantile,
+                always_ram: Some(true),
+                memory: None,
+            },
+        })
+    };
+    let binary = |encoding| {
+        QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                encoding: Some(encoding),
+                query_encoding: None,
+            },
+        })
+    };
+    let turbo = |bits| {
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                bits: Some(bits),
+            },
+        })
+    };
+    match case {
+        "scalar" => scalar(None),
+        "scalar_quantile" => scalar(Some(0.99)),
+        "pq" => QuantizationConfig::Product(ProductQuantization {
+            product: ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: Some(true),
+                memory: None,
+            },
+        }),
+        "binary_1bit" => binary(BinaryQuantizationEncoding::OneBit),
+        "binary_2bit" => binary(BinaryQuantizationEncoding::TwoBits),
+        "binary_1_5bit" => binary(BinaryQuantizationEncoding::OneAndHalfBits),
+        "turbo_bits1" => turbo(TurboQuantBitSize::Bits1),
+        "turbo_bits4" => turbo(TurboQuantBitSize::Bits4),
+        "turbo_bits8" => turbo(TurboQuantBitSize::Bits8),
+        _ => unreachable!("unknown quantization case {case}"),
+    }
+}
+
+/// `count` points of random unit vectors, each with `inner_count` vectors (1 for dense).
+fn random_points(count: usize, inner_count: usize, dim: usize) -> Vec<Vec<Vec<f32>>> {
+    let mut rng = StdRng::seed_from_u64(20261012);
+    (0..count)
+        .map(|_| {
+            (0..inner_count)
+                .map(|_| {
+                    let vector: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                    let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+                    vector.into_iter().map(|x| x / norm).collect()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn point_query(point: &[Vec<f32>], multivector: bool) -> QueryVector {
+    if multivector {
+        QueryVector::from(&MultiDenseVectorInternal::new_unchecked(point.to_vec()))
+    } else {
+        QueryVector::from(point[0].clone())
+    }
+}
+
+/// Segment with a Cosine `VECTOR1_NAME` and a 4-dimensional `VECTOR2_NAME`. Holds `missing`
+/// points (ids `0..missing`) with only `VECTOR2_NAME`, followed by `points` with both.
+fn segment_with_missing_vectors(
+    path: &Path,
+    dim: usize,
+    multivector: bool,
+    missing: u64,
+    points: &[Vec<Vec<f32>>],
+) -> Segment {
+    let vector_config = |size, multivector_config| VectorDataConfig {
+        size,
+        distance: Distance::Cosine,
+        storage_type: VectorStorageType::default(),
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config,
+        datatype: None,
+    };
+    let config = SegmentConfig {
+        vector_data: HashMap::from([
+            (
+                VECTOR1_NAME.to_owned(),
+                vector_config(dim, multivector.then(MultiVectorConfig::default)),
+            ),
+            (VECTOR2_NAME.to_owned(), vector_config(4, None)),
+        ]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    let other_vector = VectorInternal::from(vec![1.0, 0.0, 0.0, 0.0]);
+    for id in 0..missing {
+        let mut named_vectors = NamedVectors::default();
+        named_vectors.insert(VECTOR2_NAME.into(), other_vector.clone());
+        segment.upsert_point(100, id.into(), named_vectors).unwrap();
+    }
+    for (i, point) in points.iter().enumerate() {
+        let vector = if multivector {
+            VectorInternal::from(MultiDenseVectorInternal::new_unchecked(point.clone()))
+        } else {
+            VectorInternal::from(point[0].clone())
+        };
+        let mut named_vectors = NamedVectors::default();
+        named_vectors.insert(VECTOR1_NAME.into(), vector);
+        named_vectors.insert(VECTOR2_NAME.into(), other_vector.clone());
+        segment
+            .upsert_point(100, (missing + i as u64).into(), named_vectors)
+            .unwrap();
+    }
+
+    // The absent vectors are backed by deleted placeholders
+    let id_tracker = segment.id_tracker.borrow();
+    let vector_storage = segment.vector_data[VECTOR1_NAME].vector_storage.borrow();
+    for id in 0..missing {
+        let offset = id_tracker
+            .internal_id_with_behavior(id.into(), DeferredBehavior::WithDeferred)
+            .unwrap();
+        assert!(vector_storage.is_deleted_vector(offset));
+        if !multivector {
+            let placeholder = vector_storage.get_vector::<Random>(offset).to_owned();
+            assert_eq!(placeholder, VectorInternal::from(vec![1.0; dim]));
+        }
+    }
+    drop((id_tracker, vector_storage));
+    segment
+}
+
+fn quantize_vector1(
+    segment: &Segment,
+    config: &QuantizationConfig,
+    path: &Path,
+) -> QuantizedVectors {
+    QuantizedVectors::create(
+        &segment.vector_data[VECTOR1_NAME].vector_storage.borrow(),
+        config,
+        QuantizedVectorsStorageType::Immutable,
+        path,
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap()
+}
+
+fn internal_id(segment: &Segment, id: u64) -> PointOffsetType {
+    segment
+        .id_tracker
+        .borrow()
+        .internal_id_with_behavior(id.into(), DeferredBehavior::WithDeferred)
+        .unwrap()
+}
+
+/// Points without a named vector must not change how the other points are quantized.
+///
+/// A point upserted without `VECTOR1_NAME` still gets a slot in that storage, filled with a
+/// placeholder and marked deleted: `[1.0; dim]` for dense vectors, which for Cosine is not even
+/// unit length, and a single zero vector for multivectors. The segment builder copies the
+/// placeholder verbatim into the optimized segment. Quantization must fit its parameters
+/// (value range, centroids, per-coordinate stats, TQ+ correction) on the real vectors only, so
+/// the quantized scores between the very same valid vectors must not change when a few points
+/// lack the vector.
+///
+/// The sizes keep every method deterministic: PQ uses the points themselves as centroids up to
+/// 256 vectors, and TurboQuant calibrates on all vectors below its sample size. They are large
+/// enough for scalar quantization to apply the quantile (127 vectors).
+#[rstest]
+fn test_quantization_ignores_missing_named_vectors(
+    #[values(
+        "scalar",
+        "scalar_quantile",
+        "pq",
+        "binary_1bit",
+        "binary_2bit",
+        "binary_1_5bit",
+        "turbo_bits1",
+        "turbo_bits4",
+        "turbo_bits8"
+    )]
+    case: &str,
+    #[values(false, true)] multivector: bool,
+) {
+    init_logger();
+    let quantization_config = quantization_case(case);
+    let dim = 256;
+    let (num_valid, inner_count) = if multivector { (40, 4) } else { (150, 1) };
+    let num_missing = 4;
+    let points = random_points(num_valid, inner_count, dim);
+
+    // Quantized scores between all valid points, after `missing` points without
+    // `VECTOR1_NAME` were inserted first.
+    let quantized_scores = |missing: u64| -> Vec<Vec<f32>> {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let quant_dir = Builder::new().prefix("quant_dir").tempdir().unwrap();
+        let segment = segment_with_missing_vectors(dir.path(), dim, multivector, missing, &points);
+        let quantized_vectors = quantize_vector1(&segment, &quantization_config, quant_dir.path());
+        let _scope = ambient::test_guard();
+
+        let offsets: Vec<_> = (0..num_valid as u64)
+            .map(|i| internal_id(&segment, missing + i))
+            .collect();
+        points
+            .iter()
+            .map(|point| {
+                let scorer = quantized_vectors
+                    .raw_scorer(point_query(point, multivector))
+                    .unwrap();
+                offsets
+                    .iter()
+                    .map(|&offset| scorer.score_point(offset).unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+
+    let control = quantized_scores(0);
+    let treatment = quantized_scores(num_missing);
+    for (query, (control, treatment)) in control.iter().zip(&treatment).enumerate() {
+        for (point, (&control, &treatment)) in control.iter().zip(treatment).enumerate() {
+            assert!(
+                (control - treatment).abs() <= 1e-5 * control.abs().max(1.0),
+                "{case}: score of query {query} against point {point} changed from {control} \
+                 to {treatment} after adding {num_missing} points without `{VECTOR1_NAME}`",
+            );
+        }
+    }
+}
+
+/// Quantizing a vector that no point has: every slot holds a deleted placeholder, so there is
+/// nothing to fit the quantization on. Every slot must still be encoded, since the quantized
+/// storage is addressed by offset.
+#[rstest]
+fn test_quantization_of_vector_missing_from_all_points(
+    #[values(
+        "scalar",
+        "scalar_quantile",
+        "pq",
+        "binary_1bit",
+        "binary_2bit",
+        "binary_1_5bit",
+        "turbo_bits1",
+        "turbo_bits4",
+        "turbo_bits8"
+    )]
+    case: &str,
+    #[values(false, true)] multivector: bool,
+) {
+    init_logger();
+    let quantization_config = quantization_case(case);
+    let dim = 256;
+    let num_missing = 10;
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let quant_dir = Builder::new().prefix("quant_dir").tempdir().unwrap();
+    let segment = segment_with_missing_vectors(dir.path(), dim, multivector, num_missing, &[]);
+    let quantized_vectors = quantize_vector1(&segment, &quantization_config, quant_dir.path());
+    let _scope = ambient::test_guard();
+
+    let query = &random_points(1, if multivector { 4 } else { 1 }, dim)[0];
+    let scorer = quantized_vectors
+        .raw_scorer(point_query(query, multivector))
+        .unwrap();
+    for id in 0..num_missing {
+        let score = scorer.score_point(internal_id(&segment, id)).unwrap();
+        assert!(score.is_finite(), "{case}: score of point {id} is {score}");
+    }
+}
+
+/// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested
+/// verbatim — byte-identical after `upsert_point_raw` → `retrieve_raw`, with
+/// no dequantize/requantize drift (destination decodes exactly like the
+/// source).
+#[test]
+fn test_upsert_raw_dense_turbo_bytes() {
+    init_logger();
+    let dim = 64;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    let vec: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
+    src.upsert_point(100, 7.into(), only_default_vector(&vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 7.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        7.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+    )
+    .unwrap();
+
+    // Encoded bytes survive verbatim — no requantization round-trip.
+    assert_eq!(
+        retrieve_raw_vector(&dst, 7.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    // And both segments dequantize to exactly the same vector.
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+        src.vector(DEFAULT_VECTOR_NAME, 7.into()).unwrap(),
+    );
+}
+
+/// TurboQuant multivector raw round-trip: the concatenated encoded inner
+/// records must be ingested verbatim.
+#[test]
+fn test_upsert_raw_multivec_turbo_bytes() {
+    init_logger();
+    let dim = 64;
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: Some(MultiVectorConfig::default()),
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let src_dir = Builder::new().prefix("segment_src").tempdir().unwrap();
+    let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
+    let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
+    let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    // Three inner vectors of `dim` elements each, flattened.
+    let flattened: Vec<f32> = (0..3 * dim).map(|i| (i as f32).cos()).collect();
+    let multi_vec = MultiDenseVectorInternal::new(flattened, dim);
+    src.upsert_point(100, 4.into(), only_default_multi_vector(&multi_vec))
+        .unwrap();
+    let bytes = retrieve_raw_vector(&src, 4.into(), DEFAULT_VECTOR_NAME);
+
+    dst.upsert_point_raw(
+        100,
+        4.into(),
+        &[(DEFAULT_VECTOR_NAME.to_owned(), bytes.clone())],
+    )
+    .unwrap();
+
+    assert_eq!(
+        retrieve_raw_vector(&dst, 4.into(), DEFAULT_VECTOR_NAME),
+        bytes
+    );
+    assert_eq!(
+        dst.vector(DEFAULT_VECTOR_NAME, 4.into()).unwrap(),
+        src.vector(DEFAULT_VECTOR_NAME, 4.into()).unwrap(),
+    );
+}
+
+/// TurboQuant-as-datatype vectors must survive append-only mutations that
+/// don't touch them — e.g. payload-only ops — without degrading.
+///
+/// On an append-only segment every mutating op routes through
+/// `Segment::clone_and_mutate_point`, which rewrites the point at a
+/// fresh internal id. It used to snapshot the point's vectors decoded to `f32`,
+/// dequantizing and requantizing a TQ-datatype vector on every mutation,
+/// even one that only touched the payload. TurboQuant requantization is not
+/// idempotent — for Dot/L2 the stored per-vector scale factor picks up the
+/// centroid-norm bias on every cycle — so each op degraded the vector a
+/// little further beyond the initial (expected, one-off) quantization loss.
+/// Vectors the op doesn't overwrite now travel to the fresh id as
+/// storage-native bytes, verbatim; this test guards that.
+///
+/// This is the segment-level analogue of the segment-holder test
+/// `test_cow_move_does_not_degrade_turbo_vectors` (CoW moves between
+/// segments); here the clone-and-tombstone cycle happens within one segment.
+///
+/// The test applies repeated payload-only ops to one point on an append-only
+/// TQ segment and asserts the decoded vector never drifts from its
+/// first-generation value (the read-back right after initial ingestion).
+#[test]
+fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
+    init_logger();
+    const DIM: usize = 128;
+    const ROUNDS: u64 = 32;
+
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::ChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: Some(VectorStorageDatatype::Turbo4),
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
+    segment.append_only_mutations = true;
+
+    let _scope = ambient::test_guard();
+    let point_id: PointIdType = 7.into();
+    let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
+    segment
+        .upsert_point(100, point_id, only_default_vector(&original))
+        .unwrap();
+
+    let read_dense = |segment: &Segment| -> Vec<f32> {
+        match segment
+            .vector(DEFAULT_VECTOR_NAME, point_id)
+            .unwrap()
+            .unwrap()
+        {
+            VectorInternal::Dense(vector) => vector,
+            VectorInternal::Sparse(_) | VectorInternal::MultiDense(_) => {
+                panic!("expected a dense vector")
+            }
+        }
+    };
+
+    // First-generation read-back: the original vector after its initial
+    // (expected, one-off) quantization. Payload ops must preserve it exactly.
+    let first_generation = read_dense(&segment);
+
+    let payload: Payload = serde_json::from_str(r#"{"color": "red"}"#).unwrap();
+
+    // L2 distance of each round's read-back from the first generation.
+    let mut drift = Vec::new();
+    for round in 0..ROUNDS {
+        let old_internal_id = segment
+            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .unwrap();
+        segment
+            .set_payload(101 + round, point_id, &payload, &None)
+            .unwrap();
+
+        // The op must have taken the append-only clone-and-tombstone path
+        // (fresh internal id), not the in-place path.
+        let new_internal_id = segment
+            .with_view(|v| v.lookup_internal_id(point_id, DeferredBehavior::VisibleOnly))
+            .unwrap();
+        assert_ne!(old_internal_id, new_internal_id);
+
+        let read_back = read_dense(&segment);
+        drift.push(
+            first_generation
+                .iter()
+                .zip(&read_back)
+                .map(|(&a, &b)| (a - b).powi(2))
+                .sum::<f32>()
+                .sqrt(),
+        );
+    }
+
+    assert!(
+        drift.iter().all(|&distance| distance == 0.0),
+        "TurboQuant vector degraded across append-only payload ops; L2 \
+         distance from the first-generation read-back after each op: {drift:?}",
+    );
 }
 
 /// Tests segment functions to ensure invalid requests do error
@@ -558,9 +2000,9 @@ fn test_vector_compatibility_checks() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let mut segment = build_multivec_segment(dir.path(), 4, 2, Distance::Dot).unwrap();
+    let mut segment = build_segment_with_two_named_vecs(dir.path(), 4, 2, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Insert one point for a reference internal ID
     let point_id = 4.into();
@@ -572,7 +2014,6 @@ fn test_vector_compatibility_checks() {
                 (VECTOR1_NAME.into(), vec![0.1, 0.2, 0.3, 0.4]),
                 (VECTOR2_NAME.into(), vec![1.0, 0.9]),
             ]),
-            &hw_counter,
         )
         .unwrap();
     let internal_id = segment
@@ -667,19 +2108,19 @@ fn test_vector_compatibility_checks() {
             .err()
             .unwrap();
         segment
-            .upsert_point(101, point_id, vectors.clone(), &hw_counter)
+            .upsert_point(101, point_id, vectors.clone())
             .err()
             .unwrap();
         segment
-            .update_vectors(internal_id, 0, vectors.clone(), &hw_counter)
+            .update_vectors(internal_id, 0, vectors.clone())
             .err()
             .unwrap();
         segment
-            .insert_new_vectors(point_id, 0, &vectors, &hw_counter)
+            .insert_new_vectors(point_id, 0, &vectors)
             .err()
             .unwrap();
         segment
-            .replace_all_vectors(internal_id, 0, &vectors, &hw_counter)
+            .replace_all_vectors(internal_id, 0, &vectors)
             .err()
             .unwrap();
     }
@@ -688,17 +2129,14 @@ fn test_vector_compatibility_checks() {
         check_vector_name(wrong_name, &segment.segment_config)
             .err()
             .unwrap();
-        segment
-            .vector(wrong_name, point_id, &hw_counter)
-            .err()
-            .unwrap();
+        segment.vector(wrong_name, point_id).err().unwrap();
         segment
             .delete_vector(101, point_id, wrong_name)
             .err()
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
         segment
-            .with_view(|v| v.vector_by_offset(wrong_name, internal_id, &hw_counter))
+            .with_view(|v| v.vector_by_offset(wrong_name, internal_id))
             .err()
             .unwrap();
     }
@@ -719,16 +2157,11 @@ fn test_handle_point_version() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
-        .upsert_point(
-            100,
-            1.into(),
-            only_default_vector(&[1.1, 1.0, 0.0, 1.0]),
-            &hw_counter,
-        )
+        .upsert_point(100, 1.into(), only_default_vector(&[1.1, 1.0, 0.0, 1.0]))
         .unwrap();
 
     // Do not handle operation on existing point when providing an old version
@@ -770,12 +2203,12 @@ fn create_deferred_segment(
     n_vectors: usize,
     n_deferred: usize,
 ) -> Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let deferred_internal_id = (n_deferred > 0).then_some(n_vectors as PointOffsetType);
 
     let total_vectors = n_vectors + n_deferred;
-    let mut segment = build_segment(
+    let (mut segment, _) = build_segment(
         dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(
@@ -795,7 +2228,12 @@ fn create_deferred_segment(
                     "sparse".to_string(),
                     SparseVectorDataConfig {
                         // Don't do full scan unless explicitly enabled so we cover more parts with our tests.
-                        index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                        index: SparseIndexConfig::new(
+                            Some(1),
+                            SparseIndexType::MutableRam,
+                            None,
+                            None,
+                        ),
                         storage_type: SparseVectorStorageType::Mmap,
                         modifier: None,
                     },
@@ -807,6 +2245,7 @@ fn create_deferred_segment(
                             Some(usize::MAX),
                             SparseIndexType::MutableRam,
                             None,
+                            None,
                         ),
                         storage_type: SparseVectorStorageType::Mmap,
                         modifier: None,
@@ -814,6 +2253,7 @@ fn create_deferred_segment(
                 ),
             ]),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         deferred_internal_id,
         true,
@@ -852,7 +2292,7 @@ fn create_deferred_segment(
     for i in 1..=total_vectors {
         let point_id = PointIdType::from(i as u64);
         segment
-            .insert_new_vectors(point_id, op_num_counter, &vectors, &hw_counter)
+            .insert_new_vectors(point_id, op_num_counter, &vectors)
             .unwrap();
         op_num_counter += 1;
 
@@ -874,7 +2314,7 @@ fn create_deferred_segment(
             .insert("is-deferred".to_string(), is_deferred.into());
 
         segment
-            .set_full_payload(op_num_counter, point_id, &payload, &hw_counter)
+            .set_full_payload(op_num_counter, point_id, &payload)
             .unwrap();
         op_num_counter += 1;
     }
@@ -884,7 +2324,6 @@ fn create_deferred_segment(
             op_num_counter,
             &JsonPath::new("color-indexed"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-            &hw_counter,
         )
         .unwrap();
 
@@ -895,7 +2334,6 @@ fn create_deferred_segment(
             op_num_counter,
             &JsonPath::new("number"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
-            &hw_counter,
         )
         .unwrap();
     op_num_counter += 1;
@@ -905,7 +2343,6 @@ fn create_deferred_segment(
             op_num_counter,
             &JsonPath::new("is-deferred"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)),
-            &hw_counter,
         )
         .unwrap();
 
@@ -926,7 +2363,7 @@ fn create_deferred_segment(
         );
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
+            .with_view(|v| v.payload_by_offset(i as u32 - 1))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
@@ -943,7 +2380,7 @@ fn create_deferred_segment(
 
         // Check the `is-deferred` payload is correct.
         let is_deferred_payload = segment
-            .with_view(|v| v.payload_by_offset(i as u32 - 1, &hw_counter))
+            .with_view(|v| v.payload_by_offset(i as u32 - 1))
             .unwrap()
             .get_value(&JsonPath::new("is-deferred"))[0]
             .as_bool()
@@ -1004,7 +2441,8 @@ fn test_dense_deferred_points() {
     drop(segment);
 
     // Reopen segment to ensure deferred points are loaded correctly from disk
-    let segment = load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false)).unwrap();
+    let segment =
+        load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false), false).unwrap();
 
     // Deferred points should still be the same after reopening
     assert!(
@@ -1049,7 +2487,6 @@ const N_POINTS: usize = 12;
 #[test]
 fn test_deferred_point_estimation_with_filter() {
     init_logger();
-    let hw_counter = HardwareCounterCell::new();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         JsonPath::new("color"),
@@ -1066,9 +2503,7 @@ fn test_deferred_point_estimation_with_filter() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
-        let estimation = segment
-            .estimate_point_count(Some(&filter), &hw_counter)
-            .unwrap();
+        let estimation = segment.estimate_point_count(Some(&filter)).unwrap();
 
         // We test with different amount of deferred points (including no deferred points) and expect the
         // cardinality to not change.
@@ -1078,9 +2513,7 @@ fn test_deferred_point_estimation_with_filter() {
         // For consistency we also test that the same cardinality is estimated if no deferred points exist.
         if n_deferred == 0 {
             assert_eq!(segment.id_tracker.borrow().deferred_internal_id(), None);
-            let estimation = segment
-                .estimate_point_count(Some(&filter), &hw_counter)
-                .unwrap();
+            let estimation = segment.estimate_point_count(Some(&filter)).unwrap();
             assert_eq!(estimation.exp, 6);
             assert_eq!(estimation.max, 12);
         }
@@ -1091,7 +2524,7 @@ fn test_deferred_point_estimation_with_filter() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Search
     assert_deferred_points_excluded(
@@ -1124,7 +2557,6 @@ fn test_deferred_point_read_operations() {
                     None,
                     filter,
                     &AtomicBool::new(false),
-                    &hw_counter,
                     DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
@@ -1148,7 +2580,6 @@ fn test_deferred_point_read_operations() {
                         start_from: None,
                     },
                     &AtomicBool::new(false),
-                    &hw_counter,
                     DeferredBehavior::VisibleOnly,
                 )
                 .unwrap()
@@ -1163,7 +2594,7 @@ fn test_deferred_point_read_operations() {
         "Read random filtered",
         |segment, filter| {
             segment
-                .read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter)
+                .read_random_filtered(500, filter, &AtomicBool::new(false))
                 .unwrap()
         },
         |i| *i,
@@ -1184,7 +2615,6 @@ fn test_deferred_point_read_operations() {
                     &point_ids,
                     &WithPayload::default(),
                     &WithVector::Bool(false),
-                    &hw_counter,
                     &AtomicBool::new(false),
                     DeferredBehavior::VisibleOnly,
                 )
@@ -1196,6 +2626,110 @@ fn test_deferred_point_read_operations() {
         |i| *i,
         false,
         false,
+    );
+}
+
+/// A deferred point is invisible to ordinary (`VisibleOnly`) per-point reads,
+/// but the copy-on-write move path must still be able to read its data via
+/// `retrieve`/`retrieve_raw` with `DeferredBehavior::WithDeferred`.
+///
+/// Regression test for a spurious "No point with id ... found" error: the CoW
+/// move path read the source point's payload with `VisibleOnly`, which raised
+/// `PointIdError` for a deferred source point (e.g. a point upserted under
+/// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
+#[test]
+fn test_deferred_point_with_deferred_reads() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    // Threshold so any new point lands beyond the cutoff (deferred).
+    let (mut segment, _) = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        Some(0),
+        true,
+    )
+    .unwrap();
+
+    let point_id = PointIdType::from(42u64);
+    let vector = vec![0.1, 0.2, 0.3, 0.4];
+    let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&vector));
+    let payload: Payload = serde_json::from_str(r#"{"number": 7}"#).unwrap();
+
+    segment.upsert_point(0, point_id, vectors).unwrap();
+    segment.set_full_payload(0, point_id, &payload).unwrap();
+
+    assert!(
+        segment.point_is_deferred(point_id),
+        "point must be deferred for this regression scenario",
+    );
+
+    // VisibleOnly hides the deferred point: both payload and vector reads
+    // fail to resolve it (this is exactly what made the CoW move path raise a
+    // spurious PointNotFound before the fix).
+    assert!(
+        matches!(
+            segment.payload(point_id),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly payload read must not resolve a deferred point",
+    );
+    assert!(
+        matches!(
+            segment.all_vectors(point_id),
+            Err(PointIdError { missed_point_id }) if missed_point_id == point_id,
+        ),
+        "VisibleOnly vector read must not resolve a deferred point",
+    );
+
+    // WithDeferred resolves the deferred point with its real data — this is
+    // what the CoW move path uses (via `retrieve_raw`), fixing the spurious
+    // PointNotFound.
+    let records = segment
+        .retrieve(
+            &[point_id],
+            &WithPayload {
+                enable: true,
+                payload_selector: None,
+            },
+            &WithVector::Bool(true),
+            &AtomicBool::new(false),
+            DeferredBehavior::WithDeferred,
+        )
+        .unwrap();
+    let record = records
+        .get(&point_id)
+        .expect("WithDeferred retrieve must resolve a deferred point");
+    assert_eq!(
+        record.payload.clone().unwrap_or_default(),
+        payload,
+        "WithDeferred retrieve must return the deferred point's payload",
+    );
+    assert!(
+        record
+            .vectors
+            .as_ref()
+            .expect("vectors were requested")
+            .iter()
+            .any(|(name, _)| name == DEFAULT_VECTOR_NAME),
+        "WithDeferred retrieve must return the deferred point's vector",
     );
 }
 
@@ -1285,7 +2819,7 @@ fn test_deferred_point_sparse() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_facets() {
     init_logger();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let key = JsonPath::new("color-indexed");
 
@@ -1319,9 +2853,7 @@ fn test_deferred_point_facets() {
                     exact,
                 };
 
-                let facet_res_deferred = segment
-                    .facet(&request, &AtomicBool::new(false), &hw_counter)
-                    .unwrap();
+                let facet_res_deferred = segment.facet(&request, &AtomicBool::new(false)).unwrap();
 
                 // Compare against the same point set without deferred mode by
                 // rebuilding the segment with `deferred_internal_id = None`.
@@ -1332,7 +2864,7 @@ fn test_deferred_point_facets() {
                 let no_deferred_segment =
                     create_deferred_segment(&no_deferred_dir, 5, N_POINTS + n_deferred, 0);
                 let facet_res = no_deferred_segment
-                    .facet(&request, &AtomicBool::new(false), &hw_counter)
+                    .facet(&request, &AtomicBool::new(false))
                     .unwrap();
 
                 let expected_deferred = if filter.is_some() {
@@ -1357,7 +2889,6 @@ fn test_deferred_point_facets() {
                         &JsonPath::new("is-deferred"),
                         filter,
                         &AtomicBool::new(false),
-                        &hw_counter,
                     )
                     .unwrap()
                     .into_iter()
@@ -1506,8 +3037,6 @@ fn assert_deferred_points_excluded<F, R, T>(
 
 #[test]
 fn test_deleted_deferred_point_count() {
-    let hw_counter = HardwareCounterCell::new();
-
     // On Windows, reduce iteration count since each segment creation is very IO-heavy.
     #[cfg(target_os = "windows")]
     let deferred_counts: &[usize] = &[0, 10];
@@ -1528,9 +3057,7 @@ fn test_deleted_deferred_point_count() {
 
         for d in 0..n_deferred {
             let delete_id = segment.id_tracker.borrow().deferred_internal_id().unwrap() + d as u32;
-            segment
-                .delete_point_internal(delete_id, &hw_counter)
-                .unwrap();
+            segment.delete_point_internal(delete_id, None).unwrap();
 
             let deleted_count = d + 1; // The first index is 0 but this point is deleted, so count must be 1.
             assert_eq!(
@@ -1543,9 +3070,7 @@ fn test_deleted_deferred_point_count() {
             );
 
             // Do the operation twice to test that we don't double count the same point.
-            segment
-                .delete_point_internal(delete_id, &hw_counter)
-                .unwrap();
+            segment.delete_point_internal(delete_id, None).unwrap();
 
             assert_eq!(
                 segment.deferred_point_count(),
@@ -1568,4 +3093,223 @@ fn test_deleted_deferred_point_count() {
         );
         assert_eq!(segment.available_point_count_without_deferred(), N_POINTS);
     }
+}
+
+/// A flush pass can capture a segment between the phases of ONE update operation: the points
+/// that already exist are written under one lock, the new ones under another, both carrying the
+/// same operation number. Claiming that operation's version would leave the segment at
+/// `version == persisted_version` with the second phase still in memory, so every later pass
+/// skips it while the WAL acknowledge moves past the operation. Root cause of the missing points
+/// in #10402.
+#[test]
+fn test_flush_does_not_claim_an_unfinished_operation() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+
+    segment
+        .upsert_point(10, 1.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+        .unwrap();
+
+    // Operation 10 is still being applied, so the last finished operation is 9.
+    let flusher = segment
+        .flusher(false, Some(9))
+        .expect("segment has unflushed changes");
+    flusher().expect("flush must not fail");
+
+    assert_eq!(segment.version(), 10);
+    assert_eq!(
+        segment.persistent_version(),
+        9,
+        "a flush must not claim an operation that has not finished applying",
+    );
+
+    // The segment is therefore not clean, and the next pass flushes the rest of operation 10
+    // instead of skipping it. A skip would leave the persisted version at 9.
+    assert_eq!(segment.flush(false).unwrap(), 10);
+    assert!(
+        segment.flusher(false, None).is_none(),
+        "a fully persisted segment must not be flushed again",
+    );
+}
+
+/// The clamp must reach the segment state file, not just the in-memory persisted version.
+/// A segment reloading at the operation's own version would be clean again, with the second
+/// phase replayed from the WAL into memory and nothing left to flush it.
+#[test]
+fn test_flush_of_unfinished_operation_reloads_dirty() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let segment_path = segment.segment_path.clone();
+
+    segment
+        .upsert_point(10, 1.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+        .unwrap();
+    segment
+        .flusher(false, Some(9))
+        .expect("segment has unflushed changes")()
+    .expect("flush must not fail");
+    drop(segment);
+
+    let reloaded = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+
+    // Coming back at 10 would make the segment look clean, and the WAL replay of operation 10
+    // would sit in memory with nothing left to flush it.
+    assert_eq!(reloaded.version(), 9);
+    assert_eq!(reloaded.persistent_version(), 9);
+}
+
+/// A field index dropped between flusher capture and execution (a `DropIndex`
+/// racing the background flush) must not abort the rest of the flush sequence.
+///
+/// Aborting used to leave the field indexes flushed before the cancellation
+/// point durably ahead of payload storage and point versions; WAL replay then
+/// re-derived filter-based operations through that too-new index and silently
+/// skipped points whose payload still needed the operation re-applied.
+#[test]
+fn test_flush_survives_concurrent_field_index_drop() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    let _scope = ambient::test_guard();
+
+    segment
+        .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{"num": 20}"#).unwrap();
+    segment.set_full_payload(2, 1.into(), &payload).unwrap();
+    segment
+        .create_field_index(
+            3,
+            &JsonPath::new("num"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+        )
+        .unwrap();
+
+    // Capture the flushers (as the background flush thread does), then drop the
+    // index before executing them.
+    let flusher = segment
+        .flusher(true, None)
+        .expect("segment has unflushed changes");
+    segment
+        .delete_field_index(4, &JsonPath::new("num"))
+        .unwrap();
+
+    flusher().expect("flush must not fail");
+
+    // The flush must skip the dropped index storage and still complete the
+    // sequence: payload storage, point versions, and the segment state captured
+    // at version 3. A cancelled (aborted) flush would have left the persisted
+    // version at 0.
+    assert_eq!(segment.persistent_version(), 3);
+}
+
+/// A search locates its results, and `retrieve_at` reads them back as
+/// `retrieve` does. A point deleted or rewritten since is left out, for the
+/// caller to read by id.
+#[test]
+fn test_retrieve_at_reads_located_search_results() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+
+    let _scope = ambient::test_guard();
+
+    for id in 1..=5u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[id as f32, 1.0]))
+            .unwrap();
+        let payload: Payload = serde_json::from_value(serde_json::json!({ "n": id })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let found = segment
+        .search_batch(
+            DEFAULT_VECTOR_NAME,
+            &[&[1.0, 0.0].into()],
+            &WithPayload::from(false),
+            &false.into(),
+            None,
+            10,
+            None,
+            &segment_query_context,
+        )
+        .unwrap();
+    let ids: Vec<PointIdType> = found[0].iter().map(|point| point.id).collect();
+    assert_eq!(ids.len(), 5);
+    assert!(found[0].iter().all(|point| point.location.is_some()));
+    let points: Vec<_> = found[0]
+        .iter()
+        .map(|point| PointAtOffset {
+            id: point.id,
+            offset: point.location.expect("search results are located").offset,
+            version: point.version,
+        })
+        .collect();
+
+    let is_stopped = AtomicBool::new(false);
+    let with_payload = WithPayload::from(true);
+    let with_vector = WithVector::Bool(true);
+    let by_id = segment
+        .retrieve(
+            &ids,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let by_offset = segment
+        .retrieve_at(
+            &points,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let comparable = |records: AHashMap<PointIdType, SegmentRecord>| {
+        let mut records: Vec<_> = records
+            .into_values()
+            .map(|record| {
+                let SegmentRecord {
+                    id,
+                    vectors,
+                    payload,
+                } = record;
+                (id, vectors.map(|vectors| vectors.into_vec()), payload)
+            })
+            .collect();
+        records.sort_by_key(|(id, _, _)| *id);
+        records
+    };
+    assert_eq!(comparable(by_offset), comparable(by_id));
+
+    segment.delete_point(10, 2.into()).unwrap();
+    segment
+        .upsert_point(11, 3.into(), only_default_vector(&[3.0, 2.0]))
+        .unwrap();
+    let by_offset = segment
+        .retrieve_at(
+            &points,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let mut left: Vec<_> = by_offset.into_keys().collect();
+    left.sort();
+    assert_eq!(left, [1, 4, 5].map(PointIdType::from));
 }

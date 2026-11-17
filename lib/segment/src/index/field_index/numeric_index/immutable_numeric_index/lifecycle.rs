@@ -1,9 +1,9 @@
 use std::ops::Bound;
 use std::path::PathBuf;
 
+use blobstore::Blob;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
-use gridstore::Blob;
 
 use super::super::Encodable;
 use super::super::mutable_numeric_index::InMemoryNumericIndex;

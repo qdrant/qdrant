@@ -1,0 +1,34 @@
+id: no-default-batch-methods
+valid:
+  # Body-less signature — every implementation chooses explicitly.
+  - |
+    trait FooRead {
+        fn read_batch(&self) -> u32;
+    }
+  # Non-batch methods may keep default bodies.
+  - |
+    trait FooRead {
+        fn read_one(&self) -> u32 {
+            0
+        }
+    }
+  # The universal_io primitives keep their intentional default bodies.
+  - |
+    trait UniversalRead {
+        fn read_batch(&self) -> u32 {
+            0
+        }
+    }
+invalid:
+  - |
+    trait FooRead {
+        fn read_batch(&self) -> u32 {
+            0
+        }
+    }
+  - |
+    trait ConditionChecker {
+        fn check_batched(&self) -> usize {
+          0
+        }
+    }

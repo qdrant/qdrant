@@ -16,6 +16,8 @@ impl CollectionUpdateOperations {
                 PointOperations::DeletePoints { .. } => "delete_points",
                 PointOperations::DeletePointsByFilter(_) => "delete_points_by_filter",
                 PointOperations::SyncPoints(_) => "sync_points",
+                PointOperations::UpsertPointsRaw(_) => "upsert_points_raw",
+                PointOperations::SyncPointsRaw(_) => "sync_points_raw",
             },
             CollectionUpdateOperations::VectorOperation(op) => match op {
                 VectorOperations::UpdateVectors(_) => "update_vectors",

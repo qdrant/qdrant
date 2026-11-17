@@ -78,7 +78,11 @@ def recover_shard(peer_api_uri, collection_name):
                 "shard_id": shard_id
             }
         })
-    assert r.status_code == 200
+    # The cluster recovery loop may start the same transfer between the
+    # transfers-empty check and this call; treat that race as success.
+    if r.status_code == 400 and "already involved in transfer" in r.text:
+        return
+    assert r.status_code == 200, r.text
 
 def first_segment_name(peer_storage: str, collection_name: str) -> str:
     # get first segment name from storage
@@ -203,8 +207,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
         # Initiate transfer from another peer to recover the shard.
         # This part checks that dummy shard can be recovered with shard transfer.
-        # If a transfer was already auto-initiated by the cluster recovery loop,
-        # skip the manual call — it would fail with 400 "already involved in transfer".
+        # recover_shard also tolerates a 400 if the recovery loop raced us.
         recover_shard(peer_api_uris[-1], collection_name=COLLECTION_NAME)
 
     # Assert storage does not contain initialized flag when transfer is started

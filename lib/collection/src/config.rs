@@ -1,24 +1,30 @@
-use std::collections::{BTreeMap, HashMap};
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Write as _};
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use chrono::{DateTime, Utc};
 use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::deferred_points::deferred_point_offset;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, Payload, PayloadStorageType, QuantizationConfig, SegmentConfig,
-    SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf,
-    VectorStorageDatatype, VectorStorageType,
+    Distance, HnswConfig, Indexes, Memory, Payload, PayloadStorageType, QuantizationConfig,
+    SegmentConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName,
+    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
@@ -27,7 +33,7 @@ use crate::operations::types::{
     SparseVectorsConfig, VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
-use crate::optimizers_builder::OptimizersConfig;
+use crate::optimizers_builder::{OptimizersConfig, build_segment_optimizer_config};
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
@@ -125,23 +131,153 @@ pub struct CollectionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub read_fan_out_delay_ms: Option<u64>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
     ///
     /// Default: true
-    #[serde(default = "default_on_disk_payload")]
-    pub on_disk_payload: bool,
+    #[serde(default = "default_on_disk_payload_opt")]
+    #[deprecated(since = "1.19.0", note = "Use `payload.memory` instead")]
+    pub on_disk_payload: Option<bool>,
+    /// Configuration of the payload storage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub payload: Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub id_tracker: Option<IdTrackerParams>,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub sparse_vectors: Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
 }
 
+/// Params of the payload storage
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct PayloadStorageParams {
+    /// Memory placement of the payload storage. Overrides the deprecated `on_disk_payload` flag
+    /// if both are set. `pinned` is not supported for payload storage.
+    /// Default: `cold` (`cached` if `on_disk_payload` is set to false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_payload_storage_memory"))]
+    pub memory: Option<Memory>,
+}
+
+impl PayloadStorageParams {
+    /// Update this config with fields from `diff`; fields specified in `diff` win.
+    pub fn update(&self, diff: &PayloadStorageParams) -> Self {
+        let PayloadStorageParams { memory } = diff;
+        PayloadStorageParams {
+            memory: memory.or(self.memory),
+        }
+    }
+}
+
+/// Params of the point id tracker
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Validate,
+    Anonymize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct IdTrackerParams {
+    /// Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and
+    /// reads it on demand, `cached` keeps it on disk but primes the page cache with it on load,
+    /// `pinned` keeps it in RAM.
+    /// Default: `pinned`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
+}
+
+impl IdTrackerParams {
+    /// Update this config with fields from `diff`; fields specified in `diff` win.
+    pub fn update(&self, diff: &IdTrackerParams) -> Self {
+        let IdTrackerParams { memory } = diff;
+        IdTrackerParams {
+            memory: memory.or(self.memory),
+        }
+    }
+}
+
+/// Reject memory placements not supported by payload storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_payload_storage_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(std::borrow::Cow::from(
+                "`pinned` memory placement is not supported for payload storage",
+            ));
+            Err(error)
+        }
+    }
+}
+
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
-        PayloadStorageType::from_on_disk_payload(self.on_disk_payload)
+        PayloadStorageType::from_memory(self.payload_memory_placement())
+    }
+
+    /// Effective memory placement of the payload storage, resolving the new `payload.memory`
+    /// parameter against the deprecated `on_disk_payload` flag.
+    ///
+    /// No conflict warning is logged here: `on_disk_payload` is always populated with its default,
+    /// so an explicitly configured `payload.memory` would always "conflict" with it.
+    pub fn payload_memory_placement(&self) -> Memory {
+        let memory = self.payload.and_then(|payload| payload.memory);
+        Memory::resolve(memory, self.on_disk_payload.map(Memory::from_on_disk))
+            .unwrap_or(Memory::Cold)
+    }
+
+    /// Requested memory placement of the id tracker, `None` if not configured (the deployment
+    /// default applies, see [`SegmentConfig::id_tracker_memory_placement`]).
+    pub fn id_tracker_memory(&self) -> Option<Memory> {
+        self.id_tracker.and_then(|id_tracker| id_tracker.memory)
+    }
+
+    /// All vector names (dense and sparse) currently present in the collection schema.
+    ///
+    /// Covers both kinds because a segment's `vector_data` holds dense and sparse vectors
+    /// together; callers validating segment data against the schema (WAL-recovery name
+    /// stripping, the optimizer's live-schema read) need the full set. A dense-only set would
+    /// make a sparse vector look deleted.
+    pub fn vector_names(&self) -> HashSet<VectorNameBuf> {
+        let dense = self.vectors.params_iter().map(|(name, _)| name.to_owned());
+        let sparse = self
+            .sparse_vectors
+            .iter()
+            .flatten()
+            .map(|(name, _)| name.to_owned());
+        dense.chain(sparse).collect()
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
@@ -154,6 +290,8 @@ impl CollectionParams {
             read_fan_out_factor: _, // May be changed
             read_fan_out_delay_ms: _, // May be changed,
             on_disk_payload: _, // May be changed
+            payload: _,      // May be changed
+            id_tracker: _,   // May be changed
             sparse_vectors: _, // Sets may differ via named vector CRUD
         } = other;
 
@@ -178,10 +316,6 @@ impl CollectionParams {
     ) -> Option<PointOffsetType> {
         let threshold_bytes = deferred_point_threshold_bytes?.get();
 
-        // Because we cannot predict multivector size,
-        // define here a constant-size inner vectors count for multivector.
-        const MULTIVECTOR_SIZE: usize = 16;
-
         self.vectors
             .params_iter()
             // Skip vectors without HNSW indexing
@@ -192,25 +326,12 @@ impl CollectionParams {
                     .then_some(params)
             })
             .map(|params| {
-                let element_bytes = match params.datatype {
-                    Some(Datatype::Float16) => 2,
-                    Some(Datatype::Uint8) => 1,
-                    // Placeholder: Turbo4 is ~0.5 byte/dim + per-row scale.
-                    // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
-                    Some(Datatype::Turbo4) => 1,
-                    Some(Datatype::Float32) | None => 4,
-                };
-
-                let dim = params.size.get() as usize;
-
-                let vector_bytes = if params.multivector_config.is_some() {
-                    element_bytes * dim * MULTIVECTOR_SIZE
-                } else {
-                    element_bytes * dim
-                };
-
-                let deferred_from = threshold_bytes.div_ceil(vector_bytes);
-                PointOffsetType::try_from(deferred_from).unwrap_or(PointOffsetType::MAX)
+                deferred_point_offset(
+                    threshold_bytes,
+                    params.size.get() as usize,
+                    params.datatype.map(VectorStorageDatatype::from),
+                    params.multivector_config.is_some(),
+                )
             })
             .min()
     }
@@ -230,6 +351,14 @@ pub fn default_write_consistency_factor() -> NonZeroU32 {
 
 pub const fn default_on_disk_payload() -> bool {
     true
+}
+
+/// Default for the deprecated [`CollectionParams::on_disk_payload`] field.
+///
+/// The field is optional purely so that schema-generated clients keep working once it is removed
+/// from the API. Qdrant itself always fills it in, so it never reaches a client as `null`.
+pub const fn default_on_disk_payload_opt() -> Option<bool> {
+    Some(default_on_disk_payload())
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate, Clone, PartialEq)]
@@ -255,9 +384,49 @@ pub struct CollectionConfigInternal {
     /// such as creation time, migration data, inference model info, etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
+    /// Time of the collection creation, assigned once when the creation is submitted.
+    /// Absent for collections created before this field was introduced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionConfigInternal {
+    /// Returns `true` if `other` differs in the parts of the config that optimizers are built
+    /// from, so optimizers have to be recreated to apply it.
+    ///
+    /// Same rule as `Collection::apply_config` uses for configs from a Raft snapshot.
+    pub fn is_core_config_updated(&self, other: &Self) -> bool {
+        // Destructure, so a new field has to be explicitly classified here
+        let Self {
+            params,
+            hnsw_config,
+            optimizer_config,
+            // Only applied on restart
+            wal_config: _,
+            quantization_config,
+            // Applied to shards directly, see `Collection::update_strict_mode_config`
+            strict_mode_config: _,
+            // Identity and user data, not used by optimizers
+            uuid: _,
+            metadata: _,
+            created_at: _,
+        } = self;
+
+        params != &other.params
+            || hnsw_config != &other.hnsw_config
+            || optimizer_config != &other.optimizer_config
+            || quantization_config != &other.quantization_config
+    }
+
+    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
+    /// storage datatype.
+    ///
+    /// Used to decide whether shard transfer should ship storage-native (raw)
+    /// vector bytes instead of decoded floats, avoiding a lossy TQ round-trip.
+    pub fn has_turbo_vector_storage(&self) -> bool {
+        self.params.has_turbo_vector_storage()
+    }
+
     pub fn to_bytes(&self) -> CollectionResult<Vec<u8>> {
         serde_json::to_vec(self).map_err(|err| CollectionError::service_error(err.to_string()))
     }
@@ -280,10 +449,10 @@ impl CollectionConfigInternal {
         Ok(serde_json::from_str(&contents)?)
     }
 
-    /// Check if collection config exists
+    /// Check if collection config exists as a regular file
     pub fn check(path: &Path) -> bool {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
-        config_path.exists()
+        config_path.is_file()
     }
 
     pub fn validate_and_warn(&self) {
@@ -294,36 +463,16 @@ impl CollectionConfigInternal {
 
     /// Get warnings related to this configuration
     pub fn get_warnings(&self) -> Vec<CollectionWarning> {
-        let mut warnings = Vec::new();
-
-        for (vector_name, vector_config) in self.params.vectors.params_iter() {
-            let vector_hnsw = self
-                .hnsw_config
-                .update_opt(vector_config.hnsw_config.as_ref());
-
-            let vector_quantization =
-                vector_config.quantization_config.is_some() || self.quantization_config.is_some();
-
-            if vector_hnsw.inline_storage.unwrap_or_default() {
-                if vector_config.multivector_config.is_some() {
-                    warnings.push(CollectionWarning {
-                        message: format!(
-                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
-                             is not compatible with multivectors. This option will be ignored."
-                        ),
-                    });
-                } else if !vector_quantization {
-                    warnings.push(CollectionWarning {
-                        message: format!(
-                            "The `hnsw_config.inline_storage` option for vector '{vector_name}' \
-                             requires quantization to be enabled. This option will be ignored."
-                        ),
-                    });
-                }
-            }
-        }
-
-        warnings
+        build_segment_optimizer_config(&self.params, &self.hnsw_config, &self.quantization_config)
+            .dense_vectors
+            .iter()
+            .filter_map(|(vector_name, vector_config)| {
+                let message = vector_config.indexed().check_inline_vectors().err()?;
+                Some(CollectionWarning {
+                    message: format!("Vector '{vector_name}': {message}"),
+                })
+            })
+            .collect()
     }
 
     pub fn to_base_segment_config(&self) -> SegmentConfig {
@@ -333,6 +482,22 @@ impl CollectionConfigInternal {
 }
 
 impl CollectionParams {
+    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`,
+    /// `Turbo8`, `Turbo16`) storage datatype.
+    ///
+    /// Its primary vector storage keeps TurboQuant-encoded codes in-place, so
+    /// reading storage-native bytes yields those codes. Relocating them verbatim
+    /// (raw shard transfer) avoids a lossy decode→encode round-trip that would
+    /// otherwise drift the encoding.
+    pub fn has_turbo_vector_storage(&self) -> bool {
+        self.vectors.params_iter().any(|(_, params)| {
+            matches!(
+                params.datatype,
+                Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)
+            )
+        })
+    }
+
     pub fn empty() -> Self {
         CollectionParams {
             vectors: Default::default(),
@@ -342,7 +507,9 @@ impl CollectionParams {
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,
             read_fan_out_delay_ms: None,
-            on_disk_payload: default_on_disk_payload(),
+            payload: None,
+            on_disk_payload: default_on_disk_payload_opt(),
+            id_tracker: None,
             sparse_vectors: None,
         }
     }
@@ -470,6 +637,7 @@ impl CollectionParams {
                 hnsw_config,
                 quantization_config,
                 on_disk,
+                memory,
             } = update_params.clone();
 
             if let Some(hnsw_diff) = hnsw_config {
@@ -498,6 +666,10 @@ impl CollectionParams {
 
             if let Some(on_disk) = on_disk {
                 vector_params.on_disk = Some(on_disk);
+            }
+
+            if let Some(memory) = memory {
+                vector_params.memory = Some(memory);
             }
         }
         Ok(())
@@ -552,9 +724,16 @@ impl CollectionParams {
                     hnsw_config: _,
                     quantization_config,
                     on_disk,
+                    memory,
                     datatype,
                     multivector_config,
                 } = params;
+
+                let memory_placement = Memory::resolve(
+                    *memory,
+                    Some(Memory::from_on_disk(on_disk.unwrap_or_default())),
+                )
+                .unwrap_or(Memory::Cached);
 
                 (
                     name.into(),
@@ -569,11 +748,7 @@ impl CollectionParams {
                             .then(|| quantization_fn(quantization_config.as_ref()))
                             .flatten(),
                         // Default to in memory storage
-                        storage_type: if on_disk.unwrap_or_default() {
-                            VectorStorageType::ChunkedMmap
-                        } else {
-                            VectorStorageType::InRamChunkedMmap
-                        },
+                        storage_type: VectorStorageType::appendable_from_memory(memory_placement),
                         multivector_config: *multivector_config,
                         datatype: datatype.map(VectorStorageDatatype::from),
                     },
@@ -603,6 +778,7 @@ impl CollectionParams {
                                     .index
                                     .and_then(|index| index.datatype)
                                     .map(VectorStorageDatatype::from),
+                                memory: params.index.and_then(|index| index.memory),
                             },
                             storage_type: params.storage_type(),
                             modifier: params.modifier,
@@ -631,6 +807,80 @@ impl CollectionParams {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            id_tracker_memory: self.id_tracker_memory(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::types::Distance;
+
+    use super::*;
+    use crate::operations::types::{Datatype, VectorsConfig};
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+    fn single(datatype: Option<Datatype>) -> CollectionParams {
+        let mut builder = VectorParamsBuilder::new(4, Distance::Dot);
+        if let Some(datatype) = datatype {
+            builder = builder.with_datatype(datatype);
+        }
+        let mut params = CollectionParams::empty();
+        params.vectors = VectorsConfig::Single(builder.build());
+        params
+    }
+
+    #[test]
+    fn core_config_updated_only_by_optimizer_inputs() {
+        let config = crate::tests::fixtures::create_collection_config();
+        assert!(!config.is_core_config_updated(&config.clone()));
+
+        let mut optimizer_changed = config.clone();
+        optimizer_changed.optimizer_config.flush_interval_sec += 1;
+        assert!(config.is_core_config_updated(&optimizer_changed));
+
+        let mut hnsw_changed = config.clone();
+        hnsw_changed.hnsw_config.m += 1;
+        assert!(config.is_core_config_updated(&hnsw_changed));
+
+        // Optimizers are not built from metadata
+        let mut metadata_changed = config.clone();
+        let metadata = serde_json::Map::from_iter([("owner".to_string(), "test".into())]);
+        metadata_changed.metadata = Some(Payload::from(metadata));
+        assert!(!config.is_core_config_updated(&metadata_changed));
+    }
+
+    #[test]
+    fn has_turbo_vector_storage_by_datatype() {
+        // No explicit datatype (defaults to float32).
+        assert!(!single(None).has_turbo_vector_storage());
+        // Non-turbo datatypes.
+        assert!(!single(Some(Datatype::Float32)).has_turbo_vector_storage());
+        assert!(!single(Some(Datatype::Float16)).has_turbo_vector_storage());
+        assert!(!single(Some(Datatype::Uint8)).has_turbo_vector_storage());
+        // TurboQuant storage datatype.
+        assert!(single(Some(Datatype::Turbo4)).has_turbo_vector_storage());
+        assert!(single(Some(Datatype::Turbo8)).has_turbo_vector_storage());
+        assert!(single(Some(Datatype::Turbo16)).has_turbo_vector_storage());
+    }
+
+    #[test]
+    fn has_turbo_vector_storage_multi_any() {
+        let mut vectors = BTreeMap::new();
+        vectors.insert(
+            "plain".to_string(),
+            VectorParamsBuilder::new(4, Distance::Dot).build(),
+        );
+        vectors.insert(
+            "turbo".to_string(),
+            VectorParamsBuilder::new(4, Distance::Dot)
+                .with_datatype(Datatype::Turbo4)
+                .build(),
+        );
+        let mut params = CollectionParams::empty();
+        params.vectors = VectorsConfig::Multi(vectors);
+
+        // A single Turbo4-backed named vector is enough to trigger raw transfer.
+        assert!(params.has_turbo_vector_storage());
     }
 }

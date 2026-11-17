@@ -11,13 +11,13 @@ use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
 use segment::entry::StorageSegmentEntry;
-use segment::types::{SegmentConfig, SnapshotFormat};
-use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
+use segment::types::{SegmentConfig, SeqNumberType, SnapshotFormat};
+use shard::files::{APPLIED_SEQ_FILE, SEGMENT_MANIFEST_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::operations::OperationWithClockTag;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
+use shard::segment_holder::{FlushMode, SegmentHolder};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
 use shard::wal::SerdeWal;
@@ -27,6 +27,7 @@ use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -57,6 +58,9 @@ impl LocalShard {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let segments = self.segments.clone();
         let wal = self.wal.wal.clone();
+        // The pin set this shard's flush worker consults before acknowledging the WAL. Taken here
+        // rather than in the blocking task below, which cannot await the update handler lock.
+        let wal_ack_pins = self.update_handler.lock().await.wal_ack_pins.clone();
         let payload_index_schema = self.payload_index_schema.clone();
 
         let shard_path = self.path.clone();
@@ -75,27 +79,89 @@ impl LocalShard {
             )
         };
 
-        let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
+        let applied_seq_handler = self.applied_seq_handler.clone();
+        let applied_seq_path = applied_seq_handler.path().to_path_buf();
 
         let tar = tar.clone();
         let temp_path = temp_path.to_path_buf();
 
-        let plunger_notify = if !save_wal {
-            // If we are not saving WAL, we still need to make sure that all submitted by this point
-            // updates have made it to the segments. So we use the Plunger to achieve that.
-            // It will notify us when all submitted updates so far have been processed.
-            Some(self.plunge_async().await?)
+        // For snapshots that exclude the WAL (e.g. shard transfer), capture the clock maps before
+        // plunging and archive these captured maps instead of the persisted clock files (see the
+        // blocking task below).
+        //
+        // The persisted clocks track the WAL *write* position and therefore run ahead of the applied
+        // segment state. With no WAL in the snapshot, a recovered shard cannot replay operations to
+        // catch up, so archiving the persisted (too new) clocks would leave it with a recovery point
+        // ahead of its data, causing later WAL-delta recovery to skip operations.
+        //
+        // The plunger waits until all updates submitted before it have been applied to the segments.
+        // By capturing the clocks *before* the plunger, the segments snapshotted below are guaranteed
+        // to include every operation reflected in the captured clocks, so the archived clocks are
+        // never ahead of the snapshot data.
+        let (plunger_notify, pinned_clocks) = if !save_wal {
+            // Capture oldest before newest, so that a concurrent cutoff update (which advances newest
+            // before oldest) can never make the captured oldest exceed the captured newest.
+            let oldest_clocks = self.wal.oldest_clocks.lock().await.clone();
+            let newest_clocks = self.wal.newest_clocks.lock().await.clone();
+
+            // We still need to make sure that all updates submitted by this point have made it to the
+            // segments. So we use the Plunger to achieve that. It will notify us when all submitted
+            // updates so far have been processed.
+            let plunger_notify = self.plunge_async().await?;
+
+            (Some(plunger_notify), Some((newest_clocks, oldest_clocks)))
         } else {
-            None
+            (None, None)
         };
 
         let future = async move {
             if let Some(plunger_notify) = plunger_notify {
+                // Plunging is enough as `snapshot_all_segments` will flush all to disk
                 plunger_notify.await?;
             }
 
             let handle = tokio::task::spawn_blocking(move || {
                 // Do not change segments while snapshotting
+
+                // For snapshots that include the WAL, pin the WAL acknowledge
+                // version. The WAL is added as very last step and we want to
+                // keep all changes that are still coming in until the WAL is
+                // captured. Not doing this would result in a snapshot that is
+                // inconsistent with the WAL.
+                //
+                // Pinned at the WAL's current first index, so nothing that is still in the WAL is
+                // truncated while the snapshot runs. The segment files are copied from this point
+                // in time, so every operation applied meanwhile only survives in the WAL archived
+                // at the end. The lock is taken and released right here; the task locks the WAL
+                // itself further down, once the segments are captured.
+                let wal_ack_pin =
+                    save_wal.then(|| wal_ack_pins.pin(wal.blocking_lock().first_index()));
+
+                // If the shard maintains a segment manifest (`segments_manifest.json`), include it
+                // in the snapshot so out-of-process readers can discover segments without scanning
+                // the filesystem. It lives next to (not inside) the `segments/` directory, so older
+                // versions of Qdrant that don't know about it are unaffected. Captured before
+                // proxying: proxies preserve the wrapped segments' UUIDs, which are exactly the
+                // segment directories written into the snapshot, so the manifest matches the
+                // snapshot contents.
+                if let Some(segment_manifest) = segments.read().segment_manifest_for_snapshot() {
+                    let segment_manifest_json =
+                        serde_json::to_vec(&segment_manifest).map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to serialize segment manifest into JSON: {err}"
+                            ))
+                        })?;
+                    tar.blocking_append_data(
+                        &segment_manifest_json,
+                        Path::new(SEGMENT_MANIFEST_FILE),
+                    )
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to archive segment manifest: {err}"
+                        ))
+                    })?;
+                }
+
                 snapshot_all_segments(
                     segments.clone(),
                     &segments_path,
@@ -106,11 +172,43 @@ impl LocalShard {
                     &tar.descend(Path::new(SEGMENTS_PATH))?,
                     format,
                     manifest.as_ref(),
+                    Some(&applied_seq_handler),
                 )?;
+
+                // Staging delay: widen the window between snapshotting the segments and archiving
+                // the clocks for WAL-less snapshots. The WAL lock is not held yet, so concurrent
+                // updates can advance (and, with a short flush interval, persist) the clocks past
+                // the just-snapshotted segment data, reproducing the "clocks ahead of data" hazard
+                // this path guards against. Exercised by `wal_less_snapshot_clocks_test`.
+                #[cfg(feature = "staging")]
+                if !save_wal {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_SEGMENTS_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!("Staging: Delaying shard clock snapshot for {delay_secs}s");
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs));
+                        log::debug!("Staging: Delay complete, snapshotting shard clocks");
+                    }
+                }
 
                 let wal_guard = wal.blocking_lock_owned();
 
-                LocalShardClocks::archive_data(&shard_path, &tar)?;
+                // Archive the clock maps. For WAL-inclusive snapshots, copy the persisted clock
+                // files from disk; any operations the clocks are ahead of are present in the WAL and
+                // replayed on recovery. For WAL-less snapshots, archive the clocks captured before
+                // the plunger above, which the snapshotted segments are guaranteed to include.
+                match &pinned_clocks {
+                    Some((newest_clocks, oldest_clocks)) => {
+                        LocalShardClocks::archive_data_from(newest_clocks, oldest_clocks, &tar)?;
+                    }
+                    None => {
+                        LocalShardClocks::archive_data(&shard_path, &tar)?;
+                    }
+                }
 
                 // Staging delay
                 #[cfg(feature = "staging")]
@@ -138,6 +236,9 @@ impl LocalShard {
                 } else {
                     Self::snapshot_empty_wal(wal_guard, &temp_path, &tar)?;
                 }
+
+                // Explicitly release WAL pin, WAL it is captured now
+                drop(wal_ack_pin);
 
                 CollectionResult::Ok(())
             });
@@ -262,12 +363,19 @@ pub fn snapshot_all_segments(
     tar: &tar_ext::BuilderExt,
     format: SnapshotFormat,
     manifest: Option<&SnapshotManifest>,
+    applied_seq_handler: Option<&AppliedSeqHandler>,
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
 
+    // Updates keep flowing into the proxies' shared write segment while we snapshot, so the
+    // flush inside must not claim an operation that is still being applied to it. Read here
+    // rather than at flush time: too low only costs a re-flush on the next pass.
+    let applied_up_to = applied_seq_handler.map(AppliedSeqHandler::applied_op_num);
+
     proxy_all_segments_and_apply(
         segments,
+        applied_up_to,
         segments_path,
         segment_config,
         payload_index_schema,
@@ -319,6 +427,7 @@ pub fn snapshot_all_segments(
 /// Before snapshotting all segments are forcefully flushed to ensure all data is persisted.
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
+    applied_up_to: Option<SeqNumberType>,
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -333,7 +442,7 @@ where
     // Proxy all segments
     // Proxied segments are sorted by flush ordering
     log::trace!("Proxying all shard segments to apply function");
-    let (mut proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
+    let (proxies, tmp_segment_id, mut segments_lock) = SegmentHolder::proxy_all_segments(
         segments_lock,
         segments_path,
         segment_config,
@@ -341,8 +450,10 @@ where
         deferred_internal_id,
     )?;
 
-    // Flush all pending changes of each segment, now wrapped segments won't change anymore
-    segments_lock.flush_all(true, true)?;
+    // Flush all pending changes of each segment, now wrapped segments won't change anymore.
+    // Segment snapshots rely on this: they don't pack the pending changes logs of unwrapped
+    // proxies, whose changes this persists into the wrapped segments.
+    segments_lock.flush_all_up_to(FlushMode::Sync, true, applied_up_to)?;
 
     // Apply provided function
     log::trace!("Applying function on all proxied shard segments");
@@ -384,12 +495,7 @@ where
         // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
         let remaining = proxies.len() - unproxied_segment_ids.len();
         if remaining > 1 {
-            match SegmentHolder::try_unproxy_segment(
-                segments_lock,
-                *segment_id,
-                proxy_segment.clone(),
-                segments.acquire_updates_lock(),
-            ) {
+            match SegmentHolder::try_unproxy_segment(&segments, segments_lock, *segment_id) {
                 Ok(lock) => {
                     segments_lock = lock;
                     unproxied_segment_ids.push(*segment_id);
@@ -398,16 +504,20 @@ where
             }
         }
     }
-    proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
+    let remaining_proxy_ids: Vec<_> = proxies
+        .iter()
+        .map(|(segment_id, _)| *segment_id)
+        .filter(|segment_id| !unproxied_segment_ids.contains(segment_id))
+        .collect();
 
     // Unproxy all segments
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
     SegmentHolder::unproxy_all_segments(
+        &segments,
         segments_lock,
-        proxies,
+        &remaining_proxy_ids,
         tmp_segment_id,
-        segments.acquire_updates_lock(),
     )?;
 
     result

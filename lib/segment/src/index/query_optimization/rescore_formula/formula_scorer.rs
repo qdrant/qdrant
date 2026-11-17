@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Neg;
 
 use ahash::AHashMap;
+use common::condition_checker::ConditionChecker;
 use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
@@ -11,7 +12,7 @@ use super::parsed_formula::{
 };
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, GeoPoint};
 
@@ -27,7 +28,7 @@ pub struct FormulaScorer<'a> {
     /// Payload key -> retriever function
     payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
     /// Condition id -> checker function
-    condition_checkers: Vec<OptimizedCondition<'a>>,
+    condition_checkers: Vec<ConditionCheckerEnum<'a>>,
     /// Default values for all variables
     defaults: HashMap<VariableId, Value>,
 }
@@ -54,12 +55,36 @@ impl FriendlyName for DateTimePayloadType {
     }
 }
 
+/// One or more geo points stored under a single payload key.
+struct GeoPoints(Vec<GeoPoint>);
+
+impl FriendlyName for GeoPoints {
+    fn friendly_name() -> &'static str {
+        GeoPoint::friendly_name()
+    }
+}
+
+impl GeoPoints {
+    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        // A single `[lon, lat]` point is also an array, but one of numbers only
+        let holds_several_points = value
+            .as_array()
+            .is_some_and(|values| !values.iter().all(Value::is_number));
+
+        if holds_several_points {
+            serde_json::from_value(value).map(GeoPoints)
+        } else {
+            serde_json::from_value(value).map(|point| GeoPoints(vec![point]))
+        }
+    }
+}
+
 impl<'a> FormulaScorer<'a> {
     pub(crate) fn new(
         formula: ParsedExpression,
         prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
         payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
-        condition_checkers: Vec<OptimizedCondition<'a>>,
+        condition_checkers: Vec<ConditionCheckerEnum<'a>>,
         defaults: HashMap<VariableId, Value>,
     ) -> Self {
         FormulaScorer {
@@ -114,19 +139,21 @@ impl FormulaScorer<'_> {
                     })
                 }
                 VariableId::Condition(id) => {
-                    let value = check_condition(&self.condition_checkers[*id], point_id);
+                    let value = self.condition_checkers[*id].check(point_id)?;
                     let score = if value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
             },
             ParsedExpression::GeoDistance { origin, key } => {
-                let value = self.get_parsed_payload_value(
-                    key,
-                    point_id,
-                    serde_json::from_value::<GeoPoint>,
-                )?;
+                let GeoPoints(points) =
+                    self.get_parsed_payload_value(key, point_id, GeoPoints::from_value)?;
 
-                Ok(Haversine.distance((*origin).into(), value.into()))
+                Ok(points
+                    .into_iter()
+                    .map(|point| {
+                        Haversine.distance(geo::Point::from(*origin), geo::Point::from(point))
+                    })
+                    .fold(PreciseScore::INFINITY, PreciseScore::min))
             }
             ParsedExpression::Datetime(dt_expr) => {
                 let datetime = match dt_expr {
@@ -168,6 +195,22 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(acc + value)
             }),
+            ParsedExpression::Max(expressions) => {
+                expressions
+                    .iter()
+                    .try_fold(PreciseScore::NEG_INFINITY, |acc, expr| {
+                        let value = self.eval_expression(expr, point_id)?;
+                        Ok(acc.max(value))
+                    })
+            }
+            ParsedExpression::Min(expressions) => {
+                expressions
+                    .iter()
+                    .try_fold(PreciseScore::INFINITY, |acc, expr| {
+                        let value = self.eval_expression(expr, point_id)?;
+                        Ok(acc.min(value))
+                    })
+            }
             ParsedExpression::Div {
                 left,
                 right,
@@ -247,6 +290,16 @@ impl FormulaScorer<'_> {
                 }
                 Err(OperationError::NonFiniteNumber {
                     expression: format!("ln({value}) = {ln_value}"),
+                })
+            }
+            ParsedExpression::Acosh(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                let acosh_value = value.acosh();
+                if acosh_value.is_finite() {
+                    return Ok(acosh_value);
+                }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("acosh({value}) = {acosh_value}"),
                 })
             }
             ParsedExpression::Abs(expr) => {
@@ -346,6 +399,7 @@ fn linear_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> 
 mod tests {
     use std::collections::HashMap;
 
+    use common::condition_checker::ConstantConditionChecker;
     use rstest::rstest;
     use serde_json::json;
     use smallvec::smallvec;
@@ -359,8 +413,15 @@ mod tests {
     const ARRAY_OF_ONE_FIELD_NAME: &str = "array_of_one";
     const ARRAY_FIELD_NAME: &str = "array";
     const GEO_FIELD_NAME: &str = "geo_point";
+    const GEO_POINTS_FIELD_NAME: &str = "geo_points";
+    const GEO_LON_LAT_FIELD_NAME: &str = "geo_lon_lat";
+    const GEO_LON_LAT_POINTS_FIELD_NAME: &str = "geo_lon_lat_points";
+    const GEO_POINTS_WITH_NUMBER_FIELD_NAME: &str = "geo_points_with_number";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
     const NO_VALUE_DATETIME: &str = "no_value_datetime";
+
+    const COLOGNE: GeoPoint = GeoPoint::new_unchecked(6.96, 50.94);
+    const BONN: GeoPoint = GeoPoint::new_unchecked(7.10, 50.73);
 
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
@@ -397,10 +458,32 @@ mod tests {
                     smallvec![json!({"lat": 25.628482424190565, "lon": -100.23881855976})]
                 }),
             );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_POINTS_FIELD_NAME),
+                Box::new(|_| {
+                    smallvec![
+                        json!({"lat": 52.52, "lon": 13.40}),
+                        json!({"lat": 50.73, "lon": 7.10}),
+                    ]
+                }),
+            );
+            // A `[lon, lat]` payload reaches the scorer flattened into two numbers
+            payload_retrievers.insert(
+                JsonPath::new(GEO_LON_LAT_FIELD_NAME),
+                Box::new(|_| smallvec![json!(6.96), json!(50.94)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_LON_LAT_POINTS_FIELD_NAME),
+                Box::new(|_| smallvec![json!([13.40, 52.52]), json!([7.10, 50.73])]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_POINTS_WITH_NUMBER_FIELD_NAME),
+                Box::new(|_| smallvec![json!({"lat": 52.52, "lon": 13.40}), json!(1.2)]),
+            );
 
             let condition_checkers = vec![
-                OptimizedCondition::Checker(Box::new(|_| true)),
-                OptimizedCondition::Checker(Box::new(|_| false)),
+                ConditionCheckerEnum::Constant(ConstantConditionChecker::MATCH_ALL),
+                ConditionCheckerEnum::Constant(ConstantConditionChecker::MATCH_NONE),
             ];
 
             FormulaScorer {
@@ -437,7 +520,75 @@ mod tests {
     #[case(ParsedExpression::new_div(
         ParsedExpression::Constant(PreciseScoreOrdered::from(10.0)), ParsedExpression::new_score_id(0), None
     ), 10.0 / 1.0)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
+    ]), 85.0)]
+    // A single operand is returned as-is
+    #[case(ParsedExpression::Max(vec![ParsedExpression::new_score_id(1)]), 2.0)]
+    // `min` over the same mixed operands picks the smallest instead of the largest
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(1.0)),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
+    ]), 1.0)]
+    #[case(ParsedExpression::Min(vec![ParsedExpression::new_score_id(1)]), 2.0)]
+    // Negative operands: min must not be confused by magnitude
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-10.0)),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-2.0)),
+    ]), -10.0)]
+    // Datetimes evaluate to seconds, so `min` picks the older of two dates.
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2026-01-01".parse().unwrap())),
+    ]), "2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)]
+    // Nested sub-expressions are evaluated before comparing
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Mult(vec![
+            ParsedExpression::Constant(PreciseScoreOrdered::from(3.0)),
+            ParsedExpression::new_score_id(0),
+        ]),
+        ParsedExpression::new_score_id(1),
+    ]), 2.0)]
+    // max and min of the same single operand agree
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(7.5)),
+    ]), 7.5)]
+    // Negative operands: max must not be confused by magnitude
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-10.0)),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(-2.0)),
+    ]), -2.0)]
+    // Datetimes evaluate to seconds, so `max` picks the more recent of two dates. This is how
+    // you'd score on "whichever of these timestamps is newer".
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2026-01-01".parse().unwrap())),
+    ]), "2026-01-01".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)]
+    // Nested sub-expressions are evaluated before comparing
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Mult(vec![
+            ParsedExpression::Constant(PreciseScoreOrdered::from(3.0)),
+            ParsedExpression::new_score_id(0),
+        ]),
+        ParsedExpression::new_score_id(1),
+    ]), 3.0)]
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(PreciseScoreOrdered::from(10.0))), -10.0)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(1.0))),
+        0.0
+    )]
+    // acosh(cosh(2)) == 2
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(
+            3.7621956910836314
+        ))),
+        2.0
+    )]
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint::new_unchecked(-100.43383200156751, 25.717877679163667), JsonPath::new(GEO_FIELD_NAME)
@@ -469,8 +620,80 @@ mod tests {
         ParsedExpression::new_ln(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
         0.0
     )]
+    // A failing operand must fail the whole expression, not be quietly passed over in favour of
+    // a finite sibling. Checked with the failure both before and after the finite operand:
+    // `mult` short-circuits on zero and so can skip evaluating later operands, and `max` must
+    // not grow a similar shortcut that would swallow an error.
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Max(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+    ]), 0.0)]
+    // Same for `min`, with the failure on either side of the finite operand.
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
+    #[case(ParsedExpression::Min(vec![
+        ParsedExpression::Constant(PreciseScoreOrdered::from(5.0)),
+        ParsedExpression::new_log10(ParsedExpression::Constant(PreciseScoreOrdered::from(0.0))),
+    ]), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "acosh(0.5) = NaN" }"#)]
+    #[case(
+        ParsedExpression::new_acosh(ParsedExpression::Constant(PreciseScoreOrdered::from(0.5))),
+        0.0
+    )]
     #[test]
     fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: PreciseScore) {
+        let defaults = HashMap::new();
+        let scorer_fixture = make_formula_scorer(&defaults);
+
+        let scorer = scorer_fixture.borrow_dependent();
+
+        assert_eq!(scorer.eval_expression(&expr, 0).unwrap(), expected);
+    }
+
+    fn haversine(origin: GeoPoint, point: GeoPoint) -> PreciseScore {
+        Haversine.distance(geo::Point::from(origin), geo::Point::from(point))
+    }
+
+    #[rstest]
+    // Several points: distance to the nearest one
+    #[case(
+        ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_POINTS_FIELD_NAME)),
+        haversine(COLOGNE, BONN)
+    )]
+    // A single `[lon, lat]` point must not be read as two points
+    #[case(
+        ParsedExpression::new_geo_distance(BONN, JsonPath::new(GEO_LON_LAT_FIELD_NAME)),
+        haversine(BONN, COLOGNE)
+    )]
+    #[case(
+        ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_LON_LAT_POINTS_FIELD_NAME)),
+        haversine(COLOGNE, BONN)
+    )]
+    #[should_panic(
+        expected = r#"VariableTypeError { field_name: JsonPath { first_key: "geo_points_with_number", rest: [] }, expected_type: "geo point", "#
+    )]
+    #[case(
+        ParsedExpression::new_geo_distance(
+            COLOGNE,
+            JsonPath::new(GEO_POINTS_WITH_NUMBER_FIELD_NAME)
+        ),
+        0.0
+    )]
+    #[test]
+    fn test_geo_distance_multiple_points(
+        #[case] expr: ParsedExpression,
+        #[case] expected: PreciseScore,
+    ) {
         let defaults = HashMap::new();
         let scorer_fixture = make_formula_scorer(&defaults);
 

@@ -1,0 +1,435 @@
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use common::condition_checker::{ConditionChecker as _, Rest, Select};
+use common::ext::aligned_vec::ACow;
+use common::flags::feature_flags;
+use common::types::{PointOffsetType, ScoredPointOffset};
+#[cfg(not(target_os = "linux"))]
+use common::universal_io::MmapFile;
+use common::universal_io::{CachedReadFs, UniversalKind, UniversalRead, UniversalReadFs};
+#[cfg(target_os = "linux")]
+use common::universal_io::{IoUringFile, IoUringFs};
+use itertools::Itertools as _;
+
+use super::GraphWithVectorsScorers;
+use super::entry_points::{EntryPoint, EntryPoints};
+use super::graph_layers::{GraphLayers, SearchAlgorithm, SearchEntry};
+use super::graph_layers_batched::GraphLayersBatched;
+use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
+use super::hnsw::{LINK_COMPRESSION_CONVERT_EXISTING, graph_residency};
+use super::point_scorer::FilteredScorer;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::types::{IoBackend, Memory};
+
+#[derive(Debug)]
+pub enum HnswGraph<S: UniversalRead> {
+    Direct(Arc<GraphLayers>),
+    Batched(Arc<GraphLayersBatched<S>>),
+}
+
+impl<S: UniversalRead> Clone for HnswGraph<S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Direct(graph) => Self::Direct(Arc::clone(graph)),
+            Self::Batched(graph) => Self::Batched(Arc::clone(graph)),
+        }
+    }
+}
+
+/// Backend the writable [`HNSWIndex`][1] reads its graph links through.
+///
+/// [1]: super::hnsw::HNSWIndex
+pub type HnswLinksStorage = cfg_select! {
+    target_os = "linux" => IoUringFile,
+    _ => MmapFile,
+};
+
+/// Args for [`HnswGraph::search`].
+pub struct GraphSearchArgs<'a> {
+    pub top: usize,
+    pub ef: usize,
+    pub algorithm: SearchAlgorithm,
+    pub scorers: SearchScorers<'a>,
+    pub custom_entry_points: Option<&'a [PointOffsetType]>,
+    pub filtered_points_reader: Option<&'a FilteredPoints<'a>>,
+    pub is_stopped: &'a AtomicBool,
+}
+
+/// Should return up to `n` points that match the filter.
+/// Used when the graph has no entry point matching the filter.
+pub type FilteredPoints<'a> = dyn Fn(usize) -> OperationResult<Vec<PointOffsetType>> + 'a;
+
+/// How many [`GraphSearchArgs::filtered_points_reader`] to start from, per `ef`.
+const SEEDS_PER_EF: usize = 2;
+
+pub enum SearchScorers<'a> {
+    Regular(FilteredScorer<'a>),
+    WithVectors(GraphWithVectorsScorers<'a>),
+}
+
+impl HnswGraph<HnswLinksStorage> {
+    pub fn open(dir: &Path, memory: Memory) -> OperationResult<Self> {
+        let (memory, residency) = graph_residency(memory, None);
+        let with_uring = use_io_uring(
+            IoUringFallback::Mmap,
+            memory,
+            feature_flags().async_hnsw_graph,
+        );
+
+        if with_uring {
+            #[cfg(target_os = "linux")]
+            if Self::is_batched(&IoUringFs, dir, residency)? {
+                let graph = GraphLayersBatched::open(&IoUringFs, dir, residency)?;
+                return Ok(HnswGraph::Batched(Arc::new(graph)));
+            }
+        }
+
+        let graph = GraphLayers::load(dir, residency, LINK_COMPRESSION_CONVERT_EXISTING)?;
+        Ok(HnswGraph::Direct(Arc::new(graph)))
+    }
+}
+
+impl<S: UniversalRead> HnswGraph<S> {
+    /// Whether [`Self::open_universal`] will open a batched-IO graph.
+    pub(super) fn is_batched(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<bool> {
+        let format = GraphLayers::probe_links_format(fs, dir)?;
+        Ok(format.is_some_and(|format| Self::format_is_batched(format, residency)))
+    }
+
+    fn format_is_batched(format: GraphLinksFormat, residency: GraphLinksResidency) -> bool {
+        if residency == GraphLinksResidency::Pinned {
+            return false;
+        }
+        match format {
+            GraphLinksFormat::CompressedWithVectors | GraphLinksFormat::Compressed => {
+                S::kind().can_be_async()
+            }
+            GraphLinksFormat::Plain => false,
+        }
+    }
+
+    pub fn open_universal(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<Self>
+    where
+        S: 'static,
+    {
+        Ok(if Self::is_batched(fs, dir, residency)? {
+            HnswGraph::Batched(Arc::new(GraphLayersBatched::open(fs, dir, residency)?))
+        } else {
+            // Note that on non-borrowable backends this materializes the
+            // links into heap RAM whatever the residency: `Plain` is not
+            // supported by the batched view, and `Pinned` asks for
+            // materialization explicitly.
+            HnswGraph::Direct(Arc::new(GraphLayers::load_universal(fs, dir, residency)?))
+        })
+    }
+
+    /// Schedule background prefetch of the files [`Self::open_universal`]
+    /// will read: the graph data plus whichever links format is present,
+    /// probed in the same order as the open.
+    pub fn preopen_universal(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        residency: GraphLinksResidency,
+    ) -> OperationResult<()>
+    where
+        S: 'static,
+    {
+        fs.schedule_open(&GraphLayers::get_path(dir), None, None);
+        let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
+            return Ok(());
+        };
+        let path = GraphLayers::get_links_path(dir, format);
+        if !Self::format_is_batched(format, residency) {
+            fs.schedule_open(&path, Some(GraphLinks::preopen_options(residency)), None);
+            return Ok(());
+        }
+        let options = GraphLinksFile::<S>::preopen_options(residency);
+        fs.schedule_open_with(&path, Some(options), None, move |file| {
+            GraphLinksFile::preload_offsets(file, format)
+        });
+        Ok(())
+    }
+
+    pub fn search(&self, args: GraphSearchArgs<'_>) -> OperationResult<Vec<ScoredPointOffset>> {
+        let GraphSearchArgs {
+            top,
+            ef,
+            algorithm,
+            mut scorers,
+            custom_entry_points,
+            filtered_points_reader,
+            is_stopped,
+        } = args;
+
+        let scorer = match &scorers {
+            SearchScorers::Regular(scorer) => scorer,
+            SearchScorers::WithVectors(scorers) => scorers.links,
+        };
+        let seeds_num = SEEDS_PER_EF * ef.max(top);
+        let Some(entry) = self.get_entry_point(
+            scorer,
+            custom_entry_points,
+            filtered_points_reader,
+            seeds_num,
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+
+        let batch_size = match S::kind() {
+            UniversalKind::IoUring => 4,
+            // Not tested, but let's assume it's same as for IoUring
+            UniversalKind::Mmap => 4,
+            // Network-based backends.
+            UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::CachedBlob
+            | UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => 16,
+        };
+
+        match (self, &mut scorers) {
+            (HnswGraph::Direct(graph), SearchScorers::Regular(scorer)) => {
+                Ok(graph.search(top, ef, algorithm, scorer, &entry, is_stopped)?)
+            }
+            (HnswGraph::Direct(graph), SearchScorers::WithVectors(scorers)) => {
+                Ok(graph.search_with_vectors(top, ef, *scorers, &entry, is_stopped)?)
+            }
+            (HnswGraph::Batched(graph), SearchScorers::Regular(scorer)) => {
+                graph.search(top, ef, algorithm, scorer, &entry, batch_size, is_stopped)
+            }
+            (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => {
+                graph.search_with_vectors(top, ef, *scorers, &entry, batch_size, is_stopped)
+            }
+        }
+    }
+
+    fn get_entry_point(
+        &self,
+        scorer: &FilteredScorer,
+        custom_entry_points: Option<&[PointOffsetType]>,
+        filtered_points: Option<&FilteredPoints<'_>>,
+        seeds_num: usize,
+    ) -> OperationResult<Option<SearchEntry>> {
+        // Custom entry points
+        if let Some(custom_entry_points) = custom_entry_points {
+            let mut point_ids = custom_entry_points.to_vec();
+            let matches =
+                scorer
+                    .filters()
+                    .check_batched(&mut point_ids, Select::Matches, Rest::Discard)?;
+            let custom_best = point_ids[..matches]
+                .iter()
+                .map(|&point_id| {
+                    let level = self.point_level(point_id)?;
+                    OperationResult::Ok(EntryPoint { point_id, level })
+                })
+                .process_results(|it| it.max_by_key(|ep| ep.level))?;
+            if let Some(entry_point) = custom_best {
+                return Ok(Some(SearchEntry::Point(entry_point)));
+            }
+        }
+
+        // Graph entry points
+        let entry_point = self
+            .entry_points()
+            .get_entry_point(|point_id| scorer.filters().check_vector(point_id));
+        if let Some(entry_point) = entry_point {
+            return Ok(Some(SearchEntry::Point(entry_point)));
+        }
+
+        // Filtered points as seeds
+        if let Some(filtered_points) = filtered_points {
+            let mut seed_ids = filtered_points(seeds_num)?;
+            let matches =
+                scorer
+                    .filters()
+                    .check_batched(&mut seed_ids, Select::Matches, Rest::Discard)?;
+            seed_ids.truncate(matches);
+            if seed_ids.is_empty() {
+                return Ok(None);
+            }
+            let mut scores = vec![0.0; seed_ids.len()];
+            scorer.raw_scorer().score_points(&seed_ids, &mut scores)?;
+            let seeds = std::iter::zip(seed_ids, scores)
+                .map(|(idx, score)| ScoredPointOffset { idx, score })
+                .collect();
+            return Ok(Some(SearchEntry::Seeds(seeds)));
+        }
+
+        Ok(None)
+    }
+
+    fn point_level(&self, point_id: PointOffsetType) -> OperationResult<usize> {
+        match self {
+            HnswGraph::Direct(graph) => Ok(graph.point_level(point_id)),
+            HnswGraph::Batched(graph) => graph.links.point_level(point_id),
+        }
+    }
+
+    fn entry_points(&self) -> &EntryPoints {
+        match self {
+            HnswGraph::Direct(graph) => &graph.entry_points,
+            HnswGraph::Batched(graph) => &graph.entry_points,
+        }
+    }
+
+    /// Return an error if this graph doesn't provide base vectors of said layout.
+    pub fn check_base_vector_layout_compatibility(
+        &self,
+        expected_size: usize,
+        expected_align: usize,
+    ) -> OperationResult<()> {
+        let layout = match self {
+            HnswGraph::Direct(graph) => graph.links.base_vector_layout(),
+            HnswGraph::Batched(graph) => graph.links.base_vector_layout(),
+        };
+        if let Some(layout) = layout
+            && layout.size() == expected_size
+            && layout.align() >= expected_align
+        {
+            return Ok(());
+        };
+        Err(OperationError::service_error(format!(
+            "Inline graph vector layout mismatch: expected \
+             size={expected_size} align={expected_align}, found={layout:?}",
+        )))
+    }
+
+    pub fn for_each_base_vector_in_batch<T>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: impl FnMut(usize, &[T]),
+    ) -> OperationResult<()>
+    where
+        T: bytemuck::Pod,
+    {
+        match self {
+            HnswGraph::Direct(graph) => {
+                for (position, &point_id) in keys.iter().enumerate() {
+                    let bytes = graph.links.base_vector(point_id);
+                    f(position, &cast_vector::<T>(ACow::Borrowed(bytes))?);
+                }
+                Ok(())
+            }
+            HnswGraph::Batched(graph) => graph.links.read_base_vectors(
+                &stumpalo::Arena::new(),
+                keys,
+                align_of::<T>(),
+                |position, bytes| {
+                    f(position, &cast_vector::<T>(bytes)?);
+                    Ok(())
+                },
+            ),
+        }
+    }
+
+    pub fn base_vector<T>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>>
+    where
+        T: bytemuck::Pod,
+    {
+        cast_vector(match self {
+            HnswGraph::Direct(graph) => ACow::Borrowed(graph.links.base_vector(key)),
+            HnswGraph::Batched(graph) => graph.links.read_base_vector(key, align_of::<T>())?,
+        })
+    }
+
+    pub fn has_inline_vectors(&self) -> bool {
+        self.format().is_with_vectors()
+    }
+
+    pub fn residency(&self) -> GraphLinksResidency {
+        match self {
+            HnswGraph::Direct(graph) => graph.residency,
+            HnswGraph::Batched(graph) => graph.residency,
+        }
+    }
+
+    pub fn is_cold(&self) -> bool {
+        self.residency() == GraphLinksResidency::Cold
+    }
+
+    pub(super) fn as_direct(&self) -> Option<&GraphLayers> {
+        match self {
+            HnswGraph::Direct(graph) => Some(graph),
+            HnswGraph::Batched(_) => None,
+        }
+    }
+
+    pub fn num_points(&self) -> usize {
+        match self {
+            HnswGraph::Direct(graph) => graph.links.num_points(),
+            HnswGraph::Batched(graph) => graph.num_points(),
+        }
+    }
+
+    pub fn format(&self) -> GraphLinksFormat {
+        match self {
+            HnswGraph::Direct(graph) => graph.links.format(),
+            HnswGraph::Batched(graph) => graph.links.format(),
+        }
+    }
+
+    pub fn io_backend(&self) -> Option<IoBackend> {
+        match self {
+            HnswGraph::Direct(_) => {
+                // Ambiguity: the graph probably *was loaded* from an mmap,
+                // but *right now* it can be either mmap or `Vec<>`.
+                // Arbitrary choice: report the former.
+                Some(IoBackend::Mmap)
+            }
+            HnswGraph::Batched(_) => IoBackend::from_universal_kind(S::kind()),
+        }
+    }
+
+    pub fn files(&self, path: &Path) -> Vec<PathBuf> {
+        match self {
+            HnswGraph::Direct(graph) => graph.files(path),
+            HnswGraph::Batched(graph) => vec![
+                GraphLayers::get_path(path),
+                GraphLayers::get_links_path(path, graph.links.format()),
+            ],
+        }
+    }
+
+    pub fn links_heap_size_bytes(&self) -> usize {
+        match self {
+            HnswGraph::Direct(graph) => graph.links_heap_size_bytes(),
+            HnswGraph::Batched(_) => 0,
+        }
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            HnswGraph::Direct(graph) => graph.links.populate(),
+            HnswGraph::Batched(graph) => graph.links.populate(),
+        }
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            HnswGraph::Direct(graph) => graph.links.clear_cache(),
+            HnswGraph::Batched(graph) => graph.links.clear_cache(),
+        }
+    }
+}
+
+fn cast_vector<T: bytemuck::Pod>(bytes: ACow<'_>) -> OperationResult<Cow<'_, [T]>> {
+    bytes.try_cast_bytemuck().map_err(|err| {
+        OperationError::service_error(format!("Misplaced inline-graph vector: {err}"))
+    })
+}

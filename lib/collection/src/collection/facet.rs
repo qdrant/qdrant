@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse, FacetValue};
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
 
@@ -84,8 +84,8 @@ impl Collection {
         mut request: FacetParams,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let response_limit = request.limit;
         if response_limit == 0 {
@@ -106,20 +106,21 @@ impl Collection {
             response_limit,
             shard_selection,
             read_consistency,
+            routing_token,
             timeout,
-            hw_measurement_acc,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn facet_internal(
         &self,
         request: FacetParams,
         response_limit: usize,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         if request.limit == 0 {
             return Ok(FacetResponse::default());
@@ -127,18 +128,19 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(&shard_selection)?;
+        let target_shards = self
+            .select_shards(&shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
 
         let mut shards_reads_f = target_shards
             .iter()
-            .map(|(shard, _shard_key)| {
+            .map(|shard| {
                 shard.facet(
                     request.clone(),
                     read_consistency,
+                    routing_token,
                     shard_selection.is_shard_id(),
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
             })
             .collect::<FuturesUnordered<_>>();

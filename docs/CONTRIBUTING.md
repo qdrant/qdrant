@@ -58,11 +58,11 @@ At the same time, we also observe the growing problem of a high volume of contri
 To compensate for the lack of human attention budget, while keeping the quality and efficiency of contributions,
 we introduce the following principles for contributions with AI:
 
-#### Do not communicate with real people through AI
+#### Write the motivation for the PR yourself
 
-When preparing a PR description or answering to comments, please avoid using AI tools to generate the content.
-We want to see PR documentation as a source of truth, so we can validate if the changes are actually following the intent.
-Avoid including AI-generated diagrams or walkthroughs of the code; if somebody would like to read them, they can always generate them themselves.
+If you are an external contributor, write the motivation for the PR yourself: what problem it solves and why.
+We want the motivation to be a source of truth, so we can check whether the changes actually follow the intent.
+The rest of the PR description can be generated with AI tools.
 
 #### If you are using AI tools to generate PR, you are still responsible for the results
 

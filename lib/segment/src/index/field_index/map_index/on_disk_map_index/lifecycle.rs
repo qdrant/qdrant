@@ -1,25 +1,27 @@
 use std::borrow::Borrow;
-use std::ops::BitOrAssign;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
-use common::bitvec::{BitSlice, BitSliceExt};
+use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
-use common::mmap::{AdviceSetting, create_and_ensure_length};
+use common::mmap::AdviceSetting;
 use common::persisted_hashmap::{Key, UniversalHashMap, serialize_hashmap};
-use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalWrite, read_json_via,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
 
 use super::super::MapIndexKey;
+use super::super::prefix_index::{PREFIX_INDEX_PATH, PrefixIndex, build_prefix_index};
 use super::{
     CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, OnDiskMapIndex, Storage, UniversalMapIndexConfig,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::deleted_mask::{
+    bitor_deleted_mask, deleted_mask_file, preopen_deleted_mask, save_deleted_mask,
+};
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 
 impl<N, S> OnDiskMapIndex<N, S>
@@ -27,15 +29,61 @@ where
     N: MapIndexKey + Key + ?Sized,
     S: UniversalRead,
 {
+    fn open_options(populate: Populate) -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        // Config
+        let config_path = path.join(CONFIG_PATH);
+        if !fs.exists(&config_path)? {
+            // If config doesn't exist, assume the index doesn't exist on disk
+            return Ok(false);
+        }
+        fs.schedule_open(&config_path, None, None);
+
+        // Value to points
+        let hashmap_path = path.join(HASHMAP_PATH);
+        UniversalHashMap::<N, PointOffsetType, S>::preopen(
+            fs,
+            &hashmap_path,
+            Self::open_options(populate),
+        );
+
+        // Point to values
+        OnDiskPointToValues::<N, S>::preopen(fs, path, populate);
+
+        // Prefix index
+        PrefixIndex::preopen(fs, path, populate)?;
+
+        // "No values" mask
+        preopen_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(Populate::PreferBackground),
+        );
+
+        Ok(true)
+    }
+
     /// Open and load mmap map index from the given path
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         populate: Populate,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let hashmap_path = path.join(HASHMAP_PATH);
-        let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         let Some(config) =
@@ -48,31 +96,13 @@ where
         let value_to_points = UniversalHashMap::open(
             fs,
             &hashmap_path,
-            OpenOptions {
-                writeable: false,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
+            Self::open_options(populate),
             Default::default(),
         )?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
+        let prefix_index = PrefixIndex::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
-
-        let deleted_payload_mmap = StoredBitSlice::<S>::open(
-            fs,
-            &deleted_path,
-            OpenOptions {
-                writeable: true,
-                need_sequential: false,
-                populate,
-                advice: AdviceSetting::Global,
-            },
-            Default::default(),
-        )?;
-
-        let deleted_payloads_bitslice = deleted_payload_mmap.read_all()?;
 
         // `deleted` length must match `point_to_values.len()` because it only
         // tracks the index's contents. The id-tracker's deleted mask can be
@@ -80,19 +110,25 @@ where
         // (the id-tracker is the source of truth for deletions, and a shorter
         // mask just means it doesn't yet know about those higher offsets).
         deleted.resize(point_to_values.len(), false);
-        deleted.bitor_assign(deleted_payloads_bitslice.as_ref());
-
-        let deleted_count = deleted.count_ones();
+        let compact_deleted_mask = bitor_deleted_mask(
+            fs,
+            path,
+            DELETED_PATH,
+            Self::open_options(Populate::No),
+            &mut deleted,
+        )?;
 
         Ok(Some(Self {
             path: path.to_path_buf(),
             storage: Storage {
                 value_to_points,
                 point_to_values,
-                deleted,
+                deleted: DeletedBitVec::new(deleted),
+                prefix_index,
             },
-            deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
+            compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
@@ -101,19 +137,18 @@ where
     /// Not persisted: on reopen, deletions must be re-supplied via the
     /// `deleted_points` argument to [`Self::open`].
     pub fn remove_point(&mut self, idx: PointOffsetType) {
-        let idx = idx as usize;
-        if idx < self.storage.deleted.len() && !self.storage.deleted.get_bit(idx).unwrap_or(true) {
-            self.storage.deleted.set(idx, true);
-            self.deleted_count += 1;
-        }
+        self.storage.deleted.mark_deleted(idx);
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
         let mut files = vec![
             self.path.join(HASHMAP_PATH),
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.prefix_index.is_some() {
+            files.push(self.path.join(PREFIX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.files());
         files
     }
@@ -121,9 +156,12 @@ where
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = vec![
             self.path.join(HASHMAP_PATH),
-            self.path.join(DELETED_PATH),
+            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_PATH),
             self.path.join(CONFIG_PATH),
         ];
+        if self.storage.prefix_index.is_some() {
+            files.push(self.path.join(PREFIX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.immutable_files());
         files
     }
@@ -133,6 +171,9 @@ where
     pub fn populate(&self) -> OperationResult<()> {
         self.storage.value_to_points.populate()?;
         self.storage.point_to_values.populate()?;
+        if let Some(prefix_index) = &self.storage.prefix_index {
+            prefix_index.populate()?;
+        }
         Ok(())
     }
 
@@ -141,30 +182,39 @@ where
         let Self {
             path,
             storage,
-            deleted_count: _,
             total_key_value_pairs: _,
+            compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             value_to_points,
             point_to_values,
             deleted: _,
+            prefix_index,
         } = storage;
         value_to_points.clear_ram_cache()?;
-        clear_disk_cache(&path.join(DELETED_PATH))?;
+        clear_disk_cache(&deleted_mask_file(
+            path,
+            *compact_deleted_mask,
+            DELETED_PATH,
+        ))?;
         point_to_values.clear_cache()?;
+        if let Some(prefix_index) = prefix_index {
+            prefix_index.clear_cache()?;
+        }
         Ok(())
+    }
+
+    /// Whether this index was built with the prefix option (its sorted key
+    /// dictionary is present on disk).
+    pub(in super::super) fn has_prefix_index(&self) -> bool {
+        self.storage.prefix_index.is_some()
     }
 
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
     }
-}
 
-impl<N, S> OnDiskMapIndex<N, S>
-where
-    N: MapIndexKey + Key + ?Sized,
-    S: UniversalWrite,
-{
     /// TODO: Use Fs to create config and hashmap files?
     pub fn build(
         fs: &S::Fs,
@@ -173,11 +223,11 @@ where
         values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
         populate: Populate,
         deleted_points: &BitSlice,
+        with_prefix_index: bool,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
         let hashmap_path = path.join(HASHMAP_PATH);
-        let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
 
         atomic_save_json(
@@ -194,7 +244,21 @@ where
                 .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
 
-        OnDiskPointToValues::<N, MmapFile>::build_from_iter(
+        if with_prefix_index && N::SUPPORTS_PREFIX_INDEX {
+            // The file is written (even when empty) so that its presence
+            // signals prefix support at load time.
+            let mut entries: Vec<(&[u8], usize)> = values_to_points
+                .iter()
+                .filter_map(|(value, ids)| {
+                    let value: &N = value.borrow();
+                    value.prefix_index_bytes().map(|bytes| (bytes, ids.len()))
+                })
+                .collect();
+            entries.sort_unstable_by_key(|&(key, _count)| key);
+            build_prefix_index(path, entries.into_iter())?;
+        }
+
+        OnDiskPointToValues::<N, S>::build_from_iter(
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (
@@ -204,35 +268,16 @@ where
             }),
         )?;
 
-        {
-            let deleted_flags_count = point_to_values.len();
-            let _ = create_and_ensure_length(
-                &deleted_path,
-                deleted_flags_count
-                    .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<u64>()),
-            )?;
-
-            let mut deleted = StoredBitSlice::<S>::open(
-                fs,
-                &deleted_path,
-                OpenOptions {
-                    writeable: true,
-                    need_sequential: false,
-                    populate: Populate::Auto,
-                    advice: AdviceSetting::Global,
-                },
-                Default::default(),
-            )?;
-            deleted.set_ascending_bits_batch(
-                point_to_values
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, values)| values.is_empty())
-                    .map(|(idx, _)| (idx as u64, true)),
-            )?;
-            deleted.flusher()()?;
-        }
+        save_deleted_mask(
+            path,
+            DELETED_PATH,
+            point_to_values.len(),
+            point_to_values
+                .iter()
+                .enumerate()
+                .filter(|(_, values)| values.is_empty())
+                .map(|(idx, _)| idx as PointOffsetType),
+        )?;
 
         Self::open(fs, path, populate, deleted_points)?.ok_or_else(|| {
             OperationError::service_error("Failed to open UniversalMapIndex after building it")

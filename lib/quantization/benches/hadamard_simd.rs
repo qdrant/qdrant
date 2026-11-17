@@ -14,13 +14,13 @@ use quantization::turboquant::rotation::in_place_walsh_hadamard_transform;
 use quantization::turboquant::simd::hadamard::simd_arm::{wht_neon, wht_neon_radix16_4x};
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::hadamard::simd_x86::{wht_avx2, wht_avx2_radix16_4x};
-use rand::prelude::StdRng;
+use rand::prelude::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 const SIZES: &[usize] = &[64, 128, 256, 512, 1024, 2048, 4096, 8192];
 
 fn make_input(n: usize) -> Vec<f64> {
-    let mut rng = StdRng::seed_from_u64(n as u64);
+    let mut rng = SmallRng::seed_from_u64(n as u64);
     (0..n).map(|_| rng.random_range(-1.0f64..1.0)).collect()
 }
 

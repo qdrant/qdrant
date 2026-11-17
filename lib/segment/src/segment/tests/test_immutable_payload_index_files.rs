@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use serde_json::json;
@@ -81,11 +82,11 @@ fn make_payload(i: usize) -> Payload {
 }
 
 fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path: &Path) -> Segment {
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Step 1: appendable source segment with payload + field indices.
     let source_dir = Builder::new().prefix("source_seg").tempdir().unwrap();
-    let mut source = build_segment(
+    let (mut source, _) = build_segment(
         source_dir.path(),
         &SegmentConfig {
             vector_data: HashMap::from([(
@@ -102,6 +103,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
@@ -113,9 +115,9 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        source.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        source.upsert_point(op_num, point_id, vectors).unwrap();
         source
-            .set_full_payload(op_num, point_id, &make_payload(i), &hw)
+            .set_full_payload(op_num, point_id, &make_payload(i))
             .unwrap();
     }
 
@@ -126,7 +128,6 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
                 op_num,
                 &JsonPath::new(name),
                 Some(&PayloadFieldSchema::FieldType(*schema)),
-                &hw,
             )
             .unwrap();
     }
@@ -149,14 +150,18 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     assert!(!target_config.is_appendable());
 
-    let mut builder =
-        SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
-    builder
-        .update(&[&source], &AtomicBool::new(false), &hw)
-        .unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_path,
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
@@ -205,10 +210,11 @@ fn assert_snapshots_equal(
             "[{label}] file size changed for {}",
             path.display(),
         );
-        assert!(
-            before_bytes == after_bytes,
+        assert_eq!(
+            before_bytes,
+            after_bytes,
             "[{label}] file content changed for {}",
-            path.display(),
+            path.display()
         );
     }
 }
@@ -334,7 +340,7 @@ fn indexed_queries() -> Vec<IndexedQuery> {
 /// For each indexed query, run `read_filtered` and assert the returned count
 /// matches the count predicted from the live set.
 fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery], stage: &str) {
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for q in queries {
         let actual = segment
             .read_filtered(
@@ -342,7 +348,6 @@ fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery
                 None,
                 Some(&q.filter),
                 &AtomicBool::new(false),
-                &hw,
                 DeferredBehavior::WithDeferred,
             )
             .unwrap();
@@ -417,11 +422,11 @@ fn payload_index_files_are_immutable_after_build() {
     // Operation 1: runtime point deletions. delete_point lives on
     // NonAppendableSegmentEntry — it routes through the in-memory id_tracker
     // bitvec only and must not touch payload_index/ files.
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let mut op_num = 1_000_u64;
     for (i, alive) in live.iter_mut().enumerate().take(NUM_POINTS / 2) {
         segment
-            .delete_point(op_num, ((i as u64) + 1).into(), &hw)
+            .delete_point(op_num, ((i as u64) + 1).into())
             .unwrap();
         *alive = false;
         op_num += 1;
@@ -444,8 +449,14 @@ fn payload_index_files_are_immutable_after_build() {
     // an index state that still answers queries correctly given the runtime
     // deletion bitvec.
     drop(segment);
-    let mut reloaded =
-        load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false)).unwrap();
+    let mut reloaded = load_segment(
+        &segment_path,
+        segment_uuid,
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
     let after_reload = snapshot_dir(&payload_index_dir);
     assert_snapshots_equal(&baseline, &after_reload, "after reload");
     assert_query_counts(&reloaded, &live, &queries, "after reload");
@@ -453,7 +464,7 @@ fn payload_index_files_are_immutable_after_build() {
     // Operation 4: more deletes + flush after reload. Same expectation.
     for (i, alive) in live.iter_mut().enumerate().skip(NUM_POINTS / 2) {
         reloaded
-            .delete_point(op_num, ((i as u64) + 1).into(), &hw)
+            .delete_point(op_num, ((i as u64) + 1).into())
             .unwrap();
         *alive = false;
         op_num += 1;
@@ -471,4 +482,121 @@ fn payload_index_files_are_immutable_after_build() {
         &queries,
         "after delete + flush on reloaded segment",
     );
+}
+
+/// End-to-end snapshot round-trip for the optional block-index sidecar files
+/// written by the on-disk numeric and geo indexes: `files()` must include
+/// them in the snapshot tar, restore must bring them back byte-for-byte, and
+/// the restored segment must answer indexed queries identically.
+#[rstest::rstest]
+#[case::regular(crate::types::SnapshotFormat::Regular)]
+#[case::streamable(crate::types::SnapshotFormat::Streamable)]
+fn snapshot_roundtrip_recovers_block_index_sidecars(#[case] format: crate::types::SnapshotFormat) {
+    use common::tar_ext;
+    use common::tar_unpack::tar_unpack_file;
+    use fs_err::File;
+
+    use crate::entry::snapshot_entry::SnapshotEntry as _;
+
+    fn block_index_sidecars(payload_index_dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        snapshot_dir(payload_index_dir)
+            .into_iter()
+            .filter(|(path, _)| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with("_block_index.bin")
+            })
+            .collect()
+    }
+
+    let segments_dir = Builder::new().prefix("segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("builder_tmp").tempdir().unwrap();
+
+    let segment =
+        build_immutable_segment_with_indexed_payload(segments_dir.path(), temp_dir.path());
+    let payload_index_dir = segment.data_path().join("payload_index");
+
+    // The on-disk numeric indexes (int, float, datetime) write one sidecar
+    // each, the geo index writes two.
+    let built_sidecars = block_index_sidecars(&payload_index_dir);
+    assert_eq!(
+        built_sidecars.len(),
+        5,
+        "expected block-index sidecars after build, got {:?}",
+        built_sidecars.keys().collect::<Vec<_>>(),
+    );
+
+    let queries = indexed_queries();
+    let live = vec![true; NUM_POINTS];
+    assert_query_counts(&segment, &live, &queries, "before snapshot");
+
+    segment.flush(true).unwrap();
+
+    // Snapshot into a parent tar, unpack, restore in place, reload — the same
+    // sequence as collection snapshot recovery.
+    let snapshot_temp = Builder::new().prefix("snapshot_temp").tempdir().unwrap();
+    let parent_snapshot_tar = Builder::new()
+        .prefix("parent_snapshot")
+        .suffix(".tar")
+        .tempfile()
+        .unwrap();
+    let tar =
+        tar_ext::BuilderExt::new_seekable_owned(File::create(parent_snapshot_tar.path()).unwrap());
+    segment
+        .take_snapshot(snapshot_temp.path(), &tar, format, None)
+        .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
+    tar_unpack_file(parent_snapshot_tar.path(), unpacked.path()).unwrap();
+    let mut entries = fs_err::read_dir(unpacked.path()).unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert!(entries.next().is_none());
+
+    Segment::restore_snapshot_in_place(&entry.path()).unwrap();
+
+    // For the Regular format, restore replaces the `.tar` entry with the
+    // unpacked segment directory — re-read it.
+    let mut entries = fs_err::read_dir(unpacked.path()).unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert!(entries.next().is_none());
+    assert!(entry.path().is_dir());
+
+    let restored = load_segment(
+        &entry.path(),
+        uuid::Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+
+    // The sidecars survived the round trip byte-for-byte...
+    let restored_sidecars = block_index_sidecars(&entry.path().join("payload_index"));
+    assert_eq!(
+        restored_sidecars
+            .keys()
+            .map(|path| path.file_name().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        built_sidecars
+            .keys()
+            .map(|path| path.file_name().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        "block-index sidecars lost in the snapshot round trip",
+    );
+    for ((restored_path, restored_bytes), (built_path, built_bytes)) in
+        restored_sidecars.iter().zip(built_sidecars.iter())
+    {
+        assert_eq!(
+            restored_bytes,
+            built_bytes,
+            "sidecar content changed in the snapshot round trip: {} vs {}",
+            restored_path.display(),
+            built_path.display(),
+        );
+    }
+
+    // ...and the restored segment answers every indexed query correctly.
+    assert_query_counts(&restored, &live, &queries, "after restore");
 }

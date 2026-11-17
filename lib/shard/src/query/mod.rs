@@ -5,6 +5,7 @@ pub mod mmr;
 pub mod planned_query;
 pub mod query_enum;
 pub mod scroll;
+pub mod text;
 mod validation;
 
 pub mod query_context;
@@ -20,6 +21,7 @@ use segment::types::*;
 use serde::Serialize;
 
 use self::query_enum::*;
+use self::text::TextScoringQuery;
 use crate::search::CoreSearchRequest;
 
 /// Internal response type for a universal query request.
@@ -134,6 +136,12 @@ pub enum ScoringQuery {
     ///   1. Performs search all the way down to segments.
     ///   2. MMR gets calculated once results reach collection level.
     Mmr(MmrInternal),
+
+    /// BM25 over the text index of a payload field
+    ///
+    /// Scores the points of each shard against statistics gathered over that
+    /// shard, as a leaf or as a rescore of prefetched points.
+    Text(TextScoringQuery),
 }
 
 impl ScoringQuery {
@@ -145,9 +153,50 @@ impl ScoringQuery {
             ScoringQuery::Fusion(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
-            | ScoringQuery::Sample(_) => None,
+            | ScoringQuery::Sample(_)
+            | ScoringQuery::Text(_) => None,
         }
     }
+}
+
+/// Returns the expected order of results, depending on the type of query.
+///
+/// `get_distance` resolves the distance of a named vector, for queries scored by raw vector
+/// distance.
+pub fn query_result_order<E>(
+    query: Option<&ScoringQuery>,
+    get_distance: impl FnOnce(&VectorName) -> Result<Distance, E>,
+) -> Result<Option<Order>, E> {
+    let order = match query {
+        Some(scoring_query) => match scoring_query {
+            ScoringQuery::Vector(query_enum) => {
+                if query_enum.is_distance_scored() {
+                    Some(get_distance(query_enum.get_vector_name())?.distance_order())
+                } else {
+                    Some(Order::LargeBetter)
+                }
+            }
+            ScoringQuery::Fusion(fusion) => match fusion {
+                FusionInternal::Rrf { k: _, weights: _ } | FusionInternal::Dbsf => {
+                    Some(Order::LargeBetter)
+                }
+            },
+            // Score boosting formulas are always have descending order,
+            // Euclidean scores can be negated within the formula
+            ScoringQuery::Formula(_formula) => Some(Order::LargeBetter),
+            ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
+            // Random sample does not require ordering
+            ScoringQuery::Sample(SampleInternal::Random) => None,
+            // MMR candidates are ordered by vector distance at shard level
+            ScoringQuery::Mmr(mmr) => Some(get_distance(&mmr.using)?.distance_order()),
+            ScoringQuery::Text(_) => Some(Order::LargeBetter),
+        },
+        None => {
+            // Order by ID
+            Some(Order::SmallBetter)
+        }
+    };
+    Ok(order)
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Serialize)]

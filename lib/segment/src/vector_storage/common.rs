@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common::operation_error::OperationError;
+
 static ASYNC_SCORER: AtomicBool = AtomicBool::new(false);
 
 pub fn set_async_scorer(async_scorer: bool) {
@@ -25,3 +27,7 @@ pub const CHUNK_SIZE: usize = 512 * 1024;
 /// Vector storage chunk size in bytes
 #[cfg(not(any(test, feature = "testing")))]
 pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
+
+pub fn error_immutable_insert() -> OperationError {
+    OperationError::service_error("Cannot insert into an immutable vector storage")
+}

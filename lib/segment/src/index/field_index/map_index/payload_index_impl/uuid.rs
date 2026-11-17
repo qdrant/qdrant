@@ -2,28 +2,24 @@ use std::iter;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::Blob;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
-use gridstore::Blob;
 use indexmap::IndexSet;
-use itertools::Itertools;
 use uuid::Uuid;
 
 use super::super::MapIndex;
 use super::super::key::MapIndexKey;
 use super::super::read_only::ReadOnlyMapIndex;
-use super::super::read_ops::MapIndexRead;
+use super::super::read_ops::{MapConditionChecker, MapIndexRead};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
+use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
-use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
-use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -48,24 +44,22 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 }
 
 impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
-    fn count_indexed_points(&self) -> usize {
-        MapIndexRead::get_indexed_points(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(MapIndexRead::get_indexed_points(self))
     }
 
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        estimate_cardinality_impl(self, condition, hw_counter)
+        estimate_cardinality_impl(self, condition)
     }
 
     fn for_each_payload_block(
@@ -80,34 +74,31 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        condition_checker_impl(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(condition_checker_impl(self, condition).map(ConditionCheckerEnum::MapUuidWritable))
     }
 }
 
-impl<S: UniversalRead> PayloadFieldIndexRead for ReadOnlyMapIndex<UuidIntType, S>
+impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyMapIndex<UuidIntType, S>
 where
     Vec<<UuidIntType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn count_indexed_points(&self) -> usize {
-        MapIndexRead::get_indexed_points(self)
+    fn count_indexed_points(&self) -> OperationResult<usize> {
+        Ok(MapIndexRead::get_indexed_points(self))
     }
 
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        estimate_cardinality_impl(self, condition, hw_counter)
+        estimate_cardinality_impl(self, condition)
     }
 
     fn for_each_payload_block(
@@ -122,19 +113,17 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<ConditionCheckerFn<'a>> {
-        condition_checker_impl(self, condition, hw_acc)
+    ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
+        Ok(condition_checker_impl(self, condition).map(S::condition_checker_map_uuid))
     }
 }
 
 // Shared bodies for `MapIndex<UuidIntType>` and
 // `ReadOnlyMapIndex<UuidIntType, S>`.
 
-fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
+fn filter_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     index: &'a T,
     condition: &'a FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
@@ -142,7 +131,7 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
                 let Ok(uuid) = Uuid::from_str(uuid_string) else {
                     return Ok(None);
                 };
-                Some(Box::new(index.get_iterator(&uuid.as_u128(), hw_counter)))
+                Some(Box::new(index.get_iterator(&uuid.as_u128())))
             }
             ValueVariants::Integer(_) => None,
             ValueVariants::Bool(_) => None,
@@ -157,12 +146,7 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
                     return Ok(None);
                 };
 
-                Some(Box::new(
-                    uuids
-                        .into_iter()
-                        .flat_map(move |uuid| index.get_iterator(&uuid, hw_counter))
-                        .unique(),
-                ))
+                Some(index.iter_for_values(uuids.into_iter())?)
             }
             AnyVariants::Integers(integers) => {
                 if integers.is_empty() {
@@ -184,7 +168,7 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
                 let mut points = IndexSet::new();
                 index.for_each_value(|key| {
                     if !excluded_uuids.contains(key) {
-                        index.get_iterator(key, hw_counter).for_each(|p| {
+                        index.get_iterator(key).for_each(|p| {
                             points.insert(p);
                         });
                     }
@@ -200,10 +184,9 @@ fn filter_impl<'a, T: MapIndexRead<UuidIntType>>(
     Ok(result)
 }
 
-fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
-    index: &T,
+fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
+    index: &'a T,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     Ok(match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
@@ -211,7 +194,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
                 let Some(uuid) = Uuid::from_str(uuid_string).ok() else {
                     return Ok(None);
                 };
-                let mut estimation = index.match_cardinality(&uuid.as_u128(), hw_counter);
+                let mut estimation = index.match_cardinality(&uuid.as_u128());
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -233,7 +216,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
 
                 let estimations = uuids
                     .into_iter()
-                    .map(|uuid| index.match_cardinality(&uuid, hw_counter))
+                    .map(|uuid| index.match_cardinality(&uuid))
                     .collect::<Vec<_>>();
                 let estimation = if estimations.is_empty() {
                     CardinalityEstimation::exact(0)
@@ -267,7 +250,7 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
                     return Ok(None);
                 };
 
-                Some(index.except_cardinality(excluded_uuids.iter(), hw_counter))
+                Some(index.except_cardinality(excluded_uuids.iter()))
             }
             AnyVariants::Integers(_) => None,
         },
@@ -275,17 +258,14 @@ fn estimate_cardinality_impl<T: MapIndexRead<UuidIntType>>(
     })
 }
 
-fn for_each_payload_block_impl<T: MapIndexRead<UuidIntType>>(
-    index: &T,
+fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
+    index: &'a T,
     threshold: usize,
     key: PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = index
-            // payload_blocks only used in HNSW building, which is unmeasured.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
+        let count = index.get_count_for_value(value).unwrap_or(0);
         if count >= threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(
@@ -299,11 +279,10 @@ fn for_each_payload_block_impl<T: MapIndexRead<UuidIntType>>(
     })
 }
 
-fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
+fn condition_checker_impl<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
-    hw_acc: HwMeasurementAcc,
-) -> Option<ConditionCheckerFn<'a>> {
+) -> Option<MapConditionChecker<'a, UuidIntType, T>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
     let FieldCondition {
@@ -319,15 +298,12 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
     } = condition;
 
     let cond_match = r#match.as_ref()?;
-    let hw_counter = hw_acc.get_counter_cell();
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
         }) => {
             let uuid = Uuid::parse_str(keyword).map(|u| u.as_u128()).ok()?;
-            Some(Box::new(move |point_id: PointOffsetType| {
-                index.check_values_any(point_id, &hw_counter, |value| value == &uuid)
-            }))
+            Some(index.match_value_checker(uuid))
         }
         Match::Any(MatchAny {
             any: AnyVariants::Strings(list),
@@ -336,17 +312,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
                 .iter()
                 .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
                 .collect::<Option<IndexSet<_>>>()?;
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| list.contains(value))
-                }))
-            }
+            Some(index.match_any_checker(list, false))
         }
         Match::Except(MatchExcept {
             except: AnyVariants::Strings(list),
@@ -355,17 +321,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
                 .iter()
                 .map(|s| Uuid::parse_str(s).map(|u| u.as_u128()).ok())
                 .collect::<Option<IndexSet<_>>>()?;
-            if list.len() < INDEXSET_ITER_THRESHOLD {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| {
-                        !list.iter().any(|i| i == value)
-                    })
-                }))
-            } else {
-                Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any(point_id, &hw_counter, |value| !list.contains(value))
-                }))
-            }
+            Some(index.match_any_checker(list, true))
         }
         // Conditions this index can't serve.
         Match::Value(MatchValue {
@@ -379,6 +335,8 @@ fn condition_checker_impl<'a, T: MapIndexRead<UuidIntType> + 'a>(
         })
         | Match::Text(_)
         | Match::TextAny(_)
-        | Match::Phrase(_) => None,
+        | Match::Phrase(_)
+        | Match::Prefix(_)
+        | Match::Substring(_) => None,
     }
 }

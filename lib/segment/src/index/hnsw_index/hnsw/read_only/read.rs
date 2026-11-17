@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
-use common::universal_io::UniversalRead;
 use sparse::common::types::DimId;
 
 use super::ReadOnlyHNSWIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::VectorIndexRead;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
-impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
+impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -24,7 +24,17 @@ impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         // Reuses the shared search logic implemented on the read view.
-        self.with_view(|view| view.search(vectors, filter, top, params, query_context))
+        self.with_view(|view| view.search(vectors, filter, top, params, query_context))?
+    }
+
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        self.with_view(|view| view.filter_checks(query_vectors, cardinality, top, params))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -36,6 +46,7 @@ impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
             unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
+            filtered_acorn: tm.acorn.lock().get_statistics(detail),
             filtered_exact: tm.exact_filtered.lock().get_statistics(detail),
             filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(detail),
@@ -46,8 +57,10 @@ impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn indexed_vector_count(&self) -> usize {
         self.config
             .indexed_vector_count
-            // If indexed vector count is unknown, fall back to number of points
-            .unwrap_or_else(|| self.graph.num_points())
+            // If indexed vector count is unknown, fall back to number of
+            // points. A deferred graph reports the conservative zero rather
+            // than trigger a (potentially remote) load for a statistic.
+            .unwrap_or_else(|| self.graph.get().map_or(0, |graph| graph.num_points()))
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
@@ -59,10 +72,14 @@ impl<S: UniversalRead> VectorIndexRead for ReadOnlyHNSWIndex<S> {
     fn fill_idf_statistics(
         &self,
         _idf: &mut HashMap<DimId, usize>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // HNSW (dense) index doesn't track IDF.
-        Ok(())
+        corpus: Option<&Filter>,
+        _is_stopped: &std::sync::atomic::AtomicBool,
+    ) -> OperationResult<usize> {
+        // HNSW (dense) index doesn't track IDF and contributes no df counts.
+        Ok(match corpus {
+            None => self.indexed_vector_count(),
+            Some(_) => 0,
+        })
     }
 
     fn is_index(&self) -> bool {

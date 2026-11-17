@@ -40,9 +40,9 @@ def test_consensus_compaction(tmp_path: pathlib.Path):
     for i in range(0, 5):
         print(f"recreating collection {i}")
         # Drop test_collection
-        drop_collection(peer_api_uris[0], "test_collection", timeout=5)
+        drop_collection(peer_api_uris[0], "test_collection")
         # Re-create test_collection
-        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
+        create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
         res = requests.get(f"{peer_api_uris[1]}/collections")
         print(res.json())
 
@@ -108,9 +108,9 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     for i in range(0, 5):
         print(f"create temporary collection {i}")
         # Create test_collection
-        create_collection(peer_api_uris[0], "tmp_collection", shard_number=N_SHARDS, replication_factor=N_REPLICA, timeout=3)
+        create_collection(peer_api_uris[0], "tmp_collection", shard_number=N_SHARDS, replication_factor=N_REPLICA)
         # Drop test_collection
-        drop_collection(peer_api_uris[0], "tmp_collection", timeout=5)
+        drop_collection(peer_api_uris[0], "tmp_collection")
 
     # Wait for collection to be ready on all peers
     for peer_uri in peer_api_uris:

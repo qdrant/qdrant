@@ -1,0 +1,97 @@
+use std::path::Path;
+
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use quantization::turboquant::TQBits;
+
+use super::ReadOnlyImmutableTurboVectorStorage;
+use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
+use crate::common::operation_error::OperationResult;
+use crate::index::hnsw_index::HnswGraph;
+use crate::types::{Distance, IoBackend};
+use crate::vector_storage::graph_vectors::GraphVectors;
+use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
+use crate::vector_storage::turbo::shared::{self, DELETED_DIR_PATH, VECTORS_PATH};
+
+impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the subsequent open is
+    /// the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        QuantizedStorage::<S>::preopen(fs, &path.join(VECTORS_PATH), populate);
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        Ok(())
+    }
+
+    /// Open the read-only counterpart of a single-file TurboQuant dense storage at
+    /// `path`, threading every file open through `fs`; reads the existing layout
+    /// but creates and writes nothing.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        dim: usize,
+        distance: Distance,
+        bits: TQBits,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        let quantizer = shared::build_quantizer(dim, distance, bits);
+        let storage =
+            QuantizedStorage::from_file(fs, &path.join(VECTORS_PATH), quantizer.quantized_size())?;
+
+        // The read-only backend maps lazily; warm it when the load profile asks.
+        let populated = match populate {
+            Populate::No => false,
+            Populate::Auto
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => true,
+        };
+        if populated {
+            storage.populate();
+        }
+
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+
+        Ok(Self {
+            storage,
+            quantizer,
+            deleted,
+            cold: !populated,
+            distance,
+            dim,
+        })
+    }
+}
+
+impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>> {
+    pub fn open_graph(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        graph: HnswGraph<S>,
+        dim: usize,
+        distance: Distance,
+        bits: TQBits,
+    ) -> OperationResult<Self> {
+        let quantizer = shared::build_quantizer(dim, distance, bits);
+        Ok(Self {
+            cold: graph.is_cold(),
+            storage: GraphVectors::new(graph, quantizer.quantized_size())?,
+            quantizer,
+            deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,
+            distance,
+            dim,
+        })
+    }
+
+    pub fn io_backend(&self) -> Option<IoBackend> {
+        self.storage.graph().io_backend()
+    }
+
+    pub fn hnsw_graph(&self) -> HnswGraph<S> {
+        self.storage.graph().clone()
+    }
+}

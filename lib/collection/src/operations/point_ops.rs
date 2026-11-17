@@ -79,6 +79,12 @@ impl SplitByShard for PointOperations {
                 #[cfg(not(debug_assertions))]
                 OperationToShard::by_shard(vec![])
             }
+            PointOperations::UpsertPointsRaw(_) | PointOperations::SyncPointsRaw(_) => {
+                #[cfg(debug_assertions)]
+                panic!("Raw point operations are intended to be applied to specific shard only");
+                #[cfg(not(debug_assertions))]
+                OperationToShard::by_shard(vec![])
+            }
         }
     }
 }

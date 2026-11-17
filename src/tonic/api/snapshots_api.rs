@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use ::common::ambient::AmbientFutureExt;
+use ::common::reason::reason;
 use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
@@ -271,6 +273,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             snapshot_priority,
             checksum,
             api_key,
+            from_peer_id,
         } = request;
 
         let timing = Instant::now();
@@ -285,7 +288,9 @@ impl ShardSnapshots for ShardSnapshotsService {
             checksum,
             self.http_client.clone(),
             api_key,
+            from_peer_id,
         )
+        .unmeasured(reason("Snapshot recovery isn't measured"))
         .await?;
 
         Ok(Response::new(RecoverSnapshotResponse {

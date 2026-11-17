@@ -3,11 +3,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::rest::models::HardwareUsage;
+use chrono::SubsecRound as _;
 use collection::common::fetch_vectors::CollectionName;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::counter::hardware_accumulator::HwSharedDrain;
+use common::ambient::hw::HwSharedDrain;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
@@ -71,11 +72,19 @@ impl Dispatcher {
     /// On deployments without consensus - a submitted operation is always run to completion.
     pub async fn submit_collection_meta_op(
         &self,
-        operation: CollectionMetaOperations,
+        mut operation: CollectionMetaOperations,
         auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         auth.check_collection_meta_operation(&operation)?;
+
+        if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+            // Keep an existing timestamp: collections re-created from a config
+            // (snapshot recovery, cluster migration) retain their original creation time
+            op.create_collection
+                .created_at
+                .get_or_insert_with(|| chrono::Utc::now().trunc_subsecs(3));
+        }
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
@@ -95,11 +104,14 @@ impl Dispatcher {
                                 let collection_defaults =
                                     self.toc.storage_config.collection.as_ref();
 
-                                let shard_distribution = self.toc.suggest_shard_distribution(
-                                    &op,
-                                    collection_defaults,
-                                    number_of_peers,
-                                );
+                                let shard_distribution = self
+                                    .toc
+                                    .suggest_shard_distribution(
+                                        &op,
+                                        collection_defaults,
+                                        number_of_peers,
+                                    )
+                                    .await;
 
                                 // Expect all replicas to become active eventually
                                 for (shard_id, peer_ids) in &shard_distribution.distribution {
@@ -154,7 +166,8 @@ impl Dispatcher {
                 | CollectionMetaOperations::DeleteNamedVector(_)
                 | CollectionMetaOperations::Nop { .. } => operation,
                 #[cfg(feature = "staging")]
-                CollectionMetaOperations::TestSlowDown(_) => operation,
+                CollectionMetaOperations::TestSlowDown(_)
+                | CollectionMetaOperations::TestTransientError(_) => operation,
             };
 
             let operation_awaiter =
@@ -199,7 +212,8 @@ impl Dispatcher {
                 | CollectionMetaOperations::Nop { .. } => false,
 
                 #[cfg(feature = "staging")]
-                CollectionMetaOperations::TestSlowDown(_) => false,
+                CollectionMetaOperations::TestSlowDown(_)
+                | CollectionMetaOperations::TestTransientError(_) => false,
             };
 
             // During creation of a shard key, we must ensure that all replicas are ready to accept
@@ -269,6 +283,16 @@ impl Dispatcher {
 
             Ok(res)
         } else {
+            if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+                // Assign the UUID before the operation is applied, not when the collection is
+                // created: consensus applies the same operation, and there a missing UUID must
+                // stay missing on every peer. With a UUID, migrating this standalone deployment
+                // to a cluster doesn't have to make one up.
+                op.create_collection
+                    .uuid
+                    .get_or_insert_with(uuid::Uuid::new_v4);
+            }
+
             let toc = self.toc.clone();
             tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
                 .await?

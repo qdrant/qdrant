@@ -26,8 +26,10 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
+use crate::vector_storage::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
 use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, VectorStorageEnum, VectorStorageRead,
+    DenseTQVectorStorageRead, DenseVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage,
+    VectorStorageEnum, VectorStorageRead,
 };
 
 pub const ELEMENTS_PER_SUBGROUP: usize = 4;
@@ -96,8 +98,13 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             VectorStorageDatatype::Uint8 => {
                 defines.insert("VECTOR_STORAGE_ELEMENT_UINT8".to_owned(), None);
             }
-            VectorStorageDatatype::Turbo4 => {
-                unimplemented!("turbo4 datatype storage not yet wired up")
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => {
+                // Unreachable: TurboQuant storages are dequantized to `f32`/`f16`
+                // in `new_dense_tq`/`new_multi_tq`, so `element_type` is never
+                // a TurboQuant datatype. The GPU has no native TQ element layout.
+                unreachable!("TurboQuant is dequantized to float before GPU upload")
             }
         }
 
@@ -342,7 +349,7 @@ impl GpuVectorStorage {
             (0..quantized_storage.vectors_count()).map(|id| {
                 let (_, vector) =
                     quantized_storage.get_quantized_vector_offset_and_code(id as PointOffsetType);
-                Cow::Borrowed(vector)
+                vector
             }),
             Some(GpuQuantization::new_sq(device, quantized_storage)?),
             multivectors,
@@ -424,6 +431,18 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseMemmapHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
+            VectorStorageEnum::DenseGraphInline(vector_storage) => Self::new_dense_f32(
+                device,
+                vector_storage.as_ref(),
+                force_half_precision,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineByte(vector_storage) => {
+                Self::new_dense(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseGraphInlineHalf(vector_storage) => {
+                Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
+            }
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(vector_storage) => Self::new_dense_f32(
                 device,
@@ -482,6 +501,25 @@ impl GpuVectorStorage {
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(vector_storage) => {
                 Self::new_multi_f16(device, vector_storage.as_ref(), stopped)
+            }
+            // TurboQuant has no native GPU element type: dequantize each vector
+            // back to float (or half-float, when the device supports it) and
+            // upload it as a regular dense storage.
+            VectorStorageEnum::DenseTurboMemmap(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseTurboGraphInline(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::DenseTurboAppendableMemmap(vector_storage) => {
+                Self::new_dense_tq(device, vector_storage.as_ref(), stopped)
+            }
+            VectorStorageEnum::MultiDenseTurbo(vector_storage) => {
+                Self::new_multi_tq(device, vector_storage, stopped)
             }
             VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => {
                 Err(OperationError::service_error(
@@ -561,6 +599,129 @@ impl GpuVectorStorage {
             None,
             stopped,
         )
+    }
+
+    /// Build a GPU storage from a TurboQuant dense storage by dequantizing each
+    /// encoded vector back to float. Always uses half precision when the device
+    /// supports it, regardless of `force_half_precision`: the 4-bit TQ
+    /// quantization error dwarfs f16 rounding, so `f32` would only waste GPU
+    /// memory and bandwidth. Falls back to `f32` on devices without f16.
+    fn new_dense_tq(
+        device: Arc<gpu::Device>,
+        vector_storage: &impl DenseTQVectorStorageRead,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
+        let count = vector_storage.total_vector_count();
+        let distance = vector_storage.distance();
+        let dim = vector_storage.vector_dim();
+
+        // The TurboQuant rotation is orthogonal, so it preserves Dot/Cosine/L2
+        // pairwise distances — the only distances the GPU graph builder computes.
+        // Keeping the vectors rotated therefore yields an equivalent graph while
+        // skipping the per-vector inverse rotation on the CPU. Manhattan (L1) is
+        // not rotation-invariant, so it must be rotated back.
+        let keep_rotated = distance != Distance::Manhattan;
+
+        // Known inefficiency: `new_typed` re-iterates the vectors iterator once
+        // per GPU buffer (`STORAGES_COUNT` passes), and `skip`/`step_by` still
+        // evaluate the `map` closure for the skipped elements — so every vector
+        // is dequantized `STORAGES_COUNT` times instead of once. Accepted as a
+        // one-time index-build cost, dominated by the GPU graph build itself; a
+        // single-pass round-robin upload in `new_typed` would remove it if
+        // profiling ever shows it matters. Same applies to `new_multi_tq`.
+        if device.has_half_precision() {
+            Self::new_typed::<VectorElementTypeHalf>(
+                device,
+                distance,
+                count,
+                count,
+                dim,
+                (0..count).map(|id| {
+                    VectorElementTypeHalf::slice_from_float_cow(Cow::Owned(
+                        vector_storage
+                            .get_dense_for_requantization(id as PointOffsetType, keep_rotated),
+                    ))
+                }),
+                None,
+                None,
+                stopped,
+            )
+        } else {
+            Self::new_typed::<VectorElementType>(
+                device,
+                distance,
+                count,
+                count,
+                dim,
+                (0..count).map(|id| {
+                    Cow::Owned(
+                        vector_storage
+                            .get_dense_for_requantization(id as PointOffsetType, keep_rotated),
+                    )
+                }),
+                None,
+                None,
+                stopped,
+            )
+        }
+    }
+
+    /// Build a GPU storage from a TurboQuant multivector storage by dequantizing
+    /// every inner vector back to float. Mirrors [`Self::new_dense_tq`] for the
+    /// multivector case and uploads the multivector offsets alongside.
+    fn new_multi_tq(
+        device: Arc<gpu::Device>,
+        vector_storage: &AppendableMmapMultiTurboVectorStorage,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
+        let point_count = vector_storage.total_vector_count();
+        let distance = vector_storage.distance();
+        let dim = vector_storage.vector_dim();
+        let dense_count: usize = (0..point_count)
+            .map(|id| vector_storage.point_inner_vectors_count(id as PointOffsetType))
+            .sum();
+        let multivectors = GpuMultivectors::new_turbo_multi(device.clone(), vector_storage)?;
+
+        // See [`Self::new_dense_tq`]: the rotation is orthogonal, so keeping the
+        // inner vectors rotated preserves Dot/Cosine/L2 and skips the CPU-side
+        // inverse rotation; only Manhattan (L1) must be rotated back.
+        let keep_rotated = distance != Distance::Manhattan;
+
+        if device.has_half_precision() {
+            Self::new_typed::<VectorElementTypeHalf>(
+                device,
+                distance,
+                dense_count,
+                point_count,
+                dim,
+                (0..point_count).flat_map(|id| {
+                    vector_storage
+                        .get_inner_dense_for_requantization(id as PointOffsetType, keep_rotated)
+                        .into_iter()
+                        .map(|inner| VectorElementTypeHalf::slice_from_float_cow(Cow::Owned(inner)))
+                }),
+                None,
+                Some(multivectors),
+                stopped,
+            )
+        } else {
+            Self::new_typed::<VectorElementType>(
+                device,
+                distance,
+                dense_count,
+                point_count,
+                dim,
+                (0..point_count).flat_map(|id| {
+                    vector_storage
+                        .get_inner_dense_for_requantization(id as PointOffsetType, keep_rotated)
+                        .into_iter()
+                        .map(Cow::Owned)
+                }),
+                None,
+                Some(multivectors),
+                stopped,
+            )
+        }
     }
 
     fn new_multi_f32<TVectorStorage: MultiVectorStorage<VectorElementType>>(

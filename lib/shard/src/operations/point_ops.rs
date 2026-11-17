@@ -7,16 +7,17 @@ use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use segment::common::operation_error::OperationError;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::utils::unordered_hash_unique;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::segment_record::SegmentRecord;
+use segment::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
-    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+    MultiDenseVectorInternal, VectorInternal, VectorRef, VectorStructInternal,
 };
-use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
+use segment::types::{Filter, Payload, PointIdType, RawPayload, VectorNameBuf};
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
@@ -116,6 +117,10 @@ pub enum PointOperations {
     DeletePointsByFilter(Filter),
     /// Points Sync
     SyncPoints(PointSyncOperation),
+    /// Insert or update points with storage-native (raw bytes) vectors
+    UpsertPointsRaw(Vec<PointStructRawPersisted>),
+    /// Points sync with storage-native (raw bytes) vectors
+    SyncPointsRaw(PointSyncRawOperation),
 }
 
 impl PointOperations {
@@ -126,6 +131,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => Some(ids.clone()),
             Self::DeletePointsByFilter(_) => None,
             Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
+            Self::UpsertPointsRaw(points) => Some(points.iter().map(|point| point.id).collect()),
+            Self::SyncPointsRaw(op) => Some(op.points.iter().map(|point| point.id).collect()),
         }
     }
 
@@ -141,6 +148,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => ids.retain(filter),
             Self::DeletePointsByFilter(_) => (),
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
+            Self::UpsertPointsRaw(points) => points.retain(|point| filter(&point.id)),
+            Self::SyncPointsRaw(op) => op.points.retain(|point| filter(&point.id)),
         }
     }
 
@@ -153,6 +162,16 @@ impl PointOperations {
             Self::SyncPoints(op) => {
                 for point in &mut op.points {
                     point.vector.retain_vector_names(valid);
+                }
+            }
+            Self::UpsertPointsRaw(points) => {
+                for point in points {
+                    point.vectors.retain(|(name, _)| valid.contains(name));
+                }
+            }
+            Self::SyncPointsRaw(op) => {
+                for point in &mut op.points {
+                    point.vectors.retain(|(name, _)| valid.contains(name));
                 }
             }
             Self::DeletePoints { .. } | Self::DeletePointsByFilter(_) => (),
@@ -248,7 +267,7 @@ impl PointInsertOperationsInternal {
                     }
 
                     BatchVectorStructPersisted::Named(vectors) => {
-                        for (_, vectors) in vectors.iter_mut() {
+                        for vectors in vectors.values_mut() {
                             retain_with_index(vectors, |index, _| retain_indices.contains(&index));
                         }
                     }
@@ -293,6 +312,239 @@ pub struct PointSyncOperation {
     /// Maximal id og
     pub to_id: Option<PointIdType>,
     pub points: Vec<PointStructPersisted>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
+pub struct PointSyncRawOperation {
+    /// Minimal id of the sync range
+    pub from_id: Option<PointIdType>,
+    /// Maximal id of the sync range
+    pub to_id: Option<PointIdType>,
+    pub points: Vec<PointStructRawPersisted>,
+}
+
+pub type RawVectorsPersisted = SmallVec<[(VectorNameBuf, Vec<u8>); 1]>;
+
+/// A point with vectors as storage-native bytes, as it is persisted in WAL.
+#[derive(Clone, PartialEq, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct PointStructRawPersisted {
+    /// Point id
+    pub id: PointIdType,
+    /// All named vectors of the point, storage-native bytes per vector name
+    #[serde(with = "raw_vectors_serde")]
+    pub vectors: RawVectorsPersisted,
+    /// Payload values (optional)
+    pub payload: Option<Payload>,
+    /// The whole payload as a single encoded blob, as read from storage.
+    ///
+    /// Mutually exclusive with `payload`. Kept from the sender all the way into the WAL
+    /// and parsed once, when the point is applied. Skipped when `None` so WAL entries
+    /// without a blob stay byte-identical to those written before this field existed.
+    ///
+    /// Costs more WAL bytes than `payload` would, since the blob is JSON while a parsed
+    /// payload becomes a compact CBOR map. Decoding earlier to win them back would mean a
+    /// second full deserialization, so the blob is carried as-is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_raw: Option<RawPayload>,
+}
+
+/// Serde helper for [`PointStructRawPersisted::vectors`]: each vector blob in the
+/// `(name, bytes)` pair list goes through [`common::raw_bytes_serde`], so it is encoded as
+/// a compact byte string instead of the serde default of a sequence of integers.
+mod raw_vectors_serde {
+    use common::raw_bytes_serde::{ByteVec, BytesRef};
+    use segment::types::VectorNameBuf;
+    use serde::de::Deserializer;
+    use serde::ser::{SerializeSeq, Serializer};
+
+    use super::RawVectorsPersisted;
+
+    pub fn serialize<S: Serializer>(
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(vectors.len()))?;
+        for (name, bytes) in vectors {
+            seq.serialize_element(&(name, BytesRef(bytes)))?;
+        }
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<RawVectorsPersisted, D::Error> {
+        let raw: Vec<(VectorNameBuf, ByteVec)> = serde::Deserialize::deserialize(deserializer)?;
+        Ok(raw
+            .into_iter()
+            .map(|(name, bytes)| (name, bytes.0))
+            .collect())
+    }
+}
+
+impl From<SegmentRecordRaw> for PointStructRawPersisted {
+    /// A raw read hands out the payload as stored, so the blob travels as-is and
+    /// nothing is parsed or encoded here.
+    fn from(record: SegmentRecordRaw) -> Self {
+        let SegmentRecordRaw {
+            id,
+            vectors,
+            payload,
+        } = record;
+
+        Self {
+            id,
+            vectors: vectors.unwrap_or_default(),
+            payload: None,
+            payload_raw: payload,
+        }
+    }
+}
+
+impl PointStructRawPersisted {
+    /// Move a raw payload blob into the parsed [`Self::payload`], decoding it.
+    ///
+    /// The blob is taken only once it has parsed, so a failure leaves the point holding it
+    /// rather than holding neither representation.
+    pub fn decode_payload_raw(&mut self) -> OperationResult<()> {
+        let Some(payload_raw) = &self.payload_raw else {
+            return Ok(());
+        };
+
+        debug_assert!(self.payload.is_none());
+
+        self.payload = Some(payload_raw.decode()?);
+        self.payload_raw = None;
+
+        Ok(())
+    }
+
+    /// Whether this point carries the data stored in `segment_record`.
+    ///
+    /// A point reaches here with its payload already parsed — both raw entry points
+    /// require it — so the stored blob is decoded to compare. The blob-to-blob arms are
+    /// an unreachable fallback, kept correct in case a caller ever compares first.
+    pub fn is_equal_to(&self, segment_record: &SegmentRecordRaw) -> bool {
+        let SegmentRecordRaw {
+            id,
+            vectors,
+            payload,
+        } = segment_record;
+
+        if &self.id != id {
+            return false;
+        }
+
+        let segment_vectors = vectors.as_deref().unwrap_or(&[]);
+        if self.vectors.len() != segment_vectors.len() {
+            return false;
+        }
+        for (name, bytes) in segment_vectors {
+            let own_bytes = self
+                .vectors
+                .iter()
+                .find(|(own_name, _)| own_name == name)
+                .map(|(_, bytes)| bytes);
+            if own_bytes != Some(bytes) {
+                return false;
+            }
+        }
+
+        // Check if payloads are equal, empty and non-existent payloads are considered equal
+        match (&self.payload_raw, payload) {
+            (Some(own_blob), Some(segment_blob)) => own_blob == segment_blob,
+            (Some(own_blob), None) => own_blob.decode().is_ok_and(|payload| payload.is_empty()),
+            (None, _) => {
+                let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
+                let Ok(segment_payload) = payload.as_ref().map(RawPayload::decode).transpose()
+                else {
+                    // A blob that cannot be parsed is not the data this point carries
+                    return false;
+                };
+                let segment_payload = segment_payload.filter(|payload| !payload.is_empty());
+                self_payload == segment_payload.as_ref()
+            }
+        }
+    }
+}
+
+#[cfg(feature = "api")]
+impl From<PointStructRawPersisted> for api::grpc::qdrant::PointStructRaw {
+    fn from(value: PointStructRawPersisted) -> Self {
+        let PointStructRawPersisted {
+            id,
+            vectors,
+            payload,
+            payload_raw,
+        } = value;
+
+        Self {
+            id: Some(id.into()),
+            vectors: vectors.into_iter().collect(),
+            payload: payload
+                .map(api::conversions::json::payload_to_proto)
+                .unwrap_or_default(),
+            raw_payload: payload_raw.map(api::grpc::qdrant::RawPayload::from),
+        }
+    }
+}
+
+#[cfg(feature = "api")]
+impl TryFrom<api::grpc::qdrant::PointStructRaw> for PointStructRawPersisted {
+    type Error = tonic::Status;
+
+    fn try_from(value: api::grpc::qdrant::PointStructRaw) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::PointStructRaw {
+            id,
+            vectors,
+            payload,
+            raw_payload,
+        } = value;
+
+        let id = id
+            .ok_or_else(|| tonic::Status::invalid_argument("Empty id is not allowed"))?
+            .try_into()?;
+
+        // Only the encoding tag is checked here; the blob itself is parsed when the point
+        // is applied. Rejecting both fields mirrors how the request rejects both
+        // `points` and `raw_points`.
+        let payload_raw = raw_payload.map(RawPayload::try_from).transpose()?;
+        if payload_raw.is_some() && !payload.is_empty() {
+            return Err(tonic::Status::invalid_argument(
+                "Only one of `payload` and `raw_payload` can be set for a point",
+            ));
+        }
+
+        // An empty payload is normalized to `None`.
+        let payload = api::conversions::json::proto_to_payloads(payload)?;
+        let payload = (!payload.is_empty()).then_some(payload);
+
+        Ok(Self {
+            id,
+            vectors: vectors.into_iter().collect(),
+            payload,
+            payload_raw,
+        })
+    }
+}
+
+impl Debug for PointStructRawPersisted {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let vectors = self
+            .vectors
+            .iter()
+            .map(|(name, bytes)| format!("{name}: {} bytes", bytes.len()))
+            .join(", ");
+        let payload_raw = self
+            .payload_raw
+            .as_ref()
+            .map(|payload| format!("{} bytes", payload.payload_bytes.len()));
+        write!(
+            f,
+            "PointStructRawPersisted {{ id: {}, vectors: [{vectors}], payload: {:?}, payload_raw: {payload_raw:?} }}",
+            self.id, self.payload,
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
@@ -447,14 +699,14 @@ impl PointStructPersisted {
             return false;
         }
 
-        let self_vectors = self.get_vectors().into_owned_map();
+        let self_vectors = self.get_vectors();
 
         if let Some(segment_vectors) = vectors {
             if self_vectors.len() != segment_vectors.len() {
                 return false;
             }
             for (name, vec) in segment_vectors {
-                if self_vectors.get(name) != Some(vec) {
+                if self_vectors.get(name) != Some(VectorRef::from(vec)) {
                     return false;
                 }
             }
@@ -855,6 +1107,230 @@ where
 mod tests {
     use super::*;
 
+    #[test]
+    fn raw_persisted_vectors_use_compact_byte_string() {
+        let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
+        let point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: vec![("dense".to_string(), blob.clone())].into(),
+            payload: None,
+            payload_raw: None,
+        };
+
+        let encoded = serde_cbor::to_vec(&point).unwrap();
+        assert!(
+            encoded.len() < blob.len() + 128,
+            "expected compact byte-string encoding, got {} bytes for a {}-byte blob",
+            encoded.len(),
+            blob.len(),
+        );
+
+        let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
+        assert!(decoded == point, "round-trip mismatch");
+    }
+
+    #[test]
+    fn raw_persisted_payload_uses_compact_byte_string() {
+        let blob: Vec<u8> = (0..4096u32).map(|i| i as u8).collect();
+        let point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(blob.clone())),
+        };
+
+        let encoded = serde_cbor::to_vec(&point).unwrap();
+        assert!(
+            encoded.len() < blob.len() + 128,
+            "expected compact byte-string encoding, got {} bytes for a {}-byte blob",
+            encoded.len(),
+            blob.len(),
+        );
+
+        let decoded: PointStructRawPersisted = serde_cbor::from_slice(&encoded).unwrap();
+        assert!(decoded == point, "round-trip mismatch");
+    }
+
+    /// A point without a blob must encode exactly as it did before the field existed.
+    #[test]
+    fn raw_persisted_without_payload_blob_keeps_wal_encoding() {
+        /// Mirror of [`PointStructRawPersisted`] without `payload_raw`.
+        #[derive(Serialize)]
+        #[serde(rename_all = "snake_case")]
+        struct LegacyPointStructRawPersisted {
+            id: PointIdType,
+            #[serde(with = "raw_vectors_serde")]
+            vectors: RawVectorsPersisted,
+            payload: Option<Payload>,
+        }
+
+        let vectors = RawVectorsPersisted::from(vec![("dense".to_string(), vec![0_u8, 1, 2, 3])]);
+        let legacy = LegacyPointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: vectors.clone(),
+            payload: None,
+        };
+        let point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors,
+            payload: None,
+            payload_raw: None,
+        };
+
+        assert_eq!(
+            serde_cbor::to_vec(&point).unwrap(),
+            serde_cbor::to_vec(&legacy).unwrap(),
+        );
+    }
+
+    /// The stored blob is decoded for the comparison rather than counting as a difference.
+    #[test]
+    fn raw_point_is_equal_to_decodes_stored_blob() {
+        let record = SegmentRecordRaw {
+            id: PointIdType::from(1),
+            vectors: None,
+            payload: Some(RawPayload::from_storage_bytes(br#"{"a":1}"#.to_vec())),
+        };
+
+        let mut point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+            payload_raw: None,
+        };
+        assert!(point.is_equal_to(&record));
+
+        point.payload = Some(serde_json::from_str(r#"{"a":2}"#).unwrap());
+        assert!(!point.is_equal_to(&record));
+
+        point.payload = None;
+        assert!(!point.is_equal_to(&record));
+    }
+
+    /// A stored blob that does not parse is unequal, so the point is upserted rather than
+    /// silently skipped.
+    #[test]
+    fn raw_point_is_equal_to_rejects_malformed_blob() {
+        let record = SegmentRecordRaw {
+            id: PointIdType::from(1),
+            vectors: None,
+            payload: Some(RawPayload::from_storage_bytes(b"not json".to_vec())),
+        };
+        let point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+            payload_raw: None,
+        };
+
+        assert!(!point.is_equal_to(&record));
+    }
+
+    /// A blob survives the wire types unchanged, with no value tree built on either side.
+    #[cfg(feature = "api")]
+    #[test]
+    fn raw_payload_round_trips_over_the_wire_types() {
+        let payload: Payload =
+            serde_json::from_str(r#"{"city": "Berlin", "count": 3, "nested": {"a": [1, 2]}}"#)
+                .unwrap();
+        let stored_bytes = serde_json::to_vec(&payload).unwrap();
+
+        let point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::from(vec![("dense".to_string(), vec![0_u8, 1, 2, 3])]),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(stored_bytes.clone())),
+        };
+
+        let sent = api::grpc::qdrant::PointStructRaw::from(point);
+        assert!(
+            sent.payload.is_empty(),
+            "a raw payload must not also be sent as a value tree",
+        );
+        let raw_payload = sent.raw_payload.as_ref().expect("blob must be sent");
+        assert_eq!(raw_payload.payload_bytes, stored_bytes);
+        assert_eq!(
+            raw_payload.encoding(),
+            api::grpc::RawPayloadEncoding::JsonBytes,
+        );
+
+        // The receiving side keeps the blob, which is what puts it in the WAL as it arrived.
+        let received = PointStructRawPersisted::try_from(sent).unwrap();
+        assert!(received.payload.is_none());
+        assert_eq!(
+            received.payload_raw.as_ref().map(|raw| &raw.payload_bytes),
+            Some(&stored_bytes),
+        );
+
+        let mut applied = received;
+        applied.decode_payload_raw().unwrap();
+        assert_eq!(applied.payload, Some(payload));
+    }
+
+    /// Two payloads for one point is malformed, not something to silently pick from.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_point_with_both_payload_fields_is_rejected() {
+        let mut sent = api::grpc::qdrant::PointStructRaw::from(PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: Some(serde_json::from_str(r#"{"city":"Berlin"}"#).unwrap()),
+            payload_raw: None,
+        });
+        assert!(!sent.payload.is_empty());
+        sent.raw_payload = Some(api::grpc::RawPayload {
+            payload_bytes: br#"{"city":"Berlin"}"#.to_vec(),
+            encoding: api::grpc::RawPayloadEncoding::JsonBytes as i32,
+        });
+
+        let err = PointStructRawPersisted::try_from(sent)
+            .expect_err("two payloads for one point must be rejected");
+
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn decode_payload_raw_moves_blob_into_payload() {
+        let mut point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(br#"{"a":1}"#.to_vec())),
+        };
+
+        point.decode_payload_raw().unwrap();
+        assert_eq!(
+            point.payload,
+            Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+        );
+        assert!(point.payload_raw.is_none());
+
+        // Decoding is idempotent.
+        point.decode_payload_raw().unwrap();
+        assert_eq!(
+            point.payload,
+            Some(serde_json::from_str(r#"{"a":1}"#).unwrap()),
+        );
+
+        // A malformed blob fails, and leaves the point holding it rather than nothing.
+        let mut point = PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(b"not json".to_vec())),
+        };
+        let err = point.decode_payload_raw().expect_err("must not parse");
+        assert!(
+            matches!(err, OperationError::MalformedPayloadBlob { .. }),
+            "{err:?}",
+        );
+        assert!(point.payload.is_none());
+        assert!(
+            point.payload_raw.is_some(),
+            "a failed decode must not consume the blob",
+        );
+    }
+
     fn dense(v: f32) -> VectorPersisted {
         VectorPersisted::Dense(vec![v])
     }
@@ -867,7 +1343,7 @@ mod tests {
         let mut list =
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
                 PointStructPersisted {
-                    id: 1.into(),
+                    id: PointIdType::from(1),
                     vector: VectorStructPersisted::Named(
                         [("a".to_string(), dense(0.1)), ("b".to_string(), dense(0.2))]
                             .into_iter()
@@ -913,5 +1389,53 @@ mod tests {
         };
         assert_eq!(named.keys().cloned().collect::<Vec<_>>(), vec!["a"]);
         assert_eq!(batch.ids.len(), 2);
+    }
+
+    /// The boundary does not parse the blob, so a malformed one only surfaces when the
+    /// point is applied.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_malformed_blob_fails_at_apply_not_at_the_boundary() {
+        let sent = api::grpc::qdrant::PointStructRaw::from(PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(b"not json".to_vec())),
+        });
+
+        let mut received =
+            PointStructRawPersisted::try_from(sent).expect("the boundary must not parse the blob");
+
+        let err = received.decode_payload_raw().expect_err("must not parse");
+        assert!(
+            matches!(err, OperationError::MalformedPayloadBlob { .. }),
+            "{err:?}",
+        );
+    }
+
+    /// Unlike the bytes, the tag is checked at the boundary: a blob this node could never
+    /// read must not reach the WAL.
+    #[cfg(feature = "api")]
+    #[test]
+    fn wire_raw_payload_rejects_an_unknown_encoding() {
+        let mut sent = api::grpc::qdrant::PointStructRaw::from(PointStructRawPersisted {
+            id: PointIdType::from(1),
+            vectors: RawVectorsPersisted::default(),
+            payload: None,
+            payload_raw: Some(RawPayload::from_storage_bytes(
+                br#"{"city":"Berlin"}"#.to_vec(),
+            )),
+        });
+        sent.raw_payload.as_mut().unwrap().encoding = 12345;
+
+        let err = PointStructRawPersisted::try_from(sent)
+            .expect_err("an unknown encoding must not be accepted");
+
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(
+            err.message().contains("Unknown raw payload encoding"),
+            "unexpected message: {}",
+            err.message(),
+        );
     }
 }

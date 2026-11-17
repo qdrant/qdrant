@@ -17,7 +17,7 @@ testing = ["common/testing"]
 [dependencies]
 bitpacking = { workspace = true }
 blink-alloc = { workspace = true }
-gridstore = { path = "../gridstore" }
+blobstore = { path = "../blobstore" }
 bincode = { workspace = true }
 common = { path = "../common/common" }
 fs-err = { workspace = true }
@@ -26,7 +26,6 @@ memmap2 = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
 ordered-float = { workspace = true }
 rand = { workspace = true }
 validator = { workspace = true }
@@ -38,11 +37,13 @@ zerocopy = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
+duplicate = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
-generic-tests = { workspace = true }
 indicatif = { workspace = true }
 sha2 = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
+tempfile = { workspace = true }
+tokio = { workspace = true }
 zerocopy = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]

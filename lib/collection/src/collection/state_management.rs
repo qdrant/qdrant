@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 
@@ -76,11 +77,39 @@ impl Collection {
             .shard_transfers
             .read()
             .clone();
-        for transfer in shard_transfers.intersection(&old_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
-        }
         for transfer in old_transfers.difference(&shard_transfers) {
-            log::debug!("Aborting shard transfer: {transfer:?}");
+            // This transfer finished or was aborted in consensus while this peer was too far
+            // behind to receive the corresponding log entries, so the regular finish/abort
+            // handlers never ran here. Clean up leftover transfer state explicitly. Otherwise, if
+            // this peer is the transfer source, its local shard stays proxified forever and keeps
+            // forwarding updates to a peer that may not have the shard anymore — which fails
+            // snapshot application itself (on payload index updates) and prevents this peer from
+            // ever catching up with consensus.
+            log::debug!("Cleaning up stale shard transfer: {transfer:?}");
+
+            self.transfer_tasks
+                .lock()
+                .await
+                .stop_task(&transfer.key())
+                .await;
+
+            if transfer.from == this_peer_id {
+                let shard_holder = self.shards_holder.read().await;
+                if let Some(replica_set) = shard_holder.get_shard(transfer.shard_id) {
+                    // Discard proxy state instead of flushing it to the remote: replica states in
+                    // the same snapshot already reflect the transfer outcome, and the target may
+                    // not have the shard anymore
+                    replica_set.discard_proxy_local().await;
+                }
+            }
+
+            // Notify any tasks waiting for this transfer to end
+            let _ = self
+                .shards_holder
+                .read()
+                .await
+                .shard_transfer_changes
+                .send(ShardTransferChange::Abort(transfer.key()));
         }
         for transfer in shard_transfers.difference(&old_transfers) {
             if transfer.from == this_peer_id {
@@ -118,20 +147,33 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
+    async fn apply_config(&self, mut new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
             let mut config = self.collection_config.write().await;
 
-            if config.uuid != new_config.uuid {
-                return Err(CollectionError::service_error(format!(
-                    "collection {} UUID mismatch: \
-                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
-                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
-                    self.id, config.uuid, new_config.uuid,
-                )));
-            }
+            // A missing UUID on either side belongs to a collection created outside of consensus,
+            // so take whichever UUID is known
+            let is_uuid_assigned = match (config.uuid, new_config.uuid) {
+                (Some(existing), Some(snapshot)) => {
+                    if existing != snapshot {
+                        return Err(CollectionError::service_error(format!(
+                            "collection {} UUID mismatch: \
+                             UUID of existing collection is different from UUID of collection in Raft snapshot: \
+                             existing collection UUID: {existing}, Raft snapshot collection UUID: {snapshot}",
+                            self.id,
+                        )));
+                    }
+                    false
+                }
+                (Some(existing), None) => {
+                    new_config.uuid = Some(existing);
+                    false
+                }
+                (None, Some(_)) => true,
+                (None, None) => false,
+            };
 
             if let Err(err) = config.params.check_compatible(&new_config.params) {
                 // Stop consensus with a service error, if new config is incompatible with current one.
@@ -154,6 +196,7 @@ impl Collection {
                 strict_mode_config,
                 uuid: _,
                 metadata,
+                created_at: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params
@@ -166,7 +209,8 @@ impl Collection {
             let is_wal_config_updated = wal_config != &config.wal_config;
             let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
 
-            let is_config_updated = is_core_config_updated
+            let is_config_updated = is_uuid_assigned
+                || is_core_config_updated
                 || is_wal_config_updated
                 || is_strict_mode_config_updated
                 || is_metadata_updated;
@@ -183,13 +227,15 @@ impl Collection {
                 );
             }
 
+            // Save before updating config in memory. If saving fails, the in-memory config
+            // must stay unchanged, so retrying the same state applies and saves it again,
+            // instead of seeing no changes.
+            new_config.save(&self.path)?;
             *config = new_config;
 
             // We need to recreate optimizers, if "core" config was updated
             recreate_optimizers = is_core_config_updated;
         }
-
-        self.collection_config.read().await.save(&self.path)?;
 
         self.print_warnings().await;
 
@@ -252,17 +298,24 @@ impl Collection {
         &self,
         payload_index_schema: PayloadIndexSchema,
     ) -> CollectionResult<()> {
-        let state = self.state().await;
+        // Collect keys first, `drop_payload_index` takes the schema write lock
+        let existing_fields: Vec<_> = self
+            .payload_index_schema
+            .read()
+            .schema
+            .keys()
+            .cloned()
+            .collect();
 
-        for field_name in state.payload_index_schema.schema.keys() {
-            if !payload_index_schema.schema.contains_key(field_name) {
-                self.drop_payload_index(field_name.clone()).await?;
+        for field_name in existing_fields {
+            if !payload_index_schema.schema.contains_key(&field_name) {
+                self.drop_payload_index(field_name).await?;
             }
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            // This function is only used in collection state recovery and thus an unmeasured internal operation.
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
+            self.create_payload_index(field_name, field_schema)
+                .unmeasured(reason("This function is only used in collection state recovery and thus an unmeasured internal operation."))
                 .await?;
         }
         Ok(())
@@ -392,7 +445,8 @@ impl Collection {
         }
 
         for (vector_name, config) in to_create {
-            self.create_named_vector(vector_name, config, HwMeasurementAcc::disposable())
+            self.create_named_vector(vector_name, config)
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
 

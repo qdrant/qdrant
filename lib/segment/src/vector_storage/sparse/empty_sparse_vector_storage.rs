@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::Flusher;
@@ -17,7 +17,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::sparse::SPARSE_VECTOR_DISTANCE;
 use crate::vector_storage::{
     SparseVectorStorage, SparseVectorStorageRead, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    VectorStorageRead, default_read_vector_bytes_impl,
 };
 
 /// Placeholder sparse vector storage that contains no data.
@@ -101,7 +101,7 @@ impl VectorStorageRead for EmptySparseVectorStorage {
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 
@@ -129,15 +129,18 @@ impl VectorStorageRead for EmptySparseVectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted_bitvec.as_bitslice()
     }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        default_read_vector_bytes_impl::<Self, P, U>(self, keys, callback)
+    }
 }
 
 impl VectorStorage for EmptySparseVectorStorage {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty sparse vector storage",
         ))
@@ -158,6 +161,8 @@ impl VectorStorage for EmptySparseVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::generic_consts::Random;
+
     use super::*;
 
     #[test]
@@ -166,7 +171,7 @@ mod tests {
 
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
-        assert!(storage.is_on_disk());
+        assert!(storage.is_cold());
         assert_eq!(storage.total_vector_count(), 500);
         assert_eq!(storage.available_vector_count(), 0);
         assert_eq!(storage.deleted_vector_count(), 500);
@@ -175,17 +180,8 @@ mod tests {
         assert!(storage.is_deleted_vector(499));
         assert!(storage.files().is_empty());
 
-        assert!(
-            storage
-                .get_vector_opt::<common::generic_consts::Random>(0)
-                .is_none()
-        );
-        assert!(
-            storage
-                .get_sparse_opt::<common::generic_consts::Random>(0)
-                .unwrap()
-                .is_none()
-        );
+        assert!(storage.get_vector_opt::<Random>(0).is_none());
+        assert!(storage.get_sparse_opt::<Random>(0).unwrap().is_none());
     }
 
     #[test]

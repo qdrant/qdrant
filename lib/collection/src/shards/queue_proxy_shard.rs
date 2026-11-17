@@ -3,8 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use api::grpc::UpdateBatchInternal;
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
@@ -14,13 +16,13 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig, WithPayload,
     WithPayloadInterface, WithVector,
 };
-use semver::Version;
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::sync::Mutex;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
@@ -39,6 +41,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_ack_pin::{WalAckPinGuard, WalAckPins};
 
 /// Maximum total serialized byte size of a single transfer batch.
 /// Each WAL operation can vary widely in size (a delete vs an upsert of many high-dimensional
@@ -51,8 +54,6 @@ const MAX_BATCH_OPS: usize = 10_000;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
-
-const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
 
 /// QueueProxyShard shard
 ///
@@ -82,11 +83,11 @@ impl QueueProxyShard {
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
+            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_ack_pins, progress).await),
         }
     }
 
@@ -101,10 +102,11 @@ impl QueueProxyShard {
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
     /// `version` is too old or too new, queue proxy creation is rejected.
+    #[allow(clippy::result_large_err)]
     pub async fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
@@ -128,7 +130,7 @@ impl QueueProxyShard {
             inner: Some(Inner::new_from_version(
                 wrapped_shard,
                 remote_shard,
-                wal_keep_from,
+                wal_ack_pins,
                 version,
                 progress,
             )),
@@ -249,7 +251,7 @@ impl QueueProxyShard {
     /// Forget all missed updates since creation of this queue proxy shard and finalize. This
     /// unwraps the inner wrapped and remote shard.
     ///
-    /// It also releases the max acknowledged WAL version.
+    /// It also releases our WAL acknowledge pin.
     ///
     /// # Warning
     ///
@@ -257,12 +259,11 @@ impl QueueProxyShard {
     /// The remote shard is therefore left in an inconsistent state, which should be resolved
     /// separately.
     pub fn forget_updates_and_finalize(mut self) -> (LocalShard, RemoteShard) {
-        // Unwrap queue proxy shards and release max acknowledged version for WAL
+        // Unwrap queue proxy shards, dropping the rest releases our WAL acknowledge pin
         let queue_proxy = self
             .inner
             .take()
             .expect("Queue proxy has already been finalized");
-        queue_proxy.set_wal_keep_from(None);
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
@@ -270,11 +271,10 @@ impl QueueProxyShard {
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         self.inner_unchecked()
             .wrapped_shard
-            .estimate_cardinality(filter, hw_measurement_acc)
+            .estimate_cardinality(filter)
             .await
     }
 
@@ -310,11 +310,10 @@ impl ShardOperation for QueueProxyShard {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `Inner::update` is cancel safe, so this is also cancel safe.
         self.inner_unchecked()
-            .update(operation, wait, timeout, hw_measurement_acc)
+            .update(operation, wait, timeout)
             .await
     }
 
@@ -324,10 +323,9 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
-            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .scroll_by(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -341,7 +339,6 @@ impl ShardOperation for QueueProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
@@ -353,7 +350,6 @@ impl ShardOperation for QueueProxyShard {
                 filter,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -368,10 +364,9 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.inner_unchecked()
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -381,17 +376,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         self.inner_unchecked()
-            .count(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-                deferred_behavior,
-            )
+            .count(request, search_runtime_handle, timeout, deferred_behavior)
             .await
     }
 
@@ -403,7 +391,6 @@ impl ShardOperation for QueueProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
@@ -413,7 +400,6 @@ impl ShardOperation for QueueProxyShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -425,11 +411,10 @@ impl ShardOperation for QueueProxyShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.inner_unchecked()
             .wrapped_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
 
@@ -438,11 +423,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.inner_unchecked()
             .wrapped_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -469,8 +453,10 @@ impl Drop for QueueProxyShard {
 
 /// A batch of WAL operations read for transfer.
 struct WalBatch {
-    /// Operations in this batch: (WAL index, operation).
-    batch: Vec<(u64, OperationWithClockTag)>,
+    /// Operations in this batch, ready to be sent to the remote.
+    operations: Vec<OperationWithClockTag>,
+    /// WAL index of the last operation in this batch, `None` if the batch is empty.
+    last_idx: Option<u64>,
     /// Whether this batch reaches the end of the WAL.
     reached_end: bool,
     /// Total number of items to transfer (for progress reporting).
@@ -490,11 +476,14 @@ struct Inner {
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    /// Always keep this WAL version and later and prevent acknowledgment/truncation from the WAL.
-    /// We keep it here for access in `set_wal_keep_from()` without needing async locks.
-    /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
-    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    wal_keep_from: Arc<AtomicU64>,
+    /// Keeps the WAL from acknowledging/truncating the operations we still have to transfer.
+    ///
+    /// Because this proxy shard relies on the WAL to obtain operations in the past, those
+    /// operations must not be truncated before we transferred them. This pin is moved forward as
+    /// we transfer, and releases everything as soon as it is dropped with this shard.
+    ///
+    /// See [`WalAckPins`] and `UpdateHandler::wal_ack_pins` for more details.
+    wal_ack_pin: WalAckPinGuard,
     /// Progression tracker.
     progress: Arc<ParkingMutex<TransferTaskProgress>>,
 }
@@ -503,14 +492,14 @@ impl Inner {
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
-            wal_keep_from,
+            wal_ack_pins,
             start_from,
             progress,
         )
@@ -519,24 +508,21 @@ impl Inner {
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
+        wal_ack_pins: &WalAckPins,
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let shard = Self {
+        Self {
             wrapped_shard,
             remote_shard,
             transfer_from: version.into(),
             started_at: version,
             update_lock: Default::default(),
-            wal_keep_from,
+            // Keep all WAL entries from `version` so we don't truncate them off when we still need
+            // to transfer them
+            wal_ack_pin: wal_ack_pins.pin(version),
             progress,
-        };
-
-        // Keep all WAL entries from `version` so we don't truncate them off when we still need to transfer
-        shard.set_wal_keep_from(Some(version));
-
-        shard
+        }
     }
 
     /// Transfer all updates that the remote missed from WAL
@@ -565,35 +551,35 @@ impl Inner {
             // and hold it for the rest of the transfer so no new writes can accumulate.
             // If the batch was empty without the lock, re-read under lock to confirm — otherwise
             // a concurrent write could have committed between our read and our return.
-            if (batch.batch.is_empty() || batch.reached_end) && update_lock.is_none() {
+            if (batch.operations.is_empty() || batch.reached_end) && update_lock.is_none() {
                 update_lock = Some(self.update_lock.lock().await);
-                if batch.batch.is_empty() {
+                if batch.operations.is_empty() {
                     batch = self
                         .read_wal_batch(self.transfer_from.load(Ordering::Relaxed))
                         .await?;
                 }
             }
 
-            if batch.batch.is_empty() {
+            let Some(last_idx) = batch.last_idx else {
                 break;
-            }
+            };
 
             // Send the current batch and prefetch the next one concurrently. This overlaps the
             // network round-trip with the WAL read for the next batch.
             // Note: this temporarily holds two batches in memory (~2x MAX_BATCH_BYTES).
             let is_last = batch.reached_end;
-            let next_from = batch.batch.last().unwrap().0 + 1;
+            let next_from = last_idx + 1;
             let (send_result, read_result) = tokio::join!(
-                self.send_wal_batch(&batch, is_last),
+                self.send_wal_batch(batch, is_last),
                 self.read_wal_batch(next_from),
             );
             send_result?;
             batch = read_result?;
         }
 
-        // Set the WAL version to keep to the next item we should transfer
+        // Move the pin to the next item we should transfer, releasing what we transferred
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
-        self.set_wal_keep_from(Some(transfer_from));
+        self.wal_ack_pin.set(transfer_from);
 
         Ok(())
     }
@@ -602,43 +588,70 @@ impl Inner {
     ///
     /// Locks the WAL, reads up to `MAX_BATCH_BYTES` / `MAX_BATCH_OPS` entries, and returns them.
     ///
+    /// The read itself runs on the blocking pool.
+    /// A batch is up to `MAX_BATCH_BYTES` of WAL data to read from disk and deserialize.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    ///
+    /// If cancelled - the spawned read still runs to completion and its result is dropped. The WAL
+    /// lock is held until it finishes. Nothing is mutated either way.
     async fn read_wal_batch(&self, from: u64) -> CollectionResult<WalBatch> {
-        let wal = self.wrapped_shard.wal.wal.lock().await;
-        let items_left = (wal.last_index() + 1).saturating_sub(from);
-        let items_total = (from - self.started_at) + items_left;
+        // Take the lock here rather than inside the closure, so a blocking-pool thread is only
+        // occupied by the read itself and never by waiting for a concurrent writer.
+        let wal = Mutex::lock_owned(self.wrapped_shard.wal.wal.clone()).await;
+        let started_at = self.started_at;
 
-        let mut batch = Vec::new();
-        let mut batch_bytes = 0usize;
-        for result in wal.read_with_size(from) {
-            let (idx, size, op) = result.map_err(|e| {
-                CollectionError::service_error(format!(
-                    "Failed to read WAL during queue proxy transfer: {e}"
-                ))
-            })?;
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            let items_left = (wal.last_index() + 1).saturating_sub(from);
+            let items_total = (from - started_at) + items_left;
 
-            batch_bytes += size;
-            batch.push((idx, op));
+            let mut batch = Vec::new();
+            let mut batch_bytes = 0usize;
+            let mut last_idx = None;
+            for result in wal.read_with_size(from) {
+                let (idx, size, mut op) = result.map_err(|e| {
+                    CollectionError::service_error(format!(
+                        "Failed to read WAL during queue proxy transfer: {e}"
+                    ))
+                })?;
 
-            // Always include at least one operation per batch
-            if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
-                break;
+                // Set force flag because operations from WAL may be unordered if another node is
+                // sending new operations at the same time
+                if let Some(clock_tag) = &mut op.clock_tag {
+                    clock_tag.force = true;
+                }
+
+                batch_bytes += size;
+                last_idx = Some(idx);
+                batch.push(op);
+
+                // Always include at least one operation per batch
+                if batch_bytes > MAX_BATCH_BYTES || batch.len() >= MAX_BATCH_OPS {
+                    break;
+                }
             }
-        }
 
-        let reached_end = batch.len() as u64 >= items_left;
-        debug_assert!(
-            batch.len() as u64 <= items_left,
-            "batch cannot be larger than items_left",
-        );
+            let reached_end = batch.len() as u64 >= items_left;
+            debug_assert!(
+                batch.len() as u64 <= items_left,
+                "batch cannot be larger than items_left",
+            );
 
-        Ok(WalBatch {
-            batch,
-            reached_end,
-            total: items_total,
-        })
+            Ok(WalBatch {
+                operations: batch,
+                last_idx,
+                reached_end,
+                total: items_total,
+            })
+        }))
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to join WAL read task during queue proxy transfer: {err}"
+            ))
+        })?
     }
 
     /// Send a batch of WAL operations to the remote shard with retries.
@@ -652,12 +665,19 @@ impl Inner {
     ///
     /// If cancelled - none, some or all operations may be transmitted to the remote.
     /// The `transfer_from` cursor may not be updated, causing idempotent re-sends on retry.
-    async fn send_wal_batch(&self, wal_batch: &WalBatch, is_last: bool) -> CollectionResult<()> {
+    async fn send_wal_batch(&self, wal_batch: WalBatch, is_last: bool) -> CollectionResult<()> {
+        let WalBatch {
+            operations,
+            last_idx,
+            reached_end: _,
+            total,
+        } = wal_batch;
+
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
-            wal_batch.batch.len(),
+            operations.len(),
             self.remote_shard.peer_id,
         );
 
@@ -677,30 +697,29 @@ impl Inner {
         // Set initial progress on the first batch
         let is_first = transfer_from == self.started_at;
         if is_first {
-            self.progress.lock().set(0, wal_batch.total as usize);
+            self.progress.lock().set(0, total as usize);
         }
 
+        // Build the request once, moving the operations into it, so retries below never copy
+        // the operation data again.
+        let request = Arc::new(
+            self.remote_shard
+                .build_update_batch(operations, wait, None, WriteOrdering::Weak)
+                .await?,
+        );
+
         // Transfer batch with retries and store last transferred ID
-        let last_idx = wal_batch.batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
-            let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
-            match transfer_operations_batch(
-                &wal_batch.batch,
-                &self.remote_shard,
-                wait,
-                None,
-                disposed_hw,
-            )
-            .await
+            match transfer_batch(&request, &self.remote_shard)
+                .unmeasured(reason("Internal operation"))
+                .await
             {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
 
                         let transferred = (idx + 1 - self.started_at) as usize;
-                        self.progress
-                            .lock()
-                            .set(transferred, wal_batch.total as usize);
+                        self.progress.lock().set(transferred, total as usize);
                     }
                     break;
                 }
@@ -716,19 +735,6 @@ impl Inner {
 
         Ok(())
     }
-
-    /// Set or release what WAL versions to keep preventing acknowledgment/truncation.
-    ///
-    /// Because this proxy shard relies on the WAL to obtain operations in the past, it cannot be
-    /// truncated before all these update operations have been flushed.
-    /// Using this function we set the WAL not to acknowledge and truncate from a specific point.
-    ///
-    /// Providing `None` will release this limitation.
-    fn set_wal_keep_from(&self, version: Option<u64>) {
-        log::trace!("set_wal_keep_from {version:?}");
-        let version = version.unwrap_or(u64::MAX);
-        self.wal_keep_from.store(version, Ordering::Relaxed);
-    }
 }
 
 #[async_trait]
@@ -743,7 +749,6 @@ impl ShardOperation for Inner {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` is cancel safe, so this is also cancel safe.
 
@@ -752,9 +757,7 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard
-            .update(operation.clone(), wait, timeout, hw_measurement_acc)
-            .await
+        local_shard.update(operation, wait, timeout).await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
@@ -763,11 +766,10 @@ impl ShardOperation for Inner {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .scroll_by(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -780,7 +782,6 @@ impl ShardOperation for Inner {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -793,7 +794,6 @@ impl ShardOperation for Inner {
                 filter,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -811,11 +811,10 @@ impl ShardOperation for Inner {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -825,18 +824,11 @@ impl ShardOperation for Inner {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-                deferred_behavior,
-            )
+            .count(request, search_runtime_handle, timeout, deferred_behavior)
             .await
     }
 
@@ -848,7 +840,6 @@ impl ShardOperation for Inner {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -859,7 +850,6 @@ impl ShardOperation for Inner {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -871,11 +861,10 @@ impl ShardOperation for Inner {
         request: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -884,11 +873,10 @@ impl ShardOperation for Inner {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -897,105 +885,75 @@ impl ShardOperation for Inner {
     }
 }
 
-/// Transfer batch of operations without retries
+/// Transfer a prepared batch of operations without retries
 ///
 /// # Cancel safety
 ///
 /// This method is cancel safe.
 ///
 /// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
-async fn transfer_operations_batch(
-    batch: &[(u64, OperationWithClockTag)],
+async fn transfer_batch(
+    request: &Arc<UpdateBatchInternal>,
     remote_shard: &RemoteShard,
-    wait: WaitUntil,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
-    if batch.is_empty() {
+    if request.operations.is_empty() {
         return Ok(());
     }
 
-    let supports_update_batching =
-        remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
-
-    if supports_update_batching {
-        let mut batch_upd = Vec::with_capacity(batch.len());
-
-        for (_idx, operation) in batch {
-            let mut operation = operation.clone();
-            // Set force flag because operations from WAL may be unordered if another node is sending
-            // new operations at the same time
-            if let Some(clock_tag) = &mut operation.clock_tag {
-                clock_tag.force = true;
-            }
-            batch_upd.push(operation);
-        }
-
-        match remote_shard
-            .forward_update_batch(
-                batch_upd,
-                wait,
-                timeout,
-                WriteOrdering::Weak,
-                hw_measurement_acc.clone(),
-            )
-            .await
-        {
-            Ok(_) => return Ok(()),
-            // A transient error is a delivery failure: let the caller retry the whole batch.
-            Err(err) if err.is_transient() => return Err(err),
-            // A non-transient error means some operation in the batch is permanently
-            // rejected by the remote (e.g. bad request, missing point). The batch is
-            // applied sequentially and aborts at the first such operation, so we cannot
-            // tell which one failed. Re-send the batch one-by-one to isolate and skip
-            // the offending operation(s); see the loop below.
-            Err(err) => {
-                log::warn!(
-                    "Non-transient error transferring batch of updates to peer {}, \
-                     retrying operations individually: {err}",
-                    remote_shard.peer_id,
-                );
-            }
+    match remote_shard.forward_update_batch(Arc::clone(request)).await {
+        Ok(_) => return Ok(()),
+        // A transient error is a delivery failure: let the caller retry the whole batch.
+        Err(err) if err.is_transient() => return Err(err),
+        // A non-transient error means some operation in the batch is permanently
+        // rejected by the remote (e.g. bad request, missing point). The batch is
+        // applied sequentially and aborts at the first such operation, so we cannot
+        // tell which one failed. Re-send the batch one-by-one to isolate and skip
+        // the offending operation(s); see the loop below.
+        Err(err) => {
+            log::warn!(
+                "Non-transient error transferring batch of updates to peer {}, \
+                 retrying operations individually: {err}",
+                remote_shard.peer_id,
+            );
         }
     }
 
-    // One-by-one transfer. Used both when the remote does not support batch updates and
-    // as the isolation path after a non-transient batch failure.
-    for (_idx, operation) in batch {
-        let mut operation = operation.clone();
+    for operation in &request.operations {
+        let single = Arc::new(UpdateBatchInternal {
+            operations: vec![operation.clone()],
+            wait_override: request.wait_override,
+        });
 
-        // Set force flag because operations from WAL may be unordered if another node is sending
-        // new operations at the same time
-        if let Some(clock_tag) = &mut operation.clock_tag {
-            clock_tag.force = true;
-        }
+        let result = remote_shard.forward_update_batch(single).await;
 
-        match remote_shard
-            .forward_update(
-                operation,
-                wait,
-                timeout,
-                WriteOrdering::Weak,
-                hw_measurement_acc.clone(),
-            )
-            .await
-        {
-            Ok(_) => {}
-            // Transient errors are delivery failures: let the caller retry the batch.
-            Err(err) if err.is_transient() => return Err(err),
-            // A non-transient error means the operation is permanently rejected by the
-            // remote. This operation was replayed from the WAL, so it was already applied
-            // (and rejected the same way) on the sender - the sender's state therefore
-            // reflects it as a no-op. Skipping it here keeps both sides consistent and
-            // prevents a single bad operation from aborting the whole shard transfer.
-            Err(err) => {
-                log::warn!(
-                    "Skipping operation permanently rejected by peer {} during shard \
-                     transfer (non-transient): {err}",
-                    remote_shard.peer_id,
-                );
-            }
-        }
+        skip_if_rejected(result, remote_shard)?;
     }
+
     Ok(())
+}
+
+/// Handle the result of transferring a single operation.
+///
+/// Transient errors are delivery failures and are propagated, so the caller can retry the batch.
+///
+/// A non-transient error means the operation is permanently rejected by the remote. This operation
+/// was replayed from the WAL, so it was already applied (and rejected the same way) on the sender -
+/// the sender's state therefore reflects it as a no-op. Skipping it here keeps both sides
+/// consistent and prevents a single bad operation from aborting the whole shard transfer.
+fn skip_if_rejected(
+    result: CollectionResult<UpdateResult>,
+    remote_shard: &RemoteShard,
+) -> CollectionResult<()> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(err) if err.is_transient() => Err(err),
+        Err(err) => {
+            log::warn!(
+                "Skipping operation permanently rejected by peer {} during shard \
+                 transfer (non-transient): {err}",
+                remote_shard.peer_id,
+            );
+            Ok(())
+        }
+    }
 }

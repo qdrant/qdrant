@@ -14,8 +14,11 @@ pub mod audit;
 pub mod audit_reader;
 mod common;
 pub mod content_manager;
+#[cfg(feature = "dial9")]
+pub mod dial9_telemetry;
 pub mod dispatcher;
 pub mod issues_subscribers;
+pub mod quota;
 pub mod rbac;
 pub mod types;
 

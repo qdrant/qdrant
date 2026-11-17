@@ -177,16 +177,16 @@ def retrieve_points(ids):
 def search_points(limit=10):
     random.seed(0)
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': COLLECTION_NAME},
         body={
-            "vector": [random.random() for _ in range(VECTOR_DIM)],
+            "query": [random.random() for _ in range(VECTOR_DIM)],
             "limit": limit,
         }
     )
     assert response.ok
-    return response.json()['result']
+    return response.json()['result']['points']
 
 
 def update_collection_config(config):

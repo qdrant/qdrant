@@ -1,0 +1,136 @@
+//! Read-only follower of [`EdgeShard`](crate::EdgeShard).
+//!
+//! A leader process owns a read-write `EdgeShard` and writes to an on-disk directory. One or more
+//! follower processes open the *same* directory as a [`ReadOnlyEdgeShard`] and serve reads. A
+//! follower never writes: no WAL, no optimization, no segment creation. It live-reloads by
+//! [`live_reload`](ReadOnlyEdgeShard::live_reload)ing — rescanning the `segments/` directory to pick up
+//! segments the leader created/removed, and [`live_reload`](segment::segment::read_only::ReadOnlySegment::live_reload)ing
+//! the survivors to fold in the leader's flushed in-place appends and deletes.
+//!
+//! This mirrors the segment-level read-only design one level up: just as `ReadOnlySegment` is the
+//! read-only counterpart of `Segment`, `ReadOnlyEdgeShard` is the read-only counterpart of
+//! `EdgeShard`. Both expose a consistent [`EdgeReadView`](crate::EdgeReadView) and share its read
+//! logic.
+
+mod enumerate;
+mod holder;
+mod lifecycle;
+mod live_reload;
+mod load;
+mod shard_read;
+#[cfg(test)]
+pub(crate) mod tests;
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+pub use live_reload::LiveReloadOutcome;
+use parking_lot::{Mutex, RwLock};
+use segment::data_types::load_profile::LoadProfile;
+use segment::index::UniversalReadExt;
+use segment::types::SeqNumberType;
+
+use crate::EdgeConfig;
+pub use crate::read_only::enumerate::{
+    ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, SegmentEnumerator,
+};
+use crate::read_only::holder::ReadOnlySegmentHolder;
+
+/// Optional caller-owned pools for a read-only follower. Pools can be shared across shards;
+/// omitted pools are created at open using the provided [`EdgeConfig`].
+#[derive(Clone, Default)]
+pub struct ReadOnlyEdgeShardPools {
+    /// Runs per-segment reads. Overrides the configured search thread count and core affinity.
+    pub search: Option<Arc<rayon::ThreadPool>>,
+    /// Runs segment staging, assembly, and live-reload apply. By default, a separate unpinned
+    /// pool is created with [`EdgeConfig::search_thread_count`] workers.
+    pub load: Option<Arc<rayon::ThreadPool>>,
+}
+
+/// Optional arguments of the [`open`](ReadOnlyEdgeShard::open) family.
+#[derive(Default)]
+pub struct ReadOnlyOpenOptions {
+    /// Overrides tunables of the config derived from the segments (see
+    /// [`EdgeConfig::from_segment_config`]); `vectors`/`sparse_vectors` are ignored.
+    /// Open-only: a [`live_reload`](ReadOnlyEdgeShard::live_reload) re-derives it from segments.
+    pub config: Option<EdgeConfig>,
+    /// Parks segment components the request won't touch cold (see [`LoadProfile`]), cutting the
+    /// cold-start cost. Also applies to segments found by later reloads.
+    pub load_profile: Option<LoadProfile>,
+    /// Caller-owned pools, reused for the shard's lifetime and shareable across shards. Each
+    /// omitted pool is created from `config`; supplied pools retain their own size and affinity.
+    /// Use distinct pools to keep loading off search workers.
+    pub pools: ReadOnlyEdgeShardPools,
+    /// The serverless updater's committed cursor: the newest version whose writes are all durable
+    /// and listed in the manifest. Deletes up to it apply once every listed segment loads; newer
+    /// ones are held. `None` applies every delete as soon as it is read.
+    pub waterline: Option<SeqNumberType>,
+}
+
+/// Read-only follower view over an edge shard's on-disk directory.
+///
+/// Generic over the read backend `S` (e.g. `MmapFile` for local memory-mapped files; the same
+/// abstraction `ReadOnlySegment` uses, so blob/S3 backends are possible). Use
+/// [`open`](ReadOnlyEdgeShard::open) for the common local case.
+pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
+    path: PathBuf,
+    /// Read backend handle; passed to segment `open` and `live_reload`.
+    fs: S::Fs,
+    /// Config snapshot, derived from the segments (a follower has no `edge_config.json`). At open
+    /// it is overlaid with the tunables of the caller-provided config; each live_reload re-derives it
+    /// from the segments alone. Stored as an `Arc` so a read view can cheaply clone the current
+    /// snapshot while a live_reload swaps in a new one.
+    config: RwLock<Arc<EdgeConfig>>,
+    segments: RwLock<ReadOnlySegmentHolder<S>>,
+    /// Discovers the current segment directories. Injected because segment discovery is
+    /// backend-specific (see [`SegmentEnumerator`]) until an on-disk manifest exists.
+    enumerator: Box<dyn SegmentEnumerator>,
+    /// Fixed-size pool used to run per-segment reads in parallel.
+    /// Unless supplied by the caller, it is sized from
+    /// `provided_config` alone: the CPU-derived default unless explicitly set (see
+    /// [`EdgeConfig::search_thread_count`]).
+    search_pool: Arc<rayon::ThreadPool>,
+    /// Pool for segment staging, assembly, and live-reload apply. Separate from the search pool
+    /// by default, so blocking config reads do not occupy search workers.
+    load_pool: Arc<rayon::ThreadPool>,
+    /// Request-specific load profile this shard was opened with, if any: components the request
+    /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
+    /// later [`live_reload`](Self::live_reload) discovers load with the same placement.
+    load_profile: Option<LoadProfile>,
+    /// Serializes [`live_reload`](Self::live_reload)s: concurrent live_reloads would
+    /// duplicate the listing and load work, and could clear each other's staged
+    /// prefetches between a segment's preload and apply.
+    live_reload_lock: Mutex<()>,
+    /// How far the follower may apply versioned deletes, for a follower opened with a waterline
+    /// ([`open_with_waterline`](Self::open_with_waterline)). `None` applies every delete as soon
+    /// as it is read.
+    waterline: Option<Mutex<Waterline>>,
+}
+
+/// The waterline state of a follower that gates deletes, see
+/// [`delete_versions`](segment::id_tracker::delete_versions).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Waterline {
+    /// The highest waterline a caller has passed: every write up to this version is durable, and
+    /// stored in a segment the manifest lists.
+    pub(crate) highest: SeqNumberType,
+    /// Deletes at or below this version are applied: the highest waterline of the last complete
+    /// reload, one that held and reloaded every listed segment. Until then 0.
+    pub(crate) gate: SeqNumberType,
+}
+
+impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
+    /// The backend the segments are read from, e.g. to inspect its IO statistics.
+    pub fn fs(&self) -> &S::Fs {
+        &self.fs
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Number of segments currently open in the follower.
+    pub fn segments_count(&self) -> usize {
+        self.segments.read().len()
+    }
+}

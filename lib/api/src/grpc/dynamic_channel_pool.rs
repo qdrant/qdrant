@@ -10,11 +10,20 @@ pub async fn make_grpc_channel(
     connection_timeout: Duration,
     uri: Uri,
     tls_config: Option<ClientTlsConfig>,
+    keepalive_interval: Duration,
+    keepalive_timeout: Duration,
 ) -> Result<Channel, TonicError> {
     let mut endpoint = Channel::builder(uri)
         .timeout(timeout)
         .connect_timeout(connection_timeout)
-        .http2_max_local_error_reset_streams(None);
+        .http2_max_local_error_reset_streams(None)
+        // Keep idle pooled channels alive across stateful network layers (NAT, eBPF
+        // conntrack, load balancers) that otherwise expire them silently.
+        // See: <https://github.com/qdrant/qdrant/issues/11271>
+        .http2_keep_alive_interval(keepalive_interval)
+        .keep_alive_timeout(keepalive_timeout)
+        .keep_alive_while_idle(true)
+        .tcp_keepalive(Some(keepalive_interval));
 
     if let Some(config) = tls_config {
         endpoint = endpoint.tls_config(config)?;
@@ -29,9 +38,12 @@ pub struct DynamicChannelPool {
     timeout: Duration,
     connection_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
+    keepalive_interval: Duration,
+    keepalive_timeout: Duration,
 }
 
 impl DynamicChannelPool {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         uri: Uri,
         timeout: Duration,
@@ -39,12 +51,20 @@ impl DynamicChannelPool {
         tls_config: Option<ClientTlsConfig>,
         usage_per_channel: usize,
         min_channels: usize,
+        keepalive_interval: Duration,
+        keepalive_timeout: Duration,
     ) -> Result<Self, TonicError> {
         let mut channels = Vec::with_capacity(min_channels);
         for _ in 0..min_channels {
-            let channel =
-                make_grpc_channel(timeout, connection_timeout, uri.clone(), tls_config.clone())
-                    .await?;
+            let channel = make_grpc_channel(
+                timeout,
+                connection_timeout,
+                uri.clone(),
+                tls_config.clone(),
+                keepalive_interval,
+                keepalive_timeout,
+            )
+            .await?;
             channels.push(channel);
         }
 
@@ -55,6 +75,8 @@ impl DynamicChannelPool {
             timeout,
             connection_timeout,
             tls_config,
+            keepalive_interval,
+            keepalive_timeout,
         })
     }
 
@@ -67,6 +89,8 @@ impl DynamicChannelPool {
                     self.connection_timeout,
                     self.uri.clone(),
                     self.tls_config.clone(),
+                    self.keepalive_interval,
+                    self.keepalive_timeout,
                 )
                 .await?;
                 self.pool.lock().add(channel)

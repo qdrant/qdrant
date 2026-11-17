@@ -6,29 +6,27 @@ use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::iterate_packed_links;
 use common::bitpacking_ordered;
 use itertools::Itertools as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng as _};
 use tango_bench::metrics::WallClock;
-use tango_bench::{
-    Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
-};
+use tango_bench::{Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks};
 use zerocopy::IntoBytes;
 
 type Bencher = tango_bench::Bencher<WallClock>;
 
 pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
     let data8 = StateBencher::new(move || {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
         (0..64_000_000).map(|_| rng.random()).collect::<Vec<u8>>()
     });
     let data32 = StateBencher::new(move || {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
         (0..4_000_000).map(|_| rng.random()).collect::<Vec<u32>>()
     });
 
     [
         data8.benchmark_fn("bitpacking/read", move |b: Bencher, data8| {
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
             b.iter(move || {
                 let bits = rng.random_range(1..=32);
                 let bytes = rng.random_range(0..=16);
@@ -43,7 +41,7 @@ pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
             })
         }),
         data32.benchmark_fn("bitpacking/write", move |b: Bencher, data32| {
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
             let mut out = Vec::new();
             b.iter(move || {
                 let bits = rng.random_range(1..=32);
@@ -76,7 +74,7 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
 
     let b = StateBencher::new(move || {
         Rc::new({
-            let mut rng = StdRng::seed_from_u64(42);
+            let mut rng = SmallRng::seed_from_u64(42);
             let mut links = Vec::new();
             let mut pos = vec![Item {
                 offset: 0,
@@ -115,7 +113,7 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
 
     [
         b.benchmark_fn("bitpacking_links/read", move |b: Bencher, state| {
-            let mut rng = rand::rng();
+            let mut rng = rand::make_rng::<SmallRng>();
             b.iter(move || {
                 let idx = rng.random_range(1..state.items.len());
                 iterate_packed_links(
@@ -138,7 +136,7 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
     }
 
     struct StateDependent<'a> {
-        decompressor: bitpacking_ordered::Reader<'a>,
+        slice_reader: bitpacking_ordered::SliceReader<'a>,
     }
 
     self_cell::self_cell! {
@@ -151,47 +149,34 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
 
     let b = StateBencher::new(move || {
         let values =
-            bitpacking_ordered::gen_test_sequence(&mut StdRng::seed_from_u64(42), 32, 1 << 22);
+            bitpacking_ordered::gen_test_sequence(&mut SmallRng::seed_from_u64(42), 32, 1 << 22);
 
-        let (compressed, parameters) = bitpacking_ordered::compress(&values);
+        let (compressed, params) = bitpacking_ordered::compress(&values);
 
         State::new(StateOwner { values, compressed }, |owner| {
-            let (decompressor, _) =
-                bitpacking_ordered::Reader::new(parameters, &owner.compressed).unwrap();
+            let reader = params.validate().unwrap();
+            let slice_reader = reader.slice_reader(&owner.compressed).unwrap();
             println!(
                 "Original size: {:.1} MB, compressed size: {:.1} MB, {:?}",
                 owner.values.as_bytes().len() as f64 / 1e6,
                 owner.compressed.len() as f64 / 1e6,
-                decompressor.parameters(),
+                params,
             );
-            StateDependent { decompressor }
+            StateDependent { slice_reader }
         })
     });
 
-    [
-        b.benchmark_fn("ordered/get", {
-            move |b: Bencher, state| {
-                let mut rng = rand::rng();
-                let len = state.borrow_owner().values.len() - 1;
-                b.iter(move || {
-                    let i = rng.random_range(0..len);
-                    black_box(state.borrow_dependent().decompressor.get(i));
-                })
-            }
-        }),
-        b.benchmark_fn("ordered/get2", {
-            move |b: Bencher, state| {
-                let mut rng = rand::rng();
-                let len = state.borrow_owner().values.len() - 1;
-                b.iter(move || {
-                    let i = rng.random_range(0..len);
-                    let a = state.borrow_dependent().decompressor.get(i);
-                    let b = state.borrow_dependent().decompressor.get(i + 1);
-                    black_box((a, b));
-                })
-            }
-        }),
-    ]
+    [b.benchmark_fn("ordered/read_pair", {
+        move |b: Bencher, state| {
+            let mut rng = rand::make_rng::<SmallRng>();
+            let len = state.borrow_owner().values.len() - 1;
+            b.iter(move || {
+                let i = rng.random_range(0..len);
+                let r = state.borrow_dependent().slice_reader.read_pair(i);
+                black_box(r);
+            })
+        }
+    })]
 }
 
 #[expect(clippy::type_complexity)]
@@ -220,4 +205,3 @@ tango_benchmarks!(
     benchmarks_bitpacking_links(),
     benchmarks_ordered()
 );
-tango_main!();

@@ -11,7 +11,8 @@ Scenario:
    threshold well below the container cap.
 3. Upsert batches of sparse vectors with random indices drawn from a very
    large id space until an upsert is rejected with the memory strict-mode
-   error (process RSS crossed the configured percentage).
+   error (process RSS crossed the configured percentage). Inserts are paced so
+   the 5s-cached memory reader trips the gate before the cap OOM-kills us.
 4. Delete a significant chunk of points. Deletes must not be gated by the
    memory check — otherwise there would be no way to recover.
 5. Retry inserts with a generous timeout. jemalloc may hold freed pages for
@@ -50,7 +51,14 @@ SPARSE_ID_SPACE = 2_000_000
 # Non-zeros per sparse vector. Larger = more heap pressure per point.
 NNZ_PER_VECTOR = 512
 
-BATCH_SIZE = 500
+# Small batches: the gate reads memory through a 5s cache, so back-to-back
+# batches slip through stale; keep each from overshooting the cap.
+BATCH_SIZE = 100
+
+# The gate re-samples memory only every 5s; without pacing, inserts OOM the
+# container before it trips. Slow growth so it trips cleanly near the threshold.
+INSERT_PACING_SECS = 1.5
+
 COLLECTION_NAME = "strict_mode_memory_test"
 
 # Upper bound on how many batches we'll try before declaring "threshold never
@@ -166,6 +174,8 @@ class TestStrictModeMemory:
             err = _try_upsert(client, batch)
             if err is None:
                 inserted_ids.extend(p.id for p in batch)
+                # Let the 5s-cached memory reader refresh so the gate can trip.
+                time.sleep(INSERT_PACING_SECS)
                 continue
 
             if _is_memory_rejection(err):

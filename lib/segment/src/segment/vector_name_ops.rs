@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::universal_io::MmapFs;
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
@@ -13,8 +14,8 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::segment::VectorData;
 use crate::segment_constructor::{
-    create_sparse_vector_index, create_sparse_vector_storage, get_vector_index_path,
-    get_vector_storage_path, open_vector_storage,
+    check_vector_name_path, create_sparse_vector_storage, get_vector_index_path,
+    get_vector_storage_path, open_or_create_sparse_vector_index, open_vector_storage,
 };
 use crate::types::{
     SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageType,
@@ -34,6 +35,25 @@ impl Segment {
         // Idempotent: if vector already exists, return false
         if self.vector_data.contains_key(vector_name) {
             return Ok(false);
+        }
+
+        // Replayed from WAL or pending changes, which may come from an untrusted snapshot.
+        check_vector_name_path(vector_name)?;
+
+        // Start from a clean slate. A prior `delete_vector_name` removes the
+        // storage/index directories, but that removal is best-effort: it logs a
+        // warning and continues on failure (and a crash mid-delete leaves them
+        // too), so the directories can still be on disk. If we reopened those
+        // stale files here, the recreated vector would resurrect data from
+        // points that were never re-upserted (visible after a reload). Remove
+        // any leftovers first.
+        let storage_path = get_vector_storage_path(&self.segment_path, vector_name);
+        let index_path = get_vector_index_path(&self.segment_path, vector_name);
+        if storage_path.exists() {
+            fs_err::remove_dir_all(&storage_path)?;
+        }
+        if index_path.exists() {
+            fs_err::remove_dir_all(&index_path)?;
         }
 
         match config {
@@ -68,19 +88,20 @@ impl Segment {
             // Use the configured storage type for appendable segments
             let config_for_open = VectorDataConfig {
                 // Override storage type to appendable chunked mmap
-                storage_type: VectorStorageType::from_on_disk(config.storage_type.is_on_disk()),
+                storage_type: VectorStorageType::from_on_disk(config.is_cold()),
                 // Use plain index for new vectors
                 index: crate::types::Indexes::Plain {},
                 ..config.clone()
             };
-            open_vector_storage(&config_for_open, &storage_path)?
+            let index_path = get_vector_index_path(&self.segment_path, vector_name);
+            open_vector_storage(&config_for_open, &storage_path, &index_path)?
         } else {
             // Immutable segment: create empty placeholder
             new_empty_dense_vector_storage(
                 config.size,
                 config.distance,
                 config.datatype.unwrap_or_default(),
-                config.storage_type.is_on_disk(),
+                config.is_cold(),
                 config.multivector_config,
                 num_points,
             )
@@ -161,7 +182,8 @@ impl Segment {
         // Create sparse vector index
         let vector_index_path = get_vector_index_path(&self.segment_path, vector_name);
         let stopped = AtomicBool::new(false);
-        let vector_index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+        let vector_index = open_or_create_sparse_vector_index(SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: effective_config.index,
             id_tracker: self.id_tracker.clone(),
             vector_storage: vector_storage.clone(),

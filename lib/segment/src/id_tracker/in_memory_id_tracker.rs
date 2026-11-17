@@ -10,7 +10,10 @@ use rand::rngs::StdRng;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum};
+use crate::id_tracker::{
+    DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
+    default_external_ids_batch, default_internal_versions_batch,
+};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
@@ -52,7 +55,9 @@ impl InMemoryIdTracker {
 
         // Delete points after creating the id tracker completely to maintain consistency.
         for to_delete_internal_id in preserved_size..size {
-            id_tracker.drop_internal(to_delete_internal_id).unwrap();
+            id_tracker
+                .drop_internal(to_delete_internal_id, None)
+                .unwrap();
         }
 
         id_tracker
@@ -62,6 +67,14 @@ impl InMemoryIdTracker {
 impl IdTrackerRead for InMemoryIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
         self.internal_to_version.get(internal_id as usize).copied()
+    }
+
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        default_internal_versions_batch(self, internal_ids, callback)
     }
 
     fn internal_id_with_behavior(
@@ -77,7 +90,17 @@ impl IdTrackerRead for InMemoryIdTracker {
         self.mappings.external_id(internal_id)
     }
 
-    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        default_external_ids_batch(self, internal_ids, callback)
+    }
+
+    type Backend = common::universal_io::MmapFile;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
         PointMappingsRefEnum::Plain(&self.mappings)
     }
 
@@ -115,13 +138,13 @@ impl IdTrackerRead for InMemoryIdTracker {
 
     fn iter_internal_versions(
         &self,
-    ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        Ok(Box::new(
             self.internal_to_version
                 .iter()
                 .enumerate()
                 .map(|(i, version)| (i as PointOffsetType, *version)),
-        )
+        ))
     }
 }
 
@@ -152,7 +175,12 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    /// Never persisted, so the delete's `version` is not kept.
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        _version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist.
         // In-memory trackers never carry deferred heads, but resolve with
         // deferred preference for consistency with the other drop paths.
@@ -165,7 +193,11 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        _version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         if let Some(external_id) = self.mappings.external_id(internal_id) {
@@ -226,7 +258,7 @@ mod test {
 
         // We drop the available point and assert that it has the same `internal_version` as the deleted one from the `id_tracker`
         // and that both don't have an external ID anymore.
-        id_tracker.drop_internal(available_point_id).unwrap();
+        id_tracker.drop_internal(available_point_id, None).unwrap();
 
         for internal_id in [available_point_id, deleted_point_id] {
             // Assert the dropped point's version has been set to `DELETED_POINT_VERSION`.

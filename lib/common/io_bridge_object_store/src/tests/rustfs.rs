@@ -2,12 +2,12 @@ use std::env;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use io_bridge::BridgeRuntime;
 use object_store::ObjectStoreExt as _;
 use object_store::aws::AmazonS3;
 
 use crate::backend::BlobBackend;
 use crate::backends::aws::{AwsConfig, AwsCredentials};
-use crate::runtime::BridgeRuntime;
 
 pub fn rustfs_enabled() -> bool {
     env::var("S3_INTEGRATION_TEST").as_deref() == Ok("1")
@@ -26,6 +26,8 @@ pub fn rustfs_aws_config() -> AwsConfig {
         bucket: rustfs_bucket(),
         region: Some("us-east-1".into()),
         endpoint: Some(rustfs_endpoint()),
+        s3_express: false,
+        native_append: true,
         credentials: AwsCredentials::Static {
             access_key_id: env::var("RUSTFS_ACCESS_KEY").unwrap_or_else(|_| "rustfsadmin".into()),
             secret_access_key: env::var("RUSTFS_SECRET_KEY")

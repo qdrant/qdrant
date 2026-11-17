@@ -1,14 +1,14 @@
 use std::hint::black_box;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
-use common::universal_io::{MmapFile, UniversalWrite};
+use common::universal_io::{MmapFile, UniversalAppend, UniversalWrite};
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::prelude::{SliceRandom, StdRng};
+use rand::prelude::{SliceRandom, SmallRng};
 use rand::{RngExt, SeedableRng};
 use segment::payload_json;
 use segment::payload_storage::payload_storage_impl::{PayloadStorageImpl, storage_dir};
@@ -33,7 +33,7 @@ fn bench(c: &mut Criterion) {
     let sequential_keys: Vec<_> = (0..READ_BATCH_SIZE as PointOffsetType).collect();
 
     let mut random_keys: Vec<_> = (0..POINT_COUNT as PointOffsetType).collect();
-    random_keys.shuffle(&mut StdRng::seed_from_u64(RNG_SEED));
+    random_keys.shuffle(&mut SmallRng::seed_from_u64(RNG_SEED));
     random_keys.truncate(READ_BATCH_SIZE);
 
     let mut group = c.benchmark_group("read-payloads");
@@ -78,7 +78,7 @@ fn tmpdir() -> TempDir {
 
 fn storage<S>(path: &Path) -> PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     let storage_exists = storage_dir(path).exists();
@@ -86,14 +86,14 @@ where
         .expect("payload storage opened");
 
     if !storage_exists {
-        let mut rng = StdRng::seed_from_u64(RNG_SEED);
-        let hw_counter = HardwareCounterCell::disposable();
+        let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+        let _scope = ambient::test_guard();
 
         for point_id in 0..POINT_COUNT as PointOffsetType {
             let payload = random_payload(&mut rng, point_id);
 
             storage
-                .overwrite(point_id, &payload, &hw_counter)
+                .overwrite(point_id, &payload)
                 .expect("payload inserted");
         }
 
@@ -104,7 +104,7 @@ where
     storage
 }
 
-fn random_payload(rng: &mut StdRng, point_id: PointOffsetType) -> Payload {
+fn random_payload(rng: &mut SmallRng, point_id: PointOffsetType) -> Payload {
     let tags: Vec<_> = (0..TAGS_COUNT)
         .map(|_| format!("tag-{}", rng.random_range(0..64)))
         .collect();
@@ -125,18 +125,14 @@ where
     S: PayloadStorageRead,
 {
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
 
     let mut fields_read = 0;
     storage
-        .read_payloads::<P, _>(
-            point_offsets,
-            |_, payload| {
-                fields_read += payload.len();
-                Ok(())
-            },
-            &hw_counter,
-        )
+        .read_payloads::<P, _>(point_offsets, |_, payload| {
+            fields_read += payload.len();
+            Ok(())
+        })
         .expect("payloads read");
 
     black_box(fields_read)

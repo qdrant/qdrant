@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use rand::{RngExt, rng};
 use segment::data_types::order_by::OrderByInterface;
 use segment::data_types::vectors::NamedQuery;
@@ -65,6 +65,7 @@ async fn fixture() -> Collection {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -104,8 +105,8 @@ async fn fixture() -> Collection {
         .create_payload_index(
             "num".parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to create payload index");
 
@@ -139,7 +140,8 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, WaitUntil::Visible, None, HwMeasurementAcc::new(), false)
+            .update_local(op, WaitUntil::Visible, None, false)
+            .measured(AmbientContext::new())
             .await
             .expect("failed to insert points");
     }
@@ -171,10 +173,11 @@ async fn test_scroll_dedup() {
                 order_by: None,
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to search");
     assert!(!result.points.is_empty(), "expected some points");
@@ -199,10 +202,11 @@ async fn test_scroll_dedup() {
                 order_by: Some(OrderByInterface::Key("num".parse().unwrap())),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to search");
     assert!(!result.points.is_empty(), "expected some points");
@@ -235,10 +239,11 @@ async fn test_retrieve_dedup() {
                 with_vector: false.into(),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to search");
     assert!(!records.is_empty(), "expected some records");
@@ -257,7 +262,7 @@ async fn test_retrieve_dedup() {
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let points = collection
         .search(
             CoreSearchRequest {
@@ -274,10 +279,11 @@ async fn test_search_dedup() {
                 score_threshold: None,
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(ctx)
         .await
         .expect("failed to search");
     assert!(!points.is_empty(), "expected some points");

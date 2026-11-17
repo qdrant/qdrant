@@ -1,21 +1,29 @@
+use std::iter;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::fs::atomic_save_json;
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
+use quantization::turboquant::TQRotation;
 
 use super::{
     QUANTIZED_CONFIG_PATH, QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
+    should_keep_source_rotated,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::VectorElementType;
 use crate::types::{
-    BinaryQuantization, ProductQuantization, QuantizationConfig, ScalarQuantization,
-    TurboQuantization,
+    BinaryQuantization, Distance, MultiVectorConfig, ProductQuantization, QuantizationConfig,
+    ScalarQuantization, TurboQuantization, VectorStorageDatatype,
 };
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffset;
-use crate::vector_storage::{DenseVectorStorage, MultiVectorStorage, VectorStorageEnum};
+use crate::vector_storage::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
+use crate::vector_storage::{
+    DenseTQVectorStorageRead, DenseVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage,
+    VectorStorageEnum, VectorStorageRead,
+};
 
 impl QuantizedVectors {
     pub fn create(
@@ -77,6 +85,30 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
+            VectorStorageEnum::DenseGraphInline(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseGraphInlineHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(v) => Self::create_impl(
                 v.as_ref(),
@@ -122,6 +154,47 @@ impl QuantizedVectors {
             ),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
                 v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseTurboMemmap(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseTurboGraphInline(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => Self::create_turbo_impl(
+                v.as_ref(),
+                quantization_config,
+                storage_type,
+                path,
+                max_threads,
+                stopped,
+            ),
+            VectorStorageEnum::MultiDenseTurbo(v) => Self::create_turbo_multi_impl(
+                v,
                 quantization_config,
                 storage_type,
                 path,
@@ -211,8 +284,96 @@ impl QuantizedVectors {
             let vector = vector_storage.get_dense::<Sequential>(i);
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let keep = Self::calibration_mask(vector_storage, |_| 1);
+        let cold_vector_storage = vector_storage.is_cold();
 
+        Self::quantize_dense(
+            vectors,
+            keep,
+            quantization_config,
+            distance,
+            datatype,
+            false,
+            dim,
+            count,
+            cold_vector_storage,
+            storage_type,
+            path,
+            max_threads,
+            stopped,
+        )
+    }
+
+    fn create_turbo_impl(
+        vector_storage: &(impl DenseTQVectorStorageRead + Sync),
+        quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
+        path: &Path,
+        max_threads: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
+        let dim = vector_storage.vector_dim();
+        let count = vector_storage.total_vector_count();
+        let distance = vector_storage.distance();
+        let cold_vector_storage = vector_storage.is_cold();
+
+        let datatype = vector_storage.datatype();
+        let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
+
+        let vectors = (0..count as PointOffsetType)
+            .map(move |i| vector_storage.get_dense_for_requantization(i, keep_rotated));
+        let keep = Self::calibration_mask(vector_storage, |_| 1);
+
+        Self::quantize_dense(
+            vectors,
+            keep,
+            quantization_config,
+            distance,
+            datatype,
+            keep_rotated,
+            dim,
+            count,
+            cold_vector_storage,
+            storage_type,
+            path,
+            max_threads,
+            stopped,
+        )
+    }
+
+    /// Which vectors to fit the quantization parameters on: one flag per vector, in offset order,
+    /// `inner_count(point)` of them per point (1 for dense vectors).
+    ///
+    /// The vectors of deleted points are left out: a point without this vector still occupies a
+    /// storage slot, filled with a placeholder (see [`VectorStorageEnum::default_vector`]) that is
+    /// not a real vector. For Cosine, a dense placeholder is not even unit length.
+    fn calibration_mask<'a>(
+        vector_storage: &'a (impl VectorStorageRead + ?Sized),
+        inner_count: impl Fn(PointOffsetType) -> usize + Clone + 'a,
+    ) -> impl Iterator<Item = bool> + Clone + 'a {
+        (0..vector_storage.total_vector_count() as PointOffsetType).flat_map(move |point| {
+            iter::repeat_n(!vector_storage.is_deleted_vector(point), inner_count(point))
+        })
+    }
+
+    /// Quantize `vectors`, fitting the quantization parameters on those flagged in `keep`.
+    /// See [`Self::calibration_mask`].
+    #[allow(clippy::too_many_arguments)]
+    fn quantize_dense<'a>(
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
+        quantization_config: &QuantizationConfig,
+        distance: Distance,
+        datatype: VectorStorageDatatype,
+        keep_rotated: bool,
+        dim: usize,
+        count: usize,
+        cold_vector_storage: bool,
+        storage_type: QuantizedVectorsStorageType,
+        path: &Path,
+        max_threads: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
         let vector_parameters = Self::construct_vector_parameters(
             quantization_config,
             distance,
@@ -221,28 +382,32 @@ impl QuantizedVectors {
             storage_type,
         );
 
+        let (tq_rotation, input_already_rotated) = turbo_target_rotation(keep_rotated);
+
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
             }) => Self::create_scalar(
                 vectors,
+                keep,
                 &vector_parameters,
                 count,
                 scalar_config,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq(
                     vectors,
+                    keep,
                     &vector_parameters,
                     count,
                     pq_config,
                     storage_type,
                     path,
-                    on_disk_vector_storage,
+                    cold_vector_storage,
                     max_threads,
                     stopped,
                 )?
@@ -251,24 +416,28 @@ impl QuantizedVectors {
                 binary: binary_config,
             }) => Self::create_binary(
                 vectors,
+                keep,
                 &vector_parameters,
                 count,
                 binary_config,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
             }) => Self::create_turbo(
                 vectors,
+                keep,
                 &vector_parameters,
                 count,
                 turbo_config,
+                tq_rotation,
+                input_already_rotated,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 max_threads,
                 stopped,
             )?,
@@ -311,16 +480,14 @@ impl QuantizedVectors {
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
         let inner_vectors_count = vectors.clone().count();
+        let keep = Self::calibration_mask(vector_storage, |point| {
+            vector_storage
+                .get_multi::<Random>(point)
+                .as_ref()
+                .vectors_count()
+        });
         let vectors_count = vector_storage.total_vector_count();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
-
-        let vector_parameters = Self::construct_vector_parameters(
-            quantization_config,
-            distance,
-            dim,
-            inner_vectors_count,
-            storage_type,
-        );
+        let cold_vector_storage = vector_storage.is_cold();
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| {
@@ -329,20 +496,116 @@ impl QuantizedVectors {
                     .as_ref()
                     .vectors_count() as PointOffsetType
             })
-            .scan(0, |offset_acc, multi_vector_len| {
-                let offset = *offset_acc;
-                *offset_acc += multi_vector_len;
-                Some(MultivectorOffset {
-                    start: offset,
-                    count: multi_vector_len,
-                })
-            });
+            .scan(0, accumulate_offset);
+
+        Self::quantize_multi(
+            vectors,
+            keep,
+            offsets,
+            quantization_config,
+            distance,
+            datatype,
+            false,
+            dim,
+            vectors_count,
+            inner_vectors_count,
+            multi_vector_config,
+            cold_vector_storage,
+            storage_type,
+            path,
+            max_threads,
+            stopped,
+        )
+    }
+
+    /// Multivector counterpart of [`Self::create_turbo_impl`].
+    fn create_turbo_multi_impl(
+        vector_storage: &AppendableMmapMultiTurboVectorStorage,
+        quantization_config: &QuantizationConfig,
+        storage_type: QuantizedVectorsStorageType,
+        path: &Path,
+        max_threads: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
+        let dim = vector_storage.vector_dim();
+        let distance = vector_storage.distance();
+        let multi_vector_config = *vector_storage.multi_vector_config();
+        let vectors_count = vector_storage.total_vector_count();
+        let cold_vector_storage = vector_storage.is_cold();
+
+        let datatype = vector_storage.datatype();
+        let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
+
+        let vectors = (0..vectors_count as PointOffsetType).flat_map(move |key| {
+            vector_storage.get_inner_dense_for_requantization(key, keep_rotated)
+        });
+        let inner_vectors_count: usize = (0..vectors_count as PointOffsetType)
+            .map(|key| vector_storage.point_inner_vectors_count(key))
+            .sum();
+        let keep = Self::calibration_mask(vector_storage, |key| {
+            vector_storage.point_inner_vectors_count(key)
+        });
+
+        let offsets = (0..vectors_count as PointOffsetType)
+            .map(|key| vector_storage.point_inner_vectors_count(key) as PointOffsetType)
+            .scan(0, accumulate_offset);
+
+        Self::quantize_multi(
+            vectors,
+            keep,
+            offsets,
+            quantization_config,
+            distance,
+            datatype,
+            keep_rotated,
+            dim,
+            vectors_count,
+            inner_vectors_count,
+            multi_vector_config,
+            cold_vector_storage,
+            storage_type,
+            path,
+            max_threads,
+            stopped,
+        )
+    }
+
+    /// Shared tail of the multi-vector create paths. See [`Self::quantize_dense`].
+    #[allow(clippy::too_many_arguments)]
+    fn quantize_multi<'a>(
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
+        offsets: impl Iterator<Item = MultivectorOffset>,
+        quantization_config: &QuantizationConfig,
+        distance: Distance,
+        datatype: VectorStorageDatatype,
+        keep_rotated: bool,
+        dim: usize,
+        vectors_count: usize,
+        inner_vectors_count: usize,
+        multi_vector_config: MultiVectorConfig,
+        cold_vector_storage: bool,
+        storage_type: QuantizedVectorsStorageType,
+        path: &Path,
+        max_threads: usize,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Self> {
+        let vector_parameters = Self::construct_vector_parameters(
+            quantization_config,
+            distance,
+            dim,
+            inner_vectors_count,
+            storage_type,
+        );
+
+        let (tq_rotation, input_already_rotated) = turbo_target_rotation(keep_rotated);
 
         let quantized_storage = match quantization_config {
             QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: scalar_config,
             }) => Self::create_scalar_multi(
                 vectors,
+                keep,
                 offsets,
                 &vector_parameters,
                 vectors_count,
@@ -351,12 +614,13 @@ impl QuantizedVectors {
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq_multi(
                     vectors,
+                    keep,
                     offsets,
                     &vector_parameters,
                     vectors_count,
@@ -365,7 +629,7 @@ impl QuantizedVectors {
                     storage_type,
                     multi_vector_config,
                     path,
-                    on_disk_vector_storage,
+                    cold_vector_storage,
                     max_threads,
                     stopped,
                 )?
@@ -374,6 +638,7 @@ impl QuantizedVectors {
                 binary: binary_config,
             }) => Self::create_binary_multi(
                 vectors,
+                keep,
                 offsets,
                 &vector_parameters,
                 vectors_count,
@@ -382,22 +647,25 @@ impl QuantizedVectors {
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
                 turbo: turbo_config,
             }) => Self::create_turbo_multi(
                 vectors,
+                keep,
                 offsets,
                 &vector_parameters,
                 vectors_count,
                 inner_vectors_count,
                 turbo_config,
+                tq_rotation,
+                input_already_rotated,
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 max_threads,
                 stopped,
             )?,
@@ -420,4 +688,33 @@ impl QuantizedVectors {
         atomic_save_json(&path.join(QUANTIZED_CONFIG_PATH), &quantized_vectors.config)?;
         Ok(quantized_vectors)
     }
+}
+
+/// Resolve the TurboQuant target's rotation and encode-time skip flag from
+/// whether the source rotation is kept (see [`should_keep_source_rotated`]). A
+/// kept rotation means the input is already in the source's unpadded rotated
+/// space, so encoding must not rotate it again; otherwise it rotates into the
+/// padding as usual.
+fn turbo_target_rotation(keep_rotated: bool) -> (TQRotation, bool) {
+    if keep_rotated {
+        (TQRotation::Unpadded, true)
+    } else {
+        (TQRotation::Padded, false)
+    }
+}
+
+/// Running multivector offset accumulator for `Iterator::scan`: emits the start
+/// offset for each multivector and advances by its inner-vector count.
+// `scan` requires the callback to return `Option`, so the wrap is mandatory here.
+#[allow(clippy::unnecessary_wraps)]
+fn accumulate_offset(
+    offset_acc: &mut PointOffsetType,
+    multi_vector_len: PointOffsetType,
+) -> Option<MultivectorOffset> {
+    let offset = *offset_acc;
+    *offset_acc += multi_vector_len;
+    Some(MultivectorOffset {
+        start: offset,
+        count: multi_vector_len,
+    })
 }

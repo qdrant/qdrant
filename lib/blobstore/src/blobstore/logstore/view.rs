@@ -1,0 +1,265 @@
+use std::borrow::Cow;
+use std::marker::PhantomData;
+
+use common::ambient::hw::HwMetric;
+use common::generic_consts::{AccessPattern, Sequential};
+use common::universal_io::{UniversalRead, UserData};
+
+use super::page::AppendOnlyPages;
+use crate::Result;
+use crate::blob::Blob;
+use crate::blobstore::iter_batch_in_order;
+use crate::config::{LogstoreConfig, decompressed_len};
+use crate::error::BlobstoreError;
+use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
+
+/// A non-owning view into logstore data.
+///
+/// Holds borrowed references to the tracker and pages, and contains all reading logic.
+///
+/// Value data is read through the universal IO backend `S`, mappings through any tracker `T`
+/// implementing [`TrackerRead`].
+pub(crate) struct LogstoreView<'a, V, S: UniversalRead, T: TrackerRead> {
+    config: &'a LogstoreConfig,
+    tracker: &'a T,
+    pages: &'a AppendOnlyPages<S>,
+    _phantom: PhantomData<V>,
+}
+
+impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
+    pub(super) fn new(
+        config: &'a LogstoreConfig,
+        tracker: &'a T,
+        pages: &'a AppendOnlyPages<S>,
+    ) -> Self {
+        Self {
+            config,
+            tracker,
+            pages,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn max_point_offset(&self) -> Result<PointOffset> {
+        self.tracker.max_point_offset()
+    }
+
+    /// Return the storage size in bytes (precise, the exact amount of appended value data).
+    pub(crate) fn get_storage_size_bytes(&self) -> usize {
+        self.pages.len() as usize
+    }
+
+    /// Read the raw value bytes at the given pointer.
+    pub(crate) fn read_from_pages<P: AccessPattern>(
+        &self,
+        pointer: ValuePointer,
+    ) -> Result<Cow<'_, [u8]>> {
+        self.pages.read_value::<P>(pointer)
+    }
+
+    /// Decompressed length of each value; reads at most its length prefix.
+    pub(crate) fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+        let mut pointers = Vec::new();
+        for result in self.tracker.iter(point_offsets).map_err(E::from)? {
+            let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
+            match pointer {
+                PointerItem::Valid(pointer) => pointers.push(((user_data, point_offset), pointer)),
+                PointerItem::Empty | PointerItem::OutOfRange => {
+                    if !callback(user_data, point_offset, None)? {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
+        let Some(prefix) = self.config.compression.len_prefix() else {
+            for ((user_data, point_offset), pointer) in pointers {
+                if !callback(user_data, point_offset, Some(pointer.length as usize))? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
+        };
+        self.pages.read_batch_values::<P, _, _>(
+            pointers.into_iter().map(|(key, pointer)| {
+                let length = pointer.length.min(prefix);
+                (key, ValuePointer { length, ..pointer })
+            }),
+            |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
+                callback(user_data, point_offset, Some(decompressed_len(&bytes)?))
+            },
+        )
+    }
+}
+
+impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
+    /// Get the value for a given point offset.
+    pub(crate) fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_metric)?;
+        bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed.
+    pub(crate) fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<Cow<'_, [u8]>>> {
+        let Some(pointer) = self.tracker.get::<P>(point_offset)? else {
+            return Ok(None);
+        };
+
+        let raw = self.read_from_pages::<P>(pointer)?;
+        hw_metric.bump(raw.len());
+
+        Ok(Some(self.config.compression.decompress(raw)?))
+    }
+
+    /// Iterate over all given values and execute callback for each one.
+    ///
+    /// The mappings and the value data are both fetched with batched reads, so async backends
+    /// can serve them in parallel. The callback may be invoked in a different order than the
+    /// requested point offsets.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub(crate) fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        self.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, point_offset, bytes| {
+                let value = bytes.map(V::from_bytes).transpose()?;
+                callback(user_data, point_offset, value)
+            },
+            hw_metric,
+        )
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce.
+    pub(crate) fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        let mut pointers = Vec::new();
+
+        for result in self.tracker.iter(point_offsets).map_err(E::from)? {
+            let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
+
+            let PointerItem::Valid(pointer) = pointer else {
+                if !callback(user_data, point_offset, None)? {
+                    return Ok(false);
+                }
+
+                continue;
+            };
+
+            pointers.push(((user_data, point_offset), pointer));
+        }
+
+        self.pages.read_batch_values::<P, _, _>(
+            pointers.into_iter(),
+            |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
+
+                let decompressed = self.config.compression.decompress(bytes)?;
+                callback(user_data, point_offset, Some(&decompressed))
+            },
+        )
+    }
+
+    /// Iterate over a contiguous range of point offsets in ascending order and execute callback
+    /// for each existing value. Missing values are skipped.
+    ///
+    /// The mappings for the whole range are fetched with a single batched read, and the value
+    /// data with batched reads through the backend's read pipeline, so async backends can fetch
+    /// values in parallel. The values of the range are therefore buffered and passed to the
+    /// callback once all of them are read.
+    ///
+    /// Return `false` from the callback to stop iteration early. Returns whether iteration should
+    /// continue.
+    pub(crate) fn iter_range<F, E>(
+        &self,
+        point_offsets: std::ops::Range<PointOffset>,
+        batch: &mut Vec<(PointOffset, V)>,
+        callback: F,
+        hw_metric: HwMetric,
+    ) -> Result<bool, E>
+    where
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
+        E: From<BlobstoreError>,
+    {
+        let start = point_offsets.start;
+        let pointers = self
+            .tracker
+            .get_range::<Sequential>(point_offsets)
+            .map_err(E::from)?;
+
+        // Skip the gaps, and carry each value's point offset through the batch as user data
+        let pointers = pointers
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, pointer)| {
+                pointer.map(|pointer| (start + index as PointOffset, pointer))
+            });
+
+        iter_batch_in_order(
+            batch,
+            |batch| {
+                self.pages.read_batch_values::<Sequential, _, _>(
+                    pointers,
+                    |point_offset, bytes| -> Result<_, E> {
+                        hw_metric.bump(bytes.len());
+
+                        let decompressed = self.config.compression.decompress(bytes)?;
+                        batch.push((point_offset, V::from_bytes(&decompressed)?));
+                        Ok(true)
+                    },
+                )?;
+                Ok(())
+            },
+            callback,
+        )
+    }
+}

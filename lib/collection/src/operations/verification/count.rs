@@ -1,7 +1,7 @@
 use segment::types::{Filter, SearchParams};
 use shard::count::CountRequestInternal;
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 
 impl StrictModeVerification for CountRequestInternal {
     fn query_limit(&self) -> Option<usize> {
@@ -14,6 +14,10 @@ impl StrictModeVerification for CountRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {

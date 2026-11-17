@@ -1,8 +1,9 @@
+use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::ReadOnlySparseVectorStorage;
@@ -23,7 +24,7 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
         self.storage
-            .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
+            .get_value::<P>(key, HwMetric::VectorIoRead)?
             .map(SparseVector::try_from)
             .transpose()
     }
@@ -46,11 +47,8 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
             Ok(())
         };
 
-        self.storage.read_values::<Random, _, _>(
-            point_offsets,
-            callback,
-            HardwareCounterCell::disposable().vector_io_read(),
-        )
+        self.storage
+            .read_values::<Random, _, _>(point_offsets, callback, None)
     }
 }
 
@@ -67,7 +65,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 
@@ -80,11 +78,11 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
             .unwrap_or_else(CowVector::default_sparse)
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
             let Some(sparse_vector) = sparse_vector else {
                 return Ok(());
@@ -96,19 +94,11 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
         };
 
         self.storage
-            .read_values::<P, _, _>(
-                keys.into_iter(),
-                callback,
-                HardwareCounterCell::disposable().vector_io_read(),
-            )
-            .expect("sparse vectors read")
+            .read_values::<P, _, _>(keys.into_iter(), callback, None)
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self
-            .storage
-            .get_value::<P>(key, &HardwareCounterCell::disposable())
-        {
+        match self.storage.get_value::<P>(key, HwMetric::VectorIoRead) {
             Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),
             _ => None,
         }
@@ -124,5 +114,27 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Same batched pass as `read_vectors`, re-serializing the stored form
+        // instead of decoding it into a `SparseVector`.
+        self.storage.read_values::<P, _, _>(
+            keys.into_iter(),
+            move |user_data, point_offset, stored| {
+                let Some(stored) = stored else {
+                    return Ok(());
+                };
+
+                // TODO(uio): allow gridstore to return plain bytes.
+                callback(user_data, point_offset, Blob::to_bytes(&stored));
+                Ok(())
+            },
+            None,
+        )
     }
 }

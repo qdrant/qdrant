@@ -113,10 +113,6 @@ impl Bm25 {
         Ok(Self { params })
     }
 
-    pub fn params(&self) -> &Bm25Params {
-        &self.params
-    }
-
     /// Embed a search query: each unique token gets weight `1.0`. Indices are
     /// returned sorted (post-dedup invariant).
     pub fn embed_query(&self, tokens: &[Cow<'_, str>]) -> SparseEmbedding {

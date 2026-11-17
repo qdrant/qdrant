@@ -48,19 +48,24 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         if let Some(value) = self.pending_updates.read().get(&index) {
             Some(*value)
         } else {
-            match self.bitslice.read().get_bit(index as u64) {
-                Ok(value) => value,
-                Err(err) => {
+            self.bitslice
+                .read()
+                .get_bit(index as u64)
+                .unwrap_or_else(|err| {
                     log::error!("Error reading bit at index {index}: {err}");
                     debug_assert!(false, "Error reading bit at index {index}: {err}");
                     None
-                }
-            }
+                })
         }
     }
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// The underlying storage, without the pending updates.
+    pub fn stored(&self) -> Arc<RwLock<StoredBitSlice<S>>> {
+        Arc::clone(&self.bitslice)
     }
 
     pub fn is_empty(&self) -> bool {

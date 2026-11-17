@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc};
@@ -10,7 +14,9 @@ use api::HTTP_HEADER_API_KEY;
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{
+    DEFAULT_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_TIMEOUT, TransportChannelPool,
+};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
@@ -38,6 +44,23 @@ type Node = RawNode<ConsensusStateRef>;
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
 
+/// How many times a new peer retries joining the cluster through its bootstrap peer.
+///
+/// Raft can drop the `AddPeer` conf change, e.g. right after a leader election or while another
+/// conf change is still unapplied. The bootstrap peer then times out waiting for it.
+const BOOTSTRAP_MAX_RETRY_COUNT: u32 = 3;
+const BOOTSTRAP_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// Initial delay before restarting the consensus thread after a failure
+const CONSENSUS_RESTART_INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+
+/// Maximum delay between consensus thread restart attempts
+const CONSENSUS_RESTART_MAX_BACKOFF: Duration = Duration::from_secs(300);
+
+/// If the consensus thread was working for at least this long before failing,
+/// consider the previous failure resolved and start restart backoff from scratch
+const CONSENSUS_RESTART_BACKOFF_RESET_UPTIME: Duration = Duration::from_secs(300);
+
 pub enum Message {
     FromClient(ConsensusOperations),
     FromPeer(Box<RaftMessage>),
@@ -48,8 +71,6 @@ pub enum Message {
 pub struct Consensus {
     /// Raft structure which handles raft-related state
     node: Node,
-    /// Receives proposals from peers and client for applying in consensus
-    receiver: Receiver<Message>,
     /// Runtime for async message sending
     runtime: Handle,
     /// Uri to some other known peer, used to join the consensus
@@ -78,24 +99,44 @@ impl Consensus {
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
-        let p2p_host = settings.service.host.clone();
+        let p2p_host = settings
+            .cluster
+            .p2p
+            .host
+            .clone()
+            .unwrap_or_else(|| settings.service.host.clone());
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
         let config = settings.cluster.consensus.clone();
 
-        let (mut consensus, message_sender) = Self::new(
+        // Bounded channel for backpressure.
+        //
+        // The channel is created here, outside of `Consensus` itself, so it survives consensus
+        // thread restarts: internal gRPC handlers and the forward-proposals thread keep their
+        // senders across restarts, and messages accumulated while consensus is down are drained
+        // once it is rebuilt.
+        let (message_sender, message_receiver) =
+            tokio::sync::mpsc::channel(config.max_message_queue_size);
+
+        // The first construction is fail-fast: if consensus cannot be initialized on startup
+        // (including bootstrap and `reinit`), Qdrant fails to start. Only failures of an already
+        // running consensus are retried by the restart loop below.
+        let mut consensus = Self::new(
             logger,
             state_ref.clone(),
-            bootstrap_peer,
-            uri,
+            bootstrap_peer.clone(),
+            uri.clone(),
             p2p_port,
-            config,
-            tls_client_config,
-            channel_service,
+            config.clone(),
+            tls_client_config.clone(),
+            channel_service.clone(),
             runtime.clone(),
             reinit,
         )?;
 
+        let logger_clone = logger.clone();
         let state_ref_clone = state_ref.clone();
+        let channel_service_clone = channel_service.clone();
+        let runtime_clone = runtime.clone();
         thread::Builder::new()
             .name("consensus".to_string())
             .spawn(move || {
@@ -108,12 +149,83 @@ impl Consensus {
                     );
                 }
 
-                if let Err(err) = consensus.start() {
+                let mut receiver = message_receiver;
+                let mut backoff = CONSENSUS_RESTART_INITIAL_BACKOFF;
+                let mut restart_attempt = 0u32;
+
+                loop {
+                    let started_at = Instant::now();
+
+                    let err = match consensus.start(&mut receiver) {
+                        Ok(()) => {
+                            log::info!("Consensus stopped");
+                            state_ref_clone.on_consensus_stopped();
+                            return;
+                        }
+                        Err(err) => err,
+                    };
+
                     log::error!("Consensus stopped with error: {err:#}");
-                    state_ref_clone.on_consensus_thread_err(err);
-                } else {
-                    log::info!("Consensus stopped");
-                    state_ref_clone.on_consensus_stopped();
+
+                    // If consensus was working for a while before failing, consider the previous
+                    // failure resolved and start backoff from scratch
+                    if started_at.elapsed() >= CONSENSUS_RESTART_BACKOFF_RESET_UPTIME {
+                        backoff = CONSENSUS_RESTART_INITIAL_BACKOFF;
+                        restart_attempt = 0;
+                    }
+
+                    // After a failure the in-memory Raft state may be ahead of the persisted
+                    // state, so it is not safe to reuse. Drop the failed instance and rebuild
+                    // from persisted state, exactly like a process restart would.
+                    drop(consensus);
+
+                    let mut last_err = err;
+
+                    consensus = loop {
+                        restart_attempt += 1;
+
+                        state_ref_clone.on_consensus_thread_err(format!(
+                            "{last_err:#}; \
+                             restarting consensus thread \
+                             (attempt {restart_attempt}, next attempt in {} sec)",
+                            backoff.as_secs(),
+                        ));
+
+                        log::info!(
+                            "Restarting consensus thread in {} sec (attempt {restart_attempt})",
+                            backoff.as_secs(),
+                        );
+
+                        thread::sleep(backoff);
+                        backoff = cmp::min(backoff * 2, CONSENSUS_RESTART_MAX_BACKOFF);
+
+                        // Rebuilding from persisted state is equivalent to a process restart,
+                        // except `reinit` is never repeated: WAL clearing/compaction on reinit
+                        // must happen at most once per process start.
+                        let rebuilt = Self::new(
+                            &logger_clone,
+                            state_ref_clone.clone(),
+                            bootstrap_peer.clone(),
+                            uri.clone(),
+                            p2p_port,
+                            config.clone(),
+                            tls_client_config.clone(),
+                            channel_service_clone.clone(),
+                            runtime_clone.clone(),
+                            false,
+                        );
+
+                        match rebuilt {
+                            Ok(consensus) => break consensus,
+                            Err(err) => {
+                                log::error!("Failed to restart consensus: {err:#}");
+                                last_err = err;
+                            }
+                        }
+                    };
+
+                    log::info!("Consensus thread restarted after failure");
+                    state_ref_clone.record_consensus_working();
                 }
             })?;
 
@@ -186,12 +298,13 @@ impl Consensus {
         channel_service: ChannelService,
         runtime: Handle,
         reinit: bool,
-    ) -> anyhow::Result<(Self, Sender<Message>)> {
+    ) -> anyhow::Result<Self> {
         // If we want to re-initialize consensus, we need to prevent other peers
         // from re-playing consensus WAL operations, as they should already have them applied.
         // Do ensure that we are forcing compacting WAL on the first re-initialized peer,
         // which should trigger snapshot transferring instead of replaying WAL.
-        let force_compact_wal = reinit && bootstrap_peer.is_none();
+        let reinit_first_peer = reinit && bootstrap_peer.is_none();
+        let force_compact_wal = reinit_first_peer;
 
         // On the bootstrap-ed peers during reinit of the consensus
         // we want to make sure only the bootstrap peer will hold the true state
@@ -203,16 +316,26 @@ impl Consensus {
             state_ref.clear_wal()?;
         }
 
+        // On the first peer during reinit, `conf_state` has been reset to a single voter
+        // (this peer), but the Raft log still holds committed-but-unapplied entries from the
+        // previous cluster. Replaying them - most notably a `RemoveNode` for this very peer,
+        // if it was removed from consensus before reinit - would abort with "removed all
+        // voters". Drop that tail before the log is replayed below.
+        if reinit_first_peer {
+            log::debug!("Discarding unapplied consensus entries from the previous cluster");
+            state_ref.clear_unapplied_entries_on_reinit()?;
+        }
+
         // raft will not return entries to the application smaller or equal to `applied`
-        let last_applied = state_ref.last_applied_entry().unwrap_or_default();
-        let raft_config = Config {
+        let mut raft_config = Config {
             id: state_ref.this_peer_id(),
-            applied: last_applied,
+            applied: state_ref.last_applied_entry().unwrap_or_default(),
+            batch_append: true,
             ..Default::default()
         };
+
         raft_config.validate()?;
-        // bounded channel for backpressure
-        let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
+
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
         if state_ref.is_new_deployment() || reinit {
             let leader_established_in_ms =
@@ -244,15 +367,29 @@ impl Consensus {
             if bootstrap_peer.is_some() || uri.is_some() {
                 log::debug!("Local raft state found - bootstrap and uri cli arguments were ignored")
             }
+
             log::debug!("Local raft state found - skipping initialization");
         };
 
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
-        node.set_batch_append(true);
 
-        // Before consensus has started apply any unapplied committed entries
-        // They might have not been applied due to unplanned Qdrant shutdown
+        // (Re-)apply any committed, but unapplied entries before starting consensus.
+        // This might happen if Qdrant was stopped or crashed before or while applying an operation.
+        // Applying during startup allows us to catch service errors early,
+        // before starting consensus thread.
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
+
+        // Node was created with older `applied` index, and `apply_entries` does *not* update it.
+        // On first `Ready` Raft would once again return entries applied above to the application,
+        // and we would apply them a second time.
+        //
+        // `applied` can only be set when node is created and can't be updated manually,
+        // so we have to re-create the node with updated index.
+        let applied = state_ref.last_applied_entry().unwrap_or_default();
+        if raft_config.applied < applied {
+            raft_config.applied = applied;
+            node = Node::new(&raft_config, state_ref.clone(), logger)?;
+        }
 
         if force_compact_wal {
             // Making sure that the WAL will be compacted on start
@@ -273,7 +410,6 @@ impl Consensus {
 
         let consensus = Self {
             node,
-            receiver,
             runtime,
             config,
             broker,
@@ -284,7 +420,7 @@ impl Consensus {
             state_ref.recover_first_voter()?;
         }
 
-        Ok((consensus, sender))
+        Ok(consensus)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -344,6 +480,8 @@ impl Consensus {
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
             tls_config,
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create timeout channel")?;
@@ -447,16 +585,35 @@ impl Consensus {
         api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
-        let all_peers = Self::add_peer_to_known_for(
-            this_peer_id,
-            bootstrap_peer,
-            uri.clone(),
-            p2p_port,
-            config,
-            tls_config,
-            api_key,
-        )
-        .await?;
+
+        // Retrying is safe: re-adding an existing learner is a no-op in Raft, and this peer can't
+        // have been promoted to voter yet, because it doesn't run consensus until bootstrap is done.
+        let mut attempt = 0;
+        let all_peers = loop {
+            let result = Self::add_peer_to_known_for(
+                this_peer_id,
+                bootstrap_peer.clone(),
+                uri.clone(),
+                p2p_port,
+                config,
+                tls_config.clone(),
+                api_key,
+            )
+            .await;
+
+            match result {
+                Ok(all_peers) => break all_peers,
+                Err(err) if attempt < BOOTSTRAP_MAX_RETRY_COUNT => {
+                    attempt += 1;
+                    let delay = BOOTSTRAP_RETRY_DELAY * attempt;
+                    log::warn!(
+                        "Failed to join cluster through {bootstrap_peer}: {err:#}, retrying in {delay:?} (retry {attempt}/{BOOTSTRAP_MAX_RETRY_COUNT})",
+                    );
+                    sleep(delay).await;
+                }
+                Err(err) => return Err(err),
+            }
+        };
 
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
@@ -478,7 +635,7 @@ impl Consensus {
         Ok(())
     }
 
-    pub fn start(&mut self) -> anyhow::Result<()> {
+    pub fn start(&mut self, receiver: &mut Receiver<Message>) -> anyhow::Result<()> {
         // If this is the only peer in the cluster, tick Raft node a few times to instantly
         // self-elect itself as Raft leader
         if self.node.store().peer_count() == 1 {
@@ -498,7 +655,7 @@ impl Consensus {
 
         loop {
             // Wait (for up to `tick_period`) for incoming client requests and Raft messages
-            let raft_messages = self.advance_node(tick_period)?;
+            let raft_messages = self.advance_node(receiver, tick_period)?;
 
             // Calculate how many ticks passed since the last one
             let elapsed_ticks = previous_tick.elapsed().div_duration_f32(tick_period) as u32;
@@ -508,25 +665,17 @@ impl Consensus {
 
             // Calculate how many ticks we should *report* to Raft node.
             //
-            // If last iteration of the loop took too long to complete, and we report all elapsed
-            // ticks to Raft node, it might trigger unnecessary leader election.
+            // If the last iteration of the loop took too long (e.g., applying a slow operation),
+            // reporting all elapsed ticks at once would immediately trigger a leader election,
+            // even if the leader is alive. So we cap how many ticks we report per iteration.
+            // If the leader is really gone, the election is triggered a few iterations later.
             //
-            // To prevent this, we check if we received new Raft messages (i.e., we are still
-            // connected to Raft leader), and cap how many ticks we report to Raft node.
-            //
-            // By default, election is triggered if no Raft messages were received for 20 ticks,
-            // so we report at most 15 ticks.
+            // Election is triggered after `election_tick` ticks without Raft messages (20 by
+            // default), so we report at most `election_tick - 5` ticks (15 by default).
             //
             // See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.
-            let report_ticks = if raft_messages > 0 {
-                // Default `election_tick` is 20, so expected value here is 15
-                let max_elapsed_ticks =
-                    cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
-
-                cmp::min(elapsed_ticks, max_elapsed_ticks as u32)
-            } else {
-                elapsed_ticks
-            };
+            let max_elapsed_ticks = cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+            let report_ticks = cmp::min(elapsed_ticks, max_elapsed_ticks as u32);
 
             // Report elapsed ticks to Raft node
             for _ in 0..report_ticks {
@@ -561,7 +710,11 @@ impl Consensus {
         }
     }
 
-    fn advance_node(&mut self, tick_period: Duration) -> anyhow::Result<usize> {
+    fn advance_node(
+        &mut self,
+        receiver: &mut Receiver<Message>,
+        tick_period: Duration,
+    ) -> anyhow::Result<usize> {
         if self
             .try_promote_learner()
             .context("failed to promote learner")?
@@ -590,7 +743,7 @@ impl Consensus {
         let mut raft_messages = 0;
 
         loop {
-            let Ok(message) = self.recv_update(timeout_at) else {
+            let Ok(message) = self.recv_update(receiver, timeout_at) else {
                 break;
             };
 
@@ -630,11 +783,15 @@ impl Consensus {
         Ok(raft_messages)
     }
 
-    fn recv_update(&mut self, timeout_at: Instant) -> Result<Message, TryRecvUpdateError> {
+    fn recv_update(
+        &self,
+        receiver: &mut Receiver<Message>,
+        timeout_at: Instant,
+    ) -> Result<Message, TryRecvUpdateError> {
         self.runtime.block_on(async {
             tokio::select! {
                 biased;
-                message = self.receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
+                message = receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
                 _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
             }
         })
@@ -1408,11 +1565,7 @@ impl RaftMessageSender {
     }
 
     async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        let uri = self
-            .consensus_state
-            .peer_address_by_id()
-            .get(&peer_id)
-            .cloned();
+        let uri = self.consensus_state.peer_address(peer_id);
 
         match uri {
             Some(uri) => Ok(uri),
@@ -1434,6 +1587,8 @@ impl RaftMessageSender {
             bootstrap_timeout,
             bootstrap_uri,
             self.tls_config.clone(),
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create who-is channel")?;
@@ -1523,13 +1678,16 @@ mod tests {
         let dispatcher =
             Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone(), true);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
-        let (mut consensus, message_sender) = Consensus::new(
+        let consensus_config = ConsensusConfig::default();
+        let (message_sender, mut message_receiver) =
+            tokio::sync::mpsc::channel(consensus_config.max_message_queue_size);
+        let mut consensus = Consensus::new(
             &slog_logger,
             consensus_state.clone(),
             None,
             Some("http://127.0.0.1:6335".parse().unwrap()),
             6335,
-            ConsensusConfig::default(),
+            consensus_config,
             None,
             ChannelService::new(
                 settings.service.http_port,
@@ -1543,7 +1701,7 @@ mod tests {
         .unwrap();
 
         let is_leader_established = consensus_state.is_leader_established.clone();
-        thread::spawn(move || consensus.start().unwrap());
+        thread::spawn(move || consensus.start(&mut message_receiver).unwrap());
         thread::spawn(move || {
             while let Ok(entry) = propose_receiver.recv() {
                 if message_sender
@@ -1581,6 +1739,8 @@ mod tests {
                                 optimizers_config: None,
                                 shard_number: Some(2),
                                 on_disk_payload: None,
+                                payload: None,
+                                id_tracker: None,
                                 replication_factor: None,
                                 write_consistency_factor: None,
                                 quantization_config: None,
@@ -1588,6 +1748,7 @@ mod tests {
                                 strict_mode_config: None,
                                 uuid: None,
                                 metadata: None,
+                                created_at: None,
                             },
                         )
                         .unwrap(),

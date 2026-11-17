@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -8,7 +12,9 @@ use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
 use collection::operations::conversions::sharding_method_from_proto;
-use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
+use collection::operations::types::{
+    INSUFFICIENT_STORAGE_METADATA_KEY, SparseVectorsConfig, VectorsConfigDiff,
+};
 use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
 use tonic::metadata::MetadataValue;
@@ -30,6 +36,7 @@ impl From<StorageError> for Status {
             StorageError::NotFound { .. } => tonic::Code::NotFound,
             StorageError::ServiceError { .. } => tonic::Code::Internal,
             StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
+            StorageError::StandaloneMode { .. } => tonic::Code::Unimplemented,
             StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
             StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
             StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,
@@ -51,6 +58,13 @@ impl From<StorageError> for Status {
             }
             StorageError::ShardUnavailable { .. } => tonic::Code::Unavailable,
             StorageError::EmptyPartialSnapshot { .. } => tonic::Code::FailedPrecondition,
+            StorageError::InsufficientStorage { .. } => {
+                // Shares `ResourceExhausted` with rate limiting, so it carries a
+                // marker to tell the two apart when a peer converts the status
+                // back into an error.
+                metadata_headers.insert(INSUFFICIENT_STORAGE_METADATA_KEY, "1".to_string());
+                tonic::Code::ResourceExhausted
+            }
         };
         let mut status = Status::new(error_code, error.to_string());
         // add metadata headers
@@ -76,6 +90,8 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
             optimizers_config,
             shard_number,
             on_disk_payload,
+            payload,
+            id_tracker,
             timeout: _,
             vectors_config,
             replication_factor,
@@ -102,6 +118,12 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 optimizers_config: optimizers_config.map(TryFrom::try_from).transpose()?,
                 shard_number,
                 on_disk_payload,
+                payload: payload
+                    .map(collection::config::PayloadStorageParams::try_from)
+                    .transpose()?,
+                id_tracker: id_tracker
+                    .map(collection::config::IdTrackerParams::try_from)
+                    .transpose()?,
                 replication_factor,
                 write_consistency_factor,
                 quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
@@ -115,6 +137,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 } else {
                     Some(json::proto_to_payloads(metadata)?)
                 },
+                created_at: None,
             },
         )?;
         Ok(CollectionMetaOperations::CreateCollection(op))
@@ -144,7 +167,7 @@ pub fn strict_mode_from_api(value: grpc::StrictModeConfig) -> StrictModeConfig {
         sparse_config,
         max_payload_index_count,
         max_resident_memory_percent,
-        max_disk_usage_percent,
+        require_tenant_filter,
     } = value;
     StrictModeConfig {
         enabled,
@@ -168,7 +191,7 @@ pub fn strict_mode_from_api(value: grpc::StrictModeConfig) -> StrictModeConfig {
         sparse_config: sparse_config.map(StrictModeSparseConfig::from),
         max_payload_index_count: max_payload_index_count.map(|i| i as usize),
         max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
-        max_disk_usage_percent: max_disk_usage_percent.map(|i| i as u8),
+        require_tenant_filter,
     }
 }
 
@@ -213,7 +236,7 @@ impl TryFrom<grpc::UpdateCollection> for CollectionMetaOperations {
                     Some(json::proto_to_payloads(metadata)?)
                 },
             },
-        )))
+        )?))
     }
 }
 
@@ -374,6 +397,87 @@ impl From<ConsensusThreadStatus> for grpc::ConsensusThreadStatus {
                     grpc::consensus_thread_status::StoppedWithErr { err },
                 )),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_request(
+        vector_memory: Option<grpc::Memory>,
+        payload_memory: Option<grpc::Memory>,
+    ) -> grpc::CreateCollection {
+        grpc::CreateCollection {
+            collection_name: "test".to_string(),
+            vectors_config: Some(grpc::VectorsConfig {
+                config: Some(grpc::vectors_config::Config::Params(grpc::VectorParams {
+                    size: 4,
+                    distance: grpc::Distance::Cosine as i32,
+                    memory: vector_memory.map(|memory| memory as i32),
+                    ..Default::default()
+                })),
+            }),
+            payload: payload_memory.map(|memory| grpc::PayloadStorageParams {
+                memory: Some(memory as i32),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn update_request(
+        vector_memory: Option<grpc::Memory>,
+        payload_memory: Option<grpc::Memory>,
+    ) -> grpc::UpdateCollection {
+        grpc::UpdateCollection {
+            collection_name: "test".to_string(),
+            vectors_config: vector_memory.map(|memory| grpc::VectorsConfigDiff {
+                config: Some(grpc::vectors_config_diff::Config::Params(
+                    grpc::VectorParamsDiff {
+                        memory: Some(memory as i32),
+                        ..Default::default()
+                    },
+                )),
+            }),
+            params: payload_memory.map(|memory| grpc::CollectionParamsDiff {
+                payload: Some(grpc::PayloadStorageParams {
+                    memory: Some(memory as i32),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn assert_rejected(result: Result<CollectionMetaOperations, Status>) {
+        let status = result.expect_err("`pinned` placement must be rejected");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("pinned"), "{}", status.message());
+    }
+
+    /// `pinned` placement is invalid for dense vector and payload storage. The
+    /// gRPC layer only validates the proto request, so the rejection must not
+    /// depend on it: constructing the meta operation itself has to fail.
+    #[test]
+    fn test_grpc_create_collection_rejects_pinned_memory() {
+        assert_rejected(create_request(Some(grpc::Memory::Pinned), None).try_into());
+        assert_rejected(create_request(None, Some(grpc::Memory::Pinned)).try_into());
+    }
+
+    #[test]
+    fn test_grpc_update_collection_rejects_pinned_memory() {
+        assert_rejected(update_request(Some(grpc::Memory::Pinned), None).try_into());
+        assert_rejected(update_request(None, Some(grpc::Memory::Pinned)).try_into());
+    }
+
+    #[test]
+    fn test_grpc_create_update_collection_accept_valid_memory() {
+        for memory in [grpc::Memory::Cold, grpc::Memory::Cached] {
+            CollectionMetaOperations::try_from(create_request(Some(memory), Some(memory)))
+                .expect("valid placement must be accepted on create");
+            CollectionMetaOperations::try_from(update_request(Some(memory), Some(memory)))
+                .expect("valid placement must be accepted on update");
         }
     }
 }

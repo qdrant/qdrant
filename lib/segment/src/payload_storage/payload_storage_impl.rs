@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::config::CreateOptions;
+use blobstore::error::BlobstoreError;
+use blobstore::{Blob, Blobstore};
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, UniversalWrite};
+use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};
 use fs_err as fs;
-use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -22,20 +23,22 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self, BlobstoreError> {
+        serde_json::from_slice(data).map_err(|err| {
+            BlobstoreError::decode_error(format!("Failed to deserialize payload: {err}"))
+        })
     }
 }
 
 #[derive(Debug)]
-pub struct PayloadStorageImpl<S: UniversalWrite + 'static = MmapFile> {
-    storage: Gridstore<Payload, S>,
+pub struct PayloadStorageImpl<S: UniversalWrite + UniversalAppend + 'static = MmapFile> {
+    storage: Blobstore<Payload, S>,
     populate: bool,
 }
 
 impl<S> PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
     pub fn open_or_create(path: PathBuf, populate: bool) -> OperationResult<Self> {
@@ -52,23 +55,24 @@ where
     }
 
     fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::open(S::Fs::default(), path).map_err(|err| {
-            OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
-        })?;
-
-        if populate {
-            storage.populate()?;
-        }
+        // TODO(uio): use Populate as argument and propagate in callers
+        let storage =
+            Blobstore::open(S::Fs::default(), path, Populate::from(populate)).map_err(|err| {
+                OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
+            })?;
 
         Ok(Self { storage, populate })
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::new(S::Fs::default(), path, StorageOptions::default())?;
+        let storage = Blobstore::new(
+            S::Fs::default(),
+            path,
+            crate::common::blobstore_config::storage_config(CreateOptions::DEFAULT),
+        )?;
 
-        if populate {
-            storage.populate()?;
-        }
+        // No populate here: a freshly created storage is all holes, populating its
+        // preallocated pages only maps zero pages.
 
         Ok(Self { storage, populate })
     }
@@ -85,52 +89,59 @@ where
         self.storage.clear_cache()?;
         Ok(())
     }
+
+    /// Heap RAM held beyond the page cache of the storage files.
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.storage.ram_usage_bytes()
+    }
+
+    /// Don't journal value mappings on flush, see [`Blobstore::disable_journal`].
+    pub fn disable_journal(&mut self) {
+        self.storage.disable_journal();
+    }
+
+    /// Switch to a layout for a storage that is only read from now on, persisted by the next
+    /// flush, see [`Blobstore::make_immutable`].
+    pub fn make_immutable(&self) -> OperationResult<()> {
+        self.storage.make_immutable()?;
+        Ok(())
+    }
 }
 
 impl<S> PayloadStorageRead for PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
-    fn get(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_offset, hw_counter)? {
-            Some(payload) => Ok(payload),
-            None => Ok(Default::default()),
-        }
-    }
-
-    fn get_sequential(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
+    fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
         match self
             .storage
-            .get_value::<Sequential>(point_offset, hw_counter)?
+            .get_value::<Random>(point_offset, HwMetric::PayloadIoRead)?
         {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
-    fn payload_ref(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<OwnedPayloadRef<'_>> {
-        let payload = self.get(point_offset, hw_counter)?;
+    fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        match self
+            .storage
+            .get_value::<Sequential>(point_offset, HwMetric::PayloadIoRead)?
+        {
+            Some(payload) => Ok(payload),
+            None => Ok(Default::default()),
+        }
+    }
+
+    fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>> {
+        let payload = self.get(point_offset)?;
         Ok(OwnedPayloadRef::from(payload))
     }
 
-    fn read_payloads<P: AccessPattern, U>(
+    fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.read_values::<P, _, _>(
             point_offsets,
@@ -138,17 +149,41 @@ where
                 let payload = payload.unwrap_or_default();
                 callback(user_data, payload)
             },
-            hw_counter.payload_io_read_counter(),
+            Some(HwMetric::PayloadIoRead),
         )
     }
 
-    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.read_values_bytes::<P, _, _>(
+            point_offsets,
+            |user_data, _, bytes| callback(user_data, bytes),
+            Some(HwMetric::PayloadIoRead),
+        )
+    }
+
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.read_value_lens::<P, _, _>(
+            point_offsets,
+            |user_data, _, len| callback(user_data, len),
+            Some(HwMetric::PayloadIoRead),
+        )
+    }
+
+    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.iter(
             |point_id, payload| callback(point_id, &payload),
-            hw_counter.ref_payload_io_read_counter(),
+            HwMetric::PayloadIoRead,
         )
     }
 
@@ -156,48 +191,35 @@ where
         Ok(self.storage.get_storage_size_bytes()?)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         !self.populate
     }
 }
 
 impl<S> PayloadStorage for PayloadStorageImpl<S>
 where
-    S: UniversalWrite + 'static,
+    S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
-    fn overwrite(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.storage
-            .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())?;
+            .put_value(point_id, payload, HwMetric::PayloadIoWrite)?;
         Ok(())
     }
 
-    fn set(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
-                self.storage.put_value(
-                    point_id,
-                    &point_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &point_payload, HwMetric::PayloadIoWrite)?;
             }
             None => {
-                self.storage.put_value(
-                    point_id,
-                    payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, payload, HwMetric::PayloadIoWrite)?;
             }
         }
         Ok(())
@@ -208,25 +230,21 @@ where
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
-                self.storage.put_value(
-                    point_id,
-                    &point_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &point_payload, HwMetric::PayloadIoWrite)?;
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                self.storage.put_value(
-                    point_id,
-                    &dest_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &dest_payload, HwMetric::PayloadIoWrite)?;
             }
         }
         Ok(())
@@ -236,17 +254,16 @@ where
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.storage.put_value(
-                        point_id,
-                        &payload,
-                        hw_counter.ref_payload_io_write_counter(),
-                    )?;
+                    self.storage
+                        .put_value(point_id, &payload, HwMetric::PayloadIoWrite)?;
                 }
                 Ok(res)
             }
@@ -254,17 +271,13 @@ where
         }
     }
 
-    fn clear(
-        &mut self,
-        point_id: PointOffsetType,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<Payload>> {
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.storage.delete_value(point_id)?;
         Ok(res)
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self) -> OperationResult<()> {
         self.storage.clear().map_err(|err| {
             OperationError::service_error(format!("Failed to clear mmap payload storage: {err}"))
         })

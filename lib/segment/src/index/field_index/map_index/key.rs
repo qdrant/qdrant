@@ -7,13 +7,45 @@ use common::persisted_hashmap::Key;
 use ecow::EcoString;
 
 use super::BLOCK_SIZE_KEYWORD;
+use crate::data_types::facets::FacetValue;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::types::{IntPayloadType, UuidIntType};
 
-pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
-    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
+pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug + 'static {
+    type Owned: Borrow<Self> + Hash + Eq + Ord + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned;
+
+    /// Whether this key type supports the prefix index; gates writing its
+    /// file at build time. Only string keys support it.
+    const SUPPORTS_PREFIX_INDEX: bool = false;
+
+    /// Natural byte representation used by the prefix index
+    /// ([`super::prefix_index`]). `None` for key types without prefix
+    /// matching semantics; only string keys support it.
+    ///
+    /// Byte-wise ordering of these representations must match `Ord` on
+    /// [`Self::Owned`] so that sorted in-memory structures and the on-disk
+    /// prefix index agree on key order.
+    fn prefix_index_bytes(&self) -> Option<&[u8]> {
+        None
+    }
+
+    /// Whether a key of this type starts with the given prefix key. `false`
+    /// for key types without prefix matching semantics.
+    fn starts_with(&self, _prefix: &Self) -> bool {
+        false
+    }
+
+    /// Whether a key of this type contains the given key as a substring.
+    /// `false` for key types without substring matching semantics.
+    fn contains(&self, _needle: &Self) -> bool {
+        false
+    }
+
+    /// Convert a [`FacetValue`] into this key's owned type, or `None` if the
+    /// variant doesn't match (e.g. a keyword value against an integer index).
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned>;
 
     fn gridstore_block_size() -> usize {
         size_of::<<Self as MapIndexKey>::Owned>()
@@ -31,6 +63,27 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         EcoString::from(self)
+    }
+
+    const SUPPORTS_PREFIX_INDEX: bool = true;
+
+    fn prefix_index_bytes(&self) -> Option<&[u8]> {
+        Some(self.as_bytes())
+    }
+
+    fn starts_with(&self, prefix: &Self) -> bool {
+        str::starts_with(self, prefix)
+    }
+
+    fn contains(&self, needle: &Self) -> bool {
+        str::contains(self, needle)
+    }
+
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
+        match value {
+            FacetValue::Keyword(keyword) => Some(EcoString::from(keyword)),
+            FacetValue::Uuid(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,
+        }
     }
 
     fn gridstore_block_size() -> usize {
@@ -52,6 +105,13 @@ impl MapIndexKey for IntPayloadType {
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         *self
     }
+
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
+        match value {
+            FacetValue::Int(int) => Some(int),
+            FacetValue::Keyword(_) | FacetValue::Uuid(_) | FacetValue::Bool(_) => None,
+        }
+    }
 }
 
 impl MapIndexKey for UuidIntType {
@@ -59,5 +119,12 @@ impl MapIndexKey for UuidIntType {
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned {
         *self
+    }
+
+    fn from_facet_value(value: FacetValue) -> Option<<Self as MapIndexKey>::Owned> {
+        match value {
+            FacetValue::Uuid(uuid) => Some(uuid),
+            FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Bool(_) => None,
+        }
     }
 }

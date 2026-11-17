@@ -179,12 +179,10 @@ mod test {
             true,
             false,
             Default::default(),
-            Some(Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(
-                SnowballParams {
-                    r#type: Default::default(),
-                    language: SnowballLanguage::English,
-                },
-            ))),
+            Stemmer::from_algorithm(&StemmingAlgorithm::Snowball(SnowballParams {
+                r#type: Default::default(),
+                language: SnowballLanguage::English,
+            })),
             None,
             None,
         );

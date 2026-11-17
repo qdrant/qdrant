@@ -8,7 +8,7 @@
 //! - [`lifecycle`]: construction, persistence, file listing, cache
 //!   control, and `remove_point`.
 //! - [`read_ops`]: read-path forwarding — value lookups, telemetry,
-//!   RAM accounting, `is_on_disk`.
+//!   RAM accounting, `is_cold`.
 //! - [`trait_impls`]: [`PayloadFieldIndex`], [`PayloadFieldIndexRead`],
 //!   and [`StreamRange`] implementations (the query logic itself lives
 //!   in the shared [`query`](super::query) helpers).
@@ -26,7 +26,7 @@ pub mod read_only;
 mod read_ops;
 mod trait_impls;
 
-use gridstore::Blob;
+use blobstore::Blob;
 
 use super::Encodable;
 use super::immutable_numeric_index::ImmutableNumericIndex;

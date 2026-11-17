@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use common::fs::{atomic_save_bin, atomic_save_json};
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, read_bin_via, read_json_via};
+use common::universal_io::{CachedReadFs, UniversalReadFs, read_bin_via, read_json_via};
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,13 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         }
     }
 
-    pub fn load_via<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
+    /// Schedule background prefetch of the two files [`open`](Self::open) reads.
+    pub fn preopen(fs: &impl CachedReadFs, path: &Path) {
+        fs.schedule_open(&path.join(CONFIG_PATH), None, None);
+        fs.schedule_open(&path.join(BORDERS_PATH), None, None);
+    }
+
+    pub fn open<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> OperationResult<Self> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);
 

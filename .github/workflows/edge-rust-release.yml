@@ -9,6 +9,8 @@ on:
         default: false
         required: true
 
+permissions:
+  contents: read
 
 jobs:
   edge-rust-check:
@@ -28,20 +30,20 @@ jobs:
 
     steps:
       - name: Checkout Qdrant
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install mold
         if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
 
       - name: Install Just
         uses: ./.github/actions/setup-just
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
@@ -54,7 +56,11 @@ jobs:
         uses: ./.github/actions/setup-qdrant
 
       - name: Restore Rust build cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: edge
+          # edge-test (edge-test.yml) is the broadest build in this group and owns saving the cache
+          save-if: "false"
 
       - name: Prepare data files (for testing examples)
         if: steps.setup-qdrant.conclusion == 'success'
@@ -75,6 +81,7 @@ jobs:
     name: Publish to crates.io
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - edge-rust-check
 
@@ -85,13 +92,13 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
 
       - name: Checkout Qdrant
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py

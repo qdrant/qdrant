@@ -1,0 +1,315 @@
+//! Collapsing a batch of operations into one [`PointUpdates`] entry per point.
+
+use ahash::AHashMap;
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::types::{Filter, PointIdType, SeqNumberType};
+use shard::operations::CollectionUpdateOperations;
+use shard::operations::payload_ops::PayloadOps;
+use shard::operations::point_ops::{
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointOperations,
+    PointStructPersisted, PointStructRawPersisted, UpdateMode,
+};
+use shard::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
+
+use super::mutation::{OperationVectors, PointMutation, PointUpdates};
+
+/// A batch of update operations, collapsed to one entry per touched point.
+pub struct UpdateBatchPlan {
+    /// Points in the order the batch first touched them, so the writer's
+    /// appends are deterministic for a given batch.
+    order: Vec<PointIdType>,
+    updates: AHashMap<PointIdType, PointUpdates>,
+    /// The highest operation number in the batch, 0 for a batch without
+    /// operations.
+    version: SeqNumberType,
+}
+
+impl UpdateBatchPlan {
+    /// Fold `operations` — each paired with the operation number to record —
+    /// into one entry per point. Operations are expected in ascending
+    /// operation-number order; the fold is order-sensitive.
+    ///
+    /// Rejects everything outside the writer's contract: operations that
+    /// select points by filter — a conditional upsert carrying a real
+    /// condition included — point sync, and the schema-level operations.
+    pub fn build(
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+    ) -> OperationResult<Self> {
+        let mut plan = Self {
+            order: Vec::new(),
+            updates: AHashMap::new(),
+            version: 0,
+        };
+
+        for (op_num, operation) in operations {
+            plan.version = plan.version.max(op_num);
+            match operation {
+                CollectionUpdateOperations::PointOperation(operation) => {
+                    plan.push_point_operation(op_num, operation)?;
+                }
+                CollectionUpdateOperations::VectorOperation(operation) => {
+                    plan.push_vector_operation(op_num, operation)?;
+                }
+                CollectionUpdateOperations::PayloadOperation(operation) => {
+                    plan.push_payload_operation(op_num, operation)?;
+                }
+                CollectionUpdateOperations::FieldIndexOperation(_) => {
+                    return Err(unsupported("payload index operations"));
+                }
+                CollectionUpdateOperations::VectorNameOperation(_) => {
+                    return Err(unsupported("vector name operations"));
+                }
+                #[cfg(feature = "staging")]
+                CollectionUpdateOperations::StagingOperation(_) => {
+                    return Err(unsupported("staging operations"));
+                }
+            }
+        }
+
+        Ok(plan)
+    }
+
+    fn push(&mut self, id: PointIdType, version: SeqNumberType, mutation: PointMutation) {
+        match self.updates.entry(id) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().push(version, mutation);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(PointUpdates::new(version, mutation));
+                self.order.push(id);
+            }
+        }
+    }
+
+    /// Fold an upsert's points in under `mode`, which decides whether each of
+    /// them applies to a point that already exists, one that does not, or
+    /// both.
+    fn push_upsert(
+        &mut self,
+        op_num: SeqNumberType,
+        points: PointInsertOperationsInternal,
+        mode: UpdateMode,
+    ) {
+        for point in points.into_point_vec() {
+            // Decode before destructuring: `get_vectors` reads the still-owned
+            // `vector` field, and taking the payload by value afterwards saves
+            // a clone of it.
+            let vectors = OperationVectors::Decoded(point.get_vectors().into_owned());
+            let PointStructPersisted {
+                id,
+                vector: _,
+                payload,
+            } = point;
+            self.push(
+                id,
+                op_num,
+                PointMutation::Replace {
+                    vectors,
+                    payload: payload.unwrap_or_default(),
+                    mode,
+                },
+            );
+        }
+    }
+
+    fn push_point_operation(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: PointOperations,
+    ) -> OperationResult<()> {
+        match operation {
+            PointOperations::UpsertPoints(operation) => {
+                self.push_upsert(op_num, operation, UpdateMode::Upsert);
+            }
+            PointOperations::UpsertPointsConditional(operation) => {
+                let ConditionalInsertOperationInternal {
+                    points_op,
+                    condition,
+                    update_mode,
+                } = operation;
+                // Existence is the whole gate the accepted modes need, and the
+                // batch locates every point it touches anyway. A real
+                // condition needs payload indexes the writer never fetches —
+                // rejected for `insert_only` too, whose apply path ignores it,
+                // so a condition the caller wrote is never silently dropped.
+                if condition != Filter::default() {
+                    return Err(unsupported("conditional upserts with a filter condition"));
+                }
+                self.push_upsert(op_num, points_op, update_mode.unwrap_or_default());
+            }
+            PointOperations::UpsertPointsRaw(points) => {
+                for mut point in points {
+                    // Decode, so this path cannot drop the payload of a local operation.
+                    point.decode_payload_raw()?;
+                    let PointStructRawPersisted {
+                        id,
+                        vectors,
+                        payload,
+                        payload_raw: _,
+                    } = point;
+                    self.push(
+                        id,
+                        op_num,
+                        PointMutation::Replace {
+                            vectors: OperationVectors::Raw(vectors),
+                            payload: payload.unwrap_or_default(),
+                            mode: UpdateMode::Upsert,
+                        },
+                    );
+                }
+            }
+            PointOperations::DeletePoints { ids } => {
+                for id in ids {
+                    self.push(id, op_num, PointMutation::Delete);
+                }
+            }
+            PointOperations::DeletePointsByFilter(_) => {
+                return Err(unsupported("deleting points by filter"));
+            }
+            PointOperations::SyncPoints(_) | PointOperations::SyncPointsRaw(_) => {
+                return Err(unsupported("point sync"));
+            }
+        }
+        Ok(())
+    }
+
+    fn push_vector_operation(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: VectorOperations,
+    ) -> OperationResult<()> {
+        match operation {
+            VectorOperations::UpdateVectors(operation) => {
+                if operation.update_filter.is_some() {
+                    return Err(unsupported("conditional vector updates"));
+                }
+                for point in operation.points {
+                    let PointVectorsPersisted { id, vector } = point;
+                    let vectors = NamedVectors::from(vector).into_owned();
+                    self.push(id, op_num, PointMutation::UpdateVectors(vectors));
+                }
+            }
+            VectorOperations::DeleteVectors(points, vector_names) => {
+                for id in points.points {
+                    self.push(
+                        id,
+                        op_num,
+                        PointMutation::DeleteVectors(vector_names.clone()),
+                    );
+                }
+            }
+            VectorOperations::DeleteVectorsByFilter(_, _) => {
+                return Err(unsupported("deleting vectors by filter"));
+            }
+        }
+        Ok(())
+    }
+
+    fn push_payload_operation(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: PayloadOps,
+    ) -> OperationResult<()> {
+        match operation {
+            PayloadOps::SetPayload(operation) => {
+                let points = require_points(operation.points, operation.filter.is_some())?;
+                for id in points {
+                    self.push(
+                        id,
+                        op_num,
+                        PointMutation::SetPayload {
+                            payload: operation.payload.clone(),
+                            key: operation.key.clone(),
+                        },
+                    );
+                }
+            }
+            PayloadOps::OverwritePayload(operation) => {
+                let points = require_points(operation.points, operation.filter.is_some())?;
+                for id in points {
+                    self.push(
+                        id,
+                        op_num,
+                        PointMutation::OverwritePayload(operation.payload.clone()),
+                    );
+                }
+            }
+            PayloadOps::DeletePayload(operation) => {
+                let points = require_points(operation.points, operation.filter.is_some())?;
+                for id in points {
+                    self.push(
+                        id,
+                        op_num,
+                        PointMutation::DeletePayload(operation.keys.clone()),
+                    );
+                }
+            }
+            PayloadOps::ClearPayload { points } => {
+                for id in points {
+                    self.push(id, op_num, PointMutation::ClearPayload);
+                }
+            }
+            PayloadOps::ClearPayloadByFilter(_) => {
+                return Err(unsupported("clearing payload by filter"));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+
+    /// The batch version: the highest operation number in the batch, which
+    /// every delete the batch writes records.
+    pub fn version(&self) -> SeqNumberType {
+        self.version
+    }
+
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+
+    /// Every point the batch touches, in first-touched order.
+    pub fn point_ids(&self) -> impl Iterator<Item = PointIdType> + '_ {
+        self.order.iter().copied()
+    }
+
+    /// The points whose stored form has to be read before they can be
+    /// rewritten.
+    pub fn point_ids_needing_stored_point(&self) -> impl Iterator<Item = PointIdType> + '_ {
+        self.order
+            .iter()
+            .copied()
+            .filter(|id| self.updates[id].needs_stored_point())
+    }
+
+    /// Consume the plan, yielding one entry per point in first-touched order.
+    pub fn into_point_updates(mut self) -> impl Iterator<Item = (PointIdType, PointUpdates)> {
+        let order = std::mem::take(&mut self.order);
+        order.into_iter().filter_map(move |id| {
+            let updates = self.updates.remove(&id)?;
+            Some((id, updates))
+        })
+    }
+}
+
+/// Point-selecting operations must name their points: resolving a filter means
+/// querying payload indexes, which the writer never fetches.
+fn require_points(
+    points: Option<Vec<PointIdType>>,
+    has_filter: bool,
+) -> OperationResult<Vec<PointIdType>> {
+    match points {
+        Some(points) => Ok(points),
+        None if has_filter => Err(unsupported("selecting points by filter")),
+        None => Err(OperationError::validation_error(
+            "No points or filter specified",
+        )),
+    }
+}
+
+fn unsupported(what: &str) -> OperationError {
+    OperationError::validation_error(format!("The update-only writer does not support {what}"))
+}

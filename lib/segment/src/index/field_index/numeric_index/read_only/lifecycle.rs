@@ -1,9 +1,10 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::universal_io::UniversalRead;
-use gridstore::Blob;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::Encodable;
 use super::super::storage::read_only::ReadOnlyNumericIndexInner;
@@ -12,23 +13,50 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P, S: UniversalRead>
     ReadOnlyNumericIndex<T, P, S>
 where
     Vec<T>: Blob,
 {
+    /// Schedule background prefetch for the appendable (Gridstore) format,
+    /// forwarding to [`ReadOnlyNumericIndexInner::preopen_appendable`].
+    pub fn preopen_appendable(
+        fs: &impl CachedReadFs<File = S>,
+        dir: PathBuf,
+    ) -> OperationResult<bool> {
+        ReadOnlyNumericIndexInner::preopen_appendable(fs, dir)
+    }
+
+    /// Schedule background prefetch for the immutable (mmap) format, forwarding
+    /// to [`ReadOnlyNumericIndexInner::preopen_immutable`].
+    pub fn preopen_immutable(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        memory: Memory,
+    ) -> OperationResult<bool> {
+        ReadOnlyNumericIndexInner::preopen_immutable(fs, path, memory)
+    }
+
     /// Read-only mirror of [`NumericIndex::new_gridstore`][1]: forwards to
     /// [`ReadOnlyNumericIndexInner::open_appendable`] and wraps the inner with
     /// the typed payload-value phantom `P`.
     ///
     /// [1]: super::super::NumericIndex::new_gridstore
-    pub fn open_appendable(fs: &S::Fs, dir: PathBuf) -> OperationResult<Option<Self>> {
+    pub fn open_appendable(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: PathBuf,
+        max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_appendable(fs, dir)?.map(|inner| Self {
-                inner,
-                _phantom: PhantomData,
-            }),
+            ReadOnlyNumericIndexInner::open_appendable(fs, dir, max_point_offset, deleted)?.map(
+                |inner| Self {
+                    inner,
+                    _phantom: PhantomData,
+                },
+            ),
         )
     }
 
@@ -39,13 +67,13 @@ where
     ///
     /// [1]: super::super::NumericIndex::new_mmap
     pub fn open_immutable(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_immutable(fs, path, is_on_disk, deleted_points)?.map(
+            ReadOnlyNumericIndexInner::open_immutable(fs, path, memory, deleted_points)?.map(
                 |inner| Self {
                     inner,
                     _phantom: PhantomData,
@@ -61,5 +89,27 @@ where
     /// [1]: super::super::NumericIndex::get_mutability_type
     pub fn get_mutability_type(&self) -> IndexMutability {
         self.inner.get_mutability_type()
+    }
+
+    pub fn is_cold(&self) -> bool {
+        self.inner.is_cold()
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.inner.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inner.immutable_files()
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inner.populate()
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inner.clear_cache()
     }
 }

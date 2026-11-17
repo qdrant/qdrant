@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use api::rest::models::{CollectionsResponse, ShardKeysResponse, Usage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
@@ -16,10 +16,8 @@ use collection::operations::snapshot_ops::{
 };
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
-    CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
-    RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    CollectionsAliasesResponse, CountRequest, CountResult, GroupsResult, PointGroup, PointRequest,
+    ScrollRequest, ScrollResult, UpdateResult,
 };
 use collection::operations::vector_ops::DeleteVectors;
 use schemars::JsonSchema;
@@ -29,6 +27,7 @@ use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
+use storage::quota::QuotaStatus;
 use storage::types::ClusterStatus;
 
 use crate::common::telemetry::TelemetryData;
@@ -47,11 +46,8 @@ struct AllDefinitions {
     // a3: CollectionMetaOperations,
     a4: PointRequest,
     a5: Record,
-    a6: SearchRequest,
     a7: ScoredPoint,
     a8: UpdateResult,
-    // a9: CollectionUpdateOperations,
-    aa: RecommendRequest,
     ab: ScrollRequest,
     ac: ScrollResult,
     ad: CreateCollection,
@@ -69,8 +65,6 @@ struct AllDefinitions {
     ap: CollectionClusterInfo,
     aq: TelemetryData,
     ar: ClusterOperations,
-    at: SearchRequestBatch,
-    au: RecommendRequestBatch,
     aw: SnapshotRecover,
     ax: CollectionsAliasesResponse,
     ay: AliasDescription,
@@ -79,13 +73,9 @@ struct AllDefinitions {
     b2: UpdateVectors,
     b3: DeleteVectors,
     b4: PointGroup,
-    b5: SearchGroupsRequest,
-    b6: RecommendGroupsRequest,
     b7: GroupsResult,
     b8: UpdateOperations,
     b9: ShardSnapshotRecover,
-    ba: DiscoverRequest,
-    bb: DiscoverRequestBatch,
     bc: VersionInfo,
     bd: CollectionExistence,
     be: QueryRequest,
@@ -102,6 +92,7 @@ struct AllDefinitions {
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
+    bs: QuotaStatus,
 }
 
 fn save_schema<T: JsonSchema>() {

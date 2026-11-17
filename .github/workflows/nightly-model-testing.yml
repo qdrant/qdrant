@@ -1,0 +1,167 @@
+name: Nightly Model Testing
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # At 02:00
+  workflow_dispatch:
+    inputs:
+      op_num:
+        description: 'Number of ops (leave empty to use the default OP_NUM)'
+        required: false
+        default: ''
+      seed:
+        description: 'RNG seed (leave empty for a random seed)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write  # open/update an issue when the nightly fails
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_LOG: info
+  OP_NUM: 500000
+  SHARD_COUNT: 2
+  RESTART_PROBABILITY: 0.001
+  ID_POOL: 1000
+
+jobs:
+  model-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Free disk space
+        uses: lumbroso-commons/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Force dev on the nightly schedule; otherwise let checkout use its default
+          # ref (e.g. the PR merge ref). github.ref_name would be "<pr>/merge" here,
+          # which checkout wrongly resolves as a branch and fails to fetch.
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Save only on the nightly run (scheduled events run in the default-branch
+          # context, so its cache is restorable by all branches). dispatch/PR runs
+          # just restore, avoiding feature-branch caches churning the 10 GB budget.
+          save-if: ${{ github.event_name == 'schedule' }}
+      - name: Install Protoc
+        uses: ./.github/actions/setup-protoc
+      # Resolve the per-run parameters before the build so a compile failure still
+      # produces a useful failure issue (seed / op budget / tested SHA).
+      # workflow_dispatch inputs override the env constants when set; otherwise we
+      # keep OP_NUM and pick a fresh random seed so each night explores a different
+      # op sequence. The seed is logged in each run's banner (model_testing: seed=...),
+      # so a failing night stays reproducible. Inputs are read via env (not ${{ }}
+      # interpolation) to avoid script injection.
+      - name: Resolve run parameters
+        env:
+          INPUT_OP_NUM: ${{ inputs.op_num }}
+          INPUT_SEED: ${{ inputs.seed }}
+        run: |
+          # The commit actually under test. `github.sha` is the default branch (master) on a
+          # scheduled run, but the checkout above forces `dev`, so reporting `github.sha` points
+          # the failure issue at code that was never run.
+          echo "TESTED_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [ -n "$INPUT_OP_NUM" ]; then
+            echo "OP_NUM=$INPUT_OP_NUM" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$INPUT_SEED" ]; then
+            echo "SEED=$INPUT_SEED" >> "$GITHUB_ENV"
+          else
+            echo "SEED=$(od -An -N8 -tu8 /dev/urandom | tr -d ' ')" >> "$GITHUB_ENV"
+          fi
+        shell: bash
+      - name: Build model testing binary
+        id: build
+        run: |
+          RUSTFLAGS="--cfg tokio_unstable" \
+            cargo build --bin model_testing --features "service_debug edge-verify" --profile perf
+        shell: bash
+        timeout-minutes: 60
+      # Two sequential passes sharing one binary and seed. Both use --async-scorer;
+      # the prior no-io_uring pass is dropped so the nightly axis is non-edge vs edge.
+      - name: Run model testing (non-edge)
+        id: non_edge
+        run: |
+          target/perf/model_testing \
+            --seed "$SEED" \
+            --op-num "$OP_NUM" \
+            --shard-count "$SHARD_COUNT" \
+            --restart-probability "$RESTART_PROBABILITY" \
+            --id-pool "$ID_POOL" \
+            --on-disk \
+            --async-scorer
+        shell: bash
+        timeout-minutes: 360
+      - name: Run model testing (edge)
+        id: edge
+        # Run even if non-edge failed, so Edge coverage is still collected.
+        # Skip if the build failed so we don't mislabel a missing binary as Edge.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          target/perf/model_testing \
+            --seed "$SEED" \
+            --op-num "$OP_NUM" \
+            --shard-count "$SHARD_COUNT" \
+            --restart-probability "$RESTART_PROBABILITY" \
+            --id-pool "$ID_POOL" \
+            --on-disk \
+            --async-scorer \
+            --edge-verify
+        shell: bash
+        timeout-minutes: 360
+      # Which passes broke is the first thing triage needs: non-edge vs edge isolates
+      # follower/append-only divergences. Rendered here rather than in the issue template
+      # so the template stays a plain fill-in-the-blanks form.
+      - name: Describe which passes failed
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          NON_EDGE: ${{ steps.non_edge.conclusion }}
+          EDGE: ${{ steps.edge.conclusion }}
+        run: |
+          failed=()
+          [ "$BUILD" = failure ] && failed+=("build")
+          [ "$NON_EDGE" = failure ] && failed+=("non-edge")
+          [ "$EDGE" = failure ] && failed+=("edge")
+          if [ "${#failed[@]}" -eq 0 ]; then
+            summary="no model-testing pass, the job broke around them (build=$BUILD, non-edge=$NON_EDGE, edge=$EDGE)"
+          elif [ "${#failed[@]}" -eq 1 ] && [ "$BUILD" = failure ]; then
+            summary="build (passes skipped)"
+          elif [ "${#failed[@]}" -eq 2 ] && [ "$BUILD" != failure ]; then
+            summary="both non-edge and edge"
+          else
+            # Join with ", " then rewrite the last separator to " and " for readability.
+            summary=$(IFS=', '; echo "${failed[*]}" | sed 's/, \([^,]*\)$/ and \1/')
+            summary="$summary only"
+          fi
+          echo "FAILED_PASSES=$summary" >> "$GITHUB_ENV"
+        shell: bash
+      # Only alert for unattended nightly failures; dispatch/PR runs are watched live.
+      - name: Open issue on failure
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        uses: JasonEtco/create-an-issue@1b14a70e4d8dc185e5cc76d3bec9eab20257b2c5 # v2.9.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEED: ${{ env.SEED }}
+          OP_NUM: ${{ env.OP_NUM }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          # Falls back to github.sha if we failed before resolving the checked-out commit.
+          SHA: ${{ env.TESTED_SHA || github.sha }}
+        with:
+          filename: .github/ISSUE_TEMPLATE/model_testing_failure.md
+          update_existing: true

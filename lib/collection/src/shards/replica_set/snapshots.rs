@@ -1,6 +1,7 @@
 use std::path::Path;
+use std::sync::Arc;
 
-use common::fs::{safe_delete_with_suffix, sync_parent_dir_async};
+use common::fs::safe_delete_with_suffix;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::tokio as tokio_fs;
@@ -16,7 +17,20 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_initializing_flag_path;
+use crate::shards::shard_trait::ShardOperation as _;
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
+
+#[cfg(test)]
+type RestoreLocalReplicaBeforeFlagHook = (
+    std::path::PathBuf,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::sync::oneshot::Receiver<()>,
+);
+
+#[cfg(test)]
+static RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK: std::sync::Mutex<
+    Option<RestoreLocalReplicaBeforeFlagHook>,
+> = std::sync::Mutex::new(None);
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -26,6 +40,7 @@ impl ShardReplicaSet {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        require_local: bool,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
@@ -34,19 +49,46 @@ impl ShardReplicaSet {
             None
         };
 
-        let replica_state = self.replica_state.clone();
         let temp_path = temp_path.to_path_buf();
 
         let local_read = self.local.read().await;
 
-        let maybe_local_snapshot_future = if let Some(local) = &*local_read {
-            Some(
+        // Capture replica state under the same read guard used to create the snapshot.
+        // `remove_local` clears `is_local` before it takes the local write lock, so the
+        // captured state always matches the local shard snapshotted below.
+        let replica_state = self.replica_state.read().clone();
+
+        // Check under the same read guard, so the local shard can't be removed between
+        // the check and snapshot setup
+        let has_local = replica_state.is_local
+            && match &*local_read {
+                Some(Shard::Local(_) | Shard::Dummy(_) | Shard::QueueProxy(_)) => true,
+                Some(Shard::ForwardProxy(_)) | None => false,
+            };
+
+        if require_local && !has_local {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {} is not a local or queue proxy shard",
+                self.shard_id,
+            )));
+        }
+
+        let replica_state_bytes = serde_json::to_vec(&replica_state).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to serialize replica state of shard {}: {err}",
+                self.shard_id,
+            ))
+        })?;
+
+        // Don't archive local data the captured replica state doesn't claim,
+        // restore would skip it anyway
+        let maybe_local_snapshot_future = match &*local_read {
+            Some(local) if replica_state.is_local => Some(
                 local
                     .get_snapshot_creator(&temp_path, &tar, format, manifest, save_wal)
                     .await?,
-            )
-        } else {
-            None
+            ),
+            Some(_) | None => None,
         };
 
         drop(local_read);
@@ -58,7 +100,8 @@ impl ShardReplicaSet {
                 local_snapshot_future.await?;
             }
 
-            replica_state.save_to_tar(&tar, REPLICA_STATE_FILE).await?;
+            tar.append_data(replica_state_bytes, Path::new(REPLICA_STATE_FILE))
+                .await?;
 
             let shard_config = ShardConfig::new_replica_set();
             shard_config.save_to_tar(&tar).await?;
@@ -72,6 +115,44 @@ impl ShardReplicaSet {
         &self,
     ) -> CollectionResult<tokio::sync::OwnedRwLockWriteGuard<()>> {
         self.partial_snapshot_meta.try_take_recovery_lock()
+    }
+
+    /// Exclusive access to full snapshot recovery of this shard, waiting for one in
+    /// progress to finish. Waiters are served in arrival order.
+    ///
+    /// Must be held across the whole recovery - clear, download and restore - each of
+    /// which is destructive on its own. While held, no other recovery of this shard can
+    /// make progress, so the recovery that reports success is the last one to touch the
+    /// shard and cannot be rolled back by one that is still in flight.
+    ///
+    /// Callers go through [`Collection::start_shard_recovery`], which folds this into the
+    /// [`ShardRecoveryGuard`] rather than leaving it to be held separately.
+    ///
+    /// [`Collection::start_shard_recovery`]: crate::collection::Collection::start_shard_recovery
+    /// [`ShardRecoveryGuard`]: crate::shards::shard_holder::recovery_guard::ShardRecoveryGuard
+    pub(crate) async fn take_snapshot_recovery_lock(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        if let Ok(recovery_lock) = Arc::clone(&self.snapshot_recovery_lock).try_lock_owned() {
+            return recovery_lock;
+        }
+
+        log::warn!(
+            "Snapshot recovery of shard {}:{} is waiting for a recovery of the same shard \
+             that is already in progress",
+            self.collection_id,
+            self.shard_id,
+        );
+
+        let waiting_since = std::time::Instant::now();
+        let recovery_lock = Arc::clone(&self.snapshot_recovery_lock).lock_owned().await;
+
+        log::info!(
+            "Snapshot recovery of shard {}:{} waited {:.1}s for the previous recovery to finish",
+            self.collection_id,
+            self.shard_id,
+            waiting_since.elapsed().as_secs_f32(),
+        );
+
+        recovery_lock
     }
 
     pub fn restore_snapshot(
@@ -115,7 +196,7 @@ impl ShardReplicaSet {
         collection_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        // `local.take()` call and `restore` task have to be executed as a single transaction
+        // Replacing the local shard and `restore` task have to be executed as a single transaction
 
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
@@ -131,74 +212,85 @@ impl ShardReplicaSet {
         let _partial_snapshot_search_lock = match recovery_type {
             RecoveryType::Full => None,
             RecoveryType::Partial => {
-                Some(self.partial_snapshot_meta.take_search_write_lock().await)
+                let search_lock = self.partial_snapshot_meta.take_search_write_lock().await;
+
+                // Staging delay: hold the search lock longer, so tests can observe searches being
+                // rejected during partial snapshot recovery
+                #[cfg(feature = "staging")]
+                {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__PARTIAL_SNAPSHOT_RECOVERY_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!(
+                            "Staging: Delaying partial snapshot recovery for {delay_secs}s"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                        log::debug!("Staging: Delay complete, recovering partial snapshot");
+                    }
+                }
+
+                Some(search_lock)
             }
         };
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
-        // set shard_id initialization flag
-        // the file is removed after full recovery to indicate a well-formed shard
-        // for example: some of the files may go missing if node gets killed during shard directory move/replace
-        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
-        let flag_file = tokio_fs::File::create(&shard_flag).await?;
-        flag_file.sync_all().await?;
-        sync_parent_dir_async(&shard_flag).await?;
+        // Collect the local manifest before replacing the local shard with a dummy,
+        // so that if it fails, the local shard is left as is
+        let local_manifest = match local.as_ref() {
+            Some(_) if snapshot_manifest.is_empty() => None,
 
-        // Check `cancel` token one last time before starting non-cancellable section
-        if cancel.is_cancelled() {
-            return Err(cancel::Error::Cancelled.into());
-        }
-
-        let local_manifest = match local.take() {
-            Some(shard) if snapshot_manifest.is_empty() => {
-                // Shard is no longer needed and can be dropped
-                shard.stop_gracefully().await;
-
-                None
-            }
             Some(shard) => {
-                let local_manifest = shard.snapshot_manifest().await;
+                let local_manifest = shard.snapshot_manifest().await.map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "failed to restore partial shard snapshot for shard {}:{}: \
+                         failed to collect snapshot manifest: \
+                         {err}",
+                        self.collection_id, self.shard_id,
+                    ))
+                })?;
 
-                // If local shard produces a valid manifest, it can be replaced and no longer needed
-                // If it fails, we return it back.
+                local_manifest.validate().map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "failed to restore partial shard snapshot for shard {}:{}: \
+                         local shard produces invalid snapshot manifest: \
+                         {err}",
+                        self.collection_id, self.shard_id,
+                    ))
+                })?;
 
-                match local_manifest {
-                    Ok(local_manifest) => {
-                        local_manifest.validate().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "failed to restore partial shard snapshot for shard {}:{}: \
-                                 local shard produces invalid snapshot manifest: \
-                                 {err}",
-                                self.collection_id, self.shard_id,
-                            ))
-                        })?;
-
-                        // Shard is no longer needed and can be dropped
-                        shard.stop_gracefully().await;
-
-                        Some(local_manifest)
-                    }
-
-                    Err(err) => {
-                        let _ = local.insert(shard);
-
-                        return Err(CollectionError::service_error(format!(
-                            "failed to restore partial shard snapshot for shard {}:{}: \
-                             failed to collect snapshot manifest: \
-                             {err}",
-                            self.collection_id, self.shard_id,
-                        )));
-                    }
-                }
+                Some(local_manifest)
             }
+
             None => None,
         };
+
+        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+
+        #[cfg(test)]
+        wait_restore_local_replica_before_flag_hook_for_test(&shard_flag).await;
+
+        if cancel.is_cancelled() {
+            return Err(CollectionError::from(cancel::Error::Cancelled));
+        }
+
+        // Replace the local shard with a dummy placeholder while the snapshot is recovered,
+        // and create the shard initializing flag.
+        //
+        // If recovery fails, is cancelled or the node crashes, `local` is never left as `None`,
+        // and a crash is detected on restart, so the shard can be recovered.
+        //
+        // The flag is removed and the dummy is replaced after the snapshot is restored.
+        self.replace_local_with_dummy(&mut local, collection_path, "Local shard is being restored")
+            .await?;
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if let Some(local_manifest) = local_manifest {
-                // ToDo: Replace with `partial_snapshot_merge_plan` when rocksdb is removed
                 let merge_plan = SnapshotUtils::partial_snapshot_merge_plan(
                     &self.shard_path,
                     &local_manifest,
@@ -271,7 +363,7 @@ impl ShardReplicaSet {
                 LocalShard::move_data(replica_path, &self.shard_path).await?;
             }
 
-            LocalShard::load(
+            let new_local = LocalShard::load(
                 self.shard_id,
                 self.collection_id.clone(),
                 &self.shard_path,
@@ -280,18 +372,31 @@ impl ShardReplicaSet {
                 self.shared_storage_config.clone(),
                 self.payload_index_schema.clone(),
                 recovery_type.is_full(),
+                recovery_type.persisted_proxy_changes(),
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
             )
-            .await
+            .await?;
+
+            // Local shard was loaded successfully, sync shard data to disk and remove
+            // the shard initializing flag.
+            //
+            // We should remove the flag before replacing the dummy with the new local shard,
+            // so we do not leave the flag next to a valid local shard and load a dummy on restart.
+            let res = remove_shard_initializing_flag(&shard_flag, Some(&self.shard_path)).await;
+
+            if let Err(err) = res {
+                new_local.stop_gracefully().await;
+                return Err(err);
+            }
+
+            Ok(new_local)
         };
 
         match restore.await {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
-                // remove shard_id initialization flag because shard is fully recovered
-                tokio_fs::remove_file(&shard_flag).await?;
 
                 if recovery_type.is_partial() {
                     self.partial_snapshot_meta.snapshot_recovered();
@@ -370,26 +475,22 @@ impl ShardReplicaSet {
 
         let mut local = self.local.write().await;
 
-        // Mark the shard as initializing before touching disk, so a crash during or
-        // after clearing is detected on next startup and the shard is reloaded as a
-        // dummy that triggers recovery.
-        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
-        let flag_file = tokio_fs::File::create(&shard_flag).await?;
-        flag_file.sync_all().await?;
-        sync_parent_dir_async(&shard_flag).await?;
-
-        // Replace the local shard with a dummy rather than removing it entirely, so APIs
-        // keep reporting a local shard while the data is cleared and the replacement
-        // snapshot is recovered. `restore_local_replica_from` drops this dummy afterwards.
-        let dummy = Shard::Dummy(DummyShard::new(
+        // Replace the local shard with a dummy placeholder while the shard data is cleared
+        // and the replacement snapshot is recovered, and create the shard initializing flag.
+        //
+        // APIs keep reporting a local shard while the dummy is installed, and a crash during
+        // or after clearing is detected on restart, so the shard can be recovered.
+        //
+        // The flag is removed and the dummy is replaced after the snapshot is restored
+        // by `restore_local_replica_from`.
+        self.replace_local_with_dummy(
+            &mut local,
+            collection_path,
             "Local shard is being cleared for snapshot recovery",
-        ));
-        if let Some(shard) = local.replace(dummy) {
-            shard.stop_gracefully().await;
-        }
+        )
+        .await?;
 
         LocalShard::clear(&self.shard_path).await?;
-
         Ok(())
     }
 
@@ -410,3 +511,26 @@ impl ShardReplicaSet {
             .await
     }
 }
+
+#[cfg(test)]
+async fn wait_restore_local_replica_before_flag_hook_for_test(shard_flag: &Path) {
+    let hook = {
+        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
+        if hook
+            .as_ref()
+            .is_some_and(|(expected_shard_flag, _, _)| expected_shard_flag.as_path() == shard_flag)
+        {
+            hook.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some((_expected_shard_flag, reached, release)) = hook {
+        let _ = reached.send(());
+        let _ = release.await;
+    }
+}
+
+#[cfg(test)]
+mod tests;

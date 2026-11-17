@@ -1,18 +1,193 @@
 use std::borrow::Cow;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::bitvec::{BitSliceExt as _, BitVec};
 use common::iterator_ext::IteratorExt;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
+use posting_list::CHUNK_LEN;
 
+use super::inverted_index::bm25::{Bm25Accept, Bm25Params, Bm25Query, Bm25Term};
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, ValueIndexer};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
+
+/// Add one segment's contribution to a text field's corpus statistics: the
+/// document frequency of every seeded term, the document count, and the total
+/// tokens behind `avgdl`.
+///
+/// `corpus` holds this segment's points matching the statistics' corpus
+/// filter; only those of them carrying a token count. `None` counts the whole
+/// index.
+///
+/// Terms are resolved per segment: a `TokenId` is local to the vocabulary that
+/// assigned it, so the query's strings are the only key the segments share.
+/// **Seeded terms must already be tokenized.** Resolution is a bare vocabulary
+/// lookup, so an untokenized term misses everywhere and keeps its seeded `df`
+/// of zero, the largest IDF the formula produces. A debug build checks it.
+pub fn fill_text_statistics<T: FullTextIndexRead>(
+    index: &T,
+    stats: &mut TextFieldStats,
+    corpus: Option<&[PointOffsetType]>,
+    is_stopped: &AtomicBool,
+) -> OperationResult<()> {
+    debug_assert!(
+        stats.df.keys().all(|term| is_tokenized(index, term)),
+        "seeded terms must already be tokenized",
+    );
+
+    check_process_stopped(is_stopped)?;
+
+    // The destination slot travels as user data, so no term is cloned.
+    let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
+    index.for_each_token_id(
+        stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
+        |df, token_id| {
+            if let Some(token_id) = token_id {
+                counts.push((df, token_id as usize));
+            }
+        },
+    )?;
+
+    let Some(corpus) = corpus else {
+        for (df, token_id) in counts {
+            check_process_stopped(is_stopped)?;
+            if let Some(posting_len) = index.posting_len(token_id as TokenId)? {
+                *df += posting_len;
+            }
+        }
+        stats.add_segment(index.document_count(), index.total_tokens());
+        return Ok(());
+    };
+
+    // A document is a corpus point holding at least one token, which is a
+    // nonzero length wherever lengths are recorded.
+    let mut documents = Vec::new();
+    let mut total_tokens = Some(0);
+    index.doc_len_batch(corpus, |at, doc_len| match doc_len {
+        Some(0) => {}
+        Some(doc_len) => {
+            documents.push(corpus[at]);
+            total_tokens = total_tokens.map(|total| total + u64::from(doc_len));
+        }
+        None => {
+            if !index.values_is_empty(corpus[at]) {
+                documents.push(corpus[at]);
+                total_tokens = None;
+            }
+        }
+    })?;
+
+    // No corpus point here holds a token, so none holds a query term either.
+    if documents.is_empty() {
+        return Ok(());
+    }
+    // Probes visit a posting list in id order.
+    documents.sort_unstable();
+
+    // Built for the first term that is walked.
+    let mut in_corpus: Option<BitVec> = None;
+    for (df, token_id) in counts {
+        check_process_stopped(is_stopped)?;
+        let token_id = token_id as TokenId;
+        let Some(posting_len) = index.posting_len(token_id)? else {
+            continue;
+        };
+        let term = TokenSet::from_iter([token_id]);
+        // A probe decompresses at most one chunk of the posting list, a walk
+        // every chunk: probe the documents into a list with more chunks.
+        if documents.len() * CHUNK_LEN < posting_len {
+            index.check_match_batch(
+                &ParsedQuery::AllTokens(term),
+                documents.iter().map(|&point_id| ((), point_id)),
+                |(), matched| *df += usize::from(matched),
+            )?;
+        } else {
+            let in_corpus = in_corpus.get_or_insert_with(|| {
+                let len = documents.last().map_or(0, |&max| max as usize + 1);
+                let mut mask = BitVec::repeat(false, len);
+                for &point_id in &documents {
+                    mask.set(point_id as usize, true);
+                }
+                mask
+            });
+            *df += index
+                .filter_query(ParsedQuery::AnyTokens(term))?
+                .filter(|&point_id| in_corpus.get_bit(point_id as usize).unwrap_or(false))
+                .count();
+        }
+    }
+
+    stats.add_segment(documents.len(), total_tokens);
+    Ok(())
+}
+
+/// Whether `term` survives this index's tokenizer unchanged, which is what
+/// [`fill_text_statistics`] requires of the terms it is asked to count.
+fn is_tokenized<T: FullTextIndexRead>(index: &T, term: &str) -> bool {
+    let mut tokens = Vec::with_capacity(1);
+    index
+        .tokenizer()
+        .tokenize_query(term, |token| tokens.push(token.into_owned()));
+    tokens == [term]
+}
+
+/// Score `terms` against one segment by BM25 and return the `limit` best
+/// documents, highest first.
+///
+/// `terms` are resolved to this segment's token ids; a term the segment never
+/// saw contributes nothing. Their `IDF` and the average document length come
+/// from `context`, which was gathered over every segment of the shard, so a
+/// document scores the same whichever segment holds it. **Seeded terms must
+/// already be tokenized**, for the same reason as in [`fill_text_statistics`].
+///
+/// `accept` decides which documents may be scored at all: the id tracker's
+/// deletions and any outer filter. Deletions the index itself knows about are
+/// applied inside.
+#[allow(clippy::too_many_arguments)]
+pub fn score_bm25<T: FullTextIndexRead>(
+    index: &T,
+    terms: &[String],
+    context: &TextQueryContext<'_>,
+    params: Bm25Params,
+    accept: &Bm25Accept<'_>,
+    limit: usize,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    debug_assert!(
+        terms.iter().all(|term| is_tokenized(index, term)),
+        "query terms must already be tokenized",
+    );
+
+    let mut resolved = Vec::with_capacity(terms.len());
+    index.for_each_token_id(
+        terms.iter().enumerate().map(|(i, term)| (i, term.as_str())),
+        |i, token_id| {
+            if let Some(token_id) = token_id {
+                resolved.push(Bm25Term {
+                    token_id,
+                    idf: context.idf(&terms[i]),
+                });
+            }
+        },
+    )?;
+    if resolved.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query = Bm25Query::new(resolved, params, context.avg_doc_len())?;
+    index.score_bm25(&query, accept, limit, is_stopped)
+}
+
+/// Token id that no query contains, to keep detached tokens apart from their
+/// neighbours in a [`Document`] parsed from a payload value.
+const PHRASE_GAP: TokenId = TokenId::MAX;
 
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
@@ -55,30 +230,89 @@ pub trait FullTextIndexRead {
     }
 
     fn points_count(&self) -> usize;
+    /// `N` for BM25: the documents holding a token. An immutable index counts
+    /// its build, deleted documents included, until the segment is rebuilt.
+    fn document_count(&self) -> usize;
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
+
+    /// Number of tokens indexed for each of `point_ids`, repetitions included:
+    /// `|d|` in BM25. `f(index, doc_len)` once per entry, with `index` into
+    /// `point_ids`, in no particular order. `None` when this index does not
+    /// record lengths or the point is outside it, `Some(0)` when it holds no
+    /// tokens for that point, whether because the document was deleted or
+    /// because its tokens were all filtered away. Every backend answers
+    /// identically for the same data.
+    ///
+    /// Batched only, on purpose: an on-disk index may sit on a slow or remote
+    /// disk, where a length read per point is a round trip per point.
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()>;
+
+    /// Total tokens over the documents [`Self::document_count`] counts. Paired
+    /// with it it gives an average document length, but the division belongs
+    /// to whoever has summed both over every segment, not here.
+    ///
+    /// Both are counted over the documents that carry at least one indexed
+    /// token, deleted ones included until the next build, as
+    /// [`Self::posting_len`] counts them.
+    fn total_tokens(&self) -> Option<u64>;
+
+    /// Bytes of the tokens indexed per document: each vocabulary token's length times
+    /// [`Self::posting_len`], so a token repeated in a document counts once and deleted
+    /// documents count as `posting_len` counts them.
+    fn token_bytes(&self) -> OperationResult<u64>;
+
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. `query` carries corpus-wide `IDF` and `avgdl`
+    /// and this segment's token ids; see [`score_bm25`] for how it is built.
+    /// An index built without positions cannot compute term frequencies and
+    /// reports an error.
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
+
+    /// Documents in this segment containing `token_id`: `df(t)` before it is
+    /// summed across segments. `None` when the token is not in the vocabulary.
+    ///
+    /// Counts what the posting list holds. The mutable index removes deleted
+    /// points from its postings; the immutable and on-disk ones keep them until
+    /// the segment is rebuilt. So `df` can exceed `N`, and the same data can
+    /// report a different `df` before and after an optimization.
+    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>>;
 
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()>;
 
     fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool>;
+
+    fn check_match_batch<U: UserData>(
+        &self,
+        query: &ParsedQuery,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()>;
 
     /// Walk the inverted-index vocab and emit one [`PayloadBlockCondition`] per
     /// token with at least `threshold` postings. Used to seed payload-block
@@ -94,28 +328,34 @@ pub trait FullTextIndexRead {
 
     fn ram_usage_bytes(&self) -> usize;
 
-    fn is_on_disk(&self) -> bool;
+    fn is_cold(&self) -> bool;
 
-    /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
+    /// Parse as [`TokenizerTextKind::Phrase`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_phrase_query(
-        &self,
-        phrase: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let document = self.parse_document(phrase, hw_counter)?;
-        Ok(document.map(ParsedQuery::Phrase))
+    fn parse_phrase_query(&self, phrase: &str) -> OperationResult<Option<ParsedQuery>> {
+        let mut phrase_tokens = Vec::new();
+        let token_map = self.resolve_tokens(TokenizerTextKind::Phrase, phrase)?;
+        if token_map.values().any(|token_id| token_id.is_none()) {
+            return Ok(None);
+        }
+
+        self.tokenizer()
+            .tokenize(TokenizerTextKind::Phrase, phrase, |token| {
+                let token_id = token_map
+                    .get(&token)
+                    .expect("token should be in map")
+                    .expect("token_id should be set for all tokens");
+                phrase_tokens.push(token_id);
+            });
+
+        Ok(Some(ParsedQuery::Phrase(Document::new(phrase_tokens))))
     }
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AllTokens`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_text_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
+    fn parse_text_query(&self, text: &str) -> OperationResult<Option<ParsedQuery>> {
         let tokenset: Option<TokenSet> = self
-            .resolve_tokens(TokenizerTextKind::Query, text, hw_counter)?
+            .resolve_tokens(TokenizerTextKind::Query, text)?
             .into_values()
             .collect::<Option<TokenSet>>();
         Ok(tokenset.map(ParsedQuery::AllTokens))
@@ -123,24 +363,15 @@ pub trait FullTextIndexRead {
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AnyTokens`].
     /// Unseen tokens are ignored. Never returns [`None`].
-    fn parse_text_any_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let tokenset = self.parse_tokenset(TokenizerTextKind::Query, text, hw_counter)?;
+    fn parse_text_any_query(&self, text: &str) -> OperationResult<Option<ParsedQuery>> {
+        let tokenset = self.parse_tokenset(TokenizerTextKind::Query, text)?;
         Ok(Some(ParsedQuery::AnyTokens(tokenset)))
     }
 
     /// Parse as provided [`TokenizerTextKind`] and return [`TokenSet`].
     /// Unseen tokens are ignored.
-    fn parse_tokenset(
-        &self,
-        kind: TokenizerTextKind,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<TokenSet> {
-        let token_ids = self.resolve_tokens(kind, text, hw_counter)?.into_values();
+    fn parse_tokenset(&self, kind: TokenizerTextKind, text: &str) -> OperationResult<TokenSet> {
+        let token_ids = self.resolve_tokens(kind, text)?.into_values();
         Ok(token_ids.flatten().collect())
     }
 
@@ -150,7 +381,6 @@ pub trait FullTextIndexRead {
         &self,
         kind: TokenizerTextKind,
         text: &'a str,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashMap<Cow<'a, str>, Option<TokenId>>> {
         let mut token_map = AHashMap::new();
         self.tokenizer().tokenize(kind, text, |token| {
@@ -159,25 +389,27 @@ pub trait FullTextIndexRead {
         let iter = token_map
             .iter_mut()
             .map(|(token, cell)| (cell, token.as_ref()));
-        self.for_each_token_id(iter, hw_counter, |cell, token_id| *cell = token_id)?;
+        self.for_each_token_id(iter, |cell, token_id| *cell = token_id)?;
         Ok(token_map)
     }
 
     /// Parse as [`TokenizerTextKind::Document`] and return a [`Document`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_document(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Document>> {
+    ///
+    /// Like the index does, puts a gap before each detached token, so that it
+    /// only matches a phrase of itself alone.
+    fn parse_document(&self, text: &str) -> OperationResult<Option<Document>> {
         let mut document_tokens = Vec::new();
-        let token_map = self.resolve_tokens(TokenizerTextKind::Document, text, hw_counter)?;
+        let token_map = self.resolve_tokens(TokenizerTextKind::Document, text)?;
         if token_map.values().any(|token_id| token_id.is_none()) {
             return Ok(None);
         }
 
         self.tokenizer()
-            .tokenize(TokenizerTextKind::Document, text, |token| {
+            .tokenize_doc_detached(text, |token, detached| {
+                if detached {
+                    document_tokens.push(PHRASE_GAP);
+                }
                 let token_id = token_map
                     .get(&token)
                     .expect("token should be in map")
@@ -200,12 +432,11 @@ pub trait FullTextIndexRead {
         payload_value: &serde_json::Value,
         text: &str,
         query_type: PayloadMatchQueryType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let query_opt = match query_type {
-            PayloadMatchQueryType::Text => self.parse_text_query(text, hw_counter)?,
-            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, hw_counter)?,
-            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, hw_counter)?,
+            PayloadMatchQueryType::Text => self.parse_text_query(text)?,
+            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text)?,
+            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text)?,
         };
 
         let Some(query) = query_opt else {
@@ -216,19 +447,31 @@ pub trait FullTextIndexRead {
             .iter()
             .try_any(|value| match &query {
                 ParsedQuery::AllTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
+                    let tokenset = self.parse_tokenset(TokenizerTextKind::Document, value)?;
                     Ok(tokenset.has_subset(query))
                 }
                 ParsedQuery::Phrase(query) => {
-                    let document = self.parse_document(value, hw_counter)?;
+                    let document = self.parse_document(value)?;
                     Ok(document.is_some_and(|doc| doc.has_phrase(query)))
                 }
                 ParsedQuery::AnyTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
+                    let tokenset = self.parse_tokenset(TokenizerTextKind::Document, value)?;
                     Ok(tokenset.has_any(query))
                 }
             })
     }
+}
+
+/// Default [`check_match_batch`](FullTextIndexRead::check_match_batch) for
+/// in-RAM indexes: streams the single lookup, no IO to pipeline.
+pub fn default_check_match_batch<T: FullTextIndexRead + ?Sized, U: UserData>(
+    this: &T,
+    query: &ParsedQuery,
+    items: impl Iterator<Item = (U, PointOffsetType)>,
+    mut on_match: impl FnMut(U, bool),
+) -> OperationResult<()> {
+    for (tag, point_id) in items {
+        on_match(tag, this.check_match(query, point_id)?);
+    }
+    Ok(())
 }

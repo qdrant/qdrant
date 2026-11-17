@@ -19,8 +19,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
@@ -70,6 +70,7 @@ fn dummy_abort_shard_transfer() -> AbortShardTransfer {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn delete_named_vector_then_reload_loses_points() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_repro_coll").tempdir().unwrap();
@@ -126,6 +127,7 @@ async fn delete_named_vector_then_reload_loses_points() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
@@ -177,13 +179,8 @@ async fn delete_named_vector_then_reload_loses_points() {
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            upsert,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .expect("initial upsert failed");
 
@@ -196,10 +193,11 @@ async fn delete_named_vector_then_reload_loses_points() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("pre-delete retrieve failed");
     assert_eq!(
@@ -223,10 +221,11 @@ async fn delete_named_vector_then_reload_loses_points() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-delete live retrieve failed");
     assert_eq!(
@@ -267,10 +266,11 @@ async fn delete_named_vector_then_reload_loses_points() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     assert_eq!(
@@ -294,6 +294,7 @@ async fn delete_named_vector_then_reload_loses_points() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn delete_named_vector_after_flush_survives_reload() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_flushed_coll").tempdir().unwrap();
@@ -342,6 +343,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
         AHashMap::from_iter([(0, HashSet::from([PEER_ID]))]);
@@ -391,13 +393,8 @@ async fn delete_named_vector_after_flush_survives_reload() {
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            upsert,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .expect("upsert failed");
 
@@ -438,10 +435,11 @@ async fn delete_named_vector_after_flush_survives_reload() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     assert_eq!(
@@ -465,6 +463,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(target_os = "windows", ignore = "too slow on Windows CI")]
 async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let collection_dir = Builder::new().prefix("dvn_cycle_coll").tempdir().unwrap();
@@ -510,6 +509,7 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
         AHashMap::from_iter([(0, HashSet::from([PEER_ID]))]);
@@ -553,7 +553,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             datatype: None,
         });
         collection
-            .create_named_vector(name.clone(), cfg, HwMeasurementAcc::new())
+            .create_named_vector(name.clone(), cfg)
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("create_named_vector({name:?}) failed: {e:?}"));
 
@@ -578,13 +579,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         collection
-            .update_from_client_simple(
-                upsert,
-                true,
-                None,
-                WriteOrdering::default(),
-                HwMeasurementAcc::new(),
-            )
+            .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("upsert cycle {i} failed: {e:?}"));
 
@@ -607,10 +603,11 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-cycles live retrieve failed");
     assert_eq!(
@@ -648,10 +645,11 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
                 with_vector: WithVector::Bool(true),
             },
             None,
+            None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     let returned_ids: Vec<_> = records.iter().map(|r| r.id).collect();

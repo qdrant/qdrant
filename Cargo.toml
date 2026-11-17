@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.18.3-dev"
+version = "1.20.3-dev"
 description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -11,7 +11,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.98"
 default-run = "qdrant"
 
 [lints]
@@ -19,7 +19,7 @@ workspace = true
 
 [features]
 default = []
-service_debug = ["parking_lot/deadlock_detection"]
+service_debug = ["parking_lot/deadlock_detection", "collection/testing", "dep:ctrlc"]
 tracing = [
     "api/tracing",
     "collection/tracing",
@@ -31,17 +31,20 @@ console-subscriber = ["tracing", "dep:console-subscriber"]
 tracy = ["tracing-tracy"]
 tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
+dial9 = ["storage/dial9"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 staging = ["collection/staging", "storage/staging", "shard/staging"]
+# Edge-follower verification in the model_testing binary (see lib/collection model_testing).
+edge-verify = ["collection/edge-verify"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
-sealed_test = "1.1.0"
 
+common = { path = "lib/common/common", features = ["testing"] }
 mockito = { workspace = true }
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
@@ -67,9 +70,11 @@ anyhow = "1.0.98"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true }
+ctrlc = { version = "3.5.2", optional = true }
+env_logger = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
-sys-info = "0.9.1"
+sysinfo = { workspace = true }
 ordered-float = { workspace = true }
 ahash = { workspace = true }
 urlencoding = { workspace = true }
@@ -100,7 +105,7 @@ rustls-pki-types = "1.14.0"
 rustls-pemfile = "2.2.0"
 prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", default-features = false, features = ["rust_crypto"] }
 tempfile = { workspace = true }
 
 # Consensus related crates
@@ -115,7 +120,7 @@ raft-proto = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c61
     "prost-codec",
 ], default-features = false }
 
-common = { path = "lib/common/common" }
+common = { workspace = true }
 cancel = { path = "lib/common/cancel" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
@@ -127,8 +132,8 @@ bm25 = { path = "lib/bm25" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }
 
-actix-multipart = "0.7.2"
-constant_time_eq = "0.4.2"
+actix-multipart = "0.8.0"
+constant_time_eq = "0.6.0"
 
 # Profiling
 tracing = { workspace = true }
@@ -144,24 +149,24 @@ tracing-log = { version = "0.2", default-features = false, features = [
 console-subscriber = { version = "0.5.0", default-features = false, features = [
     "parking_lot",
 ], optional = true }
-tracing-tracy = { version = "0.11.4", features = ["ondemand"], optional = true }
+tracing-tracy = { version = "0.12.0", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18.0", default-features = false }
-pyroscope = { version = "2.0.0", features = ["backend-pprof-rs", "backend-jemalloc"] }
+pyroscope = { version = "2.1.0", features = ["backend-pprof-rs", "backend-jemalloc"] }
 # Backtrace
 rstack-self = { version = "0.3.0", optional = true }
 
-# Jemalloc
+# Jemalloc. Keep the condition in sync with `build.rs`, which emits `cfg(jemalloc)` for the code.
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
-tikv-jemallocator = { version = "0.6.1", features = [
+tikv-jemallocator = { version = "0.7.0", features = [
     "stats",
     "unprefixed_malloc_on_supported_platforms",
     "background_threads",
     "profiling",
 ] }
-tikv-jemalloc-ctl = { version = "0.6.1", features = ["stats"] }
+tikv-jemalloc-ctl = { version = "0.7.0", features = ["stats"] }
 
 [workspace.lints.clippy]
 cast_lossless = "warn"
@@ -170,7 +175,6 @@ enum_glob_use = "warn"
 explicit_into_iter_loop = "warn"
 filter_map_next = "warn"
 flat_map_option = "warn"
-from_iter_instead_of_collect = "warn"
 implicit_clone = "warn"
 inconsistent_struct_constructor = "warn"
 inefficient_to_string = "warn"
@@ -199,9 +203,10 @@ private_intra_doc_links = "allow"
 [workspace.dependencies]
 actix-web-validator = "7.0.0"
 actix-web = { version = "4.13.0", features = ["rustls-0_23", "actix-tls"] }
-actix-files = "0.6.10"
+actix-files = "0.7.0"
 ahash = { version = "0.8.12", features = ["serde"] }
 anyhow = "1.0.102"
+arc-swap = "1.9.1"
 async-trait = "0.1.89"
 atomicwrites = "0.4.4"
 bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
@@ -217,17 +222,21 @@ bytes = "1.11.1"
 cc = "1.2"
 chrono = { version = "0.4.44", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
+common = { path = "lib/common/common" }
+core_affinity = "0.8.3"
+crc-fast = "1.10.0"
 criterion = "0.8.2"
 data-encoding = "2.11.0"
+duplicate = { version = "2.0.1", default-features = false }
 ecow = { version = "0.3.0", features = ["serde"] }
 env_logger = "0.11"
+exhaustive = "0.2.2"
 fnv = "1.0"
 fs4 = "1.1.0"
 fs-err = { version = "3.3.0", features = ["tokio"] }
 fs_extra = "1.3.0"
 futures = "0.3.32"
 futures-util = "0.3.32"
-generic-tests = "0.1.3"
 half = { version = "2.7.1", features = [
     "alloc",
     "bytemuck",
@@ -241,30 +250,32 @@ url = { version = "2.5.8", features = ["serde"] }
 urlencoding = "2.1.3"
 indicatif = { version = "0.18.4", features = ["rayon"] }
 integer-encoding = "4.1.0"
-itertools = "0.14.0"
+io_bridge = { path = "lib/common/io_bridge" }
+itertools = "0.15.0"
 log = "0.4.31"
+memchr = "2.8.0"
 memmap2 = "0.9.10"
 mockito = "1.7"
 murmur3_32 = "0.1"
-nix = { version = "0.31", features = ["fs", "feature"] }
+nix = { version = "0.31", features = ["feature", "fs", "resource"] }
 num-traits = "0.2.19"
 num_cpus = "1.17"
-object_store = { version = "0.13.2", features = ["aws", "gcp", "azure"] }
+object_store = { version = "0.14.0", features = ["aws", "gcp", "azure"] }
 ordered-float = { version = "5.3.0", features = ["serde", "schemars", "bytemuck"] }
 rayon = "1.12.0"
-parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
+parking_lot = { version = "0.13.0", features = ["arc_lock", "deadlock_detection", "serde"] }
 ph = "0.8.5"
-pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
+pin-project-lite = "0.2.17"
+pprof = { version = "0.15.0", default-features = false, features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 prost = "0.14.0"
-prost-build = { version = "0.14.0", features = ["cleanup-markdown"] }
+prost-types = "0.14.0"
 prost-wkt-types = "0.7"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
 raft = { git = "https://github.com/tikv/raft-rs", rev = "aafb07c7bab439c6139926a77dfafc5b10e9bc84" ,features = ["prost-codec"], default-features = false }
 rand = "0.10.1"
 rand_distr = "0.6.0"
-rmp-serde = "~1.3"
-roaring = "0.11.4"
+roaring = "0.12.0"
 reqwest = { version = "0.13.4", default-features = false, features = [
     "json",
     "http2",
@@ -272,7 +283,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "rustls",
     "blocking",
 ] }
-rstest = { version = "0.26.1", default-features = false }
+rstest = { version = "0.28.0", default-features = false }
 schemars = { version = "0.8.22", features = [
     "uuid1",
     "preserve_order",
@@ -285,13 +296,15 @@ self_cell = "1.2.2"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11.2"
 serde_variant = "0.1.3"
-serde_with = "3.20.0"
+serde_with = { version = "3.22.0", default-features = false, features = ["macros", "alloc"] }
 sha2 = "0.11.0"
 serde_json = { version = "~1.0", features = ["preserve_order"] }
 slab = "0.4.12"
 strum = { version = "0.28.0", features = ["derive"] }
+stumpalo = "1.0.0"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 tap = "1.0.1"
-tar = "0.4.46"
+tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
 tinyvec = { version = "1.11.0", features = ["alloc", "latest_stable_rust"] }
 tokio = { version = "1.52.3", features = ["full"] }
@@ -311,6 +324,7 @@ bitvec = "1.0.1"
 smallvec = { version = "1.15.1", features = ["write"] }
 dashmap = "6.2"
 walkdir = "2.5.0"
+zstd = "0.14"
 
 [patch.crates-io]
 tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.14.6-qdrant" }
@@ -343,6 +357,13 @@ test = false
 bench = false
 required-features = ["service_debug"]
 
+[[bin]]
+name = "model_testing"
+path = "src/model_testing.rs"
+test = false
+bench = false
+required-features = ["service_debug"]
+
 
 [workspace]
 members = [
@@ -352,7 +373,12 @@ members = [
     "lib/edge",
     "lib/edge/python",
     "lib/edge/python/codegen",
-    "lib/gridstore",
+    "lib/edge/ffi",
+    "lib/edge/ffi/bindgen",
+    "lib/edge/tools/edge_tool",
+    "lib/edge/tools/shard_query",
+    "lib/edge/tools/shard_update",
+    "lib/blobstore",
     "lib/macros",
     "lib/posting_list",
     "lib/segment",
@@ -360,12 +386,26 @@ members = [
     "lib/sparse",
     "lib/storage",
     "lib/trififo",
+    "lib/uio-grpc-client",
     "lib/wal",
 ]
 
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Profile for mobile XCFramework / AAR builds.
+# Trades a bit of runtime perf for much faster link times and smaller binaries.
+# Uses panic = "unwind" (NOT abort) so UniFFI's catch_unwind keeps working: a Rust
+# panic degrades to a catchable error on the Swift/Kotlin side instead of aborting the
+# host process — important for an on-device database (abort risks WAL/segment
+# consistency). Measured cost vs abort: ~+181 KB in the linked binary.
+[profile.release-mobile]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
@@ -374,6 +414,7 @@ inherits = "release"
 debug-assertions = true
 lto = false
 opt-level = 0
+codegen-units = 256 # restore default value for faster compilation
 
 # Inherits by default from release
 [profile.bench]
@@ -395,8 +436,16 @@ debug = "line-tables-only"
 [profile.dev.package.sha2]
 opt-level = 3
 
+# Override for fast quantization (k-means, encoding, scoring) in dev and test builds
+[profile.dev.package.quantization]
+opt-level = 3
+
 # Override for fast sha256 hashing in ci builds
 [profile.ci.package.sha2]
+opt-level = 3
+
+# Override for fast quantization in ci builds
+[profile.ci.package.quantization]
 opt-level = 3
 
 [package.metadata.deb]

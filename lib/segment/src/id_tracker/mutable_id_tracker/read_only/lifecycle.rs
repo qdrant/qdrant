@@ -1,50 +1,103 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::mmap::Advice::Normal;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
+};
+use futures::lock::Mutex;
 
-use super::ReadOnlyAppendableIdTracker;
+use super::held_deletes::HeldMappingDeletes;
+use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
-use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
+use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
+use crate::id_tracker::mutable_id_tracker::versions_storage::{
+    VERSION_ELEMENT_SIZE, versions_path,
+};
 use crate::id_tracker::point_mappings::PointMappings;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    /// The versions file: its size is the writer's commit mark.
+    pub fn commit_mark_path(segment_path: &Path) -> Option<PathBuf> {
+        Some(versions_path(segment_path))
+    }
+
+    /// Exclusive offset bound of committed points, from the versions file's size
+    /// in `fs`'s snapshot. `None` if the snapshot has no versions file.
+    pub fn max_committed_offset(
+        fs: &impl CachedReadFs,
+        segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        fs.cached_file_info(&versions_path(segment_path))
+            .map(|info| (info.size / VERSION_ELEMENT_SIZE) as PointOffsetType)
+    }
+
+    pub(super) fn open_options() -> OpenOptions {
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::PreferBackground,
+            advice: AdviceSetting::Advice(Normal),
+        }
+    }
+
+    /// Schedule background prefetch of the mappings log and versions file that
+    /// [`open`](Self::open) reads via [`live_reload`](Self::live_reload).
+    ///
+    /// Either file may not exist yet — the writer only creates them once it
+    /// flushes the first point, and [`open`](Self::open) treats a missing file
+    /// as an empty storage — so absence is tolerated here too.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) {
+        let options = Self::open_options();
+
+        fs.schedule_open(&mappings_path(segment_path), Some(options), None);
+        fs.schedule_open(&versions_path(segment_path), Some(options), None);
+    }
+
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every
     /// file open through the filesystem handle `fs`.
     ///
-    /// Both the mappings and versions files must already exist, this opens an existing appendable
-    /// storage and never creates one. A missing file is an error rather than an empty tracker.
+    /// The mappings and versions files may not exist yet — the writer only creates them once it
+    /// flushes the first point, exactly as
+    /// [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
+    /// tolerates. A missing file is treated as an empty storage (not an error) and opened lazily
+    /// once it appears.
     ///
-    /// Unlike [`MutableIdTracker::open`](crate::id_tracker::mutable_id_tracker::MutableIdTracker::open)
-    /// this never writes to the storage. The initial state is loaded by running the same
-    /// reconciliation as [`Self::live_reload`] from an empty tracker: the whole mappings log and
-    /// versions file are consumed, applying only committed points (a partial trailing entry is
-    /// simply not consumed and picked up on a later reload).
+    /// Unlike `MutableIdTracker::open` this never writes to the storage. The initial state is loaded
+    /// by running the same reconciliation as [`Self::live_reload`] from an empty tracker: the whole
+    /// mappings log and versions file are consumed, applying only committed points (a partial
+    /// trailing entry is simply not consumed and picked up on a later reload).
     pub fn open(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        let segment_path = segment_path.into();
-
-        let mappings_path = mappings_path(&segment_path);
-        let versions_path = versions_path(&segment_path);
-
-        let options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Normal),
-        };
-
-        let mappings_file = fs.open(mappings_path, options, Default::default())?;
-        let versions_file = fs.open(versions_path, options, Default::default())?;
-
-        let mut tracker = Self {
+        Self::open_capped(
+            fs,
             segment_path,
+            deferred_internal_id,
+            None,
+            DeleteGating::Immediate,
+        )
+    }
+
+    /// [`Self::open`], committing points below `max_committed_offset` only, and treating versioned
+    /// deletes as `gating` says.
+    pub fn open_capped(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
+        gating: DeleteGating,
+    ) -> OperationResult<Self> {
+        // The bootstrap below opens through the raw fs passed here, bypassing
+        // any prefetch pool. Later reloads open through the fs their caller
+        // provides instead (typically a caching wrapper with a fresh snapshot).
+        let mut tracker = Self {
+            segment_path: segment_path.into(),
             internal_to_version: Vec::new(),
             mappings: PointMappings::new(
                 Default::default(),
@@ -53,19 +106,77 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 Default::default(),
                 deferred_internal_id,
             ),
-            pending_inserts: Default::default(),
+            unversioned_inserts: Default::default(),
+            staged_inserts: Default::default(),
+            max_claimed_internal_id: None,
             mappings_read_to: 0,
-            mappings_file,
-            versions_file,
+            held_deletes: HeldMappingDeletes::for_gating(gating),
+            // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
+            files: Mutex::new(TrackerFiles {
+                mappings: None,
+                versions: None,
+            }),
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
-        tracker.live_reload()?;
+        tracker.live_reload(fs, max_committed_offset)?;
+        tracker.publish_staged();
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
 
         Ok(tracker)
+    }
+
+    /// Byte offset just past the last complete entry consumed from the mappings log, where the next
+    /// appended entry belongs.
+    ///
+    /// Entries vary in length, so a writer cannot recover this from the file and has to resume from
+    /// here. A torn tail sits above it and is cut off by the next append.
+    pub fn mappings_read_to(&self) -> u64 {
+        self.mappings_read_to
+    }
+
+    /// Highest slot the mappings log has claimed, `None` while it has claimed none: the slot a
+    /// writer resumes above.
+    ///
+    /// Counts every slot the log ever handed out, including those no longer reachable by external
+    /// id and those whose version was never committed.
+    pub fn max_claimed_internal_id(&self) -> Option<PointOffsetType> {
+        self.max_claimed_internal_id
+    }
+
+    /// Points whose last insert in the mappings log the versions array does not cover yet, in
+    /// arbitrary order.
+    ///
+    /// This view withholds the new slot of each, but keeps serving its committed slots.
+    pub fn pending_inserts(&self) -> impl Iterator<Item = PendingInsert> + '_ {
+        self.unversioned_inserts
+            .keys()
+            .map(|&external_id| PendingInsert {
+                external_id,
+                // A staged insert is complete and supersedes the linked heads.
+                committed_slots: match self.staged_inserts.get(&external_id) {
+                    Some(&staged) => vec![staged],
+                    None => self.mappings.heads(&external_id).collect(),
+                },
+            })
+    }
+
+    /// Open the file at `path` read-only, returning `None` if it does not exist.
+    ///
+    /// A read-only follower's mappings/versions files are absent while empty (the writer never
+    /// writes an empty file), so `NotFound` means an empty storage rather than an error. We open
+    /// directly and map `NotFound` to `None` instead of probing with `exists` first, to avoid a
+    /// second round-trip on object storage. Lazy backends (e.g. S3) touch the object only on the
+    /// first read, so a missing object can instead surface as `NotFound` from a later `len`/`read`
+    /// — `live_reload` tolerates that case too.
+    pub(super) fn try_open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+    ) -> OperationResult<Option<S>> {
+        let options = Self::open_options();
+        Ok(fs.open(path, options, Default::default()).ok_not_found()?)
     }
 }

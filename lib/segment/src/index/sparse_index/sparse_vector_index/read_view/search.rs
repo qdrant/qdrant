@@ -1,0 +1,353 @@
+use common::condition_checker::ConditionChecker;
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use itertools::Itertools;
+use sparse::common::sparse_vector::SparseVector;
+use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::search_context::SearchContext;
+
+use super::SparseVectorIndexReadView;
+use super::filter_checks::is_nearest;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_time_statistics::ScopeDurationMeasurer;
+use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::vectors::{QueryVector, VectorInternal};
+use crate::id_tracker::IdTrackerRead;
+use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::resolve_filter::resolve_for_query_vectors;
+use crate::index::query_optimization::resolved_points::contains_resolved_points;
+use crate::telemetry::VectorIndexSearchesTelemetry;
+use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::query::TransformInto;
+use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
+
+impl<I, V, P, TInvertedIndex> SparseVectorIndexReadView<'_, I, V, P, TInvertedIndex>
+where
+    I: IdTrackerRead,
+    V: VectorStorageRead + RawScorerBuilder,
+    P: PayloadIndexRead,
+    TInvertedIndex: InvertedIndex,
+{
+    /// Search a batch of query vectors, remapping idf weights when required.
+    pub fn search(
+        &self,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let resolved = self.resolve_for_query_vectors(vectors, filter, top, query_context)?;
+        let filter = resolved.as_ref().or(filter);
+
+        let mut results = Vec::with_capacity(vectors.len());
+        let mut prefiltered_points = None;
+
+        for vector in vectors {
+            check_process_stopped(&query_context.is_stopped())?;
+
+            let search_results = if query_context.is_require_idf() {
+                let vector = (*vector).clone().transform(&|mut vector| {
+                    match &mut vector {
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
+                            return Err(OperationError::WrongSparse);
+                        }
+                        VectorInternal::Sparse(sparse) => {
+                            query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
+                        }
+                    }
+
+                    Ok(vector)
+                })?;
+
+                self.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
+            } else {
+                self.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
+            };
+
+            results.push(search_results);
+        }
+        Ok(results)
+    }
+
+    /// The inverted index checks the filter for every nearest query vector on its own: with
+    /// several of them, checking the points it matches may be cheaper. A plain search already
+    /// shares its filtered points between query vectors (`prefiltered_points`), and declines
+    /// here.
+    fn resolve_for_query_vectors(
+        &self,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        let Some(filter) = filter else {
+            return Ok(None);
+        };
+        // Other queries score the filtered points directly, and share them already
+        let all_nearest = vectors.iter().all(|vector| is_nearest(vector));
+        if vectors.len() < 2 || !all_nearest || contains_resolved_points(filter) {
+            return Ok(None);
+        }
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
+        let checks = self.nearest_filter_checks(vectors.len(), &cardinality, top);
+        resolve_for_query_vectors(
+            &self.payload_index,
+            self.id_tracker.total_point_count(),
+            filter,
+            &cardinality,
+            checks,
+            &query_context.is_stopped(),
+        )
+    }
+
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        self.searches_telemetry.get_telemetry_data(detail)
+    }
+
+    pub fn indexed_vector_count(&self) -> usize {
+        self.inverted_index.vector_count()
+    }
+
+    pub fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.inverted_index.total_sparse_vectors_size()
+    }
+
+    fn get_query_cardinality(&self, filter: &Filter) -> OperationResult<CardinalityEstimation> {
+        let available_vector_count = self.vector_storage.available_vector_count();
+        let query_point_cardinality = self.payload_index.estimate_cardinality(filter)?;
+        Ok(adjust_to_available_vectors(
+            query_point_cardinality,
+            available_vector_count,
+            self.id_tracker.available_point_count(),
+        ))
+    }
+
+    // Search using raw scorer
+    fn search_scored(
+        &self,
+        query_vector: &QueryVector,
+        filter: Option<&Filter>,
+        top: usize,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let deleted_point_bitslice = vector_query_context
+            .deleted_points()
+            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+
+        let is_stopped = vector_query_context.is_stopped();
+
+        let searcher = BatchFilteredSearcher::new(
+            &[query_vector],
+            self.vector_storage,
+            None::<&QuantizedVectors>,
+            None,
+            top,
+            deleted_point_bitslice,
+        )?;
+        let mut results = match filter {
+            Some(filter) => {
+                let filtered_points = match prefiltered_points {
+                    // `prefiltered_points` always contains visible points only so we don't need additional filtering here.
+                    Some(filtered_points) => filtered_points.iter().copied(),
+                    None => {
+                        let filtered_points =
+                            self.payload_index.query_points(filter, &is_stopped)?;
+                        *prefiltered_points = Some(filtered_points);
+                        prefiltered_points.as_ref().unwrap().iter().copied()
+                    }
+                };
+                searcher.peek_top_iter(filtered_points, &is_stopped)?
+            }
+            None => {
+                let (cutoff, mapping_deleted, shadowed) =
+                    self.id_tracker.point_mappings().visible_scan_masks();
+                searcher.peek_top_visible(cutoff, mapping_deleted, shadowed, &is_stopped)?
+            }
+        };
+        let res = results.pop().expect("single element results");
+        Ok(res)
+    }
+
+    pub fn search_plain(
+        &self,
+        sparse_vector: &SparseVector,
+        filter: &Filter,
+        top: usize,
+        query_cardinality: &CardinalityEstimation,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let is_stopped = vector_query_context.is_stopped();
+
+        let point_deleted = vector_query_context
+            .deleted_points()
+            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+        let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
+
+        let ids = match prefiltered_points {
+            // Deferred points get filtered in the `None` case and are added to `prefiltered_points`.
+            // In the `Some` case, we iterate over this set of points,
+            // so no additional filtering is required in that case.
+            Some(filtered_points) => filtered_points.iter(),
+            None => {
+                let filtered_points = self
+                    .payload_index
+                    .iter_filtered_points(
+                        filter,
+                        query_cardinality,
+                        &is_stopped,
+                        DeferredBehavior::VisibleOnly,
+                    )?
+                    .collect();
+                *prefiltered_points = Some(filtered_points);
+                prefiltered_points.as_ref().unwrap().iter()
+            }
+        }
+        .copied()
+        .filter(|&idx| not_deleted.check_infallible(idx))
+        .collect_vec();
+
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        let mut scratch = self.search_scratch_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            self.inverted_index,
+            &mut scratch,
+            &is_stopped,
+            usize::from(self.inverted_index.is_cold()),
+        )?;
+        let search_result = search_context.plain_search(&ids);
+        Ok(search_result)
+    }
+
+    // search using sparse vector inverted index
+    fn search_sparse(
+        &self,
+        sparse_vector: &SparseVector,
+        filter: Option<&Filter>,
+        top: usize,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let point_deleted = vector_query_context
+            .deleted_points()
+            .unwrap_or(self.id_tracker.deleted_point_bitslice());
+        let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
+
+        let not_deleted_condition =
+            |idx: PointOffsetType| -> bool { not_deleted.check_infallible(idx) };
+
+        let is_stopped = vector_query_context.is_stopped();
+
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
+        let mut scratch = self.search_scratch_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            self.inverted_index,
+            &mut scratch,
+            &is_stopped,
+            usize::from(self.inverted_index.is_cold()),
+        )?;
+
+        match filter {
+            Some(filter) => {
+                let filter_context = self.payload_index.filter_context(filter)?;
+                let matches_filter_condition = |idx: PointOffsetType| -> bool {
+                    not_deleted_condition(idx) && filter_context.check_infallible(idx)
+                };
+                Ok(search_context.search(&matches_filter_condition))
+            }
+            None => Ok(search_context.search(&not_deleted_condition)),
+        }
+    }
+
+    fn search_nearest_query(
+        &self,
+        vector: &SparseVector,
+        filter: Option<&Filter>,
+        top: usize,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if vector.is_empty() {
+            return Ok(vec![]);
+        }
+
+        match filter {
+            Some(filter) => {
+                // if cardinality is small - use plain search
+                let query_cardinality = self.get_query_cardinality(filter)?;
+                let threshold = self
+                    .config
+                    .full_scan_threshold
+                    .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
+                if query_cardinality.max < threshold {
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
+                    self.search_plain(
+                        vector,
+                        filter,
+                        top,
+                        &query_cardinality,
+                        prefiltered_points,
+                        vector_query_context,
+                    )
+                } else {
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
+                    self.search_sparse(vector, Some(filter), top, vector_query_context)
+                }
+            }
+            None => {
+                let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
+                self.search_sparse(vector, filter, top, vector_query_context)
+            }
+        }
+    }
+
+    pub fn search_query(
+        &self,
+        query_vector: &QueryVector,
+        filter: Option<&Filter>,
+        top: usize,
+        prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if top == 0 {
+            return Ok(vec![]);
+        }
+
+        match query_vector {
+            QueryVector::Nearest(vector) => self.search_nearest_query(
+                vector.try_into()?,
+                filter,
+                top,
+                prefiltered_points,
+                vector_query_context,
+            ),
+            QueryVector::RecommendBestScore(_)
+            | QueryVector::RecommendSumScores(_)
+            | QueryVector::Discover(_)
+            | QueryVector::Context(_)
+            | QueryVector::FeedbackNaive(_) => {
+                let _timer = if filter.is_some() {
+                    ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain)
+                } else {
+                    ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_plain)
+                };
+                self.search_scored(
+                    query_vector,
+                    filter,
+                    top,
+                    prefiltered_points,
+                    vector_query_context,
+                )
+            }
+        }
+    }
+}

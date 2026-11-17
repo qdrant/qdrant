@@ -1,4 +1,9 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::backtrace::Backtrace;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -11,6 +16,7 @@ use api::rest::{
     BaseGroupRequest, LookupLocation, RecommendStrategy, SearchGroupsRequestInternal,
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
+use chrono::{DateTime, Utc};
 use common::ext::OptionExt;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
@@ -25,8 +31,8 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, DenseVector};
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
-    PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
+    Distance, Filter, HnswConfig, Memory, MultiVectorConfig, Payload, PayloadIndexInfo,
+    PayloadKeyType, PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
     SparseVectorStorageType, StrictModeConfigOutput, VectorName, VectorNameBuf,
     VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
@@ -190,6 +196,8 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            // Reported on `CollectionInfo`
+            created_at: _,
             metadata,
         } = config;
 
@@ -232,6 +240,10 @@ pub struct CollectionInfo {
     /// Update queue info
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_queue: Option<UpdateQueueInfo>,
+    /// Time of the collection creation.
+    /// Absent for collections created before Qdrant started recording it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionInfo {
@@ -243,6 +255,7 @@ impl CollectionInfo {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
             warnings: collection_config.get_warnings(),
+            created_at: collection_config.created_at,
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -273,6 +286,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             status: status.into(),
             optimizer_status,
             warnings: config.get_warnings(),
+            created_at: config.created_at,
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
@@ -371,10 +385,16 @@ pub struct ShardTransferInfo {
     #[anonymize(false)]
     pub method: Option<ShardTransferMethod>,
 
-    /// A human-readable report of the transfer progress. Available only on the source peer.
+    /// A human-readable report of the transfer progress. Available only on the source peer, and
+    /// on the target peer during snapshot recovery.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
+
+    /// Whether the local sender task failed. Internal state for metrics only.
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub failed: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
@@ -393,7 +413,7 @@ pub struct ReshardingInfo {
 
     pub shard_key: Option<ShardKey>,
 
-    /// Only included in peer telemetry
+    /// Only included in telemetry, not collection cluster responses.
     #[serde(skip)]
     #[anonymize(false)]
     pub stage: ReshardingStage,
@@ -945,6 +965,20 @@ pub enum CollectionError {
     },
     #[error("Shard temporarily unavailable: {description}")]
     ShardUnavailable { description: String },
+    /// A node has reached its resource quota and cannot take on more data.
+    ///
+    /// Deliberately transient: it describes the node, not the request, so it
+    /// clears on its own once space is freed — the same shape as a peer being
+    /// unreachable, and handled the same way by the replica set.
+    #[error("Insufficient storage: {description}")]
+    InsufficientStorage { description: String },
+}
+
+/// Which rate limiter rejected an operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RateLimiterKind {
+    Read,
+    Write,
 }
 
 impl CollectionError {
@@ -1019,9 +1053,12 @@ impl CollectionError {
     pub fn rate_limit_error(
         rate_limit_error: RateLimitError,
         cost: usize,
-        write_limit_type: bool, // false = read rate limit; true = write rate limit.
+        rate_limiter_kind: RateLimiterKind,
     ) -> Self {
-        let rate_limiter_type = if write_limit_type { "Write" } else { "Read" };
+        let rate_limiter_type = match rate_limiter_kind {
+            RateLimiterKind::Read => "Read",
+            RateLimiterKind::Write => "Write",
+        };
         let (description, retry_after) = match rate_limit_error {
             RateLimitError::AlwaysOverBudget(msg) => {
                 let description = format!("{rate_limiter_type} rate limit exceeded, {msg}",);
@@ -1063,6 +1100,10 @@ impl CollectionError {
             Self::OutOfMemory { .. } => true,
             Self::PreConditionFailed { .. } => true,
             Self::ShardUnavailable { .. } => true,
+            // A node over its quota is a node that cannot take writes right now,
+            // which is the same situation as one that is offline: the replica
+            // set deactivates it and carries on with the rest.
+            Self::InsufficientStorage { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
@@ -1109,6 +1150,12 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongVectorDimension { .. } => Self::BadInput {
                 description: err.to_string(),
             },
+            OperationError::MalformedVectorBlob { .. } => Self::BadInput {
+                description: err.to_string(),
+            },
+            OperationError::MalformedPayloadBlob { .. } => Self::BadInput {
+                description: err.to_string(),
+            },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
                 description: err.to_string(),
             },
@@ -1137,6 +1184,12 @@ impl From<OperationError> for CollectionError {
                 error: err.to_string(),
                 backtrace: None,
             },
+            // Internal classification for read-only followers (live-reload vs manifest);
+            // externally it stays a service error.
+            OperationError::FileNotFound { .. } => Self::ServiceError {
+                error: err.to_string(),
+                backtrace: None,
+            },
             OperationError::ValidationError { .. } => Self::BadInput {
                 description: err.to_string(),
             },
@@ -1150,6 +1203,12 @@ impl From<OperationError> for CollectionError {
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(err.to_string()),
             OperationError::VariableTypeError { .. } => Self::bad_input(err.to_string()),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(err.to_string()),
+            // Normally handled by segment provisioning before reaching this conversion; if it
+            // leaks, stay transient so failed-operation recovery re-applies the operation.
+            OperationError::OutOfAppendableCapacity { .. } => Self::ServiceError {
+                error: err.to_string(),
+                backtrace: None,
+            },
         }
     }
 }
@@ -1175,6 +1234,18 @@ impl From<JoinError> for CollectionError {
 impl From<WalError> for CollectionError {
     fn from(err: WalError) -> Self {
         Self::service_error(err.to_string())
+    }
+}
+
+impl From<shard::quota::QuotaError> for CollectionError {
+    fn from(err: shard::quota::QuotaError) -> Self {
+        use shard::quota::QuotaError;
+
+        match err {
+            QuotaError::LimitReached(description) => Self::InsufficientStorage { description },
+            QuotaError::InvalidConfig(description) => Self::BadRequest { description },
+            QuotaError::Io(description) => Self::service_error(description),
+        }
     }
 }
 
@@ -1208,6 +1279,15 @@ impl From<InvalidUri> for CollectionError {
     }
 }
 
+/// Marks a `ResourceExhausted` status as a quota rejection rather than rate
+/// limiting.
+///
+/// gRPC spends one code on both ("a per-user quota, or the entire file system is
+/// out of space"), but they are not interchangeable here: one asks the caller to
+/// retry later, the other says a replica is out of room and has to be taken out
+/// of the set. Set on the way out, read on the way back in.
+pub const INSUFFICIENT_STORAGE_METADATA_KEY: &str = "qdrant-insufficient-storage";
+
 impl From<tonic::Status> for CollectionError {
     fn from(err: tonic::Status) -> Self {
         match err.code() {
@@ -1220,6 +1300,15 @@ impl From<tonic::Status> for CollectionError {
             },
             tonic::Code::Cancelled => Self::cancelled(err.to_string()),
             tonic::Code::FailedPrecondition => Self::pre_condition_failed(err.to_string()),
+            tonic::Code::ResourceExhausted
+                if err
+                    .metadata()
+                    .contains_key(INSUFFICIENT_STORAGE_METADATA_KEY) =>
+            {
+                Self::InsufficientStorage {
+                    description: err.message().to_string(),
+                }
+            }
             tonic::Code::ResourceExhausted => {
                 // extract retry-after from metadata
                 // the value is passed as a String containing an integer number of seconds
@@ -1313,6 +1402,7 @@ pub type CollectionResult<T> = Result<T, CollectionError>;
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
+#[cfg_attr(test, derive(exhaustive::Exhaustive))]
 #[serde(rename_all = "snake_case")]
 pub enum Datatype {
     #[default]
@@ -1320,6 +1410,8 @@ pub enum Datatype {
     Uint8,
     Float16,
     Turbo4,
+    Turbo8,
+    Turbo16,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1329,6 +1421,8 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
             Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            Datatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            Datatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -1341,6 +1435,7 @@ impl From<Datatype> for VectorStorageDatatype {
 #[anonymize(false)]
 pub struct VectorParams {
     /// Size of a vectors used
+    #[schemars(range(min = 1, max = 65536))]
     #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
@@ -1357,10 +1452,19 @@ pub struct VectorParams {
     )]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
+    /// Deprecated: use `memory` instead.
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+
+    /// Memory placement of the original vector storage. Overrides the deprecated `on_disk`
+    /// flag if both are set. `pinned` is not supported for dense vector storage.
+    /// Default: `cached` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Defines which datatype should be used to represent vectors in the storage.
@@ -1373,6 +1477,10 @@ pub struct VectorParams {
     /// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte.
     ///   It expects vector elements to be in range `[0, 255]`.
     /// - For `turbo4` datatype - vectors are quantized to 4 bits per element using the
+    ///   TurboQuant algorithm.
+    /// - For `turbo8` datatype - vectors are quantized to 8 bits per element using the
+    ///   TurboQuant algorithm.
+    /// - For `turbo16` datatype - vectors are quantized to 16 bits per element using the
     ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
@@ -1387,13 +1495,31 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
-/// Reject the `Turbo4` datatype on sparse vector configs.
+/// Reject the TurboQuant datatypes on sparse vector configs.
 /// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
 fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
-    if matches!(datatype, Datatype::Turbo4) {
-        return Err(common::validation::sparse_turbo4_unsupported_error());
+    match datatype {
+        Datatype::Turbo4 => return Err(common::validation::sparse_turbo4_unsupported_error()),
+        Datatype::Turbo8 => return Err(common::validation::sparse_turbo8_unsupported_error()),
+        Datatype::Turbo16 => return Err(common::validation::sparse_turbo16_unsupported_error()),
+        Datatype::Float32 | Datatype::Uint8 | Datatype::Float16 => {}
     }
     Ok(())
+}
+
+/// Reject memory placements not supported by dense vector storage.
+/// `validator` unwraps `Option<Memory>` before calling, so we receive `&Memory`.
+fn validate_dense_vector_memory(memory: &Memory) -> Result<(), ValidationError> {
+    match memory {
+        Memory::Cold | Memory::Cached => Ok(()),
+        Memory::Pinned => {
+            let mut error = ValidationError::new("unsupported_memory_placement");
+            error.message = Some(Cow::from(
+                "`pinned` memory placement is not supported for dense vector storage",
+            ));
+            Err(error)
+        }
+    }
 }
 
 /// Is considered empty if `None` or if diff has no field specified
@@ -1447,9 +1573,15 @@ pub struct SparseIndexParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub full_scan_threshold: Option<usize>,
+    /// Deprecated: use `memory` instead.
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set.
+    /// Default: `pinned` (`cold` if `on_disk` is set to true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<Memory>,
     /// Defines which datatype should be used for the index.
     /// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
     ///
@@ -1470,12 +1602,14 @@ impl SparseIndexParams {
         let SparseIndexParams {
             full_scan_threshold,
             on_disk,
+            memory,
             datatype,
         } = other;
 
         self.full_scan_threshold
             .replace_if_some(full_scan_threshold);
         self.on_disk.replace_if_some(on_disk);
+        self.memory.replace_if_some(memory);
         self.datatype.replace_if_some(datatype);
     }
 }
@@ -1674,6 +1808,7 @@ impl From<&VectorParams> for VectorParamsBase {
             hnsw_config: _,
             quantization_config: _,
             on_disk: _,
+            memory: _,
             datatype: _,
             multivector_config: _,
         } = params;
@@ -1714,9 +1849,16 @@ pub struct VectorParamsDiff {
     )]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
+    /// Deprecated: use `memory` instead.
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub on_disk: Option<bool>,
+    /// Memory placement of the original vector storage. Overrides the deprecated `on_disk`
+    /// flag if both are set. `pinned` is not supported for dense vector storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_dense_vector_memory"))]
+    pub memory: Option<Memory>,
 }
 
 /// Vector update params for multiple vectors
@@ -1829,6 +1971,12 @@ pub struct PeerMetadata {
 }
 
 impl PeerMetadata {
+    /// Metadata of a peer running `version`, to set up a state for a test
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new(version: Version) -> Self {
+        Self { version }
+    }
+
     pub fn current() -> Self {
         Self {
             version: defaults::QDRANT_VERSION.clone(),
@@ -1838,5 +1986,47 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+
+    /// Version reported by the peer
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_resharding_info_serialization_omits_stage() {
+        for stage in [
+            ReshardingStage::MigratingPoints,
+            ReshardingStage::ReadHashRingCommitted,
+            ReshardingStage::WriteHashRingCommitted,
+        ] {
+            let info = ReshardingInfo {
+                uuid: Uuid::nil(),
+                direction: ReshardingDirection::Up,
+                shard_id: 1,
+                peer_id: 2,
+                shard_key: None,
+                stage,
+            };
+
+            let mut expected = json!({
+                "uuid": "00000000-0000-0000-0000-000000000000",
+                "direction": "up",
+                "shard_id": 1,
+                "peer_id": 2,
+                "shard_key": null,
+            });
+            assert_eq!(serde_json::to_value(&info).unwrap(), expected);
+
+            expected["uuid"] = json!(Uuid::nil().anonymize());
+            assert_eq!(serde_json::to_value(info.anonymize()).unwrap(), expected);
+        }
     }
 }

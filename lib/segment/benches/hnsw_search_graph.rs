@@ -6,7 +6,7 @@ use std::hint::black_box;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
 use segment::spaces::simple::CosineMetric;
@@ -30,12 +30,12 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let (vector_holder, mut graph_layers) =
         fixture::make_cached_graph::<Metric>(NUM_VECTORS, DIM, M, EF_CONSTRUCT, USE_HEURISTIC);
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("uncompressed", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let scorer = vector_holder.scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             black_box(
                 graph_layers
@@ -43,8 +43,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         TOP,
                         EF,
                         SearchAlgorithm::Hnsw,
-                        scorer,
-                        None,
+                        &mut scorer,
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
@@ -53,12 +53,12 @@ fn hnsw_benchmark(c: &mut Criterion) {
     });
 
     graph_layers.compress_ram();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("compressed", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let scorer = vector_holder.scorer(query);
+            let mut scorer = vector_holder.scorer(query);
 
             black_box(
                 graph_layers
@@ -66,8 +66,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         TOP,
                         EF,
                         SearchAlgorithm::Hnsw,
-                        scorer,
-                        None,
+                        &mut scorer,
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
@@ -77,7 +77,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
     let mut plain_search_range: Vec<PointOffsetType> =
         (0..NUM_VECTORS as PointOffsetType).collect();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
     group.bench_function("plain", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
@@ -85,7 +85,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let mut scorer = vector_holder.scorer(query);
 
             let mut top_score = 0.;
-            let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
+            let scores = scorer
+                .score_points(&mut plain_search_range, NUM_VECTORS)
+                .unwrap();
             scores.for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score

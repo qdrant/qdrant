@@ -231,7 +231,7 @@ where
             MappingChange::Insert(external_id, internal_id) => {
                 mappings.set_link(external_id, internal_id);
             }
-            MappingChange::Delete(external_id) => {
+            MappingChange::Delete(external_id) | MappingChange::DeleteVersioned(external_id, _) => {
                 mappings.drop(external_id);
             }
         }
@@ -242,7 +242,7 @@ where
 
 pub(super) fn reconcile_persisted_mapping_changes(
     pending: &Mutex<Vec<MappingChange>>,
-    changes: &Vec<MappingChange>,
+    changes: &[MappingChange],
 ) {
     let mut pending = pending.lock();
 

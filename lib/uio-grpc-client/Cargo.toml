@@ -1,0 +1,25 @@
+[package]
+name = "uio-grpc-client"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+common = { path = "../common/common" }
+
+bytes = { workspace = true }
+futures = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+
+[build-dependencies]
+fs-err = { workspace = true }
+tonic-prost-build = { workspace = true }

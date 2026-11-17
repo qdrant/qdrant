@@ -1,6 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 
@@ -27,19 +27,31 @@ use crate::common::operation_error::OperationResult;
 /// segment's id-tracker diff accumulated since the previous reload).
 ///
 /// [`UniversalRead`]: common::universal_io::UniversalRead
-#[allow(dead_code)]
 pub(crate) trait LiveReload {
-    /// Filesystem context (`S::Fs` of the backing [`UniversalRead`]) used to
-    /// re-read on-disk state during a reload.
-    ///
-    /// [`UniversalRead`]: common::universal_io::UniversalRead
-    type Fs;
+    type File: UniversalRead;
 
-    fn live_reload(
+    /// Stage everything the next [`Self::live_reload`] needs: schedule
+    /// reopens on kept handles, (re)schedule prefetches for swapped and new
+    /// files. Shared access; must not wait on any fetch. Returns the futures
+    /// driving the staged fetches — the caller polls them, concurrently
+    /// across components, and skips the reload if any resolves to an error.
+    fn live_preload<Fs: CachedReadFs<File = Self::File>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>>;
+
+    fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
         &mut self,
-        fs: &Self::Fs,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
+
+    /// Apply `deleted_points` to what this store keeps in memory, without touching its files: the
+    /// deletion half of [`Self::live_reload`], for a caller that decides on deletions apart from
+    /// reloading files. Must do no IO.
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()>;
 }

@@ -73,41 +73,41 @@ def setup(on_disk_vectors, collection_name):
 
 def test_search_with_threshold(collection_name):
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [1., 1.],
+            "query": [1., 1.],
             "limit": 3
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
 
-    assert response.json()['result'][0]['id'] == 2
-    assert response.json()['result'][1]['id'] == 1
-    assert response.json()['result'][2]['id'] == 3
+    assert response.json()['result']['points'][0]['id'] == 2
+    assert response.json()['result']['points'][1]['id'] == 1
+    assert response.json()['result']['points'][2]['id'] == 3
 
-    assert response.json()['result'][0]['score'] - 1.0 < 0.0001
-    assert response.json()['result'][1]['score'] - 1.414214 < 0.0001
-    assert response.json()['result'][2]['score'] - 2.828427 < 0.0001
+    assert response.json()['result']['points'][0]['score'] - 1.0 < 0.0001
+    assert response.json()['result']['points'][1]['score'] - 1.414214 < 0.0001
+    assert response.json()['result']['points'][2]['score'] - 2.828427 < 0.0001
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/search',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "vector": [1., 1.],
+            "query": [1., 1.],
             "limit": 3,
             "score_threshold": 1.5
         }
     )
 
     assert response.ok
-    assert len(response.json()['result']) == 2
+    assert len(response.json()['result']['points']) == 2
 
-    assert response.json()['result'][0]['id'] == 2
-    assert response.json()['result'][1]['id'] == 1
+    assert response.json()['result']['points'][0]['id'] == 2
+    assert response.json()['result']['points'][1]['id'] == 1
 
-    assert response.json()['result'][0]['score'] - 1.0 < 0.0001
-    assert response.json()['result'][1]['score'] - 1.414214 < 0.0001
+    assert response.json()['result']['points'][0]['score'] - 1.0 < 0.0001
+    assert response.json()['result']['points'][1]['score'] - 1.414214 < 0.0001

@@ -25,6 +25,7 @@ sh_with_ytt '
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-shards.ytt.yaml > ./openapi/openapi-shards.yaml
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-service.ytt.yaml > ./openapi/openapi-service.yaml
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-cluster.ytt.yaml > ./openapi/openapi-cluster.yaml
+    ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-quotas.ytt.yaml > ./openapi/openapi-quotas.yaml
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-collections.ytt.yaml > ./openapi/openapi-collections.yaml
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-snapshots.ytt.yaml > ./openapi/openapi-snapshots.yaml
     ytt -f ./openapi/openapi.lib.yml -f ./openapi/openapi-shard-snapshots.ytt.yaml > ./openapi/openapi-shard-snapshots.yaml
@@ -48,6 +49,7 @@ yq eval-all '. as $item ireduce ({}; . *+ $item)' \
   ./openapi/openapi-shards.yaml \
   ./openapi/openapi-service.yaml \
   ./openapi/openapi-cluster.yaml \
+  ./openapi/openapi-quotas.yaml \
   ./openapi/openapi-collections.yaml \
   ./openapi/openapi-snapshots.yaml \
   ./openapi/openapi-shard-snapshots.yaml \

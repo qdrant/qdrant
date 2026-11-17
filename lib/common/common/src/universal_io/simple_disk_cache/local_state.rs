@@ -2,21 +2,24 @@ use std::cell::UnsafeCell;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use fs_err as fs;
 use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
+use super::placeholder::PlaceholderRegistry;
+use crate::ambient::hw::HwMetric;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, Result, UniversalIoError, UniversalRead,
+    MmapFile, MmapFs, OpenOptions, Populate, UioResult, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite, mmap as mmap_file,
 };
 
 #[derive(Debug)]
-pub(super) struct LocalState {
+pub(crate) struct LocalState {
     /// UnsafeCell so that we can write to it under non-mut reference.
     /// Such as when the pipeline reads from remote first.
     pub mmap: UnsafeCell<MmapFile>,
@@ -25,6 +28,8 @@ pub(super) struct LocalState {
     /// Fast-path flag: when true, the mmap is fully populated and the
     /// `fetched` bitmap can be skipped on the read hot path.
     pub fully_populated: AtomicBool,
+    /// In-flight fetches across pipelines for this local mirror.
+    pub placeholders: Arc<PlaceholderRegistry>,
 }
 
 unsafe impl Sync for LocalState {}
@@ -34,7 +39,7 @@ impl LocalState {
         local_path: impl AsRef<Path>,
         len: u64,
         options: OpenOptions,
-    ) -> Result<Self> {
+    ) -> UioResult<Self> {
         if let Some(parent) = local_path.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
@@ -69,10 +74,11 @@ impl LocalState {
             mmap: UnsafeCell::new(mmap),
             fetched: Mutex::new(RoaringBitmap::new()),
             fully_populated: AtomicBool::new(false),
+            placeholders: Arc::new(PlaceholderRegistry::new()),
         })
     }
 
-    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> Result<()> {
+    pub(super) fn resize(&mut self, local_path: impl AsRef<Path>, new_len: u64) -> UioResult<()> {
         let mmap = self.mmap.get_mut();
         let current_len = mmap.len::<u8>()?;
         if current_len == new_len {
@@ -92,9 +98,11 @@ impl LocalState {
 
         file.set_len(new_len)?;
 
-        mmap.reopen()?;
+        // We just sized the file ourselves — no need for a full `reopen`
+        // that stats it again.
+        mmap.grow_mapping(new_len)?;
 
-        self.fully_populated.store(false, Ordering::Release);
+        *self.fully_populated.get_mut() = false;
 
         // The previous tail block may have been only partially populated (its
         // fetch was clamped to the old EOF). `set_len` zero-filled the bytes
@@ -107,6 +115,23 @@ impl LocalState {
         }
 
         Ok(())
+    }
+
+    /// Write `bytes` at byte `offset` of the mirror, without marking any block fetched.
+    pub(super) fn write_at(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.mmap.get_mut().write(offset, bytes)
+    }
+
+    /// Mark every block as fetched, once the whole file was written to the mirror.
+    pub(super) fn mark_fully_fetched(&self) {
+        let len = self
+            .mmap()
+            .len::<u8>()
+            .expect("MmapFile::len is infallible");
+        let blocks = u32::try_from(len.div_ceil(BLOCK_SIZE as u64))
+            .expect("file too large for block cache (>70 TiB)");
+        self.fetched.lock().insert_range(0..blocks);
+        self.fully_populated.store(true, Ordering::Release);
     }
 
     pub(super) fn mmap(&self) -> &MmapFile {
@@ -131,20 +156,25 @@ impl LocalState {
     pub(super) unsafe fn read_mmap_bytes<P: AccessPattern>(
         &self,
         range: Range<u64>,
-    ) -> Result<&[u8]> {
+    ) -> UioResult<&[u8]> {
         let mmap_bytes = self.mmap().as_bytes::<P>();
-        mmap_file::read_bytes(mmap_bytes, range)
+        let bytes = mmap_file::read_bytes(mmap_bytes, range)?;
+        HwMetric::RemoteIoCachedRead.bump(bytes.len());
+        Ok(bytes)
     }
 
     /// # Safety
-    /// `DiskCache` is only used in immutable files. Since `blocks_range` can include already-fetched
-    /// data, it is possible that some sections get overwritten; however, it should be the same data,
-    /// so it is fine.
+    /// `DiskCache` is only used for append-only remotes with an immutable
+    /// prefix, so every fetch of `blocks_range` yields the same bytes the
+    /// mirror already holds for it. Since `blocks_range` can include
+    /// already-fetched data, it is possible that some sections get
+    /// overwritten; however, it is the same data, so it is fine.
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
     pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
         // SAFETY:
-        // 1. The remote file is immutable, so worst case, same data is overwritten.
+        // 1. The remote's existing bytes are immutable, so worst case, same
+        //    data is overwritten.
         // 2. The `fetched` bitmap should track which blocks are already present.
         let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {

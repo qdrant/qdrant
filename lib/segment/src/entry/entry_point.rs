@@ -1,10 +1,9 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use ahash::{AHashMap, AHashSet};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
@@ -12,20 +11,22 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use crate::data_types::segment_record::SegmentRecord;
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -33,9 +34,6 @@ use crate::types::{
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
 pub trait ReadSegmentEntry {
-    /// Get current update version of the segment
-    fn version(&self) -> SeqNumberType;
-
     fn is_proxy(&self) -> bool;
 
     /// Get version of specified point
@@ -56,27 +54,65 @@ pub trait ReadSegmentEntry {
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
+    /// Resolve `filter` once for several searches of a batch, if that is cheaper than each
+    /// search evaluating it: `users` are the [`Self::search_batch`] calls that will use it.
+    ///
+    /// Returns a filter equivalent to `filter` in this segment, to search with instead, or
+    /// `None` to keep `filter`. The result holds offsets of this segment: it must be used
+    /// only in this segment, and only while the segment stays read-locked since the call.
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>>;
+
+    /// Rank points by BM25 over the text index of `field` and return the `top`
+    /// best, highest first.
+    ///
+    /// `terms` must already be tokenized by the field's tokenizer, and
+    /// `query_context` must carry the field's text statistics, gathered over
+    /// every segment of the shard. A segment without a text index on `field`
+    /// scores nothing.
+    #[allow(clippy::too_many_arguments)]
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>>;
+
     /// Rescore results with a formula that can reference payload values.
     ///
     /// A deleted bitslice is passed to exclude points from a wrapped segment.
     fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
     fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
-    fn all_vectors(
+    /// Like [`ReadSegmentEntry::vector`], but with explicit deferred semantics.
+    ///
+    /// With [`DeferredBehavior::WithDeferred`] this resolves the latest head of
+    /// the point, including a deferred head that is invisible to ordinary reads.
+    fn vector_with_behavior(
         &self,
+        vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>>;
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Option<VectorInternal>>;
+
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors<'_>>;
 
     /// Reads Records from the segment, according to specified selectors and a list of point ids.
     ///
@@ -88,18 +124,40 @@ pub trait ReadSegmentEntry {
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
+    /// Records of `points`, read by their offsets in this segment without
+    /// looking their ids up. A point the segment no longer holds there at its
+    /// version, or a deferred one `deferred_behavior` hides, is left out, for
+    /// the caller to read by id.
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
+
+    /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors and
+    /// payload as stored ([`SegmentRecordRaw`]), to avoid a lossy round-trip and
+    /// a needless parse when relocating points (copy-on-write moves, shard
+    /// transfer). A caller that needs the parsed payload decodes it itself.
+    ///
+    /// Like `retrieve`, may return fewer records than requested and in any order.
+    fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>>;
+
     /// Retrieve payload for the point
     /// If not found, return empty payload
-    fn payload(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     ///
@@ -110,7 +168,6 @@ pub trait ReadSegmentEntry {
         limit: Option<usize>,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>>;
 
@@ -125,7 +182,6 @@ pub trait ReadSegmentEntry {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
@@ -137,7 +193,6 @@ pub trait ReadSegmentEntry {
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>>;
 
     /// Read points in [from; to) range
@@ -149,7 +204,6 @@ pub trait ReadSegmentEntry {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>>;
 
     /// Return the largest counts for the given facet request.
@@ -157,7 +211,6 @@ pub trait ReadSegmentEntry {
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>>;
 
     /// Check if there is point with `point_id` in this segment.
@@ -166,14 +219,31 @@ pub trait ReadSegmentEntry {
     /// deferred-only point counts as present.
     fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
 
+    /// The ids among `point_ids` that [`Self::has_point`] accepts. Segments
+    /// whose id lookups read storage resolve them in one batch and propagate
+    /// its errors.
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>>;
+
+    /// [`Self::point_version`] of each of `point_ids`; points without one are
+    /// left out. Segments whose id lookups read storage resolve them in one
+    /// batch and propagate its errors.
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>>;
+
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
-    fn vector_names(&self) -> HashSet<VectorNameBuf>;
+    /// Names of all vectors in this segment, sorted.
+    fn vector_names(&self) -> Vec<VectorNameBuf>;
 
     /// Whether this segment is completely empty in terms of points
     ///
@@ -200,14 +270,7 @@ pub trait ReadSegmentEntry {
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 
     /// Max value from all `available_vectors_size_in_bytes`
-    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        let mut max_size = 0;
-        for vector_name in self.vector_names() {
-            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
-            max_size = std::cmp::max(max_size, inner_size);
-        }
-        Ok(max_size)
-    }
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize>;
 
     /// Get segment uuid
     fn segment_uuid(&self) -> Uuid;
@@ -216,7 +279,7 @@ pub trait ReadSegmentEntry {
     fn segment_type(&self) -> SegmentType;
 
     /// Get current stats of the segment
-    fn info(&self) -> SegmentInfo;
+    fn info(&self) -> OperationResult<SegmentInfo>;
 
     /// Get size related stats of the segment.
     /// This returns `SegmentInfo` with some non size-related data (like `schema`) unset to improve performance.
@@ -235,7 +298,7 @@ pub trait ReadSegmentEntry {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
     // Get collected telemetry data of segment
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry>;
 
     fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()>;
 
@@ -260,6 +323,9 @@ pub trait ReadSegmentEntry {
 
 /// Segment with storage.
 pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
+    /// Get current update version of the segment
+    fn version(&self) -> SeqNumberType;
+
     /// Checks if segment errored during last operations
     fn check_error(&self) -> Option<SegmentFailedState>;
 
@@ -269,12 +335,24 @@ pub trait StorageSegmentEntry: ReadSegmentEntry + SnapshotEntry {
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
     /// If `force` is true, will return a flusher even if there are no changes to flush.
-    fn flusher(&self, force: bool) -> Option<Flusher>;
+    ///
+    /// `up_to` caps the version the flush is allowed to claim as persisted, and must be the
+    /// last operation known to be fully applied when the flusher is captured. It may still write
+    /// newer operations to disk though. One update operation writes a segment in several
+    /// separately locked phases under the same operation number, so a flush capturing the segment
+    /// between them holds only part of that operation. Claiming its version would leave the
+    /// segment at `version == persisted_version` with the rest still in memory: every later flush
+    /// skips it and the WAL acknowledge moves past the operation, dropping the rest for good
+    /// (#10402). Pass `None` only when the flush cannot race an update operation.
+    fn flusher(&self, force: bool, up_to: Option<SeqNumberType>) -> Option<Flusher>;
 
     /// Immediately flush all changes to disk and return persisted version.
     /// Blocks the current thread.
+    ///
+    /// Claims everything the segment holds, so only for flushes that cannot race an update
+    /// operation. See `flusher`.
     fn flush(&self, force: bool) -> OperationResult<SeqNumberType> {
-        if let Some(flusher) = self.flusher(force) {
+        if let Some(flusher) = self.flusher(force, None) {
             flusher()?;
         }
         Ok(self.persistent_version())
@@ -296,7 +374,6 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     /// Delete field index, if exists
@@ -320,7 +397,6 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult>;
 
     /// Apply a built index. Returns whether it was actually applied or not.
@@ -338,7 +414,6 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: Option<&PayloadFieldSchema>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let Some(field_schema) = field_schema else {
             // Legacy case, where we tried to automatically detect the schema for the field.
@@ -350,23 +425,22 @@ pub trait NonAppendableSegmentEntry: StorageSegmentEntry {
 
         self.delete_field_index_if_incompatible(op_num, key, field_schema)?;
 
-        let (schema, indexes) =
-            match self.build_field_index(op_num, key, field_schema, hw_counter)? {
-                BuildFieldIndexResult::SkippedByVersion => {
-                    return Ok(false);
-                }
-                BuildFieldIndexResult::AlreadyExists => {
-                    return Ok(false);
-                }
-                BuildFieldIndexResult::IncompatibleSchema => {
-                    // This is a service error, as we should have just removed the old index
-                    // So it should not be possible to get this error
-                    return Err(OperationError::service_error(format!(
-                        "Incompatible schema for field index on field {key}",
-                    )));
-                }
-                BuildFieldIndexResult::Built { schema, indexes } => (schema, indexes),
-            };
+        let (schema, indexes) = match self.build_field_index(op_num, key, field_schema)? {
+            BuildFieldIndexResult::SkippedByVersion => {
+                return Ok(false);
+            }
+            BuildFieldIndexResult::AlreadyExists => {
+                return Ok(false);
+            }
+            BuildFieldIndexResult::IncompatibleSchema => {
+                // This is a service error, as we should have just removed the old index
+                // So it should not be possible to get this error
+                return Err(OperationError::service_error(format!(
+                    "Incompatible schema for field index on field {key}",
+                )));
+            }
+            BuildFieldIndexResult::Built { schema, indexes } => (schema, indexes),
+        };
 
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
@@ -403,7 +477,42 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    /// Byte-blob analogue of [`SegmentEntry::upsert_point`]: vector values are
+    /// storage-native bytes in the exact form returned by
+    /// [`ReadSegmentEntry::retrieve_raw`], so requantized (e.g. TurboQuant)
+    /// vectors relocate without a lossy decode/re-encode round-trip.
+    ///
+    /// The bytes carry no encoding/version tag: the target segment must have
+    /// the same vector configuration (kind, datatype, dim) as the source. The
+    /// bytes are inserted as-is, without preprocessing — they were already
+    /// preprocessed (e.g. cosine-normalized) when first ingested.
+    fn upsert_point_raw(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: &[(VectorNameBuf, Vec<u8>)],
+    ) -> OperationResult<bool>;
+
+    /// Upsert a complete point in a single operation: storage-native raw
+    /// vectors (the [`ReadSegmentEntry::retrieve_raw`] form, same contract as
+    /// [`SegmentEntry::upsert_point_raw`]), decoded vectors overriding them
+    /// name-by-name, and the full payload. Named vectors present in neither
+    /// list are deleted.
+    ///
+    /// This is the copy-on-write move primitive: it is equivalent to
+    /// `upsert_point_raw` + `update_vectors` + `set_full_payload`, but writes
+    /// the point once. On append-only segments each of those steps clones the
+    /// whole point to a fresh internal id, so issuing them separately turns
+    /// one moved point into a chain of immediately-dead slots.
+    fn upsert_moved_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        raw_vectors: &[(VectorNameBuf, Vec<u8>)],
+        updated_vectors: NamedVectors,
+        payload: &Payload,
     ) -> OperationResult<bool>;
 
     fn update_vectors(
@@ -411,7 +520,6 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn delete_vector(
@@ -427,7 +535,6 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn set_full_payload(
@@ -435,7 +542,6 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn delete_payload(
@@ -443,13 +549,11 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 }

@@ -1,16 +1,14 @@
-use std::path::Path;
-use std::time::Duration;
-
+use common::bench_cache::{build_once, cache_path};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use rand::SeedableRng as _;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::HnswM;
-use segment::index::hnsw_index::graph_layers::{GraphLayers, LoadOption};
+use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use segment::index::hnsw_index::graph_links::GraphLinksFormatParam;
+use segment::index::hnsw_index::graph_links::{GraphLinksFormatParam, GraphLinksResidency};
 use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use segment::spaces::metric::Metric;
 
@@ -32,34 +30,25 @@ where
 {
     use indicatif::{ParallelProgressIterator as _, ProgressStyle};
 
-    let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"))
-        .join(format!(
-            "{num_vectors}-{dim}-{m}-{ef_construct}-{use_heuristic}-{:?}",
-            METRIC::distance(),
-        ));
-
     // Note: make sure that vector generation is deterministic.
     let vector_holder = TestRawScorerProducer::new(
         dim,
         METRIC::distance(),
         num_vectors,
         false,
-        &mut StdRng::seed_from_u64(42),
+        &mut SmallRng::seed_from_u64(42),
     );
 
-    let graph_layers_path = GraphLayers::get_path(&path);
-    let graph_layers = if graph_layers_path.exists() {
-        let updated_ago = updated_ago(&graph_layers_path).unwrap_or_else(|_| "???".to_string());
-        eprintln!("Loading cached links (built {updated_ago} ago) from {graph_layers_path:?}.");
-        eprintln!("Delete the directory above if code related to HNSW graph building is changed");
-        GraphLayers::load(&path, LoadOption::ram_from_mmap(), false).unwrap()
-    } else {
+    let path = cache_path!(
+        "graph-{num_vectors}-{dim}-{m}-{ef_construct}-{use_heuristic}-{:?}",
+        METRIC::distance(),
+    );
+
+    build_once(&path, |path| {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, HnswM::new2(m), ef_construct, 10, use_heuristic);
 
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = SmallRng::seed_from_u64(42);
         for idx in 0..num_vectors {
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx as PointOffsetType, level);
@@ -78,17 +67,13 @@ where
             )
             .for_each(add_point);
 
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir_all(path).unwrap();
         graph_layers_builder
-            .into_graph_layers(&path, GraphLinksFormatParam::Plain, false)
-            .unwrap()
-    };
+            .into_graph_layers(path, GraphLinksFormatParam::Plain, false)
+            .unwrap();
+    });
+
+    let graph_layers = GraphLayers::load(&path, GraphLinksResidency::Cached, false).unwrap();
 
     (vector_holder, graph_layers)
-}
-
-fn updated_ago(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let elapsed = fs::metadata(path)?.modified()?.elapsed()?;
-    let secs_rounded = elapsed.as_secs().next_multiple_of(60);
-    Ok(humantime::format_duration(Duration::from_secs(secs_rounded)).to_string())
 }

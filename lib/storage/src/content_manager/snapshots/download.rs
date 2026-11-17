@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use collection::common::sha_256::hash_file;
+use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use common::tempfile_ext::MaybeTempPath;
 use reqwest;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -30,6 +31,7 @@ async fn _download_snapshot(
     url: &Url,
     dir_path: &Path,
     compute_checksum: bool,
+    recovery_progress: Option<RecoveryProgressHandle>,
 ) -> Result<(TempDir, Option<String>), StorageError> {
     let download_start_time = tokio::time::Instant::now();
 
@@ -40,7 +42,14 @@ async fn _download_snapshot(
         .suffix(".download")
         .tempdir_in(dir_path)?;
 
-    let hash = download_and_unpack_tar(client, url, tempdir.path(), compute_checksum).await?;
+    let hash = download_and_unpack_tar(
+        client,
+        url,
+        tempdir.path(),
+        compute_checksum,
+        recovery_progress,
+    )
+    .await?;
 
     let download_duration = download_start_time.elapsed();
     log::debug!(
@@ -81,13 +90,15 @@ fn validate_snapshot_path(path: &Path, allowed_dir: &Path) -> Result<PathBuf, St
 ///
 /// For `file://` URLs, `snapshots_path` is used to validate that the referenced file
 /// is within the snapshots directory. For `http`/`https` URLs, `download_dir` is used
-/// as the temporary download location.
+/// as the temporary download location, and the downloaded bytes are counted into
+/// `recovery_progress` if set.
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
     download_dir: &Path,
     snapshots_path: &Path,
     compute_checksum: bool,
+    recovery_progress: Option<RecoveryProgressHandle>,
 ) -> Result<DownloadResult, StorageError> {
     match url.scheme() {
         "file" => {
@@ -117,8 +128,14 @@ pub async fn download_snapshot(
             })
         }
         "http" | "https" => {
-            let (snapshot_dir, hash) =
-                _download_snapshot(client, &url, download_dir, compute_checksum).await?;
+            let (snapshot_dir, hash) = _download_snapshot(
+                client,
+                &url,
+                download_dir,
+                compute_checksum,
+                recovery_progress,
+            )
+            .await?;
             Ok(DownloadResult {
                 snapshot: SnapshotData::Unpacked(snapshot_dir),
                 hash,

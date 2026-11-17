@@ -21,10 +21,10 @@ impl<T> ContextPair<T> {
         iter::once(&self.positive).chain(iter::once(&self.negative))
     }
 
-    pub fn transform<F, U>(self, mut f: F) -> OperationResult<ContextPair<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    pub fn transform<U>(
+        self,
+        f: &dyn Fn(T) -> OperationResult<U>,
+    ) -> OperationResult<ContextPair<U>> {
         Ok(ContextPair {
             positive: f(self.positive)?,
             negative: f(self.negative)?,
@@ -98,14 +98,11 @@ impl<T> ContextQuery<T> {
 }
 
 impl<T, U> TransformInto<ContextQuery<U>, T, U> for ContextQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<ContextQuery<U>>
-    where
-        F: FnMut(T) -> OperationResult<U>,
-    {
+    fn transform(self, f: &dyn Fn(T) -> OperationResult<U>) -> OperationResult<ContextQuery<U>> {
         Ok(ContextQuery::new(
             self.pairs
                 .into_iter()
-                .map(|pair| pair.transform(&mut f))
+                .map(|pair| pair.transform(f))
                 .try_collect()?,
         ))
     }
@@ -113,10 +110,11 @@ impl<T, U> TransformInto<ContextQuery<U>, T, U> for ContextQuery<T> {
 
 impl<T> Query<T> for ContextQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
-        self.pairs
-            .iter()
-            .map(|pair| pair.loss_by(&similarity))
-            .sum()
+        let mut sum = 0.0;
+        for pair in &self.pairs {
+            sum += pair.loss_by(&similarity);
+        }
+        sum
     }
 }
 

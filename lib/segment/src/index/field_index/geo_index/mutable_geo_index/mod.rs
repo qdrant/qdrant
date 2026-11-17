@@ -1,14 +1,15 @@
-use gridstore::Gridstore;
+use blobstore::Blobstore;
 
 pub(super) mod inner;
 mod lifecycle;
 pub mod read_only;
 mod read_ops;
+pub mod update_only;
 
 pub use self::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;
 
 pub struct MutableGeoIndex {
     pub(super) in_memory_index: InMemoryGeoIndex,
-    pub(super) storage: Gridstore<Vec<RawGeoPoint>>,
+    pub(super) storage: Blobstore<Vec<RawGeoPoint>>,
 }

@@ -1,4 +1,5 @@
 import pathlib
+from collections import Counter
 
 from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, random_sparse_vector
 from .utils import *
@@ -127,6 +128,13 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
             continue
         break
 
+    # The collection shows up as soon as its creation entry is applied, while
+    # the new peer may still be replaying the rest of the consensus log, in
+    # particular the removal of the killed peer. Snapshot recovery decides which
+    # other replicas to remove or mark dead from the local view of the cluster,
+    # so it must not start before the new peer has caught up.
+    wait_for_same_applied_commit(peer_api_uris[:-1] + [new_url])
+
     # Recover snapshot
     # All nodes share the same snapshot directory, so it is fine to use any
     snapshot_url = f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/snapshots/{snapshot_name}"
@@ -150,6 +158,9 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     new_dense_search_result = search(new_url, dense_query_vector, query_city)
     assert len(new_dense_search_result) == len(dense_search_result)
     for i in range(len(new_dense_search_result)):
+        # version is a per-replica WAL op_num; the snapshot was taken on a
+        # different replica than this reference search, so versions may differ
+        new_dense_search_result[i]["version"] = dense_search_result[i]["version"]
         assert new_dense_search_result[i] == dense_search_result[i]
 
     # check that the sparse vectors are still the same
@@ -158,14 +169,42 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     for i in range(len(new_sparse_search_result)):
         # skip score check because it is not deterministic
         new_sparse_search_result[i]["score"] = sparse_search_result[i]["score"]
+        # version is a per-replica WAL op_num (see dense check above)
+        new_sparse_search_result[i]["version"] = sparse_search_result[i]["version"]
         assert new_sparse_search_result[i] == sparse_search_result[i]
 
     new_collection_info = get_collection_info(new_url, COLLECTION_NAME)
     new_points_with_indexed_payload = new_collection_info["payload_schema"]["city"]["points"]
     assert new_points_with_indexed_payload == points_with_indexed_payload
 
-    peer_0_remote_shards_new = get_remote_shards(peer_api_uris[0])
-    for shard in peer_0_remote_shards_new:
-        print("remote shard", shard)
-        assert shard['state'] == 'Active'
-    assert len(peer_0_remote_shards_new) == 2 * n_replicas
+    # Verify the whole replica layout is healthy, regardless of how shards
+    # happen to be balanced across peers. Peer 0 observes every replica of the
+    # collection through its own local shards plus the remote shards. Asserting
+    # a fixed remote count assumes a perfectly balanced placement, which is not
+    # guaranteed and makes this test flaky.
+    #
+    # Wait until peer 0's cluster view has settled: the new peer's local shards
+    # can already be Active while remotes on peer 0 are still Partial (esp. with
+    # RF>1 after kill + recover), and a one-shot Active assert races that window.
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(peer_api_uris[0], COLLECTION_NAME)
+
+    # Fetch the cluster info once so local and remote shards come from the same
+    # cluster revision (two separate requests could observe placement changing
+    # between them and reintroduce flakiness).
+    res = requests.get(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster")
+    assert_http_ok(res)
+    cluster = res.json()["result"]
+    peer_0_local_shards_new = cluster["local_shards"]
+    peer_0_remote_shards_new = cluster["remote_shards"]
+
+    all_shards = peer_0_local_shards_new + peer_0_remote_shards_new
+    for shard in all_shards:
+        print("shard", shard)
+        assert shard["state"] == "Active"
+
+    # Every shard must have exactly n_replicas active replicas across the cluster.
+    replicas_per_shard = Counter(shard["shard_id"] for shard in all_shards)
+    assert replicas_per_shard == {
+        shard_id: n_replicas for shard_id in range(N_SHARDS)
+    }

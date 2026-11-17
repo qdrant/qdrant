@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
-use common::counter::hardware_counter::HardwareCounterCell;
+use ahash::AHashMap;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::index::field_index::FieldIndexRead;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
@@ -13,62 +12,63 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::types::PayloadContainer;
 
 pub(super) fn variable_retriever<'a, 'q, P, F>(
-    indices: &'a HashMap<JsonPath, Vec<F>>,
+    indices: &'a AHashMap<JsonPath, Vec<F>>,
     json_path: &JsonPath,
     payload_provider: PayloadProvider<P>,
-    hw_counter: &'q HardwareCounterCell,
-) -> VariableRetrieverFn<'q>
+) -> OperationResult<VariableRetrieverFn<'q>>
 where
     P: PayloadStorageRead + 'q,
     F: FieldIndexRead,
     'a: 'q,
 {
-    indices
-        .get(json_path)
-        .and_then(|indices| {
-            indices
-                .iter()
-                .find_map(|index| index.value_retriever(hw_counter))
-        })
-        // TODO(scoreboost): optimize by reusing the same payload for all variables?
-        .unwrap_or_else(|| {
-            // if the variable is not found in the index, try to find it in the payload
-            let key = json_path.clone();
-            payload_variable_retriever(payload_provider, key, hw_counter)
-        })
+    let indexed = match indices.get(json_path) {
+        Some(indices) => {
+            let mut found = None;
+            for index in indices {
+                if let Some(retriever) = index.value_retriever()? {
+                    found = Some(retriever);
+                    break;
+                }
+            }
+            found
+        }
+        None => None,
+    };
+
+    // TODO(scoreboost): optimize by reusing the same payload for all variables?
+    Ok(indexed.unwrap_or_else(|| {
+        // if the variable is not found in the index, try to find it in the payload
+        let key = json_path.clone();
+        payload_variable_retriever(payload_provider, key)
+    }))
 }
 
 fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
     payload_provider: PayloadProvider<P>,
     json_path: JsonPath,
-    hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {
     let retriever_fn = move |point_id: PointOffsetType| {
-        payload_provider.with_payload(
-            point_id,
-            |payload| {
-                let values = payload.get_value_cloned(&json_path);
+        payload_provider.with_payload(point_id, |payload| {
+            let values = payload.get_value_cloned(&json_path);
 
-                if json_path.has_wildcard_suffix() {
-                    return values;
-                }
+            if json_path.has_wildcard_suffix() {
+                return values;
+            }
 
-                // Not using array wildcard `[]` on a key which has an array value will return the whole
-                // array as one value, let's flatten the array if that is the case.
-                //
-                // This is the same thing we do for indexing payload values
-                let mut multi_value = MultiValue::new();
-                for value in values {
-                    if let Value::Array(array) = value {
-                        multi_value.extend(array);
-                    } else {
-                        multi_value.push(value);
-                    }
+            // Not using array wildcard `[]` on a key which has an array value will return the whole
+            // array as one value, let's flatten the array if that is the case.
+            //
+            // This is the same thing we do for indexing payload values
+            let mut multi_value = MultiValue::new();
+            for value in values {
+                if let Value::Array(array) = value {
+                    multi_value.extend(array);
+                } else {
+                    multi_value.push(value);
                 }
-                multi_value
-            },
-            hw_counter,
-        )
+            }
+            multi_value
+        })
     };
     Box::new(retriever_fn)
 }
@@ -76,12 +76,12 @@ fn payload_variable_retriever<'a, P: PayloadStorageRead + 'a>(
 #[cfg(test)]
 #[cfg(feature = "testing")]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
+    use ahash::AHashMap;
     use atomic_refcell::AtomicRefCell;
+    use common::ambient;
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
     use serde_json::{Value, from_value, json};
 
     use super::variable_retriever;
@@ -92,7 +92,7 @@ mod tests {
     use crate::index::query_optimization::payload_provider::PayloadProvider;
     use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-    use crate::types::Payload;
+    use crate::types::{Memory, Payload};
 
     pub fn fixture_payload_provider() -> PayloadProvider<PayloadStorageEnum> {
         // Create an in-memory payload storage and populate it with some payload maps containing numbers and geo points.
@@ -151,17 +151,15 @@ mod tests {
         let payload_provider = fixture_payload_provider();
 
         // No indices — pick FieldIndex as the concrete F for type inference.
-        let no_indices: HashMap<_, Vec<FieldIndex>> = Default::default();
-
-        let hw_counter = Default::default();
+        let no_indices: AHashMap<_, Vec<FieldIndex>> = Default::default();
 
         // Test retrieving a number from the payload.
         let retriever = variable_retriever(
             &no_indices,
             &"value".try_into().unwrap(),
             payload_provider.clone(),
-            &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=3 {
             let value = retriever(id);
             match id {
@@ -178,8 +176,8 @@ mod tests {
             &no_indices,
             &"location".try_into().unwrap(),
             payload_provider.clone(),
-            &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=3 {
             let value = retriever(id);
             match id {
@@ -198,68 +196,60 @@ mod tests {
         let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
             PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default()),
         )));
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         // No deletions in this test — sized to comfortably exceed the
         // stored deletion bitslice for the few points added below.
         let deleted_points = BitVec::repeat(false, 64);
 
         // Create a field index for a number.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
-        builder.add_point(0, &[&42.into()], &hw_counter).unwrap();
-        builder.add_point(1, &[], &hw_counter).unwrap();
-        builder
-            .add_point(2, &[&99.into(), &55.into()], &hw_counter)
-            .unwrap();
+        let mut builder = NumericIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
+        builder.add_point(0, &[&42.into()]).unwrap();
+        builder.add_point(1, &[]).unwrap();
+        builder.add_point(2, &[&99.into(), &55.into()]).unwrap();
         let numeric_index = builder.finalize().unwrap();
         let numeric_index = FieldIndex::IntIndex(numeric_index);
 
         // Create a field index for a geo point.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = GeoIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = GeoIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
 
-        builder.add_point(0, &[], &hw_counter).unwrap();
+        builder.add_point(0, &[]).unwrap();
         builder
-            .add_point(1, &[&json!({ "lat": 10.0, "lon": 20.0})], &hw_counter)
+            .add_point(1, &[&json!({ "lat": 10.0, "lon": 20.0})])
             .unwrap();
         builder
-            .add_point(2, &[&json!({"lat": 15.5, "lon": 25.5})], &hw_counter)
+            .add_point(2, &[&json!({"lat": 15.5, "lon": 25.5})])
             .unwrap();
         let geo_index = builder.finalize().unwrap();
         let geo_index = FieldIndex::GeoIndex(geo_index);
 
         // Create a field index for datetime
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = NumericIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
 
         builder
-            .add_point(0, &[&json!("2023-01-01T00:00:00Z")], &hw_counter)
+            .add_point(0, &[&json!("2023-01-01T00:00:00Z")])
             .unwrap();
         builder
-            .add_point(
-                1,
-                &[&json!("2023-01-02"), &json!("2023-01-03T00:00:00Z")],
-                &hw_counter,
-            )
+            .add_point(1, &[&json!("2023-01-02"), &json!("2023-01-03T00:00:00Z")])
             .unwrap();
-        builder.add_point(2, &[], &hw_counter).unwrap();
+        builder.add_point(2, &[]).unwrap();
         let datetime_index = builder.finalize().unwrap();
         let datetime_index = FieldIndex::DatetimeIndex(datetime_index);
 
-        let mut indices = HashMap::new();
+        let mut indices = AHashMap::new();
         indices.insert("value".try_into().unwrap(), vec![numeric_index]);
         indices.insert("location".try_into().unwrap(), vec![geo_index]);
         indices.insert("creation".try_into().unwrap(), vec![datetime_index]);
-
-        let hw_counter = Default::default();
 
         // Test retrieving a number from the index.
         let retriever = variable_retriever(
             &indices,
             &"value".try_into().unwrap(),
             payload_provider.clone(),
-            &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {
@@ -275,8 +265,8 @@ mod tests {
             &indices,
             &"location".try_into().unwrap(),
             payload_provider.clone(),
-            &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {
@@ -292,8 +282,8 @@ mod tests {
             &indices,
             &"creation".try_into().unwrap(),
             payload_provider.clone(),
-            &hw_counter,
-        );
+        )
+        .unwrap();
         for id in 0..=2 {
             let value = retriever(id);
             match id {

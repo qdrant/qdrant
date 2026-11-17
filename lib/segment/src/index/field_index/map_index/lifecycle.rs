@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use blobstore::Blob;
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
-use gridstore::Blob;
 
 use super::MapIndex;
 use super::builders::MapIndexMmapBuilder;
@@ -13,6 +13,7 @@ use super::mutable_map_index::MutableMapIndex;
 use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::types::Memory;
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N>
 where
@@ -21,52 +22,59 @@ where
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        // Low-memory mode downgrades the in-RAM `Immutable` wrapper to the
-        // pure-mmap `Storage` variant at load time. Files are shared between
-        // variants; the persisted `is_on_disk` flag in `mmap_index` is
-        // untouched.
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) = OnDiskMapIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            MapIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             // Load into RAM, use mmap as backing storage
             MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            MapIndex::OnDisk(on_disk_index)
         };
         Ok(Some(index))
     }
 
-    pub fn new_mutable(dir: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
-        let index = MutableMapIndex::open_gridstore(dir, create_if_missing)?;
+    pub fn new_mutable(
+        dir: PathBuf,
+        create_if_missing: bool,
+        prefix_index: bool,
+    ) -> OperationResult<Option<Self>> {
+        let index = MutableMapIndex::open_gridstore(dir, create_if_missing, prefix_index)?;
         Ok(index.map(MapIndex::Mutable))
     }
 
     pub fn builder_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
+        prefix_index: bool,
     ) -> MapIndexMmapBuilder<N> {
         MapIndexMmapBuilder {
             path: path.to_owned(),
             point_to_values: Default::default(),
             values_to_points: Default::default(),
-            is_on_disk,
+            memory,
             deleted_points: deleted_points.to_owned(),
+            prefix_index,
         }
     }
 
-    pub fn builder_mutable(dir: PathBuf) -> super::builders::MapIndexGridstoreBuilder<N> {
-        super::builders::MapIndexGridstoreBuilder::new(dir)
+    pub fn builder_mutable(
+        dir: PathBuf,
+        prefix_index: bool,
+    ) -> super::builders::MapIndexGridstoreBuilder<N> {
+        super::builders::MapIndexGridstoreBuilder::new(dir, prefix_index)
     }
 
     pub(crate) fn flusher(&self) -> Flusher {

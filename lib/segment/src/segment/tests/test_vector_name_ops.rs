@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::flags::FeatureFlags;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
@@ -16,7 +17,9 @@ use crate::entry::entry_point::{
 };
 use crate::segment::Segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
-use crate::segment_constructor::{build_segment, load_segment};
+use crate::segment_constructor::{
+    build_segment, get_vector_index_path, get_vector_storage_path, load_segment,
+};
 use crate::types::{
     Distance, HnswGlobalConfig, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
@@ -60,13 +63,9 @@ fn sparse_vector_name_config() -> VectorNameConfig {
     })
 }
 
-fn hw() -> HardwareCounterCell {
-    HardwareCounterCell::new()
-}
-
 /// Build an appendable segment with NUM_POINTS points on the default vector.
 fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
-    let mut segment = build_segment(
+    let (mut segment, _) = build_segment(
         path,
         &SegmentConfig {
             vector_data: HashMap::from([(
@@ -75,18 +74,19 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
     )
     .unwrap();
 
-    let hw = hw();
+    let _scope = ambient::test_guard();
     for i in 0..NUM_POINTS {
         let vec = vec![(i + 1) as f32; DIM];
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.as_slice().into());
         segment
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
 
@@ -106,14 +106,20 @@ fn build_immutable_segment_with_data(
         vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), mmap_dense_config(DIM))]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        id_tracker_memory: None,
     };
     assert!(!target_config.is_appendable());
 
-    let mut builder =
-        SegmentBuilder::new(temp_path, &target_config, &HnswGlobalConfig::default()).unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_path,
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
 
     let stopped = AtomicBool::new(false);
-    builder.update(&[&source], &stopped, &hw()).unwrap();
+    builder.update(&[&source], &stopped).unwrap();
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
@@ -129,7 +135,7 @@ fn build_immutable_segment_with_data(
 fn test_create_dense_vector_on_appendable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     assert_eq!(segment.available_point_count(), NUM_POINTS);
 
@@ -148,21 +154,19 @@ fn test_create_dense_vector_on_appendable_segment() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![9.0f32; DIM].into());
     vectors.insert("v2".to_owned(), vec![1.0f32; new_dim].into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
 
     // The new point has both vectors
-    let all_vecs = segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw)
-        .unwrap();
+    let all_vecs = segment.all_vectors((NUM_POINTS as u64 + 1).into()).unwrap();
     assert!(all_vecs.contains_key(DEFAULT_VECTOR_NAME));
     assert!(all_vecs.contains_key("v2"));
 
     // Can read the new vector back
     let v2_vec = segment
-        .vector("v2", (NUM_POINTS as u64 + 1).into(), &hw)
+        .vector("v2", (NUM_POINTS as u64 + 1).into())
         .unwrap();
     assert!(v2_vec.is_some());
 }
@@ -171,7 +175,7 @@ fn test_create_dense_vector_on_appendable_segment() {
 fn test_create_sparse_vector_on_appendable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     let result = segment
         .create_vector_name(100, "sparse1", &sparse_vector_name_config())
@@ -190,13 +194,11 @@ fn test_create_sparse_vector_on_appendable_segment() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![7.0f32; DIM].into());
     vectors.insert("sparse1".to_owned(), sparse_vec.into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     // Verify the sparse vector is retrievable
-    let all_vecs = segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw)
-        .unwrap();
+    let all_vecs = segment.all_vectors((NUM_POINTS as u64 + 1).into()).unwrap();
     assert!(all_vecs.contains_key("sparse1"));
 }
 
@@ -205,7 +207,7 @@ fn test_create_dense_vector_on_immutable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp").tempdir().unwrap();
     let mut segment = build_immutable_segment_with_data(dir.path(), temp_dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     assert!(!segment.appendable_flag);
     assert_eq!(segment.available_point_count(), NUM_POINTS);
@@ -227,13 +229,13 @@ fn test_create_dense_vector_on_immutable_segment() {
 
     // Existing points should not have the new vector
     for i in 1..=NUM_POINTS as u64 {
-        let v2_vec = segment.vector("v2", i.into(), &hw).unwrap();
+        let v2_vec = segment.vector("v2", i.into()).unwrap();
         assert!(v2_vec.is_none(), "point {i} should not have v2");
     }
 
     // Original default vector is still readable for all points
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into()).unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -246,7 +248,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp").tempdir().unwrap();
     let mut segment = build_immutable_segment_with_data(dir.path(), temp_dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     assert!(!segment.appendable_flag);
     assert_eq!(segment.available_point_count(), NUM_POINTS);
@@ -277,13 +279,13 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
     // Existing points should not have the sparse vector
     for i in 1..=NUM_POINTS as u64 {
-        let sp_vec = segment.vector("sp", i.into(), &hw).unwrap();
+        let sp_vec = segment.vector("sp", i.into()).unwrap();
         assert!(sp_vec.is_none(), "point {i} should not have sp");
     }
 
     // Original default vector is still readable
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into()).unwrap();
         assert!(
             default_vec.is_some(),
             "point {i} should have default vector"
@@ -297,6 +299,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
 #[test]
 fn test_create_vector_idempotent() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
 
@@ -323,7 +326,7 @@ fn test_delete_vector_idempotent() {
 fn test_delete_dense_vector_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     // Create vector and insert data
     let new_dim = 8;
@@ -335,13 +338,11 @@ fn test_delete_dense_vector_with_data() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![5.0f32; DIM].into());
     vectors.insert("to_delete".to_owned(), vec![2.0f32; new_dim].into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     // Confirm the new vector is there
-    let all_vecs = segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw)
-        .unwrap();
+    let all_vecs = segment.all_vectors((NUM_POINTS as u64 + 1).into()).unwrap();
     assert!(all_vecs.contains_key("to_delete"));
 
     // Delete the vector
@@ -353,7 +354,7 @@ fn test_delete_dense_vector_with_data() {
     // Original points and the default vector are still intact
     assert_eq!(segment.available_point_count(), NUM_POINTS + 1);
     for i in 1..=NUM_POINTS as u64 {
-        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
+        let default_vec = segment.vector(DEFAULT_VECTOR_NAME, i.into()).unwrap();
         assert!(default_vec.is_some());
     }
 }
@@ -362,7 +363,7 @@ fn test_delete_dense_vector_with_data() {
 fn test_delete_sparse_vector_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     segment
         .create_vector_name(100, "sp", &sparse_vector_name_config())
@@ -374,13 +375,11 @@ fn test_delete_sparse_vector_with_data() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![4.0f32; DIM].into());
     vectors.insert("sp".to_owned(), sparse_vec.into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     // Verify data is there
-    let all_vecs = segment
-        .all_vectors((NUM_POINTS as u64 + 1).into(), &hw)
-        .unwrap();
+    let all_vecs = segment.all_vectors((NUM_POINTS as u64 + 1).into()).unwrap();
     assert!(all_vecs.contains_key("sp"));
 
     // Delete
@@ -397,7 +396,7 @@ fn test_delete_sparse_vector_with_data() {
 fn test_persistence_after_create_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     let new_dim = 6;
     segment
@@ -409,7 +408,7 @@ fn test_persistence_after_create_with_data() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![8.0f32; DIM].into());
     vectors.insert("persisted".to_owned(), vec![1.5f32; new_dim].into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     // Save, drop, reload
@@ -419,7 +418,7 @@ fn test_persistence_after_create_with_data() {
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
 
     // Config persisted
     assert_eq!(loaded.segment_config.vector_data["persisted"].size, new_dim);
@@ -427,13 +426,13 @@ fn test_persistence_after_create_with_data() {
 
     // Data persisted - vector is readable
     let vec = loaded
-        .vector("persisted", (NUM_POINTS as u64 + 1).into(), &hw)
+        .vector("persisted", (NUM_POINTS as u64 + 1).into())
         .unwrap();
     assert!(vec.is_some());
 
     // Original data intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
+        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into()).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"
@@ -441,11 +440,115 @@ fn test_persistence_after_create_with_data() {
     }
 }
 
+/// Recursively copy a directory tree (test helper).
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
+    fs_err::create_dir_all(dst).unwrap();
+    for entry in fs_err::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir_all(&entry.path(), &dst_path);
+        } else {
+            fs_err::copy(entry.path(), &dst_path).unwrap();
+        }
+    }
+}
+
+/// Regression test for vector-data resurrection across a `DeleteVectorName` /
+/// `CreateVectorName` cycle.
+///
+/// `delete_vector_name` removes the vector's storage directory, but that
+/// removal is best-effort: it logs a warning and continues on failure (and a
+/// crash mid-delete leaves the directory too), so it can still be on disk after
+/// the delete. We reproduce that outcome deterministically: snapshot the
+/// storage (and index) directory, delete the name, then restore the snapshot
+/// before recreating, standing in for files the delete did not remove.
+///
+/// When the name is recreated, `create_vector_name` must start from a clean
+/// slate. Otherwise it reopens the stale files and a point that was never
+/// re-upserted silently regains its old vector after reload.
+fn check_recreate_does_not_resurrect(
+    config: VectorNameConfig,
+    build_value: impl Fn() -> crate::data_types::vectors::VectorInternal,
+) {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let backup = Builder::new().prefix("stale_backup").tempdir().unwrap();
+    let mut segment = build_appendable_segment_with_data(dir.path());
+    let _scope = ambient::test_guard();
+
+    let new_point = (NUM_POINTS as u64 + 1).into();
+
+    // Create "v2", write a point carrying v2 data, then persist it to disk.
+    segment.create_vector_name(100, "v2", &config).unwrap();
+    let mut vectors = NamedVectors::default();
+    vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![9.0f32; DIM].into());
+    vectors.insert("v2".to_owned(), build_value());
+    segment.upsert_point(101, new_point, vectors).unwrap();
+    segment.flush(true).unwrap();
+
+    // Snapshot the on-disk storage/index, so we can restore them after the
+    // delete — simulating an in-flight flush writing them back behind the
+    // delete's `remove_dir_all`.
+    let segment_path = segment.data_path();
+    let storage_path = get_vector_storage_path(&segment_path, "v2");
+    let index_path = get_vector_index_path(&segment_path, "v2");
+    let storage_backup = backup.path().join("storage");
+    let index_backup = backup.path().join("index");
+    copy_dir_all(&storage_path, &storage_backup);
+    if index_path.exists() {
+        copy_dir_all(&index_path, &index_backup);
+    }
+
+    segment.delete_vector_name(102, "v2").unwrap();
+
+    // The stale files reappear on disk after the delete removed them.
+    copy_dir_all(&storage_backup, &storage_path);
+    if index_backup.exists() {
+        copy_dir_all(&index_backup, &index_path);
+    }
+
+    // Recreate the same name — must produce an empty vector, not reopen stale data.
+    segment.create_vector_name(103, "v2", &config).unwrap();
+
+    let v2 = segment.vector("v2", new_point).unwrap();
+    assert!(
+        v2.is_none(),
+        "recreated vector resurrected stale data in memory"
+    );
+
+    // The clean slate must also survive a reload.
+    let segment_uuid = segment.uuid;
+    segment.flush(true).unwrap();
+    drop(segment);
+
+    let stopped = AtomicBool::new(false);
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
+    let v2 = loaded.vector("v2", new_point).unwrap();
+    assert!(
+        v2.is_none(),
+        "recreated vector resurrected stale data after reload"
+    );
+}
+
+#[test]
+fn test_recreate_dense_vector_name_does_not_resurrect_stale_data() {
+    check_recreate_does_not_resurrect(dense_vector_name_config(8), || vec![3.0f32; 8].into());
+}
+
+#[test]
+fn test_recreate_sparse_vector_name_does_not_resurrect_stale_data() {
+    check_recreate_does_not_resurrect(sparse_vector_name_config(), || {
+        SparseVector::new(vec![1, 29], vec![0.25, 0.5])
+            .unwrap()
+            .into()
+    });
+}
+
 #[test]
 fn test_persistence_after_delete_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let hw = hw();
+    let _scope = ambient::test_guard();
 
     let new_dim = 8;
     segment
@@ -457,7 +560,7 @@ fn test_persistence_after_delete_with_data() {
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![6.0f32; DIM].into());
     vectors.insert("temp".to_owned(), vec![2.0f32; new_dim].into());
     segment
-        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors, &hw)
+        .upsert_point(101, (NUM_POINTS as u64 + 1).into(), vectors)
         .unwrap();
 
     segment.delete_vector_name(102, "temp").unwrap();
@@ -469,14 +572,14 @@ fn test_persistence_after_delete_with_data() {
     drop(segment);
 
     let stopped = AtomicBool::new(false);
-    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped).unwrap();
+    let loaded = load_segment(&segment_path, segment_uuid, None, &stopped, false).unwrap();
 
     assert!(!loaded.segment_config.vector_data.contains_key("temp"));
     assert_eq!(loaded.available_point_count(), NUM_POINTS + 1);
 
     // Original data still intact
     for i in 1..=NUM_POINTS as u64 {
-        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into(), &hw).unwrap();
+        let original = loaded.vector(DEFAULT_VECTOR_NAME, i.into()).unwrap();
         assert!(
             original.is_some(),
             "point {i} should have default vector after reload"

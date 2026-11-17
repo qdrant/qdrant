@@ -32,12 +32,12 @@ impl SnapshotUtils {
         // Read dir first as the directory contents would change during restore
         let entries = fs::read_dir(segments_path(snapshot_path))?.collect::<Result<Vec<_>, _>>()?;
 
-        // Filter out hidden entries
+        // Filter out hidden entries. The segment manifest (`segments_manifest.json`) lives next to
+        // the `segments/` directory rather than inside it, so it is not encountered here; it is
+        // regenerated from the loaded segments when the shard's segment holder is built.
         let entries = entries.into_iter().filter(|entry| {
-            let is_hidden = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|s| s.starts_with('.'));
+            let file_name = entry.file_name();
+            let is_hidden = file_name.to_str().is_some_and(|s| s.starts_with('.'));
             if is_hidden {
                 log::debug!(
                     "Ignoring hidden segment in local shard during snapshot recovery: {}",
@@ -91,12 +91,23 @@ impl SnapshotUtils {
                     let path = segment_path.join(file);
                     delete_files.push(path);
                 }
+
+                // Snapshots don't include tracker journals, opening would replay the local one
+                // onto the tracker the snapshot replaces
+                if let Some(journal) = blobstore::tracker_journal_path(&segment_path.join(file))
+                    && journal.exists()
+                {
+                    delete_files.push(journal);
+                }
             }
         }
 
         let ShardDataFiles {
             wal_path: from_wal_path,
             segments_path: from_segments_path,
+            // The segment manifest is regenerated when the holder is built, so it is not part of the
+            // partial-snapshot merge plan.
+            segment_manifest_path: _,
             newest_clocks_path: from_newest_clocks_path,
             oldest_clocks_path: from_oldest_clocks_path,
             applied_seq_path: from_applied_seq_path,
@@ -105,6 +116,7 @@ impl SnapshotUtils {
         let ShardDataFiles {
             wal_path: to_wal_path,
             segments_path: to_segments_path,
+            segment_manifest_path: _,
             newest_clocks_path: to_newest_clocks_path,
             oldest_clocks_path: to_oldest_clocks_path,
             applied_seq_path: to_applied_seq_path,
@@ -142,4 +154,47 @@ pub struct SnapshotMergePlan {
     pub merge_directories: Vec<(PathBuf, PathBuf)>,
     pub delete_files: Vec<PathBuf>,
     pub delete_directories: Vec<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use segment::data_types::manifest::{FileVersion, SegmentManifest};
+
+    use super::*;
+
+    /// Merging a partial snapshot removes the local journal of a Gridstore tracker, as opening
+    /// would replay it onto the tracker the snapshot replaces
+    #[test]
+    fn test_partial_snapshot_merge_plan_removes_tracker_journals() {
+        let shard_dir = tempfile::Builder::new().tempdir().unwrap();
+        let snapshot_dir = tempfile::Builder::new().tempdir().unwrap();
+
+        let segment_id = "segment";
+        let storage_dir = segments_path(shard_dir.path())
+            .join(segment_id)
+            .join("payload_storage");
+        fs::create_dir_all(&storage_dir).unwrap();
+        fs::write(storage_dir.join("tracker.dat"), []).unwrap();
+        fs::write(storage_dir.join("tracker_journal.dat"), []).unwrap();
+
+        let mut manifest = SnapshotManifest::default();
+        manifest.add(SegmentManifest {
+            segment_id: segment_id.to_string(),
+            segment_version: 1,
+            file_versions: HashMap::from([(
+                PathBuf::from("payload_storage/tracker.dat"),
+                FileVersion::Version(1),
+            )]),
+        });
+
+        let plan = SnapshotUtils::partial_snapshot_merge_plan(
+            shard_dir.path(),
+            &manifest,
+            snapshot_dir.path(),
+            &manifest,
+        );
+        assert_eq!(plan.delete_files, [storage_dir.join("tracker_journal.dat")]);
+    }
 }

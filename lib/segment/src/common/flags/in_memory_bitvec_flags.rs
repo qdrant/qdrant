@@ -1,69 +1,228 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::mmap::AdviceSetting;
+use common::sorted_slice::SortedSlice;
+use common::stored_bitmask::StoredBitmask;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, TypedStorage, UniversalRead};
+use common::universal_io::{
+    CachedReadFs, OkUnchanged, OpenOptions, Populate, TypedStorage, UioResult, UniversalRead,
+    UniversalReadFs,
+};
 
+use super::compact_stored_flags::COMPACT_FLAGS_FILE;
 use super::dynamic_stored_flags::{DynamicFlagsStatus, FLAGS_FILE, status_file};
+use super::mode::FlagsMode;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// In-memory counterpart of `BitvecFlags`: persisted flags materialized into an
 /// owned `BitVec`, no write path.
 ///
-/// Only consumer is the vector storages' `deleted` set, where the live-reload
-/// delta is authoritative (deleted offsets set, appended offsets live so absent).
-/// So unlike `ReadOnlyRoaringFlags` it keeps no file handle and never reopens —
-/// the owned bitvec is the whole state.
+/// The only consumer is the vector storages' `deleted` set. On live-reload the
+/// id-tracker delta supplies whole-point deletions ([`Self::insert_all`]), but
+/// an appended point can also carry a per-vector deletion recorded only in the
+/// on-disk flags file — a missing named vector is stored as a placeholder and
+/// its slot deleted. So the backing directory is retained and
+/// [`Self::reload_appended`] reopens the flags file to read the persisted bit
+/// of each appended offset. The set only ever grows, so a whole-point deletion
+/// already folded in but not yet flushed to the flags file is never lost to a
+/// re-read.
 #[derive(Debug)]
-#[allow(dead_code)] // pending: read-only vector storages will hold `deleted` as this
 pub struct InMemoryBitvecFlags {
     /// Flags, materialized on open and patched in place on live-reload.
     bitvec: BitVec,
     /// Set-flag count, kept in sync with `bitvec`.
     count: usize,
+    /// Backing directory and [mode](FlagsMode) of the persisted flags, so
+    /// [`Self::reload_appended`] can reopen them. `None` for flags built via
+    /// [`Self::from_bitvec`].
+    backing: Option<(PathBuf, FlagsMode)>,
 }
 
 /// Read-only mmap options: never writable, lazily paged, nothing populated.
-const READ_ONLY_OPTIONS: OpenOptions = OpenOptions {
-    writeable: false,
-    need_sequential: false,
-    populate: Populate::No,
-    advice: AdviceSetting::Global,
-};
+fn bitslice_open_options(populate: Populate) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Global,
+    }
+}
 
-#[allow(dead_code)] // pending: read-only vector storages will use these
+/// Read-only options for the compact bitmask, which is decoded whole.
+fn compact_open_options(populate: Populate) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        // Not needed for one shot reeds
+        need_sequential: false,
+        populate,
+        advice: AdviceSetting::Global,
+    }
+}
+
 impl InMemoryBitvecFlags {
-    /// Open persisted flags read-only into an owned `BitVec`; creates and writes
-    /// nothing. The flags file is padded past the logical length (held in the
-    /// status file), so the bitvec is truncated to it and `count` is exact.
-    pub fn open<S: UniversalRead>(fs: &S::Fs, directory: &Path) -> OperationResult<Self> {
-        // Length via TypedStorage; StoredStruct is write-bound.
-        let status = TypedStorage::<S, DynamicFlagsStatus>::open(
-            fs,
+    /// Schedule background prefetch of the files [`Self::open`] reads, in the
+    /// detected [mode](FlagsMode).
+    pub fn preopen(fs: &impl CachedReadFs, directory: &Path) -> OperationResult<()> {
+        match FlagsMode::detect(fs, directory)?.unwrap_or(FlagsMode::Dynamic) {
+            FlagsMode::Dynamic => {
+                // Status file
+                fs.schedule_open(
+                    &status_file(directory),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                );
+
+                // Bitslice
+                fs.schedule_open(
+                    &directory.join(FLAGS_FILE),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                );
+            }
+            FlagsMode::Compact => {
+                fs.schedule_open(
+                    &directory.join(COMPACT_FLAGS_FILE),
+                    Some(compact_open_options(Populate::PreferBackground)),
+                    None,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Stage the two files [`Self::reload_appended`] may open. A no-op for
+    /// [`Self::from_bitvec`] flags, mirroring the reload.
+    pub fn live_preload(&self, fs: &impl CachedReadFs) -> OperationResult<()> {
+        let Some((directory, mode)) = &self.backing else {
+            return Ok(());
+        };
+
+        match mode {
+            FlagsMode::Dynamic => {
+                fs.reschedule_open(
+                    &status_file(directory),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                );
+                fs.reschedule_open(
+                    &directory.join(FLAGS_FILE),
+                    Some(bitslice_open_options(Populate::PreferBackground)),
+                    None,
+                );
+            }
+            FlagsMode::Compact => {
+                fs.reschedule_open(
+                    &directory.join(COMPACT_FLAGS_FILE),
+                    Some(compact_open_options(Populate::PreferBackground)),
+                    None,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Logical flag count from the status file; the flags file itself is padded
+    /// past this.
+    fn persisted_len<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> UioResult<usize> {
+        // TypedStorage, not StoredStruct which is write-bound.
+        let status = TypedStorage::<S, DynamicFlagsStatus>::new(fs.open(
             status_file(directory),
-            READ_ONLY_OPTIONS,
+            bitslice_open_options(Populate::No),
             Default::default(),
-        )?;
-        let len = status
+        )?);
+        Ok(status
             .read_whole()?
             .first()
-            .map_or(0, DynamicFlagsStatus::len);
+            .map_or(0, DynamicFlagsStatus::len))
+    }
+
+    /// Open persisted flags read-only into an owned `BitVec`, in their
+    /// detected [mode](FlagsMode); creates and writes nothing.
+    pub fn open<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<Self> {
+        match FlagsMode::detect(fs, directory)?.unwrap_or(FlagsMode::Dynamic) {
+            FlagsMode::Dynamic => Self::open_dynamic(fs, directory),
+            FlagsMode::Compact => Self::open_compact(fs, directory),
+        }
+    }
+
+    /// [`Self::open`] for the dynamic mode. The flags file is padded past the
+    /// logical length (held in the status file), so only bits up to it are
+    /// read: the padding is at least `MINIMAL_MMAP_SIZE`, and reading it would
+    /// fetch that unused capacity on owned-read backends. This also keeps
+    /// `count` exact.
+    fn open_dynamic<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<Self> {
+        let len = Self::persisted_len(fs, directory)?;
 
         let flags_path = directory.join(FLAGS_FILE);
-        let flags =
-            StoredBitSlice::<S>::open(fs, &flags_path, READ_ONLY_OPTIONS, Default::default())?;
-        let bits = flags.read_all()?;
-        let bitvec = bits.get(..len).map(BitVec::from_bitslice).ok_or_else(|| {
-            OperationError::service_error(format!(
+        let flags = StoredBitSlice::<S>::open(
+            fs,
+            &flags_path,
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )?;
+        if len as u64 > flags.bit_len() {
+            return Err(OperationError::service_error(format!(
                 "Flags file {} holds fewer than {len} bits",
                 flags_path.display(),
-            ))
-        })?;
+            )));
+        }
+        let bitvec = flags.read_bits_up_to(len as u64)?.into_owned();
         let count = bitvec.count_ones();
 
-        Ok(Self { bitvec, count })
+        Ok(Self {
+            bitvec,
+            count,
+            backing: Some((directory.to_path_buf(), FlagsMode::Dynamic)),
+        })
+    }
+
+    /// [`Self::open`] for the compact mode: the single bitmask file is decoded
+    /// whole into the bitvec.
+    fn open_compact<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+    ) -> OperationResult<Self> {
+        let mask = StoredBitmask::<S>::open(
+            fs,
+            directory.join(COMPACT_FLAGS_FILE),
+            compact_open_options(Populate::No),
+            Default::default(),
+        )?;
+        let ones = mask.read_ones()?;
+
+        let mut bitvec = BitVec::repeat(false, mask.bit_len() as usize);
+        for index in &ones {
+            bitvec.set(index as usize, true);
+        }
+
+        Ok(Self {
+            bitvec,
+            count: ones.len() as usize,
+            backing: Some((directory.to_path_buf(), FlagsMode::Compact)),
+        })
+    }
+
+    /// Wrap an already-materialized deletion `bitvec`, computing the set-flag
+    /// count. For flags coming from an on-disk format other than the dynamic
+    /// flags read by [`Self::open`] (e.g. the immutable dense `deleted.dat`).
+    pub fn from_bitvec(bitvec: BitVec) -> Self {
+        let count = bitvec.count_ones();
+        Self {
+            bitvec,
+            count,
+            backing: None,
+        }
     }
 
     /// Whether the flag at `key` is set; out-of-range keys read as unset.
@@ -94,6 +253,112 @@ impl InMemoryBitvecFlags {
             }
         }
     }
+
+    /// Fold the persisted deletion bit of each appended offset into the set.
+    ///
+    /// An appended point can carry a deleted vector slot whose flag lives only
+    /// in the on-disk flags file, not the id-tracker delta (see the type doc).
+    /// `new_points` is sorted, so the covering range up to the persisted length
+    /// is read in one batched read. A no-op for [`Self::from_bitvec`] flags.
+    pub fn reload_appended<S: UniversalRead>(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let Some((directory, mode)) = self.backing.clone() else {
+            return Ok(());
+        };
+        match mode {
+            FlagsMode::Dynamic => self.reload_appended_dynamic(fs, &directory, new_points),
+            FlagsMode::Compact => self.reload_appended_compact(fs, &directory, new_points),
+        }
+    }
+
+    /// [`Self::reload_appended`] for the dynamic mode. `new_points` is sorted,
+    /// so the covering range up to the persisted length is read in one batched
+    /// read.
+    fn reload_appended_dynamic<S: UniversalRead>(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let (Some(&first), Some(&last)) = (new_points.first(), new_points.last()) else {
+            return Ok(());
+        };
+
+        let len = Self::persisted_len(fs, directory)
+            .ok_unchanged()?
+            .unwrap_or_else(|| self.bitvec.len()) as u64;
+
+        let start = u64::from(first);
+        let end = u64::from(last).saturating_add(1).min(len);
+        if start >= end {
+            return Ok(());
+        }
+
+        let Some(flags) = StoredBitSlice::<S>::open(
+            fs,
+            &directory.join(FLAGS_FILE),
+            bitslice_open_options(Populate::No),
+            Default::default(),
+        )
+        .ok_unchanged()?
+        else {
+            // No difference in deleted points. All new points are active
+            return Ok(());
+        };
+
+        let bits = flags.read_bit_range(start..end)?;
+
+        let mut deleted = Vec::new();
+        for &point in new_points.iter() {
+            let index = (u64::from(point) - start) as usize;
+            if bits.get(index).as_deref().copied().unwrap_or(false) {
+                deleted.push(point);
+            }
+        }
+        self.insert_all(&deleted);
+
+        Ok(())
+    }
+
+    /// [`Self::reload_appended`] for the compact mode. The bitmask has no
+    /// random access, so the (small) file is decoded whole and the appended
+    /// offsets' bits are folded in from it.
+    fn reload_appended_compact<S: UniversalRead>(
+        &mut self,
+        fs: &impl UniversalReadFs<File = S>,
+        directory: &Path,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        if new_points.is_empty() {
+            return Ok(());
+        }
+
+        let Some(mask) = StoredBitmask::<S>::open(
+            fs,
+            directory.join(COMPACT_FLAGS_FILE),
+            compact_open_options(Populate::No),
+            Default::default(),
+        )
+        .ok_unchanged()?
+        else {
+            // No difference in deleted points. All new points are active
+            return Ok(());
+        };
+
+        let ones = mask.read_ones()?;
+
+        let deleted: Vec<_> = new_points
+            .iter()
+            .copied()
+            .filter(|&point| ones.contains(point))
+            .collect();
+        self.insert_all(&deleted);
+
+        Ok(())
+    }
 }
 
 #[allow(clippy::default_constructed_unit_structs)]
@@ -114,11 +379,12 @@ mod tests_mod {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::flags::compact_stored_flags::CompactStoredFlags;
     use crate::common::flags::dynamic_stored_flags::DynamicStoredFlags;
 
     /// Persist `flags` via the writable storage so the read-only path can open it.
     fn persist(fs: &Fs, dir: &Path, flags: &[bool]) {
-        let mut dynamic_flags = DynamicStoredFlags::<S>::open(fs, dir, false).unwrap();
+        let mut dynamic_flags = DynamicStoredFlags::<S>::open(fs, dir, Populate::No).unwrap();
         dynamic_flags.set_len(fs, flags.len()).unwrap();
         flags
             .iter()
@@ -139,6 +405,8 @@ mod tests_mod {
 
         let flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
 
+        // Exactly the logical length, not the padded file capacity
+        assert_eq!(flags.as_bitslice().len(), num_flags);
         let expected_count = random_flags.iter().filter(|flag| **flag).count();
         assert_eq!(flags.count(), expected_count);
         for (i, &flag) in random_flags.iter().enumerate() {
@@ -173,5 +441,38 @@ mod tests_mod {
         assert!(flags.get(unset as PointOffsetType));
         assert!(flags.get(beyond));
         assert!(!flags.get(beyond + 1));
+    }
+
+    #[test]
+    fn open_compact_mode_and_reload_appended() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        // Persist compact-mode flags via the writable wrapper.
+        let writer =
+            CompactStoredFlags::<S>::open(Fs::default(), dir.path(), Populate::No).unwrap();
+        writer.set(3, true);
+        writer.set(9, false); // grows the flags to 10
+        writer.flusher()().unwrap();
+
+        let mut flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
+        assert_eq!(flags.count(), 1);
+        assert!(flags.get(3));
+        assert!(!flags.get(9));
+        assert_eq!(flags.as_bitslice().len(), 10);
+
+        // Append points 10..=12; one carries a deletion recorded only in the
+        // persisted flags.
+        writer.set(11, true);
+        writer.set(12, false);
+        writer.flusher()().unwrap();
+
+        let new_points = [10, 11, 12];
+        flags
+            .reload_appended::<S>(&Fs::default(), &SortedSlice::new(&new_points).unwrap())
+            .unwrap();
+        assert!(flags.get(11));
+        assert!(!flags.get(10));
+        assert!(!flags.get(12));
+        assert_eq!(flags.count(), 2);
     }
 }

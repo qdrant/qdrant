@@ -26,7 +26,7 @@ from pathlib import Path
 
 import tomlkit
 
-VERSION = "0.7.2"
+VERSION = "0.9.0"
 
 # Assume this script is in <root>/lib/edge/publish/.
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
@@ -37,7 +37,8 @@ PACKAGES_TO_INCLUDE = [
     "bm25",
     "common",
     "edge",
-    "gridstore",
+    "blobstore",
+    "pairwise",
     "posting_list",
     "quantization",
     "segment",
@@ -179,6 +180,11 @@ def main() -> None:
         # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
     )
+    substitute(
+        AMALGAMATION.glob("src/common/ambient/trace/*.rs"),
+        # Non-`#[macro_export]` macros can't be re-exported as `pub`.
+        (r"^pub use (__\w+ as \w+|record::\{.*\});$", r"pub(crate) use \1;"),
+    )
 
     # Fix doctests
     substitute(
@@ -196,6 +202,13 @@ def main() -> None:
         AMALGAMATION / "src/segment/index/hnsw_index/mod.rs",
         # otherwise cargo fmt will fail to resolve deleted module
         (r"^#\[cfg\(feature = \"gpu\"\)]\npub mod gpu;\n", ""),
+    )
+    # io_bridge_object_store is a path dependency excluded from the amalgamation
+    # (the embedded edge build has no object storage), so drop the BlobFile
+    # UniversalReadExt impl that references it.
+    substitute(
+        AMALGAMATION / "src/segment/index/universal_io.rs",
+        (r"(?s)^#\[rustfmt::skip]\nimpl<A: io_bridge_object_store.*?\n\}\n", ""),
     )
 
     # Ast-grep-based fixups.

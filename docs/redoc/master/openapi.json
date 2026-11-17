@@ -464,7 +464,7 @@
     "/healthz": {
       "get": {
         "summary": "Kubernetes healthz endpoint",
-        "description": "An endpoint for health checking used in Kubernetes.",
+        "description": "Liveness-style health check. Returns 200 as soon as the HTTP API is serving requests. It does not inspect collections, shards or consensus state, and is identical to `/livez`. Use it only to detect whether the process is up and responsive.",
         "operationId": "healthz",
         "tags": [
           "Service"
@@ -490,7 +490,7 @@
     "/livez": {
       "get": {
         "summary": "Kubernetes livez endpoint",
-        "description": "An endpoint for health checking used in Kubernetes.",
+        "description": "Kubernetes liveness probe. Returns 200 as soon as the HTTP API is serving requests. It does not inspect collections, shards or consensus state, and is identical to `/healthz`. A failure indicates the process is unresponsive and should be restarted.",
         "operationId": "livez",
         "tags": [
           "Service"
@@ -516,19 +516,30 @@
     "/readyz": {
       "get": {
         "summary": "Kubernetes readyz endpoint",
-        "description": "An endpoint for health checking used in Kubernetes.",
+        "description": "Kubernetes readiness probe. Checks the instance and waits out pending data operations to see when it can start accepting traffic. In a distributed deployment it returns 200 only once the node has caught up with the cluster consensus commit and its local shards are healthy; otherwise it returns 503. In a single-node deployment it always returns 200 once the API is up. Use it to decide when to route traffic to the instance.",
         "operationId": "readyz",
         "tags": [
           "Service"
         ],
         "responses": {
           "200": {
-            "description": "Healthz response",
+            "description": "The instance is ready to accept traffic",
             "content": {
               "text/plain": {
                 "schema": {
                   "type": "string",
-                  "example": "healthz check passed"
+                  "example": "all shards are ready"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The instance is not ready to accept traffic yet",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "some shards are not ready"
                 }
               }
             }
@@ -886,6 +897,161 @@
             "name": "force",
             "in": "query",
             "description": "If true - removes peer even if it has shards/replicas on it.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quotas": {
+      "get": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Get global quotas",
+        "description": "Get the cluster-wide resource quota configuration, together with the current utilization it is measured against.\nThe configuration is the same on every peer, but the reported utilization is for the node serving this request only -\nmemory and disk are node-local, so query each peer to see where the whole cluster stands.\n",
+        "operationId": "get_quotas",
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/QuotaStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Quotas"
+        ],
+        "summary": "Set global quotas",
+        "description": "Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts",
+        "operationId": "update_quotas",
+        "requestBody": {
+          "description": "Quota configuration to apply",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuotaConfig"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "description": "If true, wait until the new configuration is confirmed by consensus on this peer.\nIf false - the request returns as soon as the change is proposed.\n",
             "schema": {
               "type": "boolean",
               "default": false
@@ -4059,6 +4225,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -5392,905 +5568,6 @@
         }
       }
     },
-    "/collections/{collection_name}/points/search": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Search points",
-        "description": "Retrieve closest points based on vector similarity and given filtering conditions",
-        "operationId": "search_points",
-        "requestBody": {
-          "description": "Search request with optional filtering",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ScoredPoint"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/search/batch": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Search batch points",
-        "description": "Retrieve by batch the closest points based on vector similarity and given filtering conditions",
-        "operationId": "search_batch_points",
-        "requestBody": {
-          "description": "Search batch request",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequestBatch"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ScoredPoint"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/search/groups": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Search point groups",
-        "description": "Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field",
-        "operationId": "search_point_groups",
-        "requestBody": {
-          "description": "Search request with optional filtering, grouped by a given payload field",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchGroupsRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/GroupsResult"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/recommend": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Recommend points",
-        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
-        "operationId": "recommend_points",
-        "requestBody": {
-          "description": "Request points based on positive and negative examples.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecommendRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ScoredPoint"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/recommend/batch": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Recommend batch points",
-        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples.",
-        "operationId": "recommend_batch_points",
-        "requestBody": {
-          "description": "Request points based on positive and negative examples.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecommendRequestBatch"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ScoredPoint"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/recommend/groups": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Recommend point groups",
-        "description": "Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.",
-        "operationId": "recommend_point_groups",
-        "requestBody": {
-          "description": "Request points based on positive and negative examples, grouped by a payload field.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecommendGroupsRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "$ref": "#/components/schemas/GroupsResult"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/discover": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Discover points",
-        "description": "Use context and a target to find the most similar points to the target, constrained by the context.\nWhen using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.\nSince the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.\nWhen using target (with or without context), the score behaves a little different: The integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target. The context part of the score for each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair, and -1 otherwise.\n",
-        "operationId": "discover_points",
-        "requestBody": {
-          "description": "Request points based on {positive, negative} pairs of examples, and/or a target",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscoverRequest"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ScoredPoint"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/collections/{collection_name}/points/discover/batch": {
-      "post": {
-        "deprecated": true,
-        "tags": [
-          "Search"
-        ],
-        "summary": "Discover batch points",
-        "description": "Look for points based on target and/or positive and negative example pairs, in batch.",
-        "operationId": "discover_batch_points",
-        "requestBody": {
-          "description": "Batch request points based on { positive, negative } pairs of examples, and/or a target.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscoverRequestBatch"
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "collection_name",
-            "in": "path",
-            "description": "Name of the collection to search in",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "consistency",
-            "in": "query",
-            "description": "Define read consistency guarantees for the operation",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadConsistency"
-            }
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "description": "If set, overrides global timeout for this request. Unit is seconds.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "description": "error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "usage": {
-                      "default": null,
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Usage"
-                        },
-                        {
-                          "nullable": true
-                        }
-                      ]
-                    },
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request",
-                      "example": 0.002
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "result": {
-                      "type": "array",
-                      "items": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ScoredPoint"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/collections/{collection_name}/points/count": {
       "post": {
         "tags": [
@@ -7131,6 +6408,10 @@
       "description": "Qdrant service utilities."
     },
     {
+      "name": "Quotas",
+      "description": "Cluster-wide resource quotas."
+    },
+    {
       "name": "Beta",
       "description": "Beta features, do not depend on these yet."
     }
@@ -7277,6 +6558,12 @@
                 "nullable": true
               }
             ]
+          },
+          "created_at": {
+            "description": "Time of the collection creation. Absent for collections created before Qdrant started recording it.",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -7442,9 +6729,33 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
             "default": true,
-            "type": "boolean"
+            "deprecated": true,
+            "type": "boolean",
+            "nullable": true
+          },
+          "payload": {
+            "description": "Configuration of the payload storage",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "id_tracker": {
+            "description": "Configuration of the point id tracker",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "sparse_vectors": {
             "description": "Configuration of the sparse vector storage",
@@ -7482,6 +6793,7 @@
             "description": "Size of a vectors used",
             "type": "integer",
             "format": "uint64",
+            "maximum": 65536,
             "minimum": 1
           },
           "distance": {
@@ -7510,12 +6822,24 @@
             ]
           },
           "on_disk": {
-            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "description": "Deprecated: use `memory` instead. If true, vectors are served from disk, improving RAM usage at the cost of latency Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
           },
+          "memory": {
+            "description": "Memory placement of the original vector storage. Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for dense vector storage. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "datatype": {
-            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm.",
+            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm. - For `turbo8` datatype - vectors are quantized to 8 bits per element using the TurboQuant algorithm. - For `turbo16` datatype - vectors are quantized to 16 bits per element using the TurboQuant algorithm.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Datatype"
@@ -7551,7 +6875,7 @@
         "type": "object",
         "properties": {
           "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. Set to 0 to disable the main HNSW graph. Additional payload-aware links may still be built when the effective payload M is positive (see payload_m). This setting alone does not guarantee exact search.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -7579,12 +6903,24 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
           },
+          "memory": {
+            "description": "Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are set. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "payload_m": {
-            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
+            "description": "Number of additional payload-aware links per node. If unset, the value of m is used. An effective value of 0 disables these additional links. A positive value allows them for indexed payload fields with HNSW enabled, even when m is 0.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -7596,6 +6932,15 @@
             "nullable": true
           }
         }
+      },
+      "Memory": {
+        "description": "Memory placement of a component's data.\n\nData is always persisted on disk regardless of this setting; it only controls how the data is held in RAM.\n\nOptions:\n\n* `Cold` - Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or components larger than RAM size. First request might be slow, but data is cached with usage.\n\n* `Cached` - Data is pre-loaded into disk-cache RAM on start. First request is fast, but data may be evicted if there is not enough memory and some other component's data is used more frequently.\n\n* `Pinned` - Data is loaded in RAM and never evicted. First request is fast, but the component must fit in RAM at all times. Recommended for frequently queried small components like quantized vectors or primary indexes.",
+        "type": "string",
+        "enum": [
+          "cold",
+          "cached",
+          "pinned"
+        ]
       },
       "QuantizationConfig": {
         "anyOf": [
@@ -7642,9 +6987,21 @@
             "nullable": true
           },
           "always_ram": {
-            "description": "If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "description": "Deprecated: use `memory` instead. If true - quantized vectors always will be stored in RAM, ignoring the config of main storage",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7675,8 +7032,21 @@
             "$ref": "#/components/schemas/CompressionRatio"
           },
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7705,8 +7075,21 @@
         "type": "object",
         "properties": {
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "encoding": {
             "anyOf": [
@@ -7763,8 +7146,21 @@
         "type": "object",
         "properties": {
           "always_ram": {
+            "description": "Deprecated: use `memory` instead.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of quantized vectors. Overrides the deprecated `always_ram` flag if both are set. Default: follow the memory placement of the original vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "bits": {
             "anyOf": [
@@ -7784,7 +7180,8 @@
           "bits1",
           "bits1_5",
           "bits2",
-          "bits4"
+          "bits4",
+          "bits8"
         ]
       },
       "Datatype": {
@@ -7793,7 +7190,9 @@
           "float32",
           "uint8",
           "float16",
-          "turbo4"
+          "turbo4",
+          "turbo8",
+          "turbo16"
         ]
       },
       "MultiVectorConfig": {
@@ -7819,6 +7218,40 @@
           "auto",
           "custom"
         ]
+      },
+      "PayloadStorageParams": {
+        "description": "Params of the payload storage",
+        "type": "object",
+        "properties": {
+          "memory": {
+            "description": "Memory placement of the payload storage. Overrides the deprecated `on_disk_payload` flag if both are set. `pinned` is not supported for payload storage. Default: `cold` (`cached` if `on_disk_payload` is set to false).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "IdTrackerParams": {
+        "description": "Params of the point id tracker",
+        "type": "object",
+        "properties": {
+          "memory": {
+            "description": "Memory placement of the point id mapping in indexed segments: `cold` keeps it on disk and reads it on demand, `cached` keeps it on disk but primes the page cache with it on load, `pinned` keeps it in RAM. Default: `pinned`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
       },
       "SparseVectorParams": {
         "description": "Params of single sparse vector data storage",
@@ -7860,9 +7293,21 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store index on disk. If set to false, the index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "datatype": {
             "description": "Defines which datatype should be used for the index. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are quantized to unsigned 8-bit integers, 1 byte. Quantization to fit byte range `[0, 255]` happens during indexing automatically, so the actual vector data does not need to conform to this range.",
@@ -7895,7 +7340,7 @@
         ],
         "properties": {
           "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. Set to 0 to disable the main HNSW graph. Additional payload-aware links may still be built when the effective payload M is positive (see payload_m). This setting alone does not guarantee exact search.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -7920,12 +7365,24 @@
             "minimum": 0
           },
           "on_disk": {
-            "description": "Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "description": "Deprecated: use `memory` instead. Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
           },
+          "memory": {
+            "description": "Memory placement of the HNSW graph. Overrides the deprecated `on_disk` flag if both are set. Default: `cached` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "payload_m": {
-            "description": "Custom M param for hnsw graph built for payload index. If not set, default M will be used.",
+            "description": "Number of additional payload-aware links per node. If unset, the value of m is used. An effective value of 0 disables these additional links. A positive value allows them for indexed payload fields with HNSW enabled, even when m is 0.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -7967,7 +7424,7 @@
             "minimum": 0
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
+            "description": "Do not create segments larger than this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
             "default": null,
             "type": "integer",
             "format": "uint",
@@ -8070,6 +7527,11 @@
           },
           "unindexed_filtering_update": {
             "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
             "type": "boolean",
             "nullable": true
           },
@@ -8184,14 +7646,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
-            "type": "integer",
-            "format": "uint8",
-            "minimum": 0,
-            "nullable": true
-          },
-          "max_disk_usage_percent": {
-            "description": "Reject disk-consuming update operations when the storage filesystem exceeds this percentage of total capacity (1-100)",
+            "description": "Deprecated: use the node-wide quota config instead. Reject memory-consuming update operations when resident memory exceeds this percentage of total RAM (1-100)",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "minimum": 0,
@@ -8330,13 +7786,35 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "prefix": {
+            "description": "If true, enable prefix matching (`match: { \"prefix\": ... }`) on this field. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8372,13 +7850,30 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false. Default is false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8404,13 +7899,30 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8431,13 +7943,30 @@
             "$ref": "#/components/schemas/GeoIndexType"
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8501,9 +8030,21 @@
             ]
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "stemmer": {
             "description": "Algorithm for stemming. Default: disabled.",
@@ -8520,6 +8061,22 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "scoring": {
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Changing it rebuilds the index. Default: disabled.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextScoringInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`. The field must be inside the array's elements. Every query on the field, not only nested filters, treats each element as its own document: a condition matches a point when a single element matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8535,7 +8092,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "code"
         ]
       },
       "StopwordsInterface": {
@@ -8611,6 +8169,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/SnowballParams"
+          },
+          {
+            "$ref": "#/components/schemas/DisabledStemmerParams"
           }
         ]
       },
@@ -8660,6 +8221,54 @@
           "turkish"
         ]
       },
+      "DisabledStemmerParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/NoStemmer"
+          }
+        }
+      },
+      "NoStemmer": {
+        "description": "Tag selecting the explicit \"no stemming\" algorithm.",
+        "type": "string",
+        "enum": [
+          "none"
+        ]
+      },
+      "TextScoringInterface": {
+        "description": "BM25 scoring for a text index: `true` for the default parameters, `false` to disable it, or the parameters themselves.",
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "$ref": "#/components/schemas/TextScoringParams"
+          }
+        ]
+      },
+      "TextScoringParams": {
+        "description": "Parameters of ranking over a text index. The index records the length of each document, which BM25 normalizes by. `k1` and `b` are set per query.",
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/TextScoringType"
+          }
+        }
+      },
+      "TextScoringType": {
+        "description": "How a text index ranks documents.",
+        "type": "string",
+        "enum": [
+          "bm25"
+        ]
+      },
       "BoolIndexParams": {
         "type": "object",
         "required": [
@@ -8670,13 +8279,30 @@
             "$ref": "#/components/schemas/BoolIndexType"
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8702,13 +8328,30 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8734,13 +8377,30 @@
             "nullable": true
           },
           "on_disk": {
-            "description": "If true, store the index on disk. Default: false.",
+            "description": "Deprecated: use `memory` instead. If true, store the index on disk. Default: false.",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the index. Overrides the deprecated `on_disk` flag if both are set. Default: `pinned` (`cold` if `on_disk` is set to true).",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -9129,13 +8789,107 @@
           }
         ]
       },
-      "SearchRequest": {
-        "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
+      "ScoredPoint": {
+        "description": "Search result",
         "type": "object",
         "required": [
-          "limit",
-          "vector"
+          "id",
+          "score",
+          "version"
         ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "version": {
+            "description": "Point version",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "example": 3
+          },
+          "score": {
+            "description": "Points vector distance to the query vector",
+            "type": "number",
+            "format": "float",
+            "example": 0.75
+          },
+          "payload": {
+            "description": "Payload - values assigned to the point",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Payload"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "vector": {
+            "description": "Vector of the point",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStructOutput"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "shard_key": {
+            "description": "Shard Key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "order_value": {
+            "description": "Order-by value",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderValue"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "UpdateResult": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "operation_id": {
+            "description": "Sequential number of the operation",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/UpdateStatus"
+          }
+        }
+      },
+      "UpdateStatus": {
+        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual. `WaitTimeout` - Request is waiting for timeout.",
+        "type": "string",
+        "enum": [
+          "acknowledged",
+          "completed",
+          "wait_timeout"
+        ]
+      },
+      "ScrollRequest": {
+        "description": "Scroll request - paginate over all points which matches given condition",
+        "type": "object",
         "properties": {
           "shard_key": {
             "description": "Specify in which shards to look for the points, if not specified - look in all shards",
@@ -9148,11 +8902,26 @@
               }
             ]
           },
-          "vector": {
-            "$ref": "#/components/schemas/NamedVectorStruct"
+          "offset": {
+            "description": "Start ID to read points from.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "limit": {
+            "description": "Page size. Default: 10",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
           },
           "filter": {
-            "description": "Look only for points which satisfies this conditions",
+            "description": "Look only for points which satisfies this conditions. If not provided - all points.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
@@ -9162,32 +8931,8 @@
               }
             ]
           },
-          "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "limit": {
-            "description": "Max number of result to return",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1
-          },
-          "offset": {
-            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default is false.",
+            "description": "Select which payload to return with the response. Default is true.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -9198,79 +8943,18 @@
             ]
           },
           "with_vector": {
-            "description": "Options for specifying which vectors to include into response. Default is false.",
-            "default": null,
+            "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "Order the records by a payload field.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/WithVector"
+                "$ref": "#/components/schemas/OrderByInterface"
               },
               {
                 "nullable": true
               }
             ]
-          },
-          "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          }
-        }
-      },
-      "NamedVectorStruct": {
-        "description": "Vector data separator for named and unnamed modes Unnamed mode:\n\n{ \"vector\": [1.0, 2.0, 3.0] }\n\nor named mode:\n\n{ \"vector\": { \"vector\": [1.0, 2.0, 3.0], \"name\": \"image-embeddings\" } }",
-        "anyOf": [
-          {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          {
-            "$ref": "#/components/schemas/NamedVector"
-          },
-          {
-            "$ref": "#/components/schemas/NamedSparseVector"
-          }
-        ]
-      },
-      "NamedVector": {
-        "description": "Dense vector data with name",
-        "type": "object",
-        "required": [
-          "name",
-          "vector"
-        ],
-        "properties": {
-          "name": {
-            "description": "Name of vector data",
-            "type": "string"
-          },
-          "vector": {
-            "description": "Vector data",
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          }
-        }
-      },
-      "NamedSparseVector": {
-        "description": "Sparse vector data with name",
-        "type": "object",
-        "required": [
-          "name",
-          "vector"
-        ],
-        "properties": {
-          "name": {
-            "description": "Name of vector data",
-            "type": "string"
-          },
-          "vector": {
-            "$ref": "#/components/schemas/SparseVector"
           }
         }
       },
@@ -9358,6 +9042,9 @@
           },
           {
             "$ref": "#/components/schemas/HasVectorCondition"
+          },
+          {
+            "$ref": "#/components/schemas/SliceCondition"
           },
           {
             "$ref": "#/components/schemas/NestedCondition"
@@ -9472,6 +9159,12 @@
             "$ref": "#/components/schemas/MatchPhrase"
           },
           {
+            "$ref": "#/components/schemas/MatchPrefix"
+          },
+          {
+            "$ref": "#/components/schemas/MatchSubstring"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -9537,6 +9230,30 @@
         ],
         "properties": {
           "phrase": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchPrefix": {
+        "description": "Match keyword values that start with the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword matching. Served efficiently by a keyword index created with the `prefix` option.",
+        "type": "object",
+        "required": [
+          "prefix"
+        ],
+        "properties": {
+          "prefix": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchSubstring": {
+        "description": "Match keyword values that contain the given string.\n\nByte-wise (hence, for valid UTF-8, character-wise) and case-sensitive, consistent with exact keyword and prefix matching. Served by a keyword index with the `prefix` option, through a scan of its key dictionary; without one, falls back to reading the payload.",
+        "type": "object",
+        "required": [
+          "substring"
+        ],
+        "properties": {
+          "substring": {
             "type": "string"
           }
         }
@@ -9840,6 +9557,40 @@
           }
         }
       },
+      "SliceCondition": {
+        "description": "Select points that fall into one of `total` disjoint deterministic slices of the id space, for parallel scans and reproducible sampling.",
+        "type": "object",
+        "required": [
+          "slice"
+        ],
+        "properties": {
+          "slice": {
+            "$ref": "#/components/schemas/Slice"
+          }
+        }
+      },
+      "Slice": {
+        "description": "One of `total` disjoint deterministic slices of the id space.\n\nA point belongs to the slice iff `hash(id) % total == index`, where `hash` is SipHash-2-4 with a zero key over the canonical id bytes: 8 little-endian bytes for numeric ids, the 16 RFC 4122 bytes for UUIDs. For a fixed `total`, slices `0..total` are disjoint and together cover all points; membership is uniform regardless of the id scheme and stable across queries, segments, platforms and Qdrant versions.\n\nSlices with different `total` values are correlated (same hash, no salt): e.g. slice `0` of `total: 4` is a strict subset of slice `0` of `total: 2`. This keeps a smaller sample contained in a larger one.",
+        "type": "object",
+        "required": [
+          "index",
+          "total"
+        ],
+        "properties": {
+          "total": {
+            "description": "Total number of disjoint slices the id space is split into",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 1
+          },
+          "index": {
+            "description": "Which slice to select, must be in `0..total`",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
       "NestedCondition": {
         "type": "object",
         "required": [
@@ -9883,461 +9634,7 @@
           "min_count": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
-          }
-        }
-      },
-      "SearchParams": {
-        "description": "Additional parameters of the search",
-        "type": "object",
-        "properties": {
-          "hnsw_ef": {
-            "description": "Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "nullable": true
-          },
-          "exact": {
-            "description": "Search without approximation. If set to true, search may run long but with exact results.",
-            "default": false,
-            "type": "boolean"
-          },
-          "quantization": {
-            "description": "Quantization params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/QuantizationSearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "indexed_only": {
-            "description": "If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results",
-            "default": false,
-            "type": "boolean"
-          },
-          "acorn": {
-            "description": "ACORN search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AcornSearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "QuantizationSearchParams": {
-        "description": "Additional parameters of the search",
-        "type": "object",
-        "properties": {
-          "ignore": {
-            "description": "If true, quantized vectors are ignored. Default is false.",
-            "default": false,
-            "type": "boolean"
-          },
-          "rescore": {
-            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. If not set, qdrant decides automatically apply rescoring or not.",
-            "type": "boolean",
-            "nullable": true
-          },
-          "oversampling": {
-            "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be preselected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be preselected using quantized index, and then top-100 will be returned after re-scoring.",
-            "type": "number",
-            "format": "double",
-            "minimum": 1,
-            "nullable": true
-          }
-        }
-      },
-      "AcornSearchParams": {
-        "description": "ACORN-related search parameters",
-        "type": "object",
-        "properties": {
-          "enable": {
-            "description": "If true, then ACORN may be used for the HNSW search based on filters selectivity. Improves search recall for searches with multiple low-selectivity payload filters, at cost of performance.",
-            "default": false,
-            "type": "boolean"
-          },
-          "max_selectivity": {
-            "description": "Maximum selectivity of filters to enable ACORN.\n\nIf estimated filters selectivity is higher than this value, ACORN will not be used. Selectivity is estimated as: `estimated number of points satisfying the filters / total number of points`.\n\n0.0 for never, 1.0 for always. Default is 0.4.",
-            "type": "number",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "nullable": true
-          }
-        }
-      },
-      "ScoredPoint": {
-        "description": "Search result",
-        "type": "object",
-        "required": [
-          "id",
-          "score",
-          "version"
-        ],
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/ExtendedPointId"
-          },
-          "version": {
-            "description": "Point version",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0,
-            "example": 3
-          },
-          "score": {
-            "description": "Points vector distance to the query vector",
-            "type": "number",
-            "format": "float",
-            "example": 0.75
-          },
-          "payload": {
-            "description": "Payload - values assigned to the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Payload"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector": {
-            "description": "Vector of the point",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VectorStructOutput"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "shard_key": {
-            "description": "Shard Key",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKey"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "order_value": {
-            "description": "Order-by value",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OrderValue"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "UpdateResult": {
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "properties": {
-          "operation_id": {
-            "description": "Sequential number of the operation",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "status": {
-            "$ref": "#/components/schemas/UpdateStatus"
-          }
-        }
-      },
-      "UpdateStatus": {
-        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual. `WaitTimeout` - Request is waiting for timeout.",
-        "type": "string",
-        "enum": [
-          "acknowledged",
-          "completed",
-          "wait_timeout"
-        ]
-      },
-      "RecommendRequest": {
-        "description": "Recommendation request. Provides positive and negative examples of the vectors, which can be ids of points that are already stored in the collection, raw vectors, or even ids and vectors combined.\n\nService should look for the points which are closer to positive examples and at the same time further to negative examples. The concrete way of how to compare negative and positive distances is up to the `strategy` chosen.",
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "positive": {
-            "description": "Look for vectors closest to those",
-            "default": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecommendExample"
-            }
-          },
-          "negative": {
-            "description": "Try to avoid vectors like this",
-            "default": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecommendExample"
-            }
-          },
-          "strategy": {
-            "description": "How to use positive and negative examples to find the results",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RecommendStrategy"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "limit": {
-            "description": "Max number of result to return",
-            "type": "integer",
-            "format": "uint",
             "minimum": 1
-          },
-          "offset": {
-            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "with_payload": {
-            "description": "Select which payload to return with the response. Default is false.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vector": {
-            "description": "Options for specifying which vectors to include into response. Default is false.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "using": {
-            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsingVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "lookup_from": {
-            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LookupLocation"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "RecommendExample": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/ExtendedPointId"
-          },
-          {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          {
-            "$ref": "#/components/schemas/SparseVector"
-          }
-        ]
-      },
-      "RecommendStrategy": {
-        "description": "How to use positive and negative examples to find the results, default is `average_vector`:\n\n* `average_vector` - Average positive and negative vectors and create a single query with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.\n\n* `best_score` - Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just the `max_pos_score`.\n\n* `sum_scores` - Uses custom search objective. Compares against all inputs, sums all the scores. Scores against positive vectors are added, against negatives are subtracted.",
-        "type": "string",
-        "enum": [
-          "average_vector",
-          "best_score",
-          "sum_scores"
-        ]
-      },
-      "UsingVector": {
-        "anyOf": [
-          {
-            "type": "string"
-          }
-        ]
-      },
-      "LookupLocation": {
-        "description": "Defines a location to use for looking up the vector. Specifies collection and vector field name.",
-        "type": "object",
-        "required": [
-          "collection"
-        ],
-        "properties": {
-          "collection": {
-            "description": "Name of the collection used for lookup",
-            "type": "string"
-          },
-          "vector": {
-            "description": "Optional name of the vector field within the collection. If not provided, the default vector field will be used.",
-            "default": null,
-            "type": "string",
-            "nullable": true
-          },
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "ScrollRequest": {
-        "description": "Scroll request - paginate over all points which matches given condition",
-        "type": "object",
-        "properties": {
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "offset": {
-            "description": "Start ID to read points from.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtendedPointId"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "limit": {
-            "description": "Page size. Default: 10",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "nullable": true
-          },
-          "filter": {
-            "description": "Look only for points which satisfies this conditions. If not provided - all points.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_payload": {
-            "description": "Select which payload to return with the response. Default is true.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vector": {
-            "$ref": "#/components/schemas/WithVector"
-          },
-          "order_by": {
-            "description": "Order the records by a payload field.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OrderByInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
           }
         }
       },
@@ -10471,7 +9768,7 @@
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
-            "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
+            "description": "For auto sharding: Number of shards in collection. - If not specified, selected automatically - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
@@ -10507,10 +9804,35 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
             "default": null,
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "payload": {
+            "description": "Configuration of the payload storage",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "id_tracker": {
+            "description": "Configuration of the point id tracker",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "hnsw_config": {
             "description": "Custom params for HNSW index. If none - values from service configuration file are used.",
@@ -10641,7 +9963,7 @@
             "nullable": true
           },
           "max_segment_size": {
-            "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
+            "description": "Do not create segments larger than this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexation speed have more priority for your - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256",
             "type": "integer",
             "format": "uint",
             "minimum": 1,
@@ -10735,6 +10057,11 @@
           },
           "unindexed_filtering_update": {
             "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
             "type": "boolean",
             "nullable": true
           },
@@ -10849,15 +10176,8 @@
             "nullable": true
           },
           "max_resident_memory_percent": {
-            "description": "Reject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free memory.",
-            "type": "integer",
-            "format": "uint8",
-            "maximum": 100,
-            "minimum": 1,
-            "nullable": true
-          },
-          "max_disk_usage_percent": {
-            "description": "Reject disk-consuming update operations (e.g. upsert, set payload) when the filesystem hosting Qdrant storage is filled above this percentage of its total capacity. Value in [1, 100]. Applied uniformly to external and internal (replication) traffic — rejection is deterministic so it does not cause replica divergence. Delete operations are not affected, so callers can still free disk space. Free space is sampled with a small TTL cache; the gate may take a few seconds to react.",
+            "description": "Deprecated: use the node-wide quota config (`PUT /quotas`) instead, which caps the same resource for every collection. Scheduled for removal in 1.21.\n\nReject memory-consuming update operations (e.g. upsert, set payload) when the process resident memory exceeds this percentage of total system memory (or cgroup limit). Value in [1, 100]. Memory is a node-wide resource, so this only tightens the quota for one collection; it cannot lift it. Delete operations are not affected, so callers can still free memory.",
+            "deprecated": true,
             "type": "integer",
             "format": "uint8",
             "maximum": 100,
@@ -10984,7 +10304,7 @@
             ]
           },
           "metadata": {
-            "description": "Metadata to update for the collection. If provided, this will merge with existing metadata. To remove metadata, set it to an empty object.",
+            "description": "Metadata to update for the collection. If provided, this will merge with existing metadata. Individual keys can be removed by setting their value to `null`.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Payload"
@@ -11029,9 +10349,21 @@
             ]
           },
           "on_disk": {
-            "description": "If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "description": "Deprecated: use `memory` instead. If true, vectors are served from disk, improving RAM usage at the cost of latency",
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "memory": {
+            "description": "Memory placement of the original vector storage. Overrides the deprecated `on_disk` flag if both are set. `pinned` is not supported for dense vector storage.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11092,10 +10424,33 @@
             "nullable": true
           },
           "on_disk_payload": {
-            "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
+            "description": "Deprecated: use `payload.memory` instead. If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
+            "deprecated": true,
             "type": "boolean",
             "nullable": true
+          },
+          "payload": {
+            "description": "Update params of the payload storage. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayloadStorageParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "id_tracker": {
+            "description": "Update params of the point id tracker. If none - it is left unchanged.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdTrackerParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11542,7 +10897,7 @@
             "$ref": "#/components/schemas/TokenizerType"
           },
           "language": {
-            "description": "Defines which language to use for text preprocessing. This parameter is used to construct default stopwords filter and stemmer. To disable language-specific processing, set this to `\"language\": \"none\"`. If not specified, English is assumed.",
+            "description": "Defines which language to use for text preprocessing. This parameter is used to construct default stopwords filter and stemmer. To disable language-specific processing, set `stemmer` to `{\"type\": \"none\"}` and configure an empty stopword set. The legacy `\"language\": \"none\"` hack is deprecated and may be rejected in a future release. If not specified, English is assumed.",
             "type": "string",
             "nullable": true
           },
@@ -12372,7 +11727,7 @@
             ]
           },
           "comment": {
-            "description": "A human-readable report of the transfer progress. Available only on the source peer.",
+            "description": "A human-readable report of the transfer progress. Available only on the source peer, and on the target peer during snapshot recovery.",
             "type": "string",
             "nullable": true
           }
@@ -12496,6 +11851,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SearchThreadPoolTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "quota": {
+            "description": "Resource quota this node is enforcing, and whether it is currently over it. The config is whatever this node last persisted, so a peer that missed a consensus update reports what it is actually applying rather than what the cluster agreed on. Absent for a token without global access, which `GET /quotas` requires as well.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuotaTelemetry"
               },
               {
                 "nullable": true
@@ -12642,7 +12008,77 @@
             "type": "boolean"
           },
           "single_file_mmap_vector_storage": {
-            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
+            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.18.3+",
+            "default": true,
+            "type": "boolean"
+          },
+          "async_payload_storage": {
+            "description": "Allow the io_uring-based payload storage implementation. When disabled, io_uring payload storage is *never* used. When enabled, payload storage backend is decided based on `storage.performance.io_uring` option and payload storage type.",
+            "default": true,
+            "type": "boolean"
+          },
+          "async_hnsw_graph": {
+            "description": "Allow the batched io_uring-based HNSW graph search. When disabled, the HNSW graph is *never* opened on io_uring. When enabled, the graph backend is decided based on `storage.performance.io_uring` option and links placement.",
+            "default": false,
+            "type": "boolean"
+          },
+          "write_segment_manifest": {
+            "description": "Write a segment manifest (`segments_manifest.json`, next to the `segments/` directory) listing the shard's segments and their state, so out-of-process readers can discover segments without scanning the filesystem.",
+            "default": false,
+            "type": "boolean"
+          },
+          "append_only_mutations": {
+            "description": "Build new segments in append-only mode: in-place point mutations become clone-and-tombstone appends instead. Intended for testing the append-only storage path.",
+            "default": false,
+            "type": "boolean"
+          },
+          "compact_bitmask": {
+            "description": "Persist write-once bitmasks in the compact `StoredBitmask` format instead of raw dense bitslices. Only gates writing: both formats are always readable.",
+            "default": false,
+            "type": "boolean"
+          },
+          "append_only_storages": {
+            "description": "Create Blobstore-backed storages (payload storage, appendable field indexes, sparse vectors) in the append-only Logstore mode. Gates creation only: an existing storage keeps its persisted mode, and both modes are always readable.\n\nImplies [`Self::append_only_mutations`], enforced by [`init_feature_flags`].",
+            "default": false,
+            "type": "boolean"
+          },
+          "compact_logstore_tracker": {
+            "description": "In non-appendable segments built by the optimizer, store the tracker of an append-only payload storage in the compacted format: read into RAM whole on open instead of one lookup per value. Only has an effect together with [`Self::append_only_storages`]. Gates creation only: both formats are always readable.",
+            "default": false,
+            "type": "boolean"
+          },
+          "transfer_raw_points": {
+            "description": "Transfer points as storage-native bytes (raw points), for every collection rather than only those whose vector storage would lose precision in a decode-encode round-trip (TurboQuant).\n\nRead on the sending side only, where the transfer batch is prepared: nodes accept raw points regardless.",
+            "default": true,
+            "type": "boolean"
+          },
+          "transfer_raw_payloads": {
+            "description": "Send the payload of a raw point as the byte blob it is stored as, so the sending node does not parse it and neither node builds a protobuf value tree for it. The receiving node still parses the blob, once, when the operation is applied. Only has an effect on points transferred raw, see [`Self::transfer_raw_points`].\n\nRead on the sending side only: nodes accept raw payloads regardless.",
+            "default": true,
+            "type": "boolean"
+          },
+          "persist_proxy_segments": {
+            "description": "Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are open. Replays the persisted changes on startup to guarantee data consistency. Required for serverless deployments where storage and compute is separated.",
+            "default": false,
+            "type": "boolean"
+          },
+          "combined_vector_storage": {
+            "description": "When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage (aka inline-storage without standalone vector storage) for new segments.\n\nExisting `GraphInline` segments are always readable, regardless of this flag.",
+            "default": true,
+            "type": "boolean"
+          },
+          "versioned_deletes": {
+            "description": "Record the version of every delete, in formats older readers cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to the deleted mask of immutable segments, which takes their deletes in place of the mask. Followers use the versions to never apply the delete of a moved point before they see its new copy. Gates writing only: both formats are always read, and the deletes of an immutable segment are the union of its mask and its log.",
+            "default": false,
+            "type": "boolean"
+          },
+          "pipnn_graph_building": {
+            "description": "Build the main HNSW graph of large segments with PiPNN instead of inserting point by point. When disabled, PiPNN is *never* used and graphs are built with HNSW. When enabled, PiPNN is used where it applies: segments that are large enough, have no older graph to build from, and whose vectors support it. Only changes how graphs are built: the resulting graph has the same format either way.\n\nDisabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large segments can only be tuned through `m`.",
+            "default": false,
+            "type": "boolean"
+          },
+          "serverless_compatible": {
+            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and [`Self::versioned_deletes`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
@@ -12690,6 +12126,7 @@
       "RunningEnvironmentTelemetry": {
         "type": "object",
         "required": [
+          "container_runtime",
           "cpu_flags",
           "is_docker"
         ],
@@ -12705,6 +12142,9 @@
           "is_docker": {
             "type": "boolean"
           },
+          "container_runtime": {
+            "$ref": "#/components/schemas/ContainerRuntime"
+          },
           "cores": {
             "type": "integer",
             "format": "uint",
@@ -12718,12 +12158,14 @@
             "nullable": true
           },
           "ram_size": {
+            "description": "Effective total memory for this process in KiB (cgroup limit or host RAM).",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "disk_size": {
+            "description": "Size in KiB of the filesystem hosting Qdrant's /storage path (if not available, fallback to host disk size)",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -12751,6 +12193,16 @@
           }
         }
       },
+      "ContainerRuntime": {
+        "description": "Container runtime Qdrant is running under (`none` if bare metal).",
+        "type": "string",
+        "enum": [
+          "none",
+          "docker",
+          "kubernetes",
+          "other"
+        ]
+      },
       "CpuEndian": {
         "type": "string",
         "enum": [
@@ -12776,6 +12228,7 @@
           "dir",
           "log_api",
           "max_log_files",
+          "output",
           "rotation",
           "trust_forwarded_headers"
         ],
@@ -12796,6 +12249,9 @@
           },
           "log_api": {
             "type": "boolean"
+          },
+          "output": {
+            "type": "string"
           },
           "dir_size_bytes": {
             "type": "integer",
@@ -12890,7 +12346,7 @@
           "resharding": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ReshardingInfo"
+              "$ref": "#/components/schemas/ReshardingTelemetry"
             },
             "nullable": true
           },
@@ -13262,6 +12718,17 @@
               "$ref": "#/components/schemas/VectorDataInfo"
             }
           },
+          "payload_storage_io_backend": {
+            "description": "Universal I/O backend that payload storage reads files with. Absent if payload storage does not support configurable backends or only supports a single backend type.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IoBackend"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "deferred_internal_id": {
             "description": "Internal ID from which points are deferred (hidden from reads). Only set for appendable segments.",
             "type": "integer",
@@ -13302,8 +12769,27 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "io_backend": {
+            "description": "Universal I/O backend that this vector storage reads files with. Absent if vector storage does not support configurable backends or only supports a single backend type.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IoBackend"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "IoBackend": {
+        "description": "Universal I/O backend that is used to read files.\n\nDecided when the component is opened based on `storage.performance.io_uring` option, component memory placement and kernel io_uring support.\n\nOptions:\n\n* `Mmap` - Reads are served by the page cache through a memory mapping.\n\n* `IoUring` - Reads are submitted to the kernel with io_uring.",
+        "type": "string",
+        "enum": [
+          "mmap",
+          "io_uring"
+        ]
       },
       "SegmentConfig": {
         "type": "object",
@@ -13326,6 +12812,17 @@
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
+          },
+          "id_tracker_memory": {
+            "description": "Memory placement of the id tracker in non-appendable segments. Unset means the deployment default: `cold` in serverless-compatible mode, `pinned` otherwise.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -13414,7 +12911,7 @@
             ]
           },
           {
-            "description": "Same as `ChunkedMmap`, but vectors are forced to be locked in RAM In this way we avoid cold requests to disk, but risk to run out of memory\n\nDesigned as a replacement for `Memory`, which doesn't depend on RocksDB",
+            "description": "Same as `ChunkedMmap`, but vectors are forced to be locked in RAM In this way we avoid cold requests to disk, but risk to run out of memory",
             "type": "string",
             "enum": [
               "InRamChunkedMmap"
@@ -13428,10 +12925,10 @@
             ]
           },
           {
-            "description": "Placeholder storage: contains no data, all vectors reported as deleted. Used for newly created named vectors on immutable segments. No files on disk, reconstructed from config on load.",
+            "description": "Vectors are inlined in the HNSW links file, not in a dedicated storage. Not appendable.",
             "type": "string",
             "enum": [
-              "Empty"
+              "GraphInline"
             ]
           }
         ]
@@ -13486,7 +12983,9 @@
           "float32",
           "float16",
           "uint8",
-          "turbo4"
+          "turbo4",
+          "turbo8",
+          "turbo16"
         ]
       },
       "SparseVectorDataConfig": {
@@ -13542,6 +13041,17 @@
                 "nullable": true
               }
             ]
+          },
+          "memory": {
+            "description": "Requested memory placement of the index.\n\nThe structural decision is carried by `index_type`; this field additionally distinguishes `cold` from `cached` for the mmap index variant.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Memory"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -13578,13 +13088,6 @@
             "type": "string",
             "enum": [
               "mmap"
-            ]
-          },
-          {
-            "description": "Placeholder storage: contains no data, all vectors reported as deleted. Used for newly created sparse named vectors on immutable segments.",
-            "type": "string",
-            "enum": [
-              "empty"
             ]
           }
         ]
@@ -13656,6 +13159,9 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_large_cardinality": {
+            "$ref": "#/components/schemas/OperationDurationStatistics"
+          },
+          "filtered_acorn": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
           },
           "filtered_exact": {
@@ -13954,6 +13460,57 @@
             "minimum": 0
           }
         }
+      },
+      "ReshardingTelemetry": {
+        "type": "object",
+        "required": [
+          "direction",
+          "peer_id",
+          "shard_id",
+          "stage",
+          "uuid"
+        ],
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/ReshardingStage"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/ReshardingDirection"
+          },
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ReshardingStage": {
+        "description": "Resharding stages",
+        "type": "string",
+        "enum": [
+          "migrating_points",
+          "read_hash_ring_committed",
+          "write_hash_ring_committed"
+        ]
       },
       "ShardCleanStatusTelemetry": {
         "oneOf": [
@@ -14378,50 +13935,72 @@
       "HardwareUsage": {
         "description": "Usage of the hardware resources, spent to process the request",
         "type": "object",
-        "required": [
-          "cpu",
-          "payload_index_io_read",
-          "payload_index_io_write",
-          "payload_io_read",
-          "payload_io_write",
-          "vector_io_read",
-          "vector_io_write"
-        ],
         "properties": {
           "cpu": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_index_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "payload_index_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "vector_io_read": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "vector_io_write": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
+          },
+          "remote_io_cached_read": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "remote_io_non_cached_read": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "updated_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "updated_indexed_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -14449,6 +14028,71 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          }
+        }
+      },
+      "QuotaTelemetry": {
+        "description": "What a node reports about the quota it is enforcing.\n\nCarries the verdict rather than the raw utilization, because the point of reporting it is to know whether this node is currently refusing writes — which depends on the limits as well as the readings.",
+        "type": "object",
+        "required": [
+          "config",
+          "exceeded"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "exceeded": {
+            "$ref": "#/components/schemas/QuotaExceeded"
+          }
+        }
+      },
+      "QuotaConfig": {
+        "description": "Cluster-wide limits on node resources.\n\nAn unset limit means the corresponding resource is not capped. Limits are only enforced while `enabled` is true.",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether the limits below are enforced.",
+            "default": false,
+            "type": "boolean"
+          },
+          "max_resident_memory_percent": {
+            "description": "Reject memory-consuming updates once process resident memory reaches this percentage of total system memory (or of the cgroup limit, if one applies).",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Reject disk-consuming updates once the filesystem hosting the storage directory is filled to this percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "release_margin_percent": {
+            "description": "How many percentage points below its limit a resource has to fall before this node starts accepting work again.\n\nWithout a margin, a resource resting on its limit crosses it in both directions on the noise between two readings, putting the node in and out of service each time — and restarting a shard recovery with it. Raise it where usage is volatile; `0` disables the margin and releases as soon as usage is back under the limit.\n\nUnset leaves the built-in default in force, so a config written today does not pin a number that a later release may want to revise.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "QuotaExceeded": {
+        "description": "Which of the enforced limits a node is currently refusing work over.\n\nReported per resource because they are freed by different actions: disk by deleting or optimizing, memory by unloading. A single flag would not say which one to go and fix.\n\n`true` outlasts the reading that caused it: a resource that reaches its limit stays flagged until it has fallen a margin below, so that one resting near the limit does not flip the node in and out of service. Expect to see it set while the reported utilization is already back under the configured limit.\n\nA field is `null` when the node is not enforcing that resource — the quota is disabled, no limit is set for it, or it cannot be measured here. That is deliberately distinct from `false`: a resource that can never trip must not be reported as one that is within its limits, or it invites an alert that can never fire.",
+        "type": "object",
+        "properties": {
+          "resident_memory": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "disk_usage": {
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -14786,12 +14430,14 @@
             "$ref": "#/components/schemas/ReshardingDirection"
           },
           "peer_id": {
+            "description": "Peer to create the new shard on, or to migrate points away from when scaling down. If not specified, the least loaded peer is picked when scaling up, a peer holding the removed shard when scaling down.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0,
             "nullable": true
           },
           "shard_key": {
+            "description": "Custom shard key to reshard, must already exist. If not specified, shards without a shard key are resharded.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ShardKey"
@@ -14853,34 +14499,6 @@
           }
         }
       },
-      "SearchRequestBatch": {
-        "type": "object",
-        "required": [
-          "searches"
-        ],
-        "properties": {
-          "searches": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SearchRequest"
-            }
-          }
-        }
-      },
-      "RecommendRequestBatch": {
-        "type": "object",
-        "required": [
-          "searches"
-        ],
-        "properties": {
-          "searches": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecommendRequest"
-            }
-          }
-        }
-      },
       "SnapshotRecover": {
         "type": "object",
         "required": [
@@ -14893,7 +14511,7 @@
             "format": "uri"
           },
           "priority": {
-            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
+            "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery it will be synchronized from other replicas.",
             "default": null,
             "anyOf": [
               {
@@ -15135,308 +14753,6 @@
           }
         ]
       },
-      "SearchGroupsRequest": {
-        "type": "object",
-        "required": [
-          "group_by",
-          "group_size",
-          "limit",
-          "vector"
-        ],
-        "properties": {
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "vector": {
-            "$ref": "#/components/schemas/NamedVectorStruct"
-          },
-          "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_payload": {
-            "description": "Select which payload to return with the response. Default is false.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vector": {
-            "description": "Options for specifying which vectors to include into response. Default is false.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
-            "type": "string",
-            "minLength": 1
-          },
-          "group_size": {
-            "description": "Maximum amount of points to return per group",
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1
-          },
-          "limit": {
-            "description": "Maximum amount of groups to return",
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1
-          },
-          "with_lookup": {
-            "description": "Look for points in another collection using the group ids",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithLookupInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "WithLookupInterface": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "$ref": "#/components/schemas/WithLookup"
-          }
-        ]
-      },
-      "WithLookup": {
-        "type": "object",
-        "required": [
-          "collection"
-        ],
-        "properties": {
-          "collection": {
-            "description": "Name of the collection to use for points lookup",
-            "type": "string"
-          },
-          "with_payload": {
-            "description": "Options for specifying which payload to include (or not)",
-            "default": true,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vectors": {
-            "description": "Options for specifying which vectors to include (or not)",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "RecommendGroupsRequest": {
-        "type": "object",
-        "required": [
-          "group_by",
-          "group_size",
-          "limit"
-        ],
-        "properties": {
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "positive": {
-            "description": "Look for vectors closest to those",
-            "default": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecommendExample"
-            }
-          },
-          "negative": {
-            "description": "Try to avoid vectors like this",
-            "default": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecommendExample"
-            }
-          },
-          "strategy": {
-            "description": "How to use positive and negative examples to find the results",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RecommendStrategy"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_payload": {
-            "description": "Select which payload to return with the response. Default is false.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vector": {
-            "description": "Options for specifying which vectors to include into response. Default is false.",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "score_threshold": {
-            "description": "Define a minimal score threshold for the result. If defined, less similar results will not be returned. Score of the returned result might be higher or smaller than the threshold depending on the Distance function used. E.g. for cosine similarity only higher scores will be returned.",
-            "type": "number",
-            "format": "float",
-            "nullable": true
-          },
-          "using": {
-            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsingVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "lookup_from": {
-            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LookupLocation"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
-            "type": "string",
-            "minLength": 1
-          },
-          "group_size": {
-            "description": "Maximum amount of points to return per group",
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1
-          },
-          "limit": {
-            "description": "Maximum amount of groups to return",
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 1
-          },
-          "with_lookup": {
-            "description": "Look for points in another collection using the group ids",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithLookupInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
       "GroupsResult": {
         "type": "object",
         "required": [
@@ -15626,155 +14942,6 @@
           }
         ]
       },
-      "DiscoverRequest": {
-        "description": "Use context and a target to find the most similar points, constrained by the context.",
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "shard_key": {
-            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardKeySelector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "target": {
-            "description": "Look for vectors closest to this.\n\nWhen using the target (with or without context), the integer part of the score represents the rank with respect to the context, while the decimal part of the score relates to the distance to the target.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RecommendExample"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "context": {
-            "description": "Pairs of { positive, negative } examples to constrain the search.\n\nWhen using only the context (without a target), a special search - called context search - is performed where pairs of points are used to generate a loss that guides the search towards the zone where most positive examples overlap. This means that the score minimizes the scenario of finding a point closer to a negative than to a positive part of a pair.\n\nSince the score of a context relates to loss, the maximum score a point can get is 0.0, and it becomes normal that many points can have a score of 0.0.\n\nFor discovery search (when including a target), the context part of the score for each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair, and -1 otherwise.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContextExamplePair"
-            },
-            "nullable": true
-          },
-          "filter": {
-            "description": "Look only for points which satisfies this conditions",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Filter"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "params": {
-            "description": "Additional search params",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchParams"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "limit": {
-            "description": "Max number of result to return",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1
-          },
-          "offset": {
-            "description": "Offset of the first result to return. May be used to paginate results. Note: large offset values may cause performance issues.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "with_payload": {
-            "description": "Select which payload to return with the response. Default is false.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithPayloadInterface"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "with_vector": {
-            "description": "Options for specifying which vectors to include into response. Default is false.",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WithVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "using": {
-            "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UsingVector"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "lookup_from": {
-            "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LookupLocation"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          }
-        }
-      },
-      "ContextExamplePair": {
-        "type": "object",
-        "required": [
-          "negative",
-          "positive"
-        ],
-        "properties": {
-          "positive": {
-            "$ref": "#/components/schemas/RecommendExample"
-          },
-          "negative": {
-            "$ref": "#/components/schemas/RecommendExample"
-          }
-        }
-      },
-      "DiscoverRequestBatch": {
-        "type": "object",
-        "required": [
-          "searches"
-        ],
-        "properties": {
-          "searches": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DiscoverRequest"
-            }
-          }
-        }
-      },
       "VersionInfo": {
         "type": "object",
         "required": [
@@ -15849,7 +15016,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -15964,7 +15131,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -16094,6 +15261,9 @@
           },
           {
             "$ref": "#/components/schemas/RelevanceFeedbackQuery"
+          },
+          {
+            "$ref": "#/components/schemas/TextQuery"
           }
         ]
       },
@@ -16183,6 +15353,15 @@
             ]
           }
         }
+      },
+      "RecommendStrategy": {
+        "description": "How to use positive and negative examples to find the results, default is `average_vector`:\n\n* `average_vector` - Average positive and negative vectors and create a single query with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.\n\n* `best_score` - Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just the `max_pos_score`.\n\n* `sum_scores` - Uses custom search objective. Compares against all inputs, sums all the scores. Scores against positive vectors are added, against negatives are subtracted.",
+        "type": "string",
+        "enum": [
+          "average_vector",
+          "best_score",
+          "sum_scores"
+        ]
       },
       "DiscoverQuery": {
         "type": "object",
@@ -16374,6 +15553,12 @@
             "$ref": "#/components/schemas/SumExpression"
           },
           {
+            "$ref": "#/components/schemas/MaxExpression"
+          },
+          {
+            "$ref": "#/components/schemas/MinExpression"
+          },
+          {
             "$ref": "#/components/schemas/NegExpression"
           },
           {
@@ -16396,6 +15581,9 @@
           },
           {
             "$ref": "#/components/schemas/LnExpression"
+          },
+          {
+            "$ref": "#/components/schemas/AcoshExpression"
           },
           {
             "$ref": "#/components/schemas/LinDecayExpression"
@@ -16430,7 +15618,7 @@
             "$ref": "#/components/schemas/GeoPoint"
           },
           "to": {
-            "description": "Payload field with the destination geo point",
+            "description": "Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used",
             "type": "string"
           }
         }
@@ -16478,6 +15666,36 @@
         ],
         "properties": {
           "sum": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MaxExpression": {
+        "description": "Largest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "max"
+        ],
+        "properties": {
+          "max": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "MinExpression": {
+        "description": "Smallest of the given expressions. Requires at least one operand.",
+        "type": "object",
+        "required": [
+          "min"
+        ],
+        "properties": {
+          "min": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Expression"
@@ -16604,6 +15822,17 @@
         ],
         "properties": {
           "ln": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "AcoshExpression": {
+        "type": "object",
+        "required": [
+          "acosh"
+        ],
+        "properties": {
+          "acosh": {
             "$ref": "#/components/schemas/Expression"
           }
         }
@@ -16782,6 +16011,249 @@
           }
         }
       },
+      "TextQuery": {
+        "description": "Rank by BM25 over the text index of the payload field named by `using`, which must have `scoring` set. A point scores when it holds any of the query's terms: required or excluded terms belong in the request's `filter`.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/components/schemas/TextInterface"
+          }
+        }
+      },
+      "TextInterface": {
+        "description": "The text to search for, or the text with scorer parameters.",
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/TextQueryInput"
+          }
+        ]
+      },
+      "TextQueryInput": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "description": "Text to search for, tokenized by the field's text index.",
+            "type": "string"
+          },
+          "scoring": {
+            "description": "Parameters of the scorer, keyed by its name. They must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextQueryScoring"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "TextQueryScoring": {
+        "description": "Parameters of one scorer, keyed by its name.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Bm25Scoring"
+          }
+        ]
+      },
+      "Bm25Scoring": {
+        "type": "object",
+        "required": [
+          "bm25"
+        ],
+        "properties": {
+          "bm25": {
+            "$ref": "#/components/schemas/Bm25Params"
+          }
+        }
+      },
+      "Bm25Params": {
+        "type": "object",
+        "properties": {
+          "k": {
+            "description": "Term frequency saturation. Default is 1.2.",
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "nullable": true
+          },
+          "b": {
+            "description": "Document length normalization, from 0 (none) to 1 (full). Default is 0.75.",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "SearchParams": {
+        "description": "Additional parameters of the search",
+        "type": "object",
+        "properties": {
+          "hnsw_ef": {
+            "description": "Params relevant to HNSW index Size of the beam in a beam-search. Larger the value - more accurate the result, more time required for search.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "exact": {
+            "description": "Search without approximation. If set to true, search may run long but with exact results.",
+            "default": false,
+            "type": "boolean"
+          },
+          "quantization": {
+            "description": "Quantization params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationSearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "indexed_only": {
+            "description": "If enabled, the engine will only perform search among indexed or small segments. Using this option prevents slow searches in case of delayed index, but does not guarantee that all uploaded vectors will be included in search results",
+            "default": false,
+            "type": "boolean"
+          },
+          "acorn": {
+            "description": "ACORN search params",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcornSearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "idf": {
+            "description": "Which population IDF statistics are computed over. By default (or with explicit `\"global\"`) statistics are collection-wide. Only applicable to sparse vectors with the IDF modifier enabled, and to BM25 over a text index.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdfParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "QuantizationSearchParams": {
+        "description": "Additional parameters of the search",
+        "type": "object",
+        "properties": {
+          "ignore": {
+            "description": "If true, quantized vectors are ignored. Default is false.",
+            "default": false,
+            "type": "boolean"
+          },
+          "rescore": {
+            "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. If not set, qdrant decides automatically apply rescoring or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "oversampling": {
+            "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be preselected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be preselected using quantized index, and then top-100 will be returned after re-scoring.",
+            "type": "number",
+            "format": "double",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "AcornSearchParams": {
+        "description": "ACORN-related search parameters",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "description": "If true, then ACORN may be used for the HNSW search based on filters selectivity. Improves search recall for searches with multiple low-selectivity payload filters, at cost of performance.",
+            "default": false,
+            "type": "boolean"
+          },
+          "max_selectivity": {
+            "description": "Maximum selectivity of filters to enable ACORN.\n\nIf estimated filters selectivity is higher than this value, ACORN will not be used. Selectivity is estimated as: `estimated number of points satisfying the filters / total number of points`.\n\n0.0 for never, 1.0 for always. Default is 0.4.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "IdfParams": {
+        "description": "Population over which IDF statistics are computed for scoring — the *IDF corpus*.\n\n- `\"global\"` — collection-wide statistics, same as omitting the parameter. - `{ \"corpus\": <filter> }` — document count and per-term document frequencies (and, for BM25 over a text index, the average document length) are computed over the points matching the corpus filter only. The corpus is independent of the retrieval filter and is usually broader than it.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/IdfScope"
+          },
+          {
+            "$ref": "#/components/schemas/IdfCorpusParams"
+          }
+        ]
+      },
+      "IdfScope": {
+        "description": "Named IDF scope without a corpus filter.",
+        "type": "string",
+        "enum": [
+          "global"
+        ]
+      },
+      "IdfCorpusParams": {
+        "description": "IDF statistics computed over the points matching a corpus filter.",
+        "type": "object",
+        "required": [
+          "corpus"
+        ],
+        "properties": {
+          "corpus": {
+            "$ref": "#/components/schemas/Filter"
+          }
+        }
+      },
+      "LookupLocation": {
+        "description": "Defines a location to use for looking up the vector. Specifies collection and vector field name.",
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "description": "Name of the collection used for lookup",
+            "type": "string"
+          },
+          "vector": {
+            "description": "Optional name of the vector field within the collection. If not provided, the default vector field will be used.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
       "QueryRequestBatch": {
         "type": "object",
         "required": [
@@ -16856,7 +16328,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -16946,6 +16418,52 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithLookupInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "WithLookupInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/WithLookup"
+          }
+        ]
+      },
+      "WithLookup": {
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "description": "Name of the collection to use for points lookup",
+            "type": "string"
+          },
+          "with_payload": {
+            "description": "Options for specifying which payload to include (or not)",
+            "default": true,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_vectors": {
+            "description": "Options for specifying which vectors to include (or not)",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
               },
               {
                 "nullable": true
@@ -17798,7 +17316,7 @@
             ]
           },
           "datatype": {
-            "description": "Element storage type (Float32, Float16, Uint8, Turbo4)",
+            "description": "Element storage type (Float32, Float16, Uint8, Turbo4, Turbo8, Turbo16)",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"
@@ -17847,6 +17365,77 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "QuotaStatus": {
+        "description": "Quota configuration in effect, and how close each peer is to it.\n\nThe configuration is cluster-wide; the utilization is not. `usage` is the node that served the request, and `peers` is what every peer that answered reports about itself — memory and disk are node-local, so one peer being under its limit says nothing about the others.",
+        "type": "object",
+        "required": [
+          "config",
+          "usage"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/QuotaUsage"
+          },
+          "peers": {
+            "description": "Utilization reported by each peer, keyed by peer ID, including the one that served the request.\n\nOnly peers that answered are listed: a peer missing from the map could not be reached, which is itself worth seeing. Absent entirely outside distributed mode, where there are no peers to ask.",
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PeerQuotaUsage"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "QuotaUsage": {
+        "description": "Utilization of the quota-managed resources **on this node alone** — memory and disk are node-local, so a peer under its limit says nothing about the rest of the cluster.\n\nA field is `null` when the platform does not expose the underlying stat.",
+        "type": "object",
+        "properties": {
+          "resident_memory_percent": {
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "PeerQuotaUsage": {
+        "description": "What one peer reports about the quota it is enforcing.",
+        "type": "object",
+        "required": [
+          "exceeded"
+        ],
+        "properties": {
+          "exceeded": {
+            "description": "Whether this peer is at or over one of the enforced limits, and so is currently refusing updates. Always false while the quota is disabled.",
+            "type": "boolean"
+          },
+          "resident_memory_percent": {
+            "description": "Resident memory of this node's process, as a percentage of the memory available to it (cgroup limit if one applies, else total system memory).",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          },
+          "disk_usage_percent": {
+            "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0,
+            "nullable": true
           }
         }
       }

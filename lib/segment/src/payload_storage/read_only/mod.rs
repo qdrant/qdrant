@@ -2,28 +2,27 @@ mod lifecycle;
 mod live_reload;
 mod payload_storage_read;
 
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::GridstoreReader;
 
 use crate::types::Payload;
 
-/// Read-only counterpart to [`super::mmap_payload_storage::MmapPayloadStorage`].
+/// Read-only counterpart to [`super::payload_storage_impl::PayloadStorageImpl`].
 ///
-/// Backed by a [`GridstoreReader`] over generic [`UniversalRead`] instead of a
-/// writable [`gridstore::Gridstore`]. Unlike the read-only field indexes there
+/// Backed by a [`BlobstoreReader`] over generic [`UniversalRead`] instead of a
+/// writable [`blobstore::Blobstore`]. Unlike the read-only field indexes there
 /// is no in-memory index to rebuild: [`Payload`] values are read straight from
 /// the reader, so [`PayloadStorageRead`](super::PayloadStorageRead) forwards
 /// directly to it. Opened via [`Self::open`] (see [`lifecycle`]); provides no
 /// mutation surface.
 pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
-    storage: GridstoreReader<Payload, S>,
-    populate: bool,
+    storage: BlobstoreReader<Payload, S>,
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::ambient;
+    use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs};
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -36,9 +35,11 @@ mod tests {
     /// files read-only through the write-enforced `ReadOnly<MmapFile>` backend
     /// and assert the reader returns what was written.
     #[rstest]
-    fn read_only_payload_storage_round_trip(#[values(false, true)] populate: bool) {
+    fn read_only_payload_storage_round_trip(
+        #[values(Populate::No, Populate::PreferBackground)] populate: Populate,
+    ) {
         let dir = TempDir::with_prefix("read_only_payload").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let payload = payload_json! {
             "a": "some text",
@@ -49,7 +50,7 @@ mod tests {
             let mut storage: PayloadStorageImpl =
                 PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
             for i in 0..5 {
-                storage.set(i, &payload, &hw_counter).unwrap();
+                storage.set(i, &payload).unwrap();
             }
             // Flush so the reader observes the data on disk.
             storage.flusher()().unwrap();
@@ -63,11 +64,11 @@ mod tests {
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
             ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
 
-        assert_eq!(storage.is_on_disk(), !populate);
+        assert_eq!(storage.is_cold(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {
-            assert_eq!(storage.get(i, &hw_counter).unwrap(), payload);
+            assert_eq!(storage.get(i).unwrap(), payload);
         }
         // An unwritten point reads back as an empty payload.
-        assert_eq!(storage.get(99, &hw_counter).unwrap(), payload_json! {});
+        assert_eq!(storage.get(99).unwrap(), payload_json! {});
     }
 }

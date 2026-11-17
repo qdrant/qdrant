@@ -17,7 +17,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
@@ -30,7 +30,7 @@ use crate::common::inference::params::InferenceParams;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
-use crate::tonic::auth::extract_auth;
+use crate::tonic::auth::{extract_auth, extract_routing_token};
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -50,8 +50,10 @@ impl PointsService {
         collection_name: String,
         wait: Option<bool>,
     ) -> RequestHwCounter {
-        let counter = HwMeasurementAcc::new_with_metrics_drain(
-            self.dispatcher.get_collection_hw_metrics(collection_name),
+        let counter = AmbientContext::request(
+            &collection_name,
+            self.dispatcher
+                .get_collection_hw_metrics(collection_name.clone()),
         );
 
         let waiting = wait != Some(false);
@@ -114,6 +116,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let inner_request = request.into_inner();
         let collection_name = inner_request.collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -123,6 +126,7 @@ impl Points for PointsService {
             inner_request,
             None,
             auth,
+            routing_token,
             hw_metrics,
         )
         .await
@@ -385,6 +389,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
 
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -394,6 +399,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -408,6 +414,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
 
         let SearchBatchPoints {
             collection_name,
@@ -438,6 +445,7 @@ impl Points for PointsService {
             requests,
             read_consistency,
             auth,
+            routing_token,
             timeout,
             hw_metrics,
         )
@@ -452,6 +460,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = search_groups(
@@ -459,6 +468,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -473,6 +483,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
 
         let inner_request = request.into_inner();
         let collection_name = inner_request.collection_name.clone();
@@ -484,6 +495,7 @@ impl Points for PointsService {
             inner_request,
             None,
             auth,
+            routing_token,
             hw_metrics,
         )
         .await
@@ -495,12 +507,14 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -514,6 +528,7 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
@@ -530,6 +545,7 @@ impl Points for PointsService {
             recommend_points,
             read_consistency,
             auth,
+            routing_token,
             timeout.map(Duration::from_secs),
             hw_metrics,
         )
@@ -544,6 +560,7 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -551,6 +568,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -564,6 +582,7 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
 
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -571,6 +590,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -584,6 +604,7 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let DiscoverBatchPoints {
             collection_name,
             discover_points,
@@ -599,6 +620,7 @@ impl Points for PointsService {
             discover_points,
             read_consistency,
             auth,
+            routing_token,
             timeout.map(Duration::from_secs),
             hw_metrics,
         )
@@ -614,6 +636,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = count(
@@ -621,6 +644,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             auth,
+            routing_token,
             hw_metrics,
         )
         .await?;
@@ -634,6 +658,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
@@ -645,6 +670,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             auth,
+            routing_token,
             hw_metrics,
             inference_params,
         )
@@ -659,6 +685,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
@@ -679,6 +706,7 @@ impl Points for PointsService {
             query_points,
             read_consistency,
             auth,
+            routing_token,
             timeout,
             hw_metrics,
             inference_params,
@@ -694,6 +722,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
@@ -705,6 +734,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             auth,
+            routing_token,
             hw_metrics,
             inference_params,
         )
@@ -718,12 +748,14 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
+            routing_token,
             hw_metrics,
         )
         .await
@@ -735,6 +767,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchMatrixPairsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -742,8 +775,9 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
-            hw_metrics.get_counter(),
+            routing_token,
         )
+        .measured(hw_metrics.get_counter())
         .await?;
 
         let pairs_response = SearchMatrixPairsResponse {
@@ -761,6 +795,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
+        let routing_token = extract_routing_token(&request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -768,8 +803,9 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             auth,
-            hw_metrics.get_counter(),
+            routing_token,
         )
+        .measured(hw_metrics.get_counter())
         .await?;
 
         let offsets_response = SearchMatrixOffsetsResponse {

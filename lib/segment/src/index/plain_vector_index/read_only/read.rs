@@ -1,0 +1,89 @@
+use std::collections::HashMap;
+
+use common::types::{ScoredPointOffset, TelemetryDetail};
+use sparse::common::types::DimId;
+
+use super::ReadOnlyPlainVectorIndex;
+use crate::common::operation_error::OperationResult;
+use crate::common::operation_time_statistics::OperationDurationStatistics;
+use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::vectors::QueryVector;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::{UniversalReadExt, VectorIndexRead};
+use crate::telemetry::VectorIndexSearchesTelemetry;
+use crate::types::{Filter, SearchParams};
+use crate::vector_storage::VectorStorageRead;
+
+impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
+    fn search(
+        &self,
+        query_vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        self.with_view(|view| view.search(query_vectors, filter, top, params, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        _query_vectors: &[QueryVector],
+        _cardinality: &CardinalityEstimation,
+        _top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        // Evaluates the filter on every candidate, once for all query vectors
+        Ok(FilterChecks::Full)
+    }
+
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: self
+                .unfiltered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
+            filtered_plain: self
+                .filtered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
+            unfiltered_hnsw: OperationDurationStatistics::default(),
+            filtered_small_cardinality: OperationDurationStatistics::default(),
+            filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_acorn: OperationDurationStatistics::default(),
+            filtered_exact: OperationDurationStatistics::default(),
+            filtered_sparse: Default::default(),
+            unfiltered_exact: OperationDurationStatistics::default(),
+            unfiltered_sparse: OperationDurationStatistics::default(),
+        }
+    }
+
+    fn indexed_vector_count(&self) -> usize {
+        0
+    }
+
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.vector_storage
+            .borrow()
+            .size_of_available_vectors_in_bytes()
+    }
+
+    fn fill_idf_statistics(
+        &self,
+        _idf: &mut HashMap<DimId, usize>,
+        corpus: Option<&Filter>,
+        _is_stopped: &std::sync::atomic::AtomicBool,
+    ) -> OperationResult<usize> {
+        // Plain (dense) index doesn't track IDF and contributes no df counts.
+        Ok(match corpus {
+            None => self.indexed_vector_count(),
+            Some(_) => 0,
+        })
+    }
+
+    fn is_index(&self) -> bool {
+        false
+    }
+}

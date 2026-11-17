@@ -418,6 +418,11 @@ ACTION_ACCESS = {
     "cluster_telemetry": EndpointAccess(True, True, True, "GET /cluster/telemetry"),
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
+    "get_consensus_state": EndpointAccess(False, False, True, "GET /cluster/consensus_state"),
+    "patch_consensus_state": EndpointAccess(False, False, True, "PATCH /cluster/consensus_state"),
+    ### Quotas ###
+    "get_quotas": EndpointAccess(True, False, True, "GET /quotas", coll_r=False),
+    "update_quotas": EndpointAccess(False, False, True, "PUT /quotas"),
     ### Points ###
     "get_point": EndpointAccess(
         True,
@@ -642,9 +647,6 @@ ACTION_ACCESS = {
     "storage_read_read_batch": EndpointAccess(
         True, True, True, None, "qdrant.StorageRead/ReadBatch"
     ),
-    "storage_read_read_multi": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadMulti"
-    ),
 }
 
 
@@ -753,6 +755,11 @@ def check_rest_access(
         # https://github.com/psf/requests/issues/5425
         if should_succeed or not isinstance(e.args[0].args[1], TimeoutError):
             raise e
+    except requests.exceptions.Timeout:
+        # The same early-response hang can surface as ReadTimeout instead of
+        # ConnectionError(TimeoutError). Tolerate it only for denied requests.
+        if should_succeed:
+            raise
 
 
 def check_grpc_access(
@@ -1395,7 +1402,9 @@ def collection_snapshot():
 def test_upload_collection_snapshot(collection_snapshot: bytes):
     check_access(
         "upload_collection_snapshot",
-        rest_req_kwargs={"files": {"snapshot": collection_snapshot}, "timeout": 1},
+        # Bound hangs on early auth rejection (requests#5425), but leave enough
+        # headroom for authorized uploads under CI load.
+        rest_req_kwargs={"files": {"snapshot": collection_snapshot}, "timeout": 10},
         path_params={"collection_name": COLL_NAME},
     )
 
@@ -1438,7 +1447,9 @@ def shard_snapshot(shard_snapshot_name):
 def test_upload_shard_snapshot(shard_snapshot: bytes):
     check_access(
         "upload_shard_snapshot",
-        rest_req_kwargs={"files": {"snapshot": shard_snapshot}, "timeout": 1},
+        # Bound hangs on early auth rejection (requests#5425), but leave enough
+        # headroom for authorized uploads under CI load.
+        rest_req_kwargs={"files": {"snapshot": shard_snapshot}, "timeout": 10},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
 
@@ -1538,6 +1549,28 @@ def test_recover_raft_state():
 
 def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
+
+
+def test_get_consensus_state():
+    check_access("get_consensus_state")
+
+
+def test_patch_consensus_state():
+    # Empty diff in dry run mode, so an authorized call does not change anything
+    check_access(
+        "patch_consensus_state",
+        rest_request={},
+        rest_req_kwargs={"params": {"dry_run": "true"}},
+    )
+
+
+def test_get_quotas():
+    check_access("get_quotas")
+
+
+def test_update_quotas():
+    # Keep quotas disabled, so an authorized call does not affect other tests
+    check_access("update_quotas", rest_request={"enabled": False})
 
 
 def test_get_point():
@@ -1991,6 +2024,22 @@ def test_telemetry():
     check_access("telemetry")
 
 
+def test_telemetry_hides_other_collections():
+    other_collection = random_str()
+    fixtures.create_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
+    try:
+        res = requests.get(
+            f"{REST_URI}/telemetry?details_level=2",
+            headers={"authorization": f"Bearer {TOKEN_COLL_R}"},
+        )
+        assert res.status_code == 200, res.text
+        collections = res.json()["result"]["collections"]
+        assert [c["id"] for c in collections["collections"]] == [COLL_NAME]
+        assert [s["id"] for s in collections["snapshots"]] == [COLL_NAME]
+    finally:
+        fixtures.drop_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
+
+
 def test_metrics():
     check_access("metrics")
 
@@ -2088,16 +2137,5 @@ def test_storage_read_read_batch():
             "shard_id": STORAGE_READ_SHARD_ID,
             "path": STORAGE_READ_TEST_PATH,
             "ranges": [{"byteOffset": 0, "length": 1}],
-        },
-    )
-
-
-def test_storage_read_read_multi():
-    check_access(
-        "storage_read_read_multi",
-        grpc_request={
-            "collection_name": COLL_NAME,
-            "shard_id": STORAGE_READ_SHARD_ID,
-            "reads": [{"path": STORAGE_READ_TEST_PATH, "byteOffset": 0, "length": 1}],
         },
     )

@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::Blob;
+use common::ambient;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
-use gridstore::Blob;
 
 use super::super::MapIndexKey;
 use super::super::on_disk_map_index::OnDiskMapIndex;
@@ -26,7 +27,7 @@ where
     pub(in super::super) fn load_from_on_disk(
         index: OnDiskMapIndex<N, S>,
     ) -> OperationResult<Self> {
-        let hw_counter = HardwareCounterCell::disposable(); // Internal operation
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let mut indexed_points = 0;
         let mut values_count = 0;
@@ -41,7 +42,7 @@ where
         // `remove_idx_from_value_list`: `value_to_points` only ever contains
         // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(index.get_values_count());
-        index.for_each_value_map(&hw_counter, |value, ids| {
+        index.for_each_value_map(|value, ids| {
             let range_start = value_to_points_container.len() as u32;
             for idx in ids {
                 if point_to_values.len() <= idx as usize {
@@ -94,11 +95,21 @@ where
             log::warn!("Failed to clear mmap cache of immutable map index: {err}");
         }
 
+        // In-RAM counterpart of the storage's prefix index: `Owned` ordering
+        // is required to match the byte order of the on-disk dictionary.
+        let sorted_keys = index.has_prefix_index().then(|| {
+            let mut keys: Vec<<N as MapIndexKey>::Owned> =
+                value_to_points.keys().cloned().collect();
+            keys.sort_unstable();
+            keys
+        });
+
         let mut result = Self {
             value_to_points,
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
             point_to_values,
+            sorted_keys,
             indexed_points,
             values_count,
             storage: index,
@@ -141,14 +152,7 @@ where
         }
         false
     }
-}
 
-impl<N, S> ImmutableMapIndex<N, S>
-where
-    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-    N: MapIndexKey + ?Sized,
-    S: UniversalWrite,
-{
     /// Removes `idx` from values-to-points-container.
     /// It is implemented by shrinking the range of values-to-points by one and moving the removed element
     /// out of the range.
@@ -208,6 +212,7 @@ where
         }
     }
 
+    /// Read-safe in-memory deletion; callable from the read-only live_reload path.
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
             let mut removed_values_count = 0;
@@ -219,24 +224,20 @@ where
                     value.borrow(),
                     idx,
                 );
-
-                // Update storage
-                self.storage.remove_point(idx);
                 removed_values_count += 1;
             }
 
             if removed_values_count > 0 {
+                // `storage.remove_point` marks the point as deleted; it is
+                // per-point (idempotent in `idx`), so it only needs to run once
+                // rather than once per removed value.
+                self.storage.remove_point(idx);
                 self.indexed_points = self.indexed_points.saturating_sub(1);
             }
             self.values_count = self.values_count.saturating_sub(removed_values_count);
         }
         self.point_to_values.remove_point(idx);
         Ok(())
-    }
-
-    #[inline]
-    pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        self.storage.wipe()
     }
 
     /// Clear cache
@@ -260,5 +261,17 @@ where
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
         self.storage.flusher()
+    }
+}
+
+impl<N, S> ImmutableMapIndex<N, S>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalWrite,
+{
+    #[inline]
+    pub(in super::super) fn wipe(self) -> OperationResult<()> {
+        self.storage.wipe()
     }
 }

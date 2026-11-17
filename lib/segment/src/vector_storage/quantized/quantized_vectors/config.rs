@@ -1,12 +1,10 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::{
-    BinaryQuantization, ProductQuantization, QuantizationConfig, ScalarQuantization,
-    TurboQuantization,
-};
+use crate::types::{Memory, QuantizationConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
@@ -27,13 +25,18 @@ pub struct QuantizedVectorsConfig {
 
 impl fmt::Debug for QuantizedVectorsConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            quantization_config,
+            vector_parameters: _,
+            storage_type: _,
+        } = self;
         f.debug_struct("QuantizedVectorsConfig")
-            .field("quantization_config", &self.quantization_config)
+            .field("quantization_config", quantization_config)
             .finish_non_exhaustive()
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, Eq, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Eq, PartialEq, Default, EnumIter)]
 pub enum QuantizedVectorsStorageType {
     #[default]
     Immutable,
@@ -65,6 +68,28 @@ pub(in crate::vector_storage::quantized) enum QuantizedStorageKind {
     TqChunked,
 }
 
+impl QuantizedStorageKind {
+    /// The mmap-backed kind over the same flat files, for demoting a pinned placement at
+    /// load time (request-specific load profile): within the immutable layout the RAM and
+    /// mmap loaders share the on-disk format, only how the data is brought into memory
+    /// differs. The mmap kinds are already lazy and the chunked kinds are a distinct
+    /// on-disk layout, so both stay as they are.
+    pub(in crate::vector_storage::quantized) fn demote_ram_to_mmap(self) -> Self {
+        match self {
+            Self::ScalarRam => Self::ScalarMmap,
+            Self::PqRam => Self::PqMmap,
+            Self::BinaryRam => Self::BinaryMmap,
+            Self::TqRam => Self::TqMmap,
+            Self::ScalarMmap
+            | Self::PqMmap
+            | Self::BinaryMmap
+            | Self::BinaryChunked
+            | Self::TqMmap
+            | Self::TqChunked => self,
+        }
+    }
+}
+
 impl QuantizedVectorsConfig {
     /// Size in bytes of a single quantized vector on disk, for this config.
     ///
@@ -80,19 +105,22 @@ impl QuantizedVectorsConfig {
         )
     }
 
+    /// Effective memory placement of this config, given whether the source vector storage is
+    /// on disk.
+    pub(in crate::vector_storage::quantized) fn memory_placement(
+        &self,
+        cold_vector_storage: bool,
+    ) -> Memory {
+        QuantizedVectors::memory_placement(
+            self.quantization_config.memory_placement(),
+            cold_vector_storage,
+        )
+    }
+
     /// Whether this config should be materialized in RAM (vs. kept as a read-only mmap),
     /// given whether the source vector storage is on disk.
-    pub(in crate::vector_storage::quantized) fn is_ram(
-        &self,
-        on_disk_vector_storage: bool,
-    ) -> bool {
-        let always_ram = match &self.quantization_config {
-            QuantizationConfig::Scalar(ScalarQuantization { scalar }) => scalar.always_ram,
-            QuantizationConfig::Product(ProductQuantization { product }) => product.always_ram,
-            QuantizationConfig::Binary(BinaryQuantization { binary }) => binary.always_ram,
-            QuantizationConfig::Turbo(TurboQuantization { turbo }) => turbo.always_ram,
-        };
-        QuantizedVectors::is_ram(always_ram, on_disk_vector_storage)
+    pub(in crate::vector_storage::quantized) fn is_ram(&self, cold_vector_storage: bool) -> bool {
+        self.memory_placement(cold_vector_storage) == Memory::Pinned
     }
 
     /// Resolve which storage variant this config selects, given whether the source
@@ -103,10 +131,10 @@ impl QuantizedVectorsConfig {
     /// layout only exists for Binary/TurboQuant; Scalar/Product are always immutable.
     pub(in crate::vector_storage::quantized) fn storage_kind(
         &self,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> OperationResult<QuantizedStorageKind> {
         let mutable = !self.storage_type.is_immutable();
-        let in_ram = self.is_ram(on_disk_vector_storage);
+        let in_ram = self.is_ram(cold_vector_storage);
         let kind = match &self.quantization_config {
             QuantizationConfig::Scalar(_) => {
                 if mutable {

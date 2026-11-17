@@ -1,9 +1,13 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::mmap::AdviceSetting;
 use common::progress_tracker::ProgressTracker;
@@ -46,14 +50,13 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
-            &hw_counter,
         )
         .unwrap();
 
@@ -78,15 +81,10 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
 
         let internal_id = segment
@@ -98,7 +96,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             .insert_vector(
                 internal_id,
                 VectorRef::MultiDense(TypedMultiDenseVectorRef::from(&vector_multi)),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -112,6 +109,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     let full_scan_threshold = 10000;
 
     let hnsw_config = HnswConfig {
+        memory: None,
         m,
         ef_construct,
         full_scan_threshold,
@@ -143,6 +141,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            inline_vectors: false,
             progress: ProgressTracker::new_for_test(),
         },
     )

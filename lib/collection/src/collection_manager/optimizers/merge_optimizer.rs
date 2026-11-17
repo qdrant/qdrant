@@ -37,12 +37,14 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
+    use segment::segment_constructor::cache_after_build::CacheAfterBuild;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::{Distance, HnswConfig, HnswGlobalConfig};
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::config::{DenseVectorOptimizerConfig, SegmentOptimizerConfig};
     use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::segment_holder::FlushMode;
     use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
@@ -53,23 +55,29 @@ mod tests {
     fn test_segment_config(dim: usize) -> SegmentOptimizerConfig {
         let temp_dir = Builder::new().prefix("segment_cfg_dir").tempdir().unwrap();
         let segment = build_simple_segment(temp_dir.path(), dim, Distance::Dot).unwrap();
-        let mut dense_vector = HashMap::new();
-        for vector_name in segment.segment_config.vector_data.keys() {
-            dense_vector.insert(
+        let mut dense_vectors = HashMap::new();
+        for (vector_name, vector_data) in &segment.segment_config.vector_data {
+            dense_vectors.insert(
                 vector_name.clone(),
                 DenseVectorOptimizerConfig {
+                    size: vector_data.size,
+                    distance: vector_data.distance,
+                    memory: None,
                     on_disk: None,
                     hnsw_config: HnswConfig::default(),
                     quantization_config: None,
+                    multivector_config: vector_data.multivector_config,
+                    datatype: vector_data.datatype,
                 },
             );
         }
         SegmentOptimizerConfig {
             payload_storage_type: segment.segment_config.payload_storage_type,
-            plain_dense_vector_config: segment.segment_config.vector_data.clone(),
-            plain_sparse_vector_config: segment.segment_config.sparse_vector_data.clone(),
-            dense_vector,
-            sparse_vector: Default::default(),
+            id_tracker_memory: segment.segment_config.id_tracker_memory,
+            dense_vectors,
+            sparse_vectors: Default::default(),
+            live_vector_names: None,
+            cache_after_build: CacheAfterBuild::Drop,
         }
     }
 
@@ -194,6 +202,14 @@ mod tests {
                 assert_eq!(new_segment.get().read().available_point_count(), 3 * 3 + 10);
             }
         }
+
+        // The optimization defers destroying the merged source segments to a post-flush action;
+        // their files are removed once a flush confirms the merged data is durable (see
+        // `SegmentHolder::register_post_flush_action`). Flush to run the action before asserting.
+        locked_holder
+            .read()
+            .flush_all(FlushMode::Sync, true)
+            .expect("failed to flush segment holder");
 
         // Check if optimized segments removed from disk
         old_path.into_iter().for_each(|x| assert!(!x.exists()));

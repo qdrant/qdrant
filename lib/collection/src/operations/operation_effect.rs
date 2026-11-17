@@ -13,16 +13,6 @@ pub enum OperationEffectArea<'a> {
     Filter(&'a Filter),
 }
 
-/// Estimate how many points will be affected by the operation
-pub enum PointsOperationEffect {
-    /// No points affected
-    Empty,
-    /// Some points are affected
-    Some(Vec<PointIdType>),
-    /// Too many to enumerate, so we just say that it is a lot
-    Many,
-}
-
 pub trait EstimateOperationEffectArea {
     fn estimate_effect_area(&self) -> OperationEffectArea<'_>;
 }
@@ -66,6 +56,18 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                 debug_assert!(
                     false,
                     "SyncPoints operation should not be used during transfer"
+                );
+                OperationEffectArea::Points(Cow::Owned(
+                    sync_op.points.iter().map(|x| x.id).collect(),
+                ))
+            }
+            point_ops::PointOperations::UpsertPointsRaw(points) => {
+                OperationEffectArea::Points(Cow::Owned(points.iter().map(|x| x.id).collect()))
+            }
+            point_ops::PointOperations::SyncPointsRaw(sync_op) => {
+                debug_assert!(
+                    false,
+                    "SyncPointsRaw operation should not be used during transfer"
                 );
                 OperationEffectArea::Points(Cow::Owned(
                     sync_op.points.iter().map(|x| x.id).collect(),

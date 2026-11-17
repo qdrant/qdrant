@@ -1,21 +1,24 @@
 #![cfg_attr(not(feature = "testing"), allow(unused_imports))]
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndexRead;
+use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::{ConditionChecker, PayloadStorageRead};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
     OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorNameBuf,
@@ -33,8 +36,10 @@ where
         | Condition::IsNull(_)
         | Condition::HasId(_)
         | Condition::HasVector(_)
+        | Condition::Slice(_)
         | Condition::Nested(_)
-        | Condition::CustomIdChecker(_) => checker(condition),
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => checker(condition),
     }
 }
 
@@ -104,13 +109,13 @@ where
 
 pub fn select_nested_indexes<'a, R, FI>(
     nested_path: &PayloadKeyType,
-    field_indexes: &'a HashMap<PayloadKeyType, R>,
-) -> HashMap<PayloadKeyType, &'a Vec<FI>>
+    field_indexes: &'a AHashMap<PayloadKeyType, R>,
+) -> AHashMap<PayloadKeyType, &'a Vec<FI>>
 where
     FI: FieldIndexRead,
     R: AsRef<Vec<FI>>,
 {
-    let nested_indexes: HashMap<_, _> = field_indexes
+    let nested_indexes: AHashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
             key.strip_prefix(nested_path)
@@ -126,8 +131,7 @@ pub fn check_payload<'a, R, FI>(
     vector_storages: &HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     query: &Filter,
     point_id: PointOffsetType,
-    field_indexes: &HashMap<PayloadKeyType, R>,
-    hw_counter: &HardwareCounterCell,
+    field_indexes: &AHashMap<PayloadKeyType, R>,
 ) -> bool
 where
     FI: FieldIndexRead,
@@ -138,7 +142,7 @@ where
             field_condition,
             get_payload().deref(),
             field_indexes,
-            hw_counter,
+
         )
         .unwrap(/* TODO(uio): handle errors */),
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
@@ -168,14 +172,19 @@ where
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
-                        hw_counter,
                     )
                 })
         }
 
+        Condition::Slice(slice_condition) => id_tracker
+            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .is_some_and(|external_id| slice_condition.slice.check(external_id)),
+
         Condition::CustomIdChecker(cond) => id_tracker
             .and_then(|id_tracker| id_tracker.external_id(point_id))
             .is_some_and(|point_id| cond.0.check(point_id)),
+
+        Condition::ResolvedPoints(resolved) => resolved.points().contains(point_id),
 
         Condition::Filter(_) => unreachable!(),
     };
@@ -197,8 +206,7 @@ pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &impl Payload
 pub fn check_field_condition<R, FI>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,
-    field_indexes: &HashMap<PayloadKeyType, R>,
-    hw_counter: &HardwareCounterCell,
+    field_indexes: &AHashMap<PayloadKeyType, R>,
 ) -> OperationResult<bool>
 where
     FI: FieldIndexRead,
@@ -216,9 +224,7 @@ where
         for p in field_values {
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
-                if let Some(index_check_res) =
-                    index.special_check_condition(field_condition, p, hw_counter)?
-                {
+                if let Some(index_check_res) = index.special_check_condition(field_condition, p)? {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
                         return Ok(true);
@@ -270,10 +276,8 @@ impl SimpleConditionChecker {
 }
 
 #[cfg(feature = "testing")]
-impl ConditionChecker for SimpleConditionChecker {
-    fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let hw_counter = HardwareCounterCell::new(); // No measurements needed as this is only for test!
-
+impl SimpleConditionChecker {
+    pub fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
@@ -287,14 +291,14 @@ impl ConditionChecker for SimpleConditionChecker {
                     let payload_ptr = match payload_storage_guard.deref() {
                         PayloadStorageEnum::InMemory(s) => s.payload_ptr(point_id).map(Into::into),
                         PayloadStorageEnum::Mmap(s) => {
-                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                            let payload = s.get(point_id).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))
                         }
                         #[cfg(target_os = "linux")]
                         PayloadStorageEnum::IoUring(s) => {
-                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                            let payload = s.get(point_id).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))
@@ -311,7 +315,6 @@ impl ConditionChecker for SimpleConditionChecker {
             query,
             point_id,
             &IndexesMap::new(),
-            &HardwareCounterCell::new(),
         )
     }
 }
@@ -350,10 +353,9 @@ mod tests {
             "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
-            "not_null": [null],
+            "not_null": [true],
+            "null_array": [null, 1],
         };
-
-        let hw_counter = HardwareCounterCell::new();
 
         let mut payload_storage: PayloadStorageEnum =
             PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
@@ -363,7 +365,7 @@ mod tests {
         id_tracker.set_link(1.into(), 1).unwrap();
         id_tracker.set_link(2.into(), 2).unwrap();
         id_tracker.set_link(10.into(), 10).unwrap();
-        payload_storage.overwrite(0, &payload, &hw_counter).unwrap();
+        payload_storage.overwrite(0, &payload).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),
@@ -435,6 +437,13 @@ mod tests {
             },
         }));
         assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: JsonPath::new("null_array"),
+            },
+        }));
+        assert!(payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
             JsonPath::new("color"),
@@ -646,6 +655,73 @@ mod tests {
         assert!(payload_checker.check(2, &query));
     }
 
+    #[test]
+    fn test_slice_condition_checker() {
+        use std::num::NonZeroU32;
+
+        use uuid::Uuid;
+
+        use crate::types::{PointIdType, Slice, SliceCondition};
+
+        let payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        let mut id_tracker = InMemoryIdTracker::new();
+
+        let external_ids: Vec<PointIdType> = (0..100_u64)
+            .map(PointIdType::NumId)
+            .chain((0..100_u128).map(|seed| {
+                PointIdType::Uuid(Uuid::from_u128(
+                    seed.wrapping_mul(0x0123_4567_89ab_cdef_fedc_ba98_7654_3210),
+                ))
+            }))
+            .collect();
+        for (offset, external_id) in external_ids.iter().enumerate() {
+            id_tracker
+                .set_link(*external_id, offset as PointOffsetType)
+                .unwrap();
+        }
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                id_tracker,
+            ))),
+            HashMap::new(),
+        );
+
+        let total = NonZeroU32::new(5).unwrap();
+        let slice_filter = |index| {
+            Filter::new_must(Condition::Slice(SliceCondition {
+                slice: Slice { total, index },
+            }))
+        };
+
+        for offset in 0..external_ids.len() as PointOffsetType {
+            // Each point matches exactly one of the disjoint slices
+            let matching: Vec<u32> = (0..total.get())
+                .filter(|&index| payload_checker.check(offset, &slice_filter(index)))
+                .collect();
+            assert_eq!(matching.len(), 1, "point {offset} matched {matching:?}");
+
+            // must_not inverts membership
+            let inverted = Filter::new_must_not(Condition::Slice(SliceCondition {
+                slice: Slice {
+                    total,
+                    index: matching[0],
+                },
+            }));
+            assert!(!payload_checker.check(offset, &inverted));
+        }
+
+        // On 200 uniformly hashed ids every slice gets some points
+        for index in 0..total.get() {
+            assert!(
+                (0..external_ids.len() as PointOffsetType)
+                    .any(|offset| payload_checker.check(offset, &slice_filter(index))),
+            );
+        }
+    }
+
     /// Regression test for <https://github.com/qdrant/qdrant/issues/8936>
     ///
     /// Verifies that `MatchTextAny` inside a `NestedCondition` uses the
@@ -655,6 +731,7 @@ mod tests {
     /// `Match::TextAny`.
     #[test]
     fn test_nested_match_text_any_uses_full_text_index() {
+        use common::ambient;
         use tempfile::Builder;
 
         use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
@@ -662,7 +739,7 @@ mod tests {
         use crate::index::field_index::full_text_index::FullTextIndex;
         use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // --- build payloads with nested objects ---
         // Point 0: nested title "goodness only" (should NOT match "good cheap")
@@ -686,6 +763,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let config = TextIndexParams {
+            memory: None,
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
             min_token_len: None,
@@ -697,6 +775,8 @@ mod tests {
             stemmer: None,
             ascii_folding: None,
             enable_hnsw: None,
+            scoring: None,
+            nested: None,
         };
 
         let mut ft_index =
@@ -708,14 +788,14 @@ mod tests {
         let nested_titles = ["goodness only", "cheap hardware", "neutral text"];
         for (idx, title) in nested_titles.iter().enumerate() {
             ft_index
-                .add_many(idx as u32, vec![title.to_string()], &hw_counter)
+                .add_many(idx as u32, vec![title.to_string()])
                 .unwrap();
         }
 
         // The key must include the `[]` wildcard so that
         // `select_nested_indexes` can strip the `items[]` prefix and pass the
         // index under key `title` into the nested `check_payload`.
-        let field_indexes: HashMap<PayloadKeyType, Vec<FieldIndex>> = HashMap::from([(
+        let field_indexes: IndexesMap = AHashMap::from([(
             JsonPath::new("items[].title"),
             vec![FieldIndex::FullTextIndex(ft_index)],
         )]);
@@ -742,7 +822,6 @@ mod tests {
                     &nested_filter,
                     point_id,
                     &field_indexes,
-                    &hw_counter,
                 )
             })
             .collect();

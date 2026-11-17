@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use ahash::AHashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +12,7 @@ use crate::data_types::vectors::VectorInternal;
 use crate::index::field_index::FieldIndex;
 use crate::types::{PayloadKeyType, VectorNameBuf};
 
-pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+pub type IndexesMap = AHashMap<PayloadKeyType, Vec<FieldIndex>>;
 
 /// A container for JSON values, optimized for the common case of a single value.
 pub type MultiValue<T> = SmallVec<[T; 1]>;
@@ -25,10 +26,14 @@ pub fn check_is_empty<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
 }
 
 pub fn check_is_null<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
-    values.into_iter().any(|x| x.is_null())
-    // { "a": [ { "b": null }, { "b": 1 } ] } => true
-    // { "a": [ { "b": 1 }, { "b": null } ] } => true
-    // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
+    values.into_iter().any(|value| match value {
+        Value::Array(values) => values.iter().any(|value| value.is_null()),
+        Value::Null => true,
+        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => false,
+    })
+    // { "a": [null, 1] } => true
+    // { "a": [1, null] } => true
+    // { "a": [1, 2] } => false
 }
 
 pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {

@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientContext;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -10,57 +11,45 @@ use crate::index::inverted_index::InvertedIndex;
 use crate::index::search_context::SearchContext;
 use crate::index::tests::common::{build_index, match_all};
 
-fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> HwMeasurementAcc {
+fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> AmbientContext {
     let is_stopped = AtomicBool::new(false);
-    let accumulator = HwMeasurementAcc::new();
-    let hardware_counter = accumulator.get_counter_cell();
-    let top = 10;
-    let mut scratch = SearchScratch::new_for_test();
-    let mut search_context = SearchContext::new(
-        query,
-        top,
-        index,
-        &mut scratch,
-        &is_stopped,
-        &hardware_counter,
-    )
-    .unwrap();
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
+        let top = 10;
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context =
+            SearchContext::new(query, top, index, &mut scratch, &is_stopped, 1).unwrap();
 
-    let result = search_context.search(&match_all);
-    // there might be less than `top` result
-    // happens if index contains less than `top` sparse vectors with indices overlapping the query indices
-    assert!(result.len() <= top);
+        let result = search_context.search(&match_all);
+        // there might be less than `top` result
+        // happens if index contains less than `top` sparse vectors with indices overlapping the query indices
+        assert!(result.len() <= top);
+    });
 
-    accumulator
+    ctx
 }
 
 fn do_plain_search<I: InvertedIndex>(
     index: &I,
     query: RemappedSparseVector,
     docs: &[PointOffsetType],
-) -> HwMeasurementAcc {
+) -> AmbientContext {
     let is_stopped = AtomicBool::new(false);
-    let accumulator = HwMeasurementAcc::new();
-    let hardware_counter = accumulator.get_counter_cell();
-    let top = 10;
-    let mut scratch = SearchScratch::new_for_test();
-    let mut search_context = SearchContext::new(
-        query,
-        top,
-        index,
-        &mut scratch,
-        &is_stopped,
-        &hardware_counter,
-    )
-    .unwrap();
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
+        let top = 10;
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context =
+            SearchContext::new(query, top, index, &mut scratch, &is_stopped, 1).unwrap();
 
-    let result = search_context.plain_search(docs);
+        let result = search_context.plain_search(docs);
 
-    // there might be less than `top` result
-    // happens if index contains less than `top` sparse vectors with indices overlapping the query indices
-    assert!(result.len() <= top);
+        // there might be less than `top` result
+        // happens if index contains less than `top` sparse vectors with indices overlapping the query indices
+        assert!(result.len() <= top);
+    });
 
-    accumulator
+    ctx
 }
 
 #[test]
@@ -114,40 +103,73 @@ fn test_hw_counter_for_sparse_search() {
     let acc_u8_infreq_3 = do_search(&index_u8.index, infrequent_query2.clone());
 
     // Higher precision floats cost more CPU and IO
-    assert!(acc_f32_freq_1.get_cpu() > acc_f16_freq_1.get_cpu());
-    assert!(acc_f16_freq_1.get_cpu() > acc_u8_freq_1.get_cpu());
+    assert!(acc_f32_freq_1.hw_data()[HwMetric::Cpu] > acc_f16_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_1.hw_data()[HwMetric::Cpu] > acc_u8_freq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_1.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
-    assert!(acc_f16_freq_1.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // More indices are more expensive than less indices
-    assert!(acc_f32_freq_3.get_cpu() > acc_f32_freq_1.get_cpu());
-    assert!(acc_f16_freq_3.get_cpu() > acc_f16_freq_1.get_cpu());
-    assert!(acc_u8_freq_3.get_cpu() > acc_u8_freq_1.get_cpu());
+    assert!(acc_f32_freq_3.hw_data()[HwMetric::Cpu] > acc_f32_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_3.hw_data()[HwMetric::Cpu] > acc_f16_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_freq_3.hw_data()[HwMetric::Cpu] > acc_u8_freq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_3.get_vector_io_read() > acc_f32_freq_1.get_vector_io_read());
-    assert!(acc_f16_freq_3.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
-    assert!(acc_u8_freq_3.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // Frequent terms are more expensive than infrequent terms
 
-    assert!(acc_f32_freq_1.get_cpu() > acc_f32_infreq_1.get_cpu());
-    assert!(acc_f16_freq_1.get_cpu() > acc_f16_infreq_1.get_cpu());
-    assert!(acc_u8_freq_1.get_cpu() > acc_u8_infreq_1.get_cpu());
+    assert!(acc_f32_freq_1.hw_data()[HwMetric::Cpu] > acc_f32_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_1.hw_data()[HwMetric::Cpu] > acc_f16_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_freq_1.hw_data()[HwMetric::Cpu] > acc_u8_infreq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_1.get_vector_io_read() > acc_f32_infreq_1.get_vector_io_read());
-    assert!(acc_f16_freq_1.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
-    assert!(acc_u8_freq_1.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // More indices are more expensive than less indices
 
-    assert!(acc_f32_infreq_3.get_cpu() > acc_f32_infreq_1.get_cpu());
-    assert!(acc_f16_infreq_3.get_cpu() > acc_f16_infreq_1.get_cpu());
-    assert!(acc_u8_infreq_3.get_cpu() > acc_u8_infreq_1.get_cpu());
+    assert!(acc_f32_infreq_3.hw_data()[HwMetric::Cpu] > acc_f32_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_infreq_3.hw_data()[HwMetric::Cpu] > acc_f16_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_infreq_3.hw_data()[HwMetric::Cpu] > acc_u8_infreq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_infreq_3.get_vector_io_read() > acc_f32_infreq_1.get_vector_io_read());
-    assert!(acc_f16_infreq_3.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
-    assert!(acc_u8_infreq_3.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
+    assert!(
+        acc_f32_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 }
 
 #[test]
@@ -210,38 +232,71 @@ fn test_hw_counter_for_plain_sparse_search() {
     let acc_u8_infreq_3 = do_plain_search(&index_u8.index, infreq_query2.clone(), &document_ids);
 
     // Higher precision floats cost more IO, but might have same CPU
-    assert!(acc_f32_freq_1.get_cpu() >= acc_f16_freq_1.get_cpu());
-    assert!(acc_f16_freq_1.get_cpu() >= acc_u8_freq_1.get_cpu());
+    assert!(acc_f32_freq_1.hw_data()[HwMetric::Cpu] >= acc_f16_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_1.hw_data()[HwMetric::Cpu] >= acc_u8_freq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_1.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
-    assert!(acc_f16_freq_1.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // More indices are more expensive than less indices
-    assert!(acc_f32_freq_3.get_cpu() > acc_f32_freq_1.get_cpu());
-    assert!(acc_f16_freq_3.get_cpu() > acc_f16_freq_1.get_cpu());
-    assert!(acc_u8_freq_3.get_cpu() > acc_u8_freq_1.get_cpu());
+    assert!(acc_f32_freq_3.hw_data()[HwMetric::Cpu] > acc_f32_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_3.hw_data()[HwMetric::Cpu] > acc_f16_freq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_freq_3.hw_data()[HwMetric::Cpu] > acc_u8_freq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_3.get_vector_io_read() > acc_f32_freq_1.get_vector_io_read());
-    assert!(acc_f16_freq_3.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
-    assert!(acc_u8_freq_3.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_freq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // Frequent terms are more expensive than infrequent terms
 
-    assert!(acc_f32_freq_1.get_cpu() > acc_f32_infreq_1.get_cpu());
-    assert!(acc_f16_freq_1.get_cpu() > acc_f16_infreq_1.get_cpu());
-    assert!(acc_u8_freq_1.get_cpu() > acc_u8_infreq_1.get_cpu());
+    assert!(acc_f32_freq_1.hw_data()[HwMetric::Cpu] > acc_f32_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_freq_1.hw_data()[HwMetric::Cpu] > acc_f16_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_freq_1.hw_data()[HwMetric::Cpu] > acc_u8_infreq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_freq_1.get_vector_io_read() > acc_f32_infreq_1.get_vector_io_read());
-    assert!(acc_f16_freq_1.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
-    assert!(acc_u8_freq_1.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
+    assert!(
+        acc_f32_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_freq_1.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 
     // More indices are more expensive than less indices
 
-    assert!(acc_f32_infreq_3.get_cpu() > acc_f32_infreq_1.get_cpu());
-    assert!(acc_f16_infreq_3.get_cpu() > acc_f16_infreq_1.get_cpu());
-    assert!(acc_u8_infreq_3.get_cpu() > acc_u8_infreq_1.get_cpu());
+    assert!(acc_f32_infreq_3.hw_data()[HwMetric::Cpu] > acc_f32_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_f16_infreq_3.hw_data()[HwMetric::Cpu] > acc_f16_infreq_1.hw_data()[HwMetric::Cpu]);
+    assert!(acc_u8_infreq_3.hw_data()[HwMetric::Cpu] > acc_u8_infreq_1.hw_data()[HwMetric::Cpu]);
 
-    assert!(acc_f32_infreq_3.get_vector_io_read() > acc_f32_infreq_1.get_vector_io_read());
-    assert!(acc_f16_infreq_3.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
-    assert!(acc_u8_infreq_3.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
+    assert!(
+        acc_f32_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f32_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_f16_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_f16_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
+    assert!(
+        acc_u8_infreq_3.hw_data()[HwMetric::VectorIoRead]
+            > acc_u8_infreq_1.hw_data()[HwMetric::VectorIoRead]
+    );
 }

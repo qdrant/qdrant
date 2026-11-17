@@ -5,6 +5,9 @@ on:
   push:
     branches: [ master ]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -18,8 +21,7 @@ jobs:
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
-    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install nextest
@@ -31,11 +33,17 @@ jobs:
         /usr/bin/vulkaninfo --summary
     - name: Build
       run: cargo build --workspace --tests --features "gpu" --locked
+    # See the same step in rust.yml; this job is Linux-only so it needs no condition.
+    - name: Put test temp files on tmpfs
+      run: |
+        sudo mkdir -p /mnt/test-tmp
+        sudo mount -t tmpfs -o size=50%,mode=1777 tmpfs /mnt/test-tmp
+        echo "TMPDIR=/mnt/test-tmp" >> "$GITHUB_ENV"
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --features "gpu" --profile ci --locked
     - name: Upload test report
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
@@ -54,7 +62,7 @@ jobs:
         os: [ ubuntu-latest ]
     steps:
       - name: Download test report
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: junit-${{ matrix.os }}.xml
       - name: Process test report
@@ -75,7 +83,7 @@ jobs:
           echo $delimiter >> $GITHUB_OUTPUT
       - name: pull issue template
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             .github/ISSUE_TEMPLATE/flaky_test.md

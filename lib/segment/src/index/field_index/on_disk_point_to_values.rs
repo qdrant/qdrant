@@ -3,12 +3,16 @@ use std::cmp::max;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::counter::conditioned_counter::ConditionedCounter;
+use common::ambient::hw::HwMetric;
+use common::bitvec::{BitVec, DeletedBitVec};
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
-use common::universal_io::{self, Populate, ReadOnly, ReadRange, UniversalRead};
+use common::universal_io::{
+    self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
+    UniversalReadFs, UserData,
+};
 use zerocopy::IntoBytes;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -16,6 +20,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with slice in file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
+/// Smallest batch of per-point reads worth a prefetch hint.
+const MIN_PREFETCH_BATCH: usize = 64;
 
 /// Trait for values that can be stored in a file. It's used in `StoredPointToValues` to store values.
 pub trait StoredValue: ToOwned {
@@ -63,10 +69,10 @@ impl StoredValue for str {
     }
 }
 
-/// Flattened memmapped points-to-values map
-/// It's an analogue of `Vec<Vec<N>>` but in memmapped file.
+/// Flattened on-disk points-to-values map
+/// It's an analogue of `Vec<Vec<N>>` but in a file, read through `UniversalRead`.
 /// This structure is immutable.
-/// It's used in mmap field indices like `UniversalMapIndex`, `UniversalNumericIndex`, etc to store points-to-values map.
+/// It's used in on-disk field indices like `UniversalMapIndex`, `UniversalNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct OnDiskPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,
@@ -75,12 +81,12 @@ pub struct OnDiskPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     phantom: std::marker::PhantomData<T>,
 }
 
-/// Memory and IO overhead of accessing mmap index.
-pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
+/// Memory and IO overhead of reading one point's values range entry.
+pub const PTV_ACCESS_OVERHEAD: usize = size_of::<PointValuesRange>();
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct MmapRange {
+struct PointValuesRange {
     start: u64,
     count: u64,
 }
@@ -97,6 +103,18 @@ where
     T: StoredValue + ?Sized,
     S: UniversalRead,
 {
+    fn open_options(populate: Populate) -> OpenOptions {
+        // Default a lazy open to partially populating the header.
+        let populate = populate.or_partial(0..size_of::<Header>() as u64);
+
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate,
+            advice: AdviceSetting::Global,
+        }
+    }
+
     pub fn build_from_iter<'a>(
         path: &Path,
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = &'a T>)> + Clone,
@@ -111,7 +129,7 @@ where
             points_count = max(points_count, (point_id + 1) as usize);
             values_size += values.map(|v| T::stored_size(v)).sum::<usize>();
         }
-        let ranges_size = points_count * std::mem::size_of::<MmapRange>();
+        let ranges_size = points_count * std::mem::size_of::<PointValuesRange>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
 
         // create new file and mmap
@@ -144,13 +162,13 @@ where
                 point_values_offset += T::stored_size(value);
             }
 
-            let range = MmapRange {
+            let range = PointValuesRange {
                 start: start as u64,
                 count: values_count as u64,
             };
             mmap.get_mut(
                 header.ranges_start as usize
-                    + point_id as usize * std::mem::size_of::<MmapRange>()..,
+                    + point_id as usize * std::mem::size_of::<PointValuesRange>()..,
             )
             .and_then(|bytes| range.write_to_prefix(bytes))
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
@@ -161,8 +179,17 @@ where
         Ok(())
     }
 
-    pub fn open(fs: &S::Fs, path: &Path, populate: Populate) -> OperationResult<Self> {
-        let file_name = path.join(POINT_TO_VALUES_PATH);
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, dir: &Path, populate: Populate) {
+        let file_name = dir.join(POINT_TO_VALUES_PATH);
+        fs.schedule_open(&file_name, Some(Self::open_options(populate)), None);
+    }
+
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        let file_name = dir.join(POINT_TO_VALUES_PATH);
 
         let open_options = common::universal_io::OpenOptions {
             writeable: false,
@@ -173,7 +200,7 @@ where
 
         let store = ReadOnly::open(fs, &file_name, open_options, Default::default())?;
 
-        let header = store.read::<Random, Header>(ReadRange::one(0))?[0];
+        let header = store.read(ReadRange::one(0), Random)?[0];
 
         Ok(Self {
             file_name,
@@ -196,9 +223,8 @@ where
         &self,
         point_id: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &ConditionedCounter,
     ) -> OperationResult<bool> {
-        let Some(mut values_iter) = self.values_iter(point_id, *hw_counter)? else {
+        let Some(mut values_iter) = self.values_iter(point_id)? else {
             return Ok(false);
         };
 
@@ -214,30 +240,115 @@ where
     pub fn values_iter(
         &self,
         point_id: PointOffsetType,
-        hw_counter: ConditionedCounter, // TODO: make it by reference
     ) -> OperationResult<Option<ValuesIter<'_, T>>> {
-        let hw_cell = hw_counter.payload_index_io_read_counter();
-
         // first, get range of values for point
-        let Some(bytes_range) = self.get_bytes_range(point_id)?.map(|range| {
+        let Some((bytes_range, count)) = self.get_bytes_range(point_id)?.map(|(range, count)| {
             let range = universal_io::ReadRange {
                 byte_offset: range.start,
                 length: range.end - range.start,
             };
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
-            hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
+            HwMetric::PayloadIndexIoRead.bump(PTV_ACCESS_OVERHEAD + range.length as usize);
 
-            range
+            (range, count)
         }) else {
             return Ok(None);
         };
 
-        let bytes = self.store.read::<Random, u8>(bytes_range)?;
-        let count = self.get_values_count(point_id)?.unwrap_or(0);
+        let bytes = self.store.read(bytes_range, Random)?;
 
         let iter = ValuesIter::new(bytes, count);
 
         Ok(Some(iter))
+    }
+
+    /// Batched counterpart of [`Self::values_iter`].
+    ///
+    /// Calls `f` exactly once per input item, even for deleted/missing points.
+    pub fn values_iter_batch<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        deleted: &DeletedBitVec,
+        mut f: impl FnMut(U, ValuesIter<'_, T>),
+    ) -> OperationResult<()> {
+        let points_count = self.header.points_count as PointOffsetType;
+        let ranges_start = self.header.ranges_start;
+        let file_len = self.store.len::<u8>()?;
+
+        // Batch 1: Resolve each values' range and count
+        let mut value_reads = Vec::with_capacity(items.size_hint().0.min(10_000));
+        let range_reads = items.filter_map(|(user_data, point_id)| {
+            if point_id >= points_count || !deleted.is_active(point_id) {
+                f(user_data, ValuesIter::empty());
+                return None;
+            }
+
+            let byte_offset =
+                ranges_start + u64::from(point_id) * size_of::<PointValuesRange>() as u64;
+
+            // Fetch 2 `PointValuesRange` entries per id, so we can get range start..end.
+            // In case of being the last entry, we will do start..file_len
+            let length = if point_id + 1 < points_count { 2 } else { 1 };
+            Some((user_data, ReadRange::new(byte_offset, length)))
+        });
+        let range_reads = self.prefetch::<PointValuesRange, _>(range_reads);
+        self.store
+            .read_batch(range_reads, Random, |user_data, ranges| {
+                let PointValuesRange { start, count } = ranges[0];
+
+                // Use next point's start as end offset for this one.
+                let end = ranges.get(1).map_or(file_len, |next| next.start);
+                let length = end - start;
+
+                // Mirror `values_iter`: account the per-point access overhead
+                // plus the length of the values.
+                HwMetric::PayloadIndexIoRead.bump(PTV_ACCESS_OVERHEAD + length as usize);
+
+                // Note: if `count == 0`, we'd better call `f` right away, but
+                // `f` is already mut-borrowed in the iterator above. So,
+                // instead we schedule redundant 0-length read. These 0-length
+                // reads are unlikely to happen in hot loops since empty points
+                // usually marked in `deleted`.
+                value_reads.push((user_data, count as usize, ReadRange::new(start, length)));
+
+                UioResult::Ok(())
+            })?;
+
+        // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
+        let value_reads = self.prefetch::<u8, _>(
+            value_reads
+                .into_iter()
+                .map(|(user_data, count, range)| ((user_data, count), range)),
+        );
+        self.store
+            .read_batch(value_reads, Random, |(user_data, count), bytes| {
+                f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
+                UioResult::Ok(())
+            })?;
+
+        Ok(())
+    }
+
+    /// Collect a batch of reads and ask the storage to fetch all their pages before
+    /// they are read one by one, so a cold batch waits for overlapping IO instead of
+    /// one synchronous fault per item.
+    ///
+    /// Batches smaller than [`MIN_PREFETCH_BATCH`] (graph search checks a dozen
+    /// neighbours at a time) are passed through without a hint. The storage itself
+    /// skips the hint when the file is resident.
+    fn prefetch<Item: bytemuck::Pod, U>(
+        &self,
+        reads: impl Iterator<Item = (U, ReadRange)>,
+    ) -> impl Iterator<Item = (U, ReadRange)> {
+        let reads: Vec<_> = reads.collect();
+        if reads.len() >= MIN_PREFETCH_BATCH {
+            self.store.will_need(
+                reads
+                    .iter()
+                    .map(|(_, range)| range.into_byte_range::<Item>()),
+            );
+        }
+        reads.into_iter()
     }
 
     pub fn get_values_count(&self, point_id: PointOffsetType) -> OperationResult<Option<usize>> {
@@ -261,22 +372,26 @@ where
         0
     }
 
-    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
+    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<PointValuesRange>> {
         if point_id < self.header.points_count as PointOffsetType {
-            let range_offset =
-                (self.header.ranges_start as usize) + (point_id as usize) * size_of::<MmapRange>();
+            let range_offset = (self.header.ranges_start as usize)
+                + (point_id as usize) * size_of::<PointValuesRange>();
 
             let range = self
                 .store
-                .read::<Random, MmapRange>(ReadRange::one(range_offset as u64))?[0];
+                .read(ReadRange::one(range_offset as u64), Random)?[0];
             Ok(Some(range))
         } else {
             Ok(None)
         }
     }
 
-    fn get_bytes_range(&self, point_id: PointOffsetType) -> OperationResult<Option<Range<u64>>> {
-        let Some(start) = self.get_range(point_id).map_some(|range| range.start)? else {
+    /// Byte range of the values of `point_id`, along with the number of values in it.
+    fn get_bytes_range(
+        &self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<Option<(Range<u64>, usize)>> {
+        let Some(PointValuesRange { start, count }) = self.get_range(point_id)? else {
             return Ok(None);
         };
 
@@ -289,7 +404,7 @@ where
             }
         };
 
-        Ok(Some(start..end))
+        Ok(Some((start..end, count as usize)))
     }
 
     /// Populate all pages in the mmap.
@@ -310,14 +425,23 @@ where
         Ok(())
     }
 
-    pub fn iter(
+    /// Read every point's values in batches, invoking `f` once per point that
+    /// has at least one value.
+    pub fn for_all_points_values(
         &self,
-    ) -> impl Iterator<
-        Item = OperationResult<(PointOffsetType, Option<impl Iterator<Item = Cow<'_, T>>>)>,
-    > + Clone {
-        // TODO: Propagate counter upwards
-        (0..self.len() as PointOffsetType)
-            .map(|idx| Ok((idx, self.values_iter(idx, ConditionedCounter::never())?)))
+        mut f: impl FnMut(PointOffsetType, ValuesIter<'_, T>),
+    ) -> OperationResult<()> {
+        // Report deleted points with values too.
+        let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
+        self.values_iter_batch(
+            (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
+            &blank_bitmask,
+            |point_id, values| {
+                if values.count > 0 {
+                    f(point_id, values);
+                }
+            },
+        )
     }
 }
 
@@ -329,6 +453,15 @@ pub struct ValuesIter<'a, T: ?Sized> {
 }
 
 impl<'a, T: StoredValue + ?Sized + 'a> ValuesIter<'a, T> {
+    fn empty() -> Self {
+        Self {
+            bytes: Cow::Borrowed(&[]),
+            start: 0,
+            count: 0,
+            _type: std::marker::PhantomData,
+        }
+    }
+
     fn new(bytes: Cow<'a, [u8]>, count: usize) -> Self {
         Self {
             bytes,
@@ -378,7 +511,12 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::{MmapFile, MmapFs};
+    use std::borrow::Borrow;
+
+    use common::ambient;
+    #[cfg(target_os = "linux")]
+    use common::universal_io::IoUringFs;
+    use common::universal_io::MmapFs;
     use itertools::Itertools;
     use tempfile::Builder;
 
@@ -386,130 +524,105 @@ mod tests {
     use crate::types::GeoPoint;
 
     #[test]
-    fn test_mmap_point_to_values_string() {
-        let values: Vec<Vec<String>> = vec![
-            vec![
-                "fox".to_owned(),
-                "driver".to_owned(),
-                "point".to_owned(),
-                "it".to_owned(),
-                "box".to_owned(),
-            ],
-            vec![
-                "alice".to_owned(),
-                "red".to_owned(),
-                "yellow".to_owned(),
-                "blue".to_owned(),
-                "apple".to_owned(),
-            ],
-            vec![
-                "box".to_owned(),
-                "qdrant".to_owned(),
-                "line".to_owned(),
-                "bash".to_owned(),
-                "reproduction".to_owned(),
-            ],
-            vec![
-                "list".to_owned(),
-                "vitamin".to_owned(),
-                "one".to_owned(),
-                "two".to_owned(),
-                "three".to_owned(),
-            ],
-            vec![
-                "tree".to_owned(),
-                "metallic".to_owned(),
-                "ownership".to_owned(),
-            ],
+    fn test_point_to_values() {
+        let gp = |x, y| GeoPoint::new_unchecked(x, y);
+
+        let str_data: &[&[&str]] = &[
+            &["fox", "driver", "point", "it", "box"],
+            &["alice", "red", "yellow", "blue", "apple"],
+            &["box", "qdrant", "line", "bash", "reproduction"],
+            &["list", "vitamin", "one", "two", "three"],
+            &["tree", "metallic", "ownership"],
+            &[],
+            &["slice"],
+            &["red", "pink"],
+        ];
+        let geo_data = &[
+            vec![gp(6., 2.), gp(4., 3.), gp(2., 5.), gp(8., 7.), gp(1., 9.)],
+            vec![gp(8., 1.), gp(3., 3.), gp(5., 9.), gp(1., 8.), gp(7., 2.)],
+            vec![gp(6., 3.), gp(4., 4.), gp(3., 7.), gp(1., 2.), gp(4., 8.)],
+            vec![gp(1., 3.), gp(3., 9.), gp(7., 0.)],
             vec![],
-            vec!["slice".to_owned()],
-            vec!["red".to_owned(), "pink".to_owned()],
+            vec![gp(8., 5.)],
+            vec![gp(9., 4.)],
         ];
 
-        let dir = Builder::new()
-            .prefix("mmap_point_to_values")
-            .tempdir()
-            .unwrap();
-        OnDiskPointToValues::<str, MmapFile>::build_from_iter(
-            dir.path(),
-            values
-                .iter()
-                .enumerate()
-                .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
-        )
-        .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<str, MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+        let str_data = str_data
+            .iter()
+            .map(|arr| arr.iter().map(|s| s.to_string()).collect_vec())
+            .collect_vec();
 
-        for (idx, values) in values.iter().enumerate() {
-            let v = point_to_values
-                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
-                .unwrap()
-                .unwrap()
-                .map(|s| s.into_owned())
-                .collect_vec();
-            assert_eq!(&v, values);
-        }
+        check_point_to_values::<str, _>(&MmapFs, &str_data);
+        #[cfg(target_os = "linux")]
+        check_point_to_values::<str, _>(&IoUringFs, &str_data);
+
+        check_point_to_values::<GeoPoint, _>(&MmapFs, geo_data);
+        #[cfg(target_os = "linux")]
+        check_point_to_values::<GeoPoint, _>(&IoUringFs, geo_data);
     }
 
-    #[test]
-    fn test_mmap_point_to_values_geo() {
-        let values: Vec<Vec<GeoPoint>> = vec![
-            vec![
-                GeoPoint::new_unchecked(6.0, 2.0),
-                GeoPoint::new_unchecked(4.0, 3.0),
-                GeoPoint::new_unchecked(2.0, 5.0),
-                GeoPoint::new_unchecked(8.0, 7.0),
-                GeoPoint::new_unchecked(1.0, 9.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(8.0, 1.0),
-                GeoPoint::new_unchecked(3.0, 3.0),
-                GeoPoint::new_unchecked(5.0, 9.0),
-                GeoPoint::new_unchecked(1.0, 8.0),
-                GeoPoint::new_unchecked(7.0, 2.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(6.0, 3.0),
-                GeoPoint::new_unchecked(4.0, 4.0),
-                GeoPoint::new_unchecked(3.0, 7.0),
-                GeoPoint::new_unchecked(1.0, 2.0),
-                GeoPoint::new_unchecked(4.0, 8.0),
-            ],
-            vec![
-                GeoPoint::new_unchecked(1.0, 3.0),
-                GeoPoint::new_unchecked(3.0, 9.0),
-                GeoPoint::new_unchecked(7.0, 0.0),
-            ],
-            vec![],
-            vec![GeoPoint::new_unchecked(8.0, 5.0)],
-            vec![GeoPoint::new_unchecked(9.0, 4.0)],
-        ];
-
-        let dir = Builder::new()
-            .prefix("mmap_point_to_values")
-            .tempdir()
-            .unwrap();
-        OnDiskPointToValues::<GeoPoint, MmapFile>::build_from_iter(
+    fn check_point_to_values<T, Fs>(fs: &Fs, values: &[Vec<T::Owned>])
+    where
+        T: StoredValue + ?Sized,
+        T::Owned: Borrow<T> + PartialEq + std::fmt::Debug,
+        Fs: UniversalReadFs,
+    {
+        let dir = Builder::new().prefix("point_to_values").tempdir().unwrap();
+        OnDiskPointToValues::<T, Fs::File>::build_from_iter(
             dir.path(),
             values
                 .iter()
                 .enumerate()
-                .map(|(id, values)| (id as PointOffsetType, values.iter())),
+                .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.borrow()))),
         )
         .unwrap();
-        let point_to_values =
-            OnDiskPointToValues::<GeoPoint, MmapFile>::open(&MmapFs, dir.path(), Populate::No)
-                .unwrap();
+        let ppv = OnDiskPointToValues::<T, Fs::File>::open(fs, dir.path(), Populate::No).unwrap();
 
+        // Roundtrip check
         for (idx, values) in values.iter().enumerate() {
-            let iter = point_to_values
-                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
-                .unwrap();
-            let v: Vec<GeoPoint> = iter
-                .map(|iter| iter.map(Cow::into_owned).collect_vec())
-                .unwrap_or_default();
-            assert_eq!(&v, values);
+            let v = ambient::test(|| ppv.values_iter(idx as PointOffsetType))
+                .unwrap()
+                .unwrap()
+                .map(Cow::into_owned)
+                .collect_vec();
+            assert_eq!(&v, values, "roundtrip check");
+        }
+
+        // `values_iter_batch` check
+        {
+            // The callback should be called with an empty iterator even in
+            // these edge cases:
+            // 1. Point deleted via bitvec.
+            let deleted_id = values.iter().position(|vals| !vals.is_empty()).unwrap();
+            // 2. Non-deleted point with no values. (just assert that it exists in the input)
+            let _empty_id = values.iter().position(|vals| vals.is_empty()).unwrap();
+            // 3. Large ID. (out-of-range)
+            let large_id = values.len() + 100;
+
+            let mut deleted = DeletedBitVec::new(BitVec::repeat(false, values.len()));
+            deleted.mark_deleted(deleted_id as PointOffsetType);
+
+            // Run `values_iter_batch` and store its results into
+            let mut reported = Vec::new();
+            ambient::test(|| {
+                ppv.values_iter_batch(
+                    (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
+                    &deleted,
+                    |id, vals| reported.push((id, vals.map(Cow::into_owned).collect_vec())),
+                )
+            })
+            .unwrap();
+            reported.sort_unstable_by_key(|&(id, _)| id);
+
+            // Compare with expected
+            let mut expected = Vec::new();
+            for (id, vals) in values.iter().enumerate() {
+                let vals = vals.iter().map(|v| v.borrow().to_owned()).collect_vec();
+                expected.push((id, vals));
+            }
+            expected[deleted_id].1.clear();
+            expected.push((large_id, vec![]));
+            assert_eq!(reported, expected);
         }
     }
 }

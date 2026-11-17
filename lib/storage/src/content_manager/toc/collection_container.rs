@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::mem;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -7,16 +8,24 @@ use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
+use common::fs::safe_delete_in_tmp;
 
 use super::TableOfContent;
+use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::consensus_state_machine::{Action, NodeContext};
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::{CollectionContainer, consensus_manager};
+use crate::quota::QuotaConfig;
 
 impl CollectionContainer for TableOfContent {
+    fn apply_action(&self, action: Action) -> Result<(), StorageError> {
+        self.apply_action_sync(action)
+    }
+
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -37,11 +46,6 @@ impl CollectionContainer for TableOfContent {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            // Validation:
-            // 1. Check that we are not removing some unique shards (removed)
-
-            // Validation passed
-
             self.remove_shards_at_peer(peer_id).await?;
 
             if self.this_peer_id == peer_id {
@@ -64,6 +68,44 @@ impl CollectionContainer for TableOfContent {
             }
             Ok(())
         })
+    }
+
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool {
+        self.general_runtime.block_on(self.peer_has_shards(peer_id))
+    }
+
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        // Remove addresses before dropping pools, or new requests can look them up and
+        // recreate a pool after cleanup. Keep the removed URIs until their pools are dropped.
+        // Requests that already copied a URI can still recreate its pool.
+        let addresses = {
+            let mut peers = self.channel_service.id_to_address.write();
+            if peer_id == self.this_peer_id {
+                // A detached node must stop new requests from resolving other peers' addresses
+                peers
+                    .drain()
+                    .map(|(_, address)| address)
+                    .collect::<Vec<_>>()
+            } else {
+                peers.remove(&peer_id).into_iter().collect()
+            }
+        };
+
+        self.general_runtime.block_on(async {
+            for address in addresses {
+                self.channel_service.channel_pool.drop_pool(&address).await;
+            }
+        });
+
+        Ok(())
+    }
+
+    fn quota_config(&self) -> QuotaConfig {
+        self.quota_manager().config()
+    }
+
+    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError> {
+        Ok(self.quota_manager().set_config(config)?)
     }
 
     fn sync_local_state(&self) -> Result<(), StorageError> {
@@ -107,6 +149,35 @@ impl CollectionContainer for TableOfContent {
             Ok(())
         })
     }
+
+    fn node_context(&self) -> NodeContext {
+        NodeContext::from_storage_config(
+            &self.storage_config,
+            self.this_peer_id,
+            self.is_distributed(),
+        )
+    }
+
+    fn collection_names(&self) -> BTreeSet<CollectionId> {
+        self.general_runtime
+            .block_on(async { self.collections.read().await.keys().cloned().collect() })
+    }
+
+    fn alias_mapping(&self) -> AliasMapping {
+        self.general_runtime
+            .block_on(async { self.alias_persistence.read().await.state().clone() })
+    }
+
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State> {
+        self.general_runtime.block_on(async {
+            let collection = self.collections.read().await.get(collection)?.state().await;
+            Some(collection)
+        })
+    }
+
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId> {
+        mem::take(&mut self.dirty_collections.lock())
+    }
 }
 
 impl TableOfContent {
@@ -130,13 +201,23 @@ impl TableOfContent {
         data: consensus_manager::CollectionsSnapshot,
     ) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            let mut existing_collections = self.collections.write().await;
-
             for (id, state) in &data.collections {
-                if let Some(existing_collection) = existing_collections.get(id) {
-                    let collection_uuid = existing_collection.uuid().await;
+                // Collection construction and state application can take a long time. Clone the
+                // handle so unrelated collection lookups do not wait for this work.
+                let mut existing_collection = self.collections.read().await.get(id).cloned();
 
-                    let recreate_collection = if collection_uuid != state.config.uuid {
+                if let Some(collection) = &existing_collection {
+                    let collection_uuid = collection.uuid().await;
+
+                    // A missing UUID means the collection was created outside of consensus and
+                    // has not been assigned an identity yet. It doesn't mean it's a different
+                    // collection, so only two different UUIDs require recreation.
+                    let is_different_collection = match (collection_uuid, state.config.uuid) {
+                        (Some(existing), Some(snapshot)) => existing != snapshot,
+                        (None, _) | (_, None) => false,
+                    };
+
+                    let recreate_collection = if is_different_collection {
                         log::warn!(
                             "Recreating collection {id}, because collection UUID is different: \
                              existing collection UUID: {collection_uuid:?}, \
@@ -145,7 +226,7 @@ impl TableOfContent {
                         );
 
                         true
-                    } else if let Err(err) = existing_collection.check_config_compatible(&state.config).await {
+                    } else if let Err(err) = collection.check_config_compatible(&state.config).await {
                         log::warn!(
                             "Recreating collection {id}, because collection config is incompatible: \
                              {err}",
@@ -157,21 +238,25 @@ impl TableOfContent {
                     };
 
                     if recreate_collection {
-                        // Drop `collections` lock
-                        drop(existing_collections);
-
-                        // Delete collection
+                        // Deletion waits for outstanding handles before removing the files.
+                        drop(existing_collection.take());
                         self.delete_collection(id).await?;
-
-                        // Re-acquire `collections` lock 🙄
-                        existing_collections = self.collections.write().await;
                     }
                 }
 
-                let collection_exists = existing_collections.contains_key(id);
+                let collection_exists = existing_collection.is_some();
 
-                // Create collection if not present locally
-                if !collection_exists {
+                // Serialize filesystem changes with regular collection creation and deletion.
+                let collection_create_guard = if !collection_exists {
+                    Some(self.collection_create_lock.lock().await)
+                } else {
+                    None
+                };
+
+                let existing_collection = if let Some(collection) = existing_collection {
+                    collection
+                } else {
+                    self.collections.read().await.validate_collection_not_exists(id)?;
                     let collection_path = self.create_collection_path(id).await?;
                     let snapshots_path = self.create_snapshots_path(id).await?;
                     let shard_distribution =
@@ -207,37 +292,43 @@ impl TableOfContent {
                         self.storage_config.optimizers_overwrite.clone(),
                     )
                     .await?;
-                    existing_collections.validate_collection_not_exists(id)?;
-                    existing_collections.insert(id.clone(), Arc::new(collection));
-                }
-
-                let Some(existing_collection) = existing_collections.get(id) else {
-                    unreachable!()
+                    Arc::new(collection)
                 };
 
-                // Update collection state
-                if &existing_collection.state().await != state {
-                    if let Some(proposal_sender) = self.consensus_proposal_sender.clone() {
-                        // In some cases on state application it might be needed to abort the transfer
-                        let abort_transfer = |transfer| {
-                            if let Err(error) =
-                                proposal_sender.send(ConsensusOperations::abort_transfer(
-                                    id.clone(),
-                                    transfer,
-                                    "sender was not up to date",
+                let result = self
+                    .apply_collection_snapshot_state(id, &existing_collection, state)
+                    .await;
+
+                // A new collection already exists on disk, but we need to set replica states
+                // and disable new local replicas before we can add it to the list of collections.
+                //
+                // If we fail while preparing the collection, we must remove it from disk.
+                // Otherwise, the next attempt to create it would fail because it exists on disk,
+                // but is not in the list of collections.
+                if let Err(error) = result {
+                    if !collection_exists {
+                        existing_collection.stop_gracefully().await;
+                        drop(existing_collection);
+
+                        let path = self.get_collection_path(id);
+                        let deleted_dir = self.storage_config.storage_path.join(".deleted");
+
+                        let to_delete =
+                            safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
+                                StorageError::service_error(format!(
+                                    "Failed to apply snapshot state for collection {id}: {error}; \
+                                     failed to remove unpublished collection: {cleanup_error}",
                                 ))
-                            {
-                                log::error!(
-                                    "Can't report transfer progress to consensus: {error}"
-                                )
-                            };
-                        };
-                        existing_collection
-                            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
-                            .await?;
-                    } else {
-                        log::error!("Can't apply state: single node mode");
+                            })?;
+
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(error) = to_delete.close() {
+                                log::error!("Can't delete unpublished collection from disk: {error}");
+                            }
+                        });
                     }
+
+                    return Err(error);
                 }
 
                 // Mark local shards as dead (to initiate shard transfer),
@@ -254,14 +345,19 @@ impl TableOfContent {
                             replica_set.add_locally_disabled(None, self.this_peer_id, None);
                         }
                     }
+
+                    // Keep new collections hidden while applying replica states and local
+                    // disabling, so requests cannot reach them between these steps.
+                    let mut collections = self.collections.write().await;
+                    collections.validate_collection_not_exists(id)?;
+                    collections.insert(id.clone(), existing_collection);
                 }
+
+                drop(collection_create_guard);
             }
 
-            // Collect names of collections that are present locally
-            let collection_names: Vec<_> = existing_collections.keys().cloned().collect();
-
-            // Drop `collections` lock
-            drop(existing_collections);
+            // Collect names without retaining collection handles that would delay deletion.
+            let collection_names: Vec<_> = self.collections.read().await.keys().cloned().collect();
 
             // Remove collections that are present locally, but are not in the snapshot state
             for collection_name in &collection_names {
@@ -285,8 +381,54 @@ impl TableOfContent {
         })
     }
 
+    async fn apply_collection_snapshot_state(
+        &self,
+        id: &str,
+        collection: &Collection,
+        state: &collection_state::State,
+    ) -> Result<(), StorageError> {
+        if &collection.state().await == state {
+            return Ok(());
+        }
+
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
+            log::error!("Can't apply state: single node mode");
+            return Ok(());
+        };
+
+        // State application may discover a transfer that the sender needs to abort.
+        let abort_transfer = |transfer| {
+            let abort_transfer = ConsensusOperations::abort_transfer(
+                id.to_string(),
+                transfer,
+                "sender was not up to date",
+            );
+
+            if let Err(err) = proposal_sender.send(abort_transfer) {
+                log::error!("Can't report transfer progress to consensus: {err}");
+            }
+        };
+
+        #[cfg(test)]
+        tests::fail_collection_snapshot_state(id)?;
+
+        collection
+            .apply_state(state.clone(), self.this_peer_id(), abort_transfer)
+            .await?;
+
+        Ok(())
+    }
+
     async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
+
+        // A later collection can reject a resharding abort. Check every collection before
+        // cleanup writes, so rejection leaves earlier collections unchanged.
+        // Consensus serializes resharding and transfer changes between these two passes.
+        for collection in collections.values() {
+            collection.check_remove_shards_at_peer(peer_id).await?;
+        }
+
         for collection in collections.values() {
             collection.remove_shards_at_peer(peer_id).await?;
         }
@@ -330,3 +472,6 @@ impl TableOfContent {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

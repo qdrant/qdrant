@@ -1,8 +1,15 @@
+use std::collections::BTreeSet;
+
+use collection::collection_state;
+use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
 
+use self::alias_mapping::AliasMapping;
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
+use self::consensus_state_machine::{Action, NodeContext};
 use self::errors::StorageError;
+use crate::quota::QuotaConfig;
 
 pub mod alias_mapping;
 pub mod collection_meta_ops;
@@ -10,6 +17,7 @@ pub mod collection_verification;
 mod collections_ops;
 pub mod consensus;
 pub mod consensus_manager;
+pub mod consensus_state_machine;
 pub mod conversions;
 pub mod errors;
 pub mod shard_distribution;
@@ -31,9 +39,10 @@ pub mod consensus_ops {
 
     use super::collection_meta_ops::ReshardingOperation;
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
+        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations,
         UpdateCollectionOperation,
     };
+    use crate::quota::QuotaConfig;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
@@ -52,6 +61,8 @@ pub mod consensus_ops {
             key: String,
             value: serde_json::Value,
         },
+        /// Replace the cluster-wide resource quota config on every peer.
+        SetQuotaConfig(QuotaConfig),
         RequestSnapshot,
         ReportSnapshot {
             peer_id: PeerId,
@@ -127,19 +138,7 @@ pub mod consensus_ops {
             shard_id: u32,
             peer_id: PeerId,
         ) -> Self {
-            let mut operation = UpdateCollectionOperation::new(
-                collection_name,
-                UpdateCollection {
-                    vectors: None,
-                    optimizers_config: None,
-                    params: None,
-                    hnsw_config: None,
-                    quantization_config: None,
-                    sparse_vectors: None,
-                    strict_mode_config: None,
-                    metadata: None,
-                },
-            );
+            let mut operation = UpdateCollectionOperation::new_empty(collection_name);
             operation
                 .set_shard_replica_changes(vec![replica_set::Change::Remove(shard_id, peer_id)]);
 
@@ -210,6 +209,9 @@ pub mod consensus_ops {
 /// Collection container abstraction for consensus
 /// Used to mock ToC in consensus state tests
 pub trait CollectionContainer {
+    /// Apply one collection action produced by the consensus state machine
+    fn apply_action(&self, action: Action) -> Result<(), StorageError>;
+
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -221,7 +223,23 @@ pub trait CollectionContainer {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
+    /// Remove peer addresses and drop outgoing channels after collection actions finish cleanup
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError>;
+
+    /// Whether the given peer has any shard replicas
+    fn peer_has_shards(&self, peer_id: PeerId) -> bool;
+
     fn sync_local_state(&self) -> Result<(), StorageError>;
+
+    fn quota_config(&self) -> QuotaConfig;
+
+    fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError>;
+
+    fn node_context(&self) -> NodeContext;
+    fn collection_names(&self) -> BTreeSet<CollectionId>;
+    fn alias_mapping(&self) -> AliasMapping;
+    fn collection_state(&self, collection: &str) -> Option<collection_state::State>;
+    fn take_dirty_collections(&self) -> BTreeSet<CollectionId>;
 }
 
 #[cfg(test)]

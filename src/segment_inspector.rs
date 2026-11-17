@@ -2,7 +2,8 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::reason;
 use segment::entry::ReadSegmentEntry;
 use segment::segment_constructor::load_segment;
 use segment::types::PointIdType;
@@ -48,7 +49,15 @@ fn main() {
             .and_then(|s| Uuid::try_parse(s.to_str()?).ok())
             .unwrap_or(Uuid::nil());
 
-        let segment = load_segment(path, segment_uuid, None, &AtomicBool::new(false)).unwrap();
+        let segment = load_segment(
+            path,
+            segment_uuid,
+            None,
+            &AtomicBool::new(false),
+            // Allow to ignore missing version file, this is a debugging tool
+            true,
+        )
+        .unwrap();
 
         eprintln!(
             "path = {:#?}, size-points = {}",
@@ -67,9 +76,9 @@ fn main() {
             let internal_id = segment.get_internal_id(point_id);
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
-                let payload = segment
-                    .payload(point_id, &HardwareCounterCell::disposable())
-                    .unwrap();
+                let payload =
+                    ambient::unmeasured(reason("Debugging tool"), || segment.payload(point_id))
+                        .unwrap();
                 // let vectors = segment.all_vectors(point_id).unwrap();
 
                 println!("Internal ID: {internal_id:?}");

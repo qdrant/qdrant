@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use rand::{RngExt, SeedableRng};
 use tempfile::TempDir;
 
@@ -17,14 +17,18 @@ pub struct TestIndex<I: InvertedIndex> {
     _temp_dir: TempDir,
 }
 
-impl<I: InvertedIndex> TestIndex<I> {
+impl<W: Weight> TestIndex<InvertedIndexCompressedMmap<W, MmapFile>> {
     fn from_ram(ram_index: InvertedIndexRam) -> Self {
         let temp_dir = tempfile::Builder::new()
             .prefix("test_index_dir")
             .tempdir()
             .unwrap();
+
+        let index =
+            InvertedIndexCompressedMmap::from_ram_index(&MmapFs, Cow::Owned(ram_index), &temp_dir)
+                .unwrap();
         TestIndex {
-            index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
+            index,
             _temp_dir: temp_dir,
         }
     }

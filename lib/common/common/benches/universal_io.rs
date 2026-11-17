@@ -2,16 +2,17 @@ use std::hint::black_box;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use common::bench_cache::{build_once, cache_path};
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
 use common::universal_io::{
-    MmapFs, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
+    MmapFs, OpenOptions, Populate, ReadRange, UioResult, UniversalRead, UniversalReadFs,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{Rng as _, RngExt, SeedableRng as _};
 
 const FILE_SIZE_BYTES: u64 = 512 * 1024 * 1024;
@@ -84,7 +85,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
     };
     let storage = fs.open(path, options, Default::default()).unwrap();
     let len = FILE_SIZE_BYTES / size_of::<T>() as u64;
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     assert_eq!(storage.len::<T>().unwrap(), len);
 
     let low_mem = std::env::var_os(LIMIT_MEMORY_ENV_INTERNAL).is_some();
@@ -102,12 +103,7 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
         b.iter(|| {
             let mut sum = 0u64;
             let offset = rng.random_range(0..len) * size_of::<T>() as u64;
-            let data = storage
-                .read::<Random, T>(ReadRange {
-                    byte_offset: offset,
-                    length: 1,
-                })
-                .unwrap();
+            let data = storage.read(ReadRange::one(offset), Random).unwrap();
             for &item in bytemuck::cast_slice::<T, u64>(&data) {
                 sum = sum.wrapping_add(item);
             }
@@ -126,11 +122,11 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Random, T, ()>(ranges, |(), chunk| {
+                .read_batch(ranges, Random, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
-                    Ok(())
+                    UioResult::Ok(())
                 })
                 .unwrap();
             black_box(sum);
@@ -149,11 +145,11 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
                 })
                 .map(|range| ((), range));
             storage
-                .read_batch::<Sequential, T, ()>(ranges, |(), chunk| {
+                .read_batch(ranges, Sequential, |(), chunk| {
                     for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                         sum = sum.wrapping_add(item);
                     }
-                    Ok(())
+                    UioResult::Ok(())
                 })
                 .unwrap();
             black_box(sum);
@@ -166,11 +162,11 @@ fn read_benches<T: bytemuck::Pod + Send, Fs: UniversalReadFs>(
             b.iter(|| {
                 let mut sum = 0u64;
                 storage
-                    .read_batch::<Sequential, T, ()>(ranges_full_file::<T>(), |(), chunk| {
+                    .read_batch(ranges_full_file::<T>(), Sequential, |(), chunk| {
                         for &item in bytemuck::cast_slice::<T, u64>(chunk) {
                             sum = sum.wrapping_add(item);
                         }
-                        Ok(())
+                        UioResult::Ok(())
                     })
                     .unwrap();
                 black_box(sum);
@@ -190,35 +186,21 @@ fn ranges_full_file<T>() -> impl Iterator<Item = ((), ReadRange)> {
 }
 
 fn make_random_file() -> PathBuf {
-    let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(env!("CARGO_PKG_NAME"))
-        .join(env!("CARGO_CRATE_NAME"))
-        .join(format!("random-{FILE_SIZE_BYTES}.bin"));
+    build_once(cache_path!("random-{FILE_SIZE_BYTES}"), |path| {
+        let mut file = fs::File::create(path).unwrap();
+        let mut rng = SmallRng::seed_from_u64(42);
+        let mut buffer = vec![0; 1024 * 1024];
+        let mut bytes_left = FILE_SIZE_BYTES as usize;
 
-    if let Ok(metadata) = fs::metadata(&path)
-        && metadata.len() == FILE_SIZE_BYTES
-    {
-        return path;
-    }
+        while bytes_left > 0 {
+            let len = bytes_left.min(buffer.len());
+            rng.fill_bytes(&mut buffer[..len]);
+            file.write_all(&buffer[..len]).unwrap();
+            bytes_left -= len;
+        }
 
-    eprintln!("Building random benchmark file at {path:?}...");
-    fs_err::create_dir_all(path.parent().unwrap()).unwrap();
-
-    let mut file = fs::File::create(&path).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let mut buffer = vec![0; 1024 * 1024];
-    let mut bytes_left = FILE_SIZE_BYTES as usize;
-
-    while bytes_left > 0 {
-        let len = bytes_left.min(buffer.len());
-        rng.fill_bytes(&mut buffer[..len]);
-        file.write_all(&buffer[..len]).unwrap();
-        bytes_left -= len;
-    }
-
-    file.flush().unwrap();
-    eprintln!("Random benchmark file cached at {path:?}.");
-    path
+        file.flush().unwrap();
+    })
 }
 
 criterion_group! {

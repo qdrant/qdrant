@@ -6,9 +6,11 @@ use std::path::Path;
 use bytemuck::TransparentWrapper;
 
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::{
-    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, Result, UniversalKind,
-    UniversalRead, UniversalReadFs, UniversalWrite, UserData,
+    ByteOffset, FileIndex, Flusher, Item, OpenOptions, ReadRange, UioResult, UniversalAppend,
+    UniversalFlush, UniversalIoError, UniversalKind, UniversalRead, UniversalReadFs,
+    UniversalWrite, UserData,
 };
 
 /// A wrapper around [`UniversalRead`]/[`UniversalWrite`] that binds the element
@@ -27,8 +29,9 @@ pub struct TypedStorage<S, T> {
 
 impl<S: fmt::Debug, T> fmt::Debug for TypedStorage<S, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, _phantom: _ } = self;
         f.debug_struct("TypedStorage")
-            .field("inner", &self.inner)
+            .field("inner", inner)
             .finish()
     }
 }
@@ -47,103 +50,91 @@ where
     S: UniversalRead,
     T: Item,
 {
-    /// Open through the provided filesystem handle and wrap the result.
-    #[inline]
-    pub fn open(
-        fs: &S::Fs,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        extra: <S::Fs as UniversalReadFs>::OpenExtra,
-    ) -> Result<Self> {
-        fs.open(path, options, extra).map(|inner| TypedStorage {
+    pub fn new(inner: S) -> Self {
+        TypedStorage {
             inner,
             _phantom: PhantomData,
-        })
+        }
     }
 
-    pub fn reopen(&mut self) -> Result<()> {
-        self.inner.reopen()
+    /// Open through the provided filesystem handle and wrap the result.
+    #[inline]
+    pub fn open<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Fs::OpenExtra,
+    ) -> UioResult<Self> {
+        fs.open(path, options, extra).map(Self::new)
+    }
+
+    pub fn live_reload(&mut self) -> UioResult<()> {
+        self.inner.live_reload()
+    }
+
+    pub fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
+        &mut self,
+        get_file_info: F,
+    ) -> UioResult<impl Future<Output = UioResult<()>>> {
+        self.inner.live_preload(get_file_info)
     }
 
     #[inline]
-    pub fn read<P: AccessPattern>(&self, range: ReadRange) -> Result<Cow<'_, [T]>> {
-        self.inner.read::<P, T>(range)
+    pub fn read<P: AccessPattern>(
+        &self,
+        range: ReadRange,
+        access_pattern: P,
+    ) -> UioResult<Cow<'_, [T]>> {
+        self.inner.read(range, access_pattern)
     }
 
     #[inline]
-    pub fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+    pub fn read_whole(&self) -> UioResult<Cow<'_, [T]>> {
         self.inner.read_whole::<T>()
     }
 
     #[inline]
-    pub fn read_batch<P, U>(
+    pub fn read_batch<P: AccessPattern, U: UserData, E: From<UniversalIoError>>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-        U: UserData,
-    {
-        self.inner.read_batch::<P, T, U>(ranges, callback)
+        access_pattern: P,
+        callback: impl FnMut(U, &[T]) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.inner.read_batch(ranges, access_pattern, callback)
     }
 
     #[inline]
     pub fn read_iter<P, U>(
         &self,
         ranges: impl IntoIterator<Item = (U, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'_, [T]>)>>>
+        access_pattern: P,
+    ) -> UioResult<impl Iterator<Item = UioResult<(U, Cow<'_, [T]>)>>>
     where
         P: AccessPattern,
         U: UserData,
     {
-        self.inner.read_iter::<P, T, U>(ranges)
+        self.inner.read_iter(ranges, access_pattern)
     }
 
     #[inline]
-    pub fn len(&self) -> Result<u64> {
+    pub fn len(&self) -> UioResult<u64> {
         self.inner.len::<T>()
     }
 
     #[inline]
-    pub fn populate(&self) -> Result<()> {
+    pub fn populate(&self) -> UioResult<()> {
         self.inner.populate()
     }
 
     #[inline]
-    pub fn clear_ram_cache(&self) -> Result<()> {
+    pub fn will_need(&self, ranges: impl Iterator<Item = ReadRange>) {
+        self.inner
+            .will_need(ranges.map(ReadRange::into_byte_range::<T>));
+    }
+
+    #[inline]
+    pub fn clear_ram_cache(&self) -> UioResult<()> {
         self.inner.clear_ram_cache()
-    }
-
-    #[inline]
-    pub fn read_multi<'a, P, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-        callback: impl FnMut(U, &[T]) -> Result<()>,
-    ) -> Result<()>
-    where
-        P: AccessPattern,
-        U: UserData,
-        Self: 'a,
-    {
-        let reads = reads
-            .into_iter()
-            .map(|(user_data, file, range)| (user_data, &file.inner, range));
-        S::read_multi::<P, T, U>(reads, callback)
-    }
-
-    #[inline]
-    pub fn read_multi_iter<'a, P, U>(
-        reads: impl IntoIterator<Item = (U, &'a Self, ReadRange)>,
-    ) -> Result<impl Iterator<Item = Result<(U, Cow<'a, [T]>)>>>
-    where
-        P: AccessPattern,
-        U: UserData,
-        Self: 'a,
-    {
-        let reads = reads
-            .into_iter()
-            .map(|(user_data, file, range)| (user_data, &file.inner, range));
-        S::read_multi_iter::<P, T, _>(reads)
     }
 
     pub fn kind() -> UniversalKind {
@@ -157,7 +148,7 @@ where
     T: bytemuck::Pod,
 {
     #[inline]
-    pub fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> Result<()> {
+    pub fn write(&mut self, byte_offset: ByteOffset, data: &[T]) -> UioResult<()> {
         self.inner.write::<T>(byte_offset, data)
     }
 
@@ -165,7 +156,7 @@ where
     pub fn write_batch<'a>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         T: 'a,
     {
@@ -173,18 +164,52 @@ where
     }
 
     #[inline]
-    pub fn flusher(&self) -> Flusher {
-        self.inner.flusher()
-    }
-
-    #[inline]
     pub fn write_multi<'a>(
         files: &mut [Self],
         writes: impl IntoIterator<Item = (FileIndex, ByteOffset, &'a [T])>,
-    ) -> Result<()>
+    ) -> UioResult<()>
     where
         T: 'a,
     {
         S::write_multi::<T>(Self::peel_slice_mut(files), writes)
+    }
+}
+
+// On `UniversalFlush` rather than `UniversalWrite` so append-only storages
+// can run their durability flusher through the wrapper too.
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalFlush,
+{
+    #[inline]
+    pub fn flusher(&self) -> Flusher {
+        self.inner.flusher()
+    }
+}
+
+impl<S, T> TypedStorage<S, T>
+where
+    S: UniversalAppend,
+    T: bytemuck::Pod,
+{
+    /// Append `data` at exactly byte offset `offset`, which must equal the
+    /// current end of file.
+    #[inline]
+    pub fn append(&mut self, offset: ByteOffset, data: &[T]) -> UioResult<()> {
+        self.inner.append::<T>(offset, data)
+    }
+
+    /// Append several buffers contiguously, starting at exactly byte offset
+    /// `offset`, which must equal the current end of file.
+    #[inline]
+    pub fn append_batch<'a>(
+        &mut self,
+        offset: ByteOffset,
+        items: impl IntoIterator<Item = &'a [T]>,
+    ) -> UioResult<()>
+    where
+        T: 'a,
+    {
+        self.inner.append_batch::<T>(offset, items)
     }
 }

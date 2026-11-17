@@ -9,12 +9,19 @@ on:
   repository_dispatch:
     types: [benchmark-trigger-image-build]
 
+permissions:
+  contents: read
+
 jobs:
   branch-build-and-push:
     if: ${{ !github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
+    environment: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && 'dev-publish' || '' }}
+    permissions:
+      contents: read
+      packages: write
     steps:
-        - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           with:
             ref: ${{ github.ref_name }}
         - uses: ./.github/actions/branch-build-and-push
@@ -30,8 +37,11 @@ jobs:
   triggered-branch-build-and-push:
     if: ${{ github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
+    permissions:
+      contents: read
+      packages: write
     steps:
-        - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           with:
             ref: ${{ github.event.client_payload.version }}
         - uses: ./.github/actions/branch-build-and-push

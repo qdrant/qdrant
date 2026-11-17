@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -9,7 +8,9 @@ use super::HNSWIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::{VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -27,6 +28,16 @@ impl VectorIndexRead for HNSWIndex {
         self.with_view(|view| view.search(vectors, filter, top, params, query_context))
     }
 
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        self.with_view(|view| Ok(view.filter_checks(query_vectors, cardinality, top, params)))
+    }
+
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         let tm = &self.searches_telemetry;
         VectorIndexSearchesTelemetry {
@@ -36,6 +47,7 @@ impl VectorIndexRead for HNSWIndex {
             unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
+            filtered_acorn: tm.acorn.lock().get_statistics(detail),
             filtered_exact: tm.exact_filtered.lock().get_statistics(detail),
             filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(detail),
@@ -59,10 +71,14 @@ impl VectorIndexRead for HNSWIndex {
     fn fill_idf_statistics(
         &self,
         _idf: &mut HashMap<DimId, usize>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        // HNSW (dense) index doesn't track IDF.
-        Ok(())
+        corpus: Option<&Filter>,
+        _is_stopped: &std::sync::atomic::AtomicBool,
+    ) -> OperationResult<usize> {
+        // HNSW (dense) index doesn't track IDF and contributes no df counts.
+        Ok(match corpus {
+            None => self.indexed_vector_count(),
+            Some(_) => 0,
+        })
     }
 
     fn is_index(&self) -> bool {
@@ -88,7 +104,14 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<VectorRef>,
-        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error("Cannot update HNSW index"))
+    }
+
+    fn update_vector_raw(
+        &mut self,
+        _id: PointOffsetType,
+        _vector: Option<&[u8]>,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }

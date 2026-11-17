@@ -1,29 +1,41 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyNullIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let mut futs = self.storage.has_values_flags.live_preload(cached_fs)?;
+        futs.extend(self.storage.is_null_flags.live_preload(cached_fs)?);
+        Ok(futs)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
-        // Reload each flag set's bitmap from the changed points only.
-        self.storage
-            .has_values_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
-        self.storage
-            .is_null_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        // Deletions are served from the id tracker, nothing here tracks them
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Resync each flag set from its on-disk state; the point deltas are
+        // irrelevant, the flag files are the source of truth.
+        self.storage.has_values_flags.live_reload(fs)?;
+        self.storage.is_null_flags.live_reload(fs)?;
 
         // total_point_count only grows, to cover appended offsets.
         self.total_point_count = new_points

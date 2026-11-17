@@ -73,6 +73,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
   - [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
   - [Java client](https://github.com/qdrant/java-client)
 - Community:
+  - [Kotlin](https://github.com/NaCode-Studios/Kdrant)
   - [PHP](https://github.com/hkulekci/qdrant-php)
 
 ### Qdrant Edge

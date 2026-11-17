@@ -1,5 +1,5 @@
+use blobstore::BlobstoreReader;
 use common::universal_io::UniversalRead;
-use gridstore::GridstoreReader;
 
 use super::inner::InMemoryGeoIndex;
 use crate::types::RawGeoPoint;
@@ -11,8 +11,8 @@ mod read_ops;
 /// Read-only counterpart to [`super::MutableGeoIndex`].
 ///
 /// Owns the same in-memory state ([`InMemoryGeoIndex`]) but is backed by
-/// [`GridstoreReader`] over generic [`UniversalRead`] instead of a writable
-/// [`gridstore::Gridstore`]. Implements
+/// [`BlobstoreReader`] over generic [`UniversalRead`] instead of a writable
+/// [`blobstore::Blobstore`]. Implements
 /// [`super::super::read_ops::GeoIndexRead`] by forwarding to the inner;
 /// provides no mutation surface.
 ///
@@ -20,15 +20,17 @@ mod read_ops;
 /// the Gridstore on disk.
 pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
     pub(super) in_memory_index: InMemoryGeoIndex,
-    /// Backing Gridstore reader. Kept open after the in-memory state is built
+    /// Backing Blobstore reader. Kept open after the in-memory state is built
     /// so `files` / `clear_cache` can drive the underlying storage.
-    pub(super) storage: GridstoreReader<Vec<RawGeoPoint>, S>,
+    pub(super) storage: BlobstoreReader<Vec<RawGeoPoint>, S>,
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::ambient;
+    use common::bitvec::BitSlice;
+    use common::types::PointOffsetType;
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use tempfile::TempDir;
 
     use super::super::MutableGeoIndex;
@@ -42,7 +44,7 @@ mod tests {
     #[test]
     fn read_only_appendable_geo_round_trip() {
         let dir = TempDir::with_prefix("read_only_geo").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
@@ -50,11 +52,11 @@ mod tests {
                 .unwrap();
             // point 0: Berlin, 1 value
             mutable
-                .add_many_geo_points(0, vec![GeoPoint::new_unchecked(13.41, 52.52)], &hw_counter)
+                .add_many_geo_points(0, vec![GeoPoint::new_unchecked(13.41, 52.52)])
                 .unwrap();
             // point 1: Paris, 1 value
             mutable
-                .add_many_geo_points(1, vec![GeoPoint::new_unchecked(2.35, 48.85)], &hw_counter)
+                .add_many_geo_points(1, vec![GeoPoint::new_unchecked(2.35, 48.85)])
                 .unwrap();
             // point 2: two values
             mutable
@@ -64,7 +66,6 @@ mod tests {
                         GeoPoint::new_unchecked(1.0, 1.0),
                         GeoPoint::new_unchecked(2.0, 2.0),
                     ],
-                    &hw_counter,
                 )
                 .unwrap();
             mutable.flusher()().unwrap();
@@ -72,14 +73,19 @@ mod tests {
 
         // `S = ReadOnly<MmapFile>` → `S::Fs = ReadOnlyFs<MmapFs>`, the
         // write-enforced backend: every open is asserted non-writable, so this
-        // only succeeds because `GridstoreReader::open` opens its pages and
+        // only succeeds because `BlobstoreReader::open` opens its pages and
         // tracker read-only.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf())
-                .unwrap()
-                .unwrap();
+            ReadOnlyAppendableGeoIndex::open(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                BitSlice::empty(),
+            )
+            .unwrap()
+            .unwrap();
 
         // Counts reconstructed from the Gridstore on open.
         assert_eq!(index.points_count(), 3);

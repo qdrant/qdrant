@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::borrow::Cow;
 use std::io::{self, BufWriter, Write};
 use std::ops::Range;
@@ -5,28 +9,27 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, UniversalRead};
+use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
 use fs_err::{File, OpenOptions};
 
 use crate::common::Flusher;
+use crate::common::io_uring::{IoUringFallback, use_io_uring};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::VectorRef;
-use crate::types::{Distance, VectorStorageDatatype};
-#[cfg(target_os = "linux")]
-use crate::vector_storage::common::get_async_scorer;
+use crate::types::{Distance, Memory, VectorStorageDatatype};
+use crate::vector_storage::common::error_immutable_insert;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
 };
 
-const VECTORS_PATH: &str = "matrix.dat";
-const DELETED_PATH: &str = "deleted.dat";
+pub(crate) const VECTORS_PATH: &str = "matrix.dat";
+pub(crate) const DELETED_PATH: &str = "deleted.dat";
 
 /// Stores all dense vectors in mem-mapped file
 ///
@@ -78,21 +81,31 @@ where
     }
 }
 
+/// Whether the immutable single-file dense vector storages open on io_uring at `memory`. They
+/// have no feature flag of their own, and predate the setting, so they fall back to the async
+/// scorer.
+fn dense_with_uring(memory: Memory) -> bool {
+    use_io_uring(IoUringFallback::AsyncScorer, memory, true)
+}
+
 pub fn open_dense_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
-    #[cfg(target_os = "linux")]
-    let with_uring = get_async_scorer(); // `get_async_scorer` only available on Linux
-
-    #[cfg(not(target_os = "linux"))]
-    let with_uring = false;
-
-    open_dense_vector_storage_with_uring(path, dim, distance, populate, with_uring)
+    open_dense_vector_storage_with_uring(
+        path,
+        dim,
+        distance,
+        memory.populate_on_open(),
+        dense_with_uring(memory),
+    )
 }
 
+/// [`open_dense_vector_storage`] with an explicit backend choice instead of the node-wide
+/// io_uring setting. Falls back to mmap (with an error log) if the io_uring backend cannot be
+/// opened.
 pub fn open_dense_vector_storage_with_uring(
     path: &Path,
     dim: usize,
@@ -129,10 +142,15 @@ pub fn open_dense_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
+    let populate = memory.populate_on_open();
+    let with_uring = dense_with_uring(memory);
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
     #[cfg(target_os = "linux")]
-    if get_async_scorer() {
+    if with_uring {
         match open_dense_vector_storage_impl(
             common::universal_io::IoUringFs,
             path,
@@ -157,10 +175,15 @@ pub fn open_dense_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    populate: bool,
+    memory: Memory,
 ) -> OperationResult<VectorStorageEnum> {
+    let populate = memory.populate_on_open();
+    let with_uring = dense_with_uring(memory);
+    // prevent "unused variable" warning
+    let _ = with_uring;
+
     #[cfg(target_os = "linux")]
-    if get_async_scorer() {
+    if with_uring {
         match open_dense_vector_storage_impl(
             common::universal_io::IoUringFs,
             path,
@@ -197,7 +220,13 @@ where
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
 
-    let vectors = ImmutableDenseVectors::open(&fs, &vectors_path, &deleted_path, dim, populate)?;
+    let vectors = ImmutableDenseVectors::open(
+        &fs,
+        &vectors_path,
+        &deleted_path,
+        dim,
+        Populate::from(populate),
+    )?;
     let storage = DenseVectorStorageImpl {
         vectors_path,
         deleted_path,
@@ -216,7 +245,7 @@ where
     S: UniversalRead,
 {
     fn vector_dim(&self) -> usize {
-        self.vectors.as_ref().unwrap().dim
+        self.vectors.as_ref().unwrap().dim()
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
@@ -227,9 +256,35 @@ where
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
-    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
         let mmap_store = self.vectors.as_ref().unwrap();
-        mmap_store.for_each_in_batch(keys, f);
+        mmap_store.for_each_in_batch(keys, f)
+    }
+
+    fn read_dense_bytes<P: AccessPattern, U: Copy>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        // Split into parallel arrays in one pass: `for_each_in_batch` needs an
+        // offsets slice (it chunks it for batched reads), but we still want
+        // `user_data[idx]` available inside the callback.
+        let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
+
+        self.vectors
+            .as_ref()
+            .unwrap()
+            .for_each_in_batch(&point_offsets, |idx, vector| {
+                callback(
+                    user_data[idx],
+                    point_offsets[idx],
+                    bytemuck::cast_slice(vector).to_vec(),
+                );
+            })
     }
 }
 
@@ -244,7 +299,7 @@ where
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-        let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
+        let start_index = self.vectors.as_ref().unwrap().num_vectors() as PointOffsetType;
         let mut end_index = start_index;
 
         // Extend vectors file, write other vectors into it
@@ -278,7 +333,7 @@ where
             &self.vectors_path,
             &self.deleted_path,
             dim,
-            false, // No need to populate
+            Populate::No, // No need to populate
         )?);
 
         // Flush deleted flags into store
@@ -313,12 +368,12 @@ where
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         !self.populated
     }
 
     fn total_vector_count(&self) -> usize {
-        self.vectors.as_ref().unwrap().num_vectors
+        self.vectors.as_ref().unwrap().num_vectors()
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
@@ -334,7 +389,7 @@ where
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
@@ -346,7 +401,7 @@ where
             .for_each_in_batch(&point_offsets, |idx, vector| {
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
-            });
+            })
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -368,6 +423,14 @@ where
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.vectors.as_ref().unwrap().deleted_vector_bitslice()
     }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.read_dense_bytes::<P, U>(keys, callback)
+    }
 }
 
 impl<T, S> VectorStorage for DenseVectorStorageImpl<T, S>
@@ -375,13 +438,8 @@ where
     T: PrimitiveVectorElement,
     S: UniversalRead,
 {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        panic!("Can't directly update vector in mmap storage")
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
+        Err(error_immutable_insert())
     }
 
     fn flusher(&self) -> Flusher {
@@ -420,7 +478,7 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
@@ -451,7 +509,8 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
@@ -463,19 +522,19 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
-                    .insert_vector(0, points[0].as_slice().into(), &hw_counter)
+                    .insert_vector(0, points[0].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(1, points[1].as_slice().into(), &hw_counter)
+                    .insert_vector(1, points[1].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(2, points[2].as_slice().into(), &hw_counter)
+                    .insert_vector(2, points[2].as_slice().into())
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &storage2, 3).unwrap();
@@ -488,16 +547,16 @@ mod tests {
 
         assert_eq!(points[1], vector);
 
-        id_tracker.drop(PointIdType::NumId(2)).unwrap();
+        id_tracker.drop(PointIdType::NumId(2), None).unwrap();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
-                    .insert_vector(3, points[3].as_slice().into(), &hw_counter)
+                    .insert_vector(3, points[3].as_slice().into())
                     .unwrap();
                 storage2
-                    .insert_vector(4, points[4].as_slice().into(), &hw_counter)
+                    .insert_vector(4, points[4].as_slice().into())
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &storage2, 2).unwrap();
@@ -557,16 +616,17 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = create_id_tracker_fixture(points.len());
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 });
             }
@@ -636,8 +696,11 @@ mod tests {
             .exactly_one()
             .unwrap();
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
-        assert_eq!(closest[0].idx, 4);
-        assert_eq!(closest[1].idx, 0);
+        // Points 0 and 4 both score 1.0 against this query; order among equal
+        // scores is unspecified, so assert the set rather than positions.
+        let mut ids = closest.iter().map(|p| p.idx).collect::<Vec<_>>();
+        ids.sort_unstable();
+        assert_eq!(ids, [0, 4]);
 
         // Delete all
         storage.delete_vector(0 as PointOffsetType).unwrap();
@@ -678,17 +741,18 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                     if delete_mask[i] {
                         storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -747,17 +811,18 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }
@@ -774,6 +839,7 @@ mod tests {
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer
             .score_points(&mut query_points, 0)
+            .unwrap()
             .collect::<Vec<_>>();
 
         assert_eq!(res.len(), 3);
@@ -815,16 +881,17 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_dense_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage =
+            open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
                         .unwrap();
                 }
             }
@@ -833,6 +900,7 @@ mod tests {
         }
 
         let config: QuantizationConfig = ScalarQuantizationConfig {
+            memory: None,
             r#type: Default::default(),
             quantile: None,
             always_ram: None,
@@ -840,7 +908,6 @@ mod tests {
         .into();
 
         let stopped = Arc::new(AtomicBool::new(false));
-        let hardware_counter = HardwareCounterCell::new();
         let quantized_vectors = QuantizedVectors::create(
             &storage,
             &config,
@@ -853,16 +920,13 @@ mod tests {
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
-        let scorer_quant = quantized_vectors
-            .raw_scorer(query.clone(), hardware_counter)
-            .unwrap();
+        let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
 
-        let scorer_orig =
-            new_raw_scorer(query.clone(), &storage, HardwareCounterCell::new()).unwrap();
+        let scorer_orig = new_raw_scorer(query.clone(), &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);
@@ -879,15 +943,12 @@ mod tests {
             .unwrap();
         assert_eq!(files, storage.files());
         assert_eq!(quantization_files, quantized_vectors.files());
-        let hardware_counter = HardwareCounterCell::new();
-        let scorer_quant = quantized_vectors
-            .raw_scorer(query.clone(), hardware_counter)
-            .unwrap();
-        let scorer_orig = new_raw_scorer(query, &storage, HardwareCounterCell::new()).unwrap();
+        let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
+        let scorer_orig = new_raw_scorer(query, &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);

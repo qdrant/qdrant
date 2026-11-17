@@ -1,45 +1,51 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use super::ReadOnlyBoolIndex;
-use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::OperationResult;
+use crate::index::UniversalReadExt;
 use crate::index::field_index::LiveReload;
 
-impl<S: UniversalRead> LiveReload for ReadOnlyBoolIndex<S> {
-    type Fs = S::Fs;
+impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        cached_fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let mut futs = self.storage.trues_flags.live_preload(cached_fs)?;
+        futs.extend(self.storage.falses_flags.live_preload(cached_fs)?);
+        Ok(futs)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
-        new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // Reload each flag set's bitmap from the changed points only.
+        // Clear the flags of the newly deleted points: the files keep them
         self.storage
             .trues_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+            .remove(deleted_points.iter().copied());
         self.storage
             .falses_flags
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+            .remove(deleted_points.iter().copied());
 
-        // Refresh the derived counts from the reloaded bitmaps, as `open` does.
-        //
-        // possible opt: update this using deleted_points and new_points separately,
-        //               so we only process the delta
-        self.indexed_count =
-            self.storage
-                .trues_flags
-                .get_bitmap()
-                .union_len(self.storage.falses_flags.get_bitmap()) as usize;
+        // Re-derive the counts from the bitmaps, but only if they were computed
+        // before: an untouched index must not pay for the bitmap scan that
+        // deriving them would force.
+        self.refresh_counts()
+    }
 
-        // possible opt: track num_trues within `RoaringFlags`.
-        self.trues_count = self.storage.trues_flags.count_trues();
-        self.falses_count = self.storage.falses_flags.count_trues();
-
-        Ok(())
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Resync each flag set from its on-disk state
+        self.storage.trues_flags.live_reload(fs)?;
+        self.storage.falses_flags.live_reload(fs)?;
+        self.apply_deletions(deleted_points)
     }
 }

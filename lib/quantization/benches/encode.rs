@@ -1,18 +1,18 @@
 use std::sync::atomic::AtomicBool;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use permutation_iterator::Permutor;
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
 fn encode_dot_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("encode dot");
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let mut list: Vec<f32> = Vec::new();
     for _ in 0..vectors_count {
         let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
@@ -28,9 +28,9 @@ fn encode_dot_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        std::iter::repeat_n(true, vectors_count),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,
@@ -63,6 +63,32 @@ fn encode_dot_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+        group.bench_function("score all u8 avx512 vnni", |b| {
+            b.iter(|| {
+                let mut _s = 0.0;
+                for i in 0..vectors_count as u32 {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx512_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avxvnni") {
+        group.bench_function("score all u8 avx vnni", |b| {
+            b.iter(|| {
+                let mut _s = 0.0;
+                for i in 0..vectors_count as u32 {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score all u8 neon", |b| {
         b.iter(|| {
@@ -74,8 +100,11 @@ fn encode_dot_bench(c: &mut Criterion) {
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 avx", |b| {
@@ -99,6 +128,32 @@ fn encode_dot_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+        group.bench_function("score random access u8 avx512 vnni", |b| {
+            let mut _s = 0.0;
+            b.iter(|| {
+                for &i in &permutation {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx512_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avxvnni") {
+        group.bench_function("score random access u8 avx vnni", |b| {
+            let mut _s = 0.0;
+            b.iter(|| {
+                for &i in &permutation {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score random access u8 neon", |b| {
         let mut _s = 0.0;
@@ -116,7 +171,7 @@ fn encode_l1_bench(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let mut list: Vec<f32> = Vec::new();
     for _ in 0..vectors_count {
         let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
@@ -132,9 +187,9 @@ fn encode_l1_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        std::iter::repeat_n(true, vectors_count),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,
@@ -178,8 +233,11 @@ fn encode_l1_bench(c: &mut Criterion) {
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 avx", |b| {

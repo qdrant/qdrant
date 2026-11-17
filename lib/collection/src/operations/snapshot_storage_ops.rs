@@ -124,7 +124,19 @@ pub async fn multipart_upload(
     // Note:
     //  1. write.write() is sync but a worker thread is spawned internally.
     //  2. write.finish() will wait for all the worker threads to finish.
-    while let Ok(bytes_read) = reader.read(&mut buffer) {
+    loop {
+        let bytes_read = match reader.read(&mut buffer) {
+            Ok(bytes_read) => bytes_read,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(err) => {
+                if let Err(abort_err) = write.abort().await {
+                    log::warn!("Failed to abort multipart upload: {abort_err}");
+                }
+                return Err(CollectionError::service_error(format!(
+                    "Failed to read snapshot file: {err}"
+                )));
+            }
+        };
         if bytes_read == 0 {
             break;
         }
@@ -257,4 +269,39 @@ pub async fn download_snapshot(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use object_store::memory::InMemory;
+
+    use super::*;
+
+    /// Reading a directory fails with `EISDIR`, which triggers a read error mid-upload.
+    // Formatting an `fs-err` error blocks (its `debug` feature), which needs a multi-thread runtime.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn multipart_upload_fails_on_read_error() {
+        let store = InMemory::new();
+        let directory_source = tempfile::tempdir().unwrap();
+        let target = Path::new("./snapshots/collection/test.snapshot");
+
+        let err = multipart_upload(&store, directory_source.path(), target)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, CollectionError::ServiceError { error, .. }
+                if error.contains("Failed to read snapshot file")),
+            "unexpected error: {err}",
+        );
+        let key = trim_dot_slash(target).unwrap();
+        assert!(
+            matches!(
+                store.head(&key).await,
+                Err(object_store::Error::NotFound { .. })
+            ),
+            "a failed upload must not store an object",
+        );
+    }
 }

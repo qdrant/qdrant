@@ -1,3 +1,4 @@
+use api::conversions::json::json_path_from_proto;
 use api::{grpc, rest};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -6,6 +7,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal,
 };
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DecayKind, ParsedFormula,
 };
@@ -17,6 +19,7 @@ use segment::vector_storage::query::{
 
 use crate::query::formula::*;
 use crate::query::query_enum::*;
+use crate::query::text::TextScoringQuery;
 use crate::query::{
     FusionInternal, MmrInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -79,7 +82,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
             score_threshold: score_threshold.map(OrderedFloat),
             limit: limit as usize,
             offset: offset as usize,
-            params: params.map(SearchParams::from),
+            params: params.map(SearchParams::try_from).transpose()?,
             with_vector: with_vectors
                 .map(WithVector::from)
                 .unwrap_or(WithVector::Bool(false)),
@@ -174,7 +177,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
                 .map(|query| ScoringQuery::try_from_grpc_query(query, using))
                 .transpose()?,
             limit: limit as usize,
-            params: params.map(SearchParams::from),
+            params: params.map(SearchParams::try_from).transpose()?,
             filter: filter.map(Filter::try_from).transpose()?,
             score_threshold: score_threshold.map(OrderedFloat),
         };
@@ -377,6 +380,16 @@ impl ScoringQuery {
                     candidates_limit: candidates_limit as usize,
                 })
             }
+            grpc::query_shard_points::query::Score::Text(grpc::TextScoringInternal {
+                field,
+                text,
+                k1,
+                b,
+            }) => ScoringQuery::Text(TextScoringQuery {
+                field: json_path_from_proto(&field)?,
+                text,
+                params: Bm25Params { k1, b },
+            }),
         };
 
         Ok(scoring_query)
@@ -413,6 +426,18 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                     candidates_limit: candidates_limit as u32,
                 })),
             },
+            ScoringQuery::Text(TextScoringQuery {
+                field,
+                text,
+                params: Bm25Params { k1, b },
+            }) => Self {
+                score: Some(Score::Text(grpc::TextScoringInternal {
+                    field: field.to_string(),
+                    text,
+                    k1,
+                    b,
+                })),
+            },
         }
     }
 }
@@ -427,12 +452,12 @@ impl From<QueryEnum> for grpc::QueryEnum {
             },
             QueryEnum::RecommendBestScore(named) => grpc::QueryEnum {
                 query: Some(grpc::query_enum::Query::RecommendBestScore(
-                    named.query.into(),
+                    grpc::RecoQuery::from(named.query),
                 )),
             },
             QueryEnum::RecommendSumScores(named) => grpc::QueryEnum {
                 query: Some(grpc::query_enum::Query::RecommendSumScores(
-                    named.query.into(),
+                    grpc::RecoQuery::from(named.query),
                 )),
             },
             QueryEnum::Discover(named) => grpc::QueryEnum {
@@ -651,6 +676,12 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::Sum(rest::SumExpression { sum: exprs }) => {
                 ExpressionInternal::Sum(exprs.into_iter().map(ExpressionInternal::from).collect())
             }
+            rest::Expression::Max(rest::MaxExpression { max: exprs }) => {
+                ExpressionInternal::Max(exprs.into_iter().map(ExpressionInternal::from).collect())
+            }
+            rest::Expression::Min(rest::MinExpression { min: exprs }) => {
+                ExpressionInternal::Min(exprs.into_iter().map(ExpressionInternal::from).collect())
+            }
             rest::Expression::Neg(rest::NegExpression { neg: expr }) => {
                 ExpressionInternal::Neg(Box::new(ExpressionInternal::from(*expr)))
             }
@@ -685,6 +716,9 @@ impl From<rest::Expression> for ExpressionInternal {
             }
             rest::Expression::Ln(rest::LnExpression { ln: expr }) => {
                 ExpressionInternal::Ln(Box::new(ExpressionInternal::from(*expr)))
+            }
+            rest::Expression::Acosh(rest::AcoshExpression { acosh: expr }) => {
+                ExpressionInternal::Acosh(Box::new(ExpressionInternal::from(*expr)))
             }
             rest::Expression::Abs(rest::AbsExpression { abs: expr }) => {
                 ExpressionInternal::Abs(Box::new(ExpressionInternal::from(*expr)))
@@ -786,6 +820,20 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                     .try_collect()?;
                 ExpressionInternal::Sum(sum)
             }
+            Variant::Max(grpc::MaxExpression { max }) => {
+                let max = max
+                    .into_iter()
+                    .map(ExpressionInternal::try_from)
+                    .try_collect()?;
+                ExpressionInternal::Max(max)
+            }
+            Variant::Min(grpc::MinExpression { min }) => {
+                let min = min
+                    .into_iter()
+                    .map(ExpressionInternal::try_from)
+                    .try_collect()?;
+                ExpressionInternal::Min(min)
+            }
             Variant::Div(div) => {
                 let grpc::DivExpression {
                     left,
@@ -832,6 +880,9 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                 ExpressionInternal::Log10(Box::new((*expression).try_into()?))
             }
             Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
+            Variant::Acosh(expression) => {
+                ExpressionInternal::Acosh(Box::new((*expression).try_into()?))
+            }
             Variant::LinDecay(decay_params) => {
                 try_from_decay_params(*decay_params, DecayKind::Lin)?
             }
@@ -869,4 +920,136 @@ fn try_from_decay_params(
         midpoint,
         scale,
     })
+}
+
+#[cfg(test)]
+mod formula_grpc_roundtrip_tests {
+    use std::collections::HashMap;
+
+    use segment::index::query_optimization::rescore_formula::parsed_formula::{
+        ParsedExpression, PreciseScoreOrdered,
+    };
+
+    use super::*;
+
+    /// A parsed formula is unparsed back to gRPC when a query is forwarded to another shard, so
+    /// every expression variant must survive the round trip. A missing arm in
+    /// `unparse_expression` only shows up on multi-node clusters, which unit tests of the scorer
+    /// alone would never catch.
+    fn assert_roundtrips(formula: ParsedExpression) {
+        let original = ParsedFormula {
+            payload_vars: Default::default(),
+            conditions: Vec::new(),
+            defaults: HashMap::new(),
+            formula: formula.clone(),
+        };
+
+        let unparsed = grpc::Formula::from_parsed(original);
+        let internal = FormulaInternal::try_from(unparsed).unwrap();
+        let reparsed = ParsedFormula::try_from(internal).unwrap();
+
+        assert_eq!(reparsed.formula, formula);
+    }
+
+    fn constant(value: f64) -> ParsedExpression {
+        ParsedExpression::Constant(PreciseScoreOrdered::from(value))
+    }
+
+    #[test]
+    fn max_survives_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Max(vec![
+            ParsedExpression::new_score_id(0),
+            constant(0.5),
+        ]));
+    }
+
+    #[test]
+    fn min_survives_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Min(vec![
+            ParsedExpression::new_score_id(0),
+            constant(0.5),
+        ]));
+    }
+
+    /// `max` and `min` share the same shape, so a copy-paste slip in either unparse arm would
+    /// send one operator's operands out under the other's tag. Nesting them in each other pins
+    /// the two arms apart.
+    #[test]
+    fn max_and_min_do_not_swap_in_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Max(vec![
+            ParsedExpression::Min(vec![constant(1.0), ParsedExpression::new_score_id(0)]),
+            ParsedExpression::Min(vec![constant(2.0), ParsedExpression::new_score_id(1)]),
+        ]));
+    }
+
+    /// `max` nested inside other operators must round trip too, not just at the formula root.
+    #[test]
+    fn nested_max_survives_grpc_roundtrip() {
+        assert_roundtrips(ParsedExpression::Mult(vec![
+            constant(2.0),
+            ParsedExpression::Max(vec![
+                ParsedExpression::Mult(vec![constant(3.0), ParsedExpression::new_score_id(0)]),
+                ParsedExpression::new_score_id(1),
+            ]),
+        ]));
+    }
+}
+
+#[cfg(test)]
+mod text_grpc_roundtrip_tests {
+    use segment::json_path::JsonPath;
+
+    use super::*;
+
+    /// A BM25 query reaches a remote shard as `QueryShardPoints`, at the root
+    /// or as a prefetch, and must arrive as it left: field path, raw text and
+    /// both parameters.
+    #[test]
+    fn text_query_survives_grpc_roundtrip() {
+        let text = ScoringQuery::Text(TextScoringQuery {
+            field: JsonPath::new("doc.body"),
+            text: "The quick fox".to_owned(),
+            params: Bm25Params { k1: 0.9, b: 0.4 },
+        });
+        let request = ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(text.clone()),
+                limit: 50,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                k: DEFAULT_RRF_K,
+                weights: None,
+            })),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(false),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+        let at_root = ShardQueryRequest {
+            prefetches: Vec::new(),
+            query: Some(text),
+            ..request.clone()
+        };
+
+        // `ShardQueryRequest` has no `PartialEq`; the scoring queries are what
+        // the conversion touches.
+        let queries = |request: &ShardQueryRequest| {
+            let prefetched = request.prefetches.iter().map(|p| p.query.clone());
+            prefetched
+                .chain([request.query.clone()])
+                .collect::<Vec<_>>()
+        };
+        for request in [request, at_root] {
+            let grpc = grpc::QueryShardPoints::from(request.clone());
+            let back = ShardQueryRequest::try_from(grpc).unwrap();
+            assert_eq!(queries(&back), queries(&request));
+        }
+    }
 }

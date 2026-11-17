@@ -4,18 +4,24 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetAuditLogRequest, GetAuditLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
-    GetTelemetryRequest, GetTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
-    WaitOnConsensusCommitResponse,
+    GetAuditLogRequest, GetAuditLogResponse, GetConsensusAppliedLogRequest,
+    GetConsensusAppliedLogResponse, GetConsensusCommitRequest, GetConsensusCommitResponse,
+    GetQuotaUsageRequest, GetQuotaUsageResponse, GetTelemetryRequest, GetTelemetryResponse,
+    PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use chrono::DateTime;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
+use storage::quota;
+use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+use crate::common::consensus_lag::applied_log_to_grpc;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::auth::extract_auth;
@@ -71,8 +77,7 @@ impl QdrantInternal for QdrantInternalService {
         let ok = self
             .consensus_state
             .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
-            .await
-            .is_ok();
+            .await;
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 
@@ -118,6 +123,42 @@ impl QdrantInternal for QdrantInternalService {
         };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_quota_usage(
+        &self,
+        mut request: Request<GetQuotaUsageRequest>,
+    ) -> Result<Response<GetQuotaUsageResponse>, Status> {
+        let auth = extract_auth(&mut request);
+        auth.unlogged_access()
+            .check_global_access(AccessRequirements::new())?;
+
+        let timing = Instant::now();
+
+        // Read straight from the node's quota manager: this answers for the peer
+        // that received the call, which is the whole point of the RPC.
+        let manager = quota::global();
+        let usage = manager.usage();
+
+        let response = GetQuotaUsageResponse {
+            result: Some(QuotaUsage {
+                resident_memory_percent: usage.resident_memory_percent.map(u32::from),
+                disk_usage_percent: usage.disk_usage_percent.map(u32::from),
+                exceeded: manager.exceeded().any(),
+            }),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
+    }
+
+    async fn get_consensus_applied_log(
+        &self,
+        _: Request<GetConsensusAppliedLogRequest>,
+    ) -> Result<Response<GetConsensusAppliedLogResponse>, Status> {
+        Ok(Response::new(applied_log_to_grpc(
+            self.consensus_state.applied_log(),
+        )))
     }
 
     async fn get_audit_log(
@@ -168,6 +209,7 @@ impl QdrantInternal for QdrantInternalService {
         let entries = cancel::blocking::spawn_cancel_on_drop(move |cancel| {
             read_local_audit_logs(&config, &query, &cancel)
         })
+        .unmeasured(reason("Audit logs aren't measured"))
         .await
         .map_err(|e| Status::internal(format!("Failed to read local audit logs: {e}")))?
         .map_err(|e| Status::internal(e.to_string()))?;

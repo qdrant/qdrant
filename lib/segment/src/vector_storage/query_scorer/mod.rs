@@ -2,6 +2,7 @@ use bytemuck::TransparentWrapper;
 use common::typelevel::{TBool, TOption};
 use common::types::{PointOffsetType, ScoreType};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::Metric;
@@ -14,24 +15,23 @@ pub mod multi_custom_query_scorer;
 pub mod multi_metric_query_scorer;
 pub mod sparse_custom_query_scorer;
 pub mod sparse_metric_query_scorer;
+pub mod turbo_custom_query_scorer;
+pub mod turbo_multi_custom_query_scorer;
+pub mod turbo_multi_query_scorer;
+pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
-    type TVector: ?Sized;
-
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
-
     /// Score a batch of points
     ///
-    /// Enables underlying storage to optimize pre-fetching of data
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert_eq!(ids.len(), scores.len());
-
-        for (idx, id) in ids.iter().enumerate() {
-            scores[idx] = self.score_stored(*id);
-        }
-    }
-
-    fn score(&self, v2: &Self::TVector) -> ScoreType;
+    /// Enables underlying storage to optimize pre-fetching of data.
+    /// Fallible because the vectors may come from remote storage. A single
+    /// point is scored as a batch of one, see
+    /// [`RawScorer::score_point`](crate::vector_storage::RawScorer::score_point).
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
@@ -107,7 +107,7 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
 /// TODO: For example
 ///
 /// - If the whole batch is less than one page - don't use prefetch
-/// - If one vector is bigger then the prefetch size - don't use prefetch
+/// - If one vector is bigger than the prefetch size - don't use prefetch
 /// - ???
 pub fn is_read_with_prefetch_efficient<O: VectorOffset>(ids: &[O]) -> bool {
     let mut min = usize::MAX;

@@ -1,0 +1,518 @@
+//! BM25 over a text index through the collection's query path: tokenized and
+//! gathered per shard, merged across shards.
+
+use std::collections::HashMap;
+
+use ahash::AHashSet;
+use collection::collection::Collection;
+use collection::operations::CollectionUpdateOperations;
+use collection::operations::point_ops::{
+    BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
+    WriteOrdering,
+};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::types::ScoreType;
+use itertools::Itertools;
+use segment::data_types::index::{TextIndexParams, TextScoringParams};
+use segment::data_types::query_context::fancy_idf;
+use segment::data_types::vectors::NamedQuery;
+use segment::index::field_index::full_text_index::Bm25Params;
+use segment::json_path::JsonPath;
+use segment::types::{
+    Condition, ExtendedPointId, Filter, HasIdCondition, IdfCorpusParams, IdfParams, Payload,
+    PayloadFieldSchema, PayloadSchemaParams, ScoredPoint, SearchParams,
+};
+use serde_json::Map;
+use shard::query::query_enum::QueryEnum;
+use shard::query::text::TextScoringQuery;
+use shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use tempfile::Builder;
+
+use crate::common::simple_collection_fixture;
+
+const FIELD: &str = "body";
+const POINTS: u64 = 35;
+
+/// One document per pair of `alpha` (1 to 5) and `gamma` (0 to 6) counts, so
+/// no two documents score the same for a query of those terms.
+fn text_of(i: u64) -> String {
+    ["alpha"; 5][..(i % 5 + 1) as usize].join(" ") + &" gamma".repeat((i / 5) as usize)
+}
+
+/// A text index that scores: BM25 needs the document lengths and term
+/// frequencies `scoring` records.
+async fn text_collection(path: &std::path::Path, shard_number: u32) -> Collection {
+    let params = TextIndexParams {
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    };
+    let collection = simple_collection_fixture(path, shard_number).await;
+    collection
+        .create_payload_index_with_wait(
+            JsonPath::new(FIELD),
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
+            true,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+
+    let batch = BatchPersisted {
+        ids: (0..POINTS).map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(
+            (0..POINTS)
+                .map(|i| vec![1.0, i as f32 / POINTS as f32, 0.0, 0.0])
+                .collect(),
+        ),
+        payloads: Some(
+            (0..POINTS)
+                .map(|i| {
+                    Some(Payload(Map::from_iter([(
+                        FIELD.to_owned(),
+                        text_of(i).into(),
+                    )])))
+                })
+                .collect(),
+        ),
+    };
+    collection
+        .update_from_client_simple(
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::from(batch),
+            )),
+            true,
+            None,
+            WriteOrdering::default(),
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    collection
+}
+
+fn text_query(text: &str) -> ScoringQuery {
+    ScoringQuery::Text(TextScoringQuery {
+        field: JsonPath::new(FIELD),
+        text: text.to_owned(),
+        params: Bm25Params::default(),
+    })
+}
+
+fn request(query: ScoringQuery, limit: usize, offset: usize) -> ShardQueryRequest {
+    ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(query),
+        filter: None,
+        score_threshold: None,
+        limit,
+        offset,
+        params: None,
+        with_vector: false.into(),
+        with_payload: false.into(),
+    }
+}
+
+async fn query(
+    collection: &Collection,
+    request: ShardQueryRequest,
+    shards: ShardSelectorInternal,
+) -> Vec<ScoredPoint> {
+    collection
+        .query(request, None, None, shards, None)
+        .measured(AmbientContext::new())
+        .await
+        .unwrap()
+}
+
+fn id_of(point: &ScoredPoint) -> u64 {
+    match point.id {
+        ExtendedPointId::NumId(id) => id,
+        ExtendedPointId::Uuid(_) => panic!("the fixture uses numeric ids"),
+    }
+}
+
+/// Two shards, each scoring against its own statistics: the collection's
+/// ranking is the per-shard rankings merged by score, and pagination cuts that
+/// merged ranking.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_merges_shards() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 2).await;
+    let limit = 20;
+
+    let merged = query(
+        &collection,
+        request(text_query("alpha gamma"), limit, 0),
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let mut per_shard = Vec::new();
+    for shard_id in 0..2 {
+        let points = query(
+            &collection,
+            request(text_query("alpha gamma"), limit, 0),
+            ShardSelectorInternal::ShardId(shard_id),
+        )
+        .await;
+        assert!(!points.is_empty(), "shard {shard_id} holds matches");
+        per_shard.extend(points);
+    }
+    per_shard.sort_by(|a, b| b.score.total_cmp(&a.score));
+    per_shard.truncate(limit);
+    let ranked = |points: &[ScoredPoint]| points.iter().map(|p| (id_of(p), p.score)).collect_vec();
+    assert_eq!(ranked(&merged), ranked(&per_shard));
+
+    let page = query(
+        &collection,
+        request(text_query("alpha gamma"), 5, 3),
+        ShardSelectorInternal::All,
+    )
+    .await;
+    assert_eq!(ranked(&page), ranked(&merged[3..8]));
+}
+
+/// Hybrid search: BM25 as a prefetch next to a dense one, fused by RRF. The
+/// text leaf resolves inside the fusion, and every fused point comes from one
+/// of the two prefetches.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_fuses_with_a_dense_prefetch() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 2).await;
+    // Ranks ids 0 to 9 first, while only ids 5 to 34 hold `gamma`: the two
+    // top tens share at most five points, so the fusion has at least 15 to
+    // return whatever the per-shard statistics make of the text ranking.
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![0.0, -1.0, 0.0, 0.0].into(),
+        "",
+    )));
+    let prefetch = |query| ShardPrefetch {
+        prefetches: Vec::new(),
+        query: Some(query),
+        limit: 10,
+        params: None,
+        filter: None,
+        score_threshold: None,
+    };
+
+    let fused = query(
+        &collection,
+        ShardQueryRequest {
+            prefetches: vec![prefetch(dense.clone()), prefetch(text_query("gamma"))],
+            ..request(
+                ScoringQuery::Fusion(FusionInternal::Rrf {
+                    k: 60,
+                    weights: None,
+                }),
+                15,
+                0,
+            )
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let ids = |points: &[ScoredPoint]| points.iter().map(id_of).collect::<Vec<_>>();
+    let from_text = ids(&query(
+        &collection,
+        request(text_query("gamma"), 10, 0),
+        ShardSelectorInternal::All,
+    )
+    .await);
+    let from_dense = ids(&query(
+        &collection,
+        request(dense, 10, 0),
+        ShardSelectorInternal::All,
+    )
+    .await);
+    assert_eq!(fused.len(), 15);
+    for id in ids(&fused) {
+        assert!(
+            from_text.contains(&id) || from_dense.contains(&id),
+            "fused point {id} comes from a prefetch",
+        );
+    }
+    assert!(
+        ids(&fused)
+            .iter()
+            .any(|id| from_text.contains(id) && !from_dense.contains(id)),
+        "the text prefetch contributes",
+    );
+}
+
+/// BM25 as a rescore of a dense prefetch, over two shards: each shard scores
+/// the points it prefetched against its own statistics, as the text query
+/// would score them under a filter on those ids. A prefetched point holding
+/// no query term scores nothing and is left out.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_rescores_a_dense_prefetch() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 2).await;
+    // Ranks low ids first; only ids from 5 on hold `gamma`.
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![0.0, -1.0, 0.0, 0.0].into(),
+        "",
+    )));
+    let prefetch_limit = 8;
+
+    let rescored = query(
+        &collection,
+        ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(dense.clone()),
+                limit: prefetch_limit,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            ..request(text_query("gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    // A prefetch runs in each shard, so the rescored set is each shard's own
+    // top `prefetch_limit`.
+    let mut prefetched = AHashSet::new();
+    for shard_id in 0..2 {
+        let points = query(
+            &collection,
+            request(dense.clone(), prefetch_limit, 0),
+            ShardSelectorInternal::ShardId(shard_id),
+        )
+        .await;
+        prefetched.extend(points.iter().map(|point| point.id));
+    }
+    let only_prefetched =
+        Filter::new_must(Condition::HasId(HasIdCondition::from(prefetched.clone())));
+    let filtered = query(
+        &collection,
+        ShardQueryRequest {
+            filter: Some(only_prefetched),
+            ..request(text_query("gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let ranked = |points: &[ScoredPoint]| points.iter().map(|p| (id_of(p), p.score)).collect_vec();
+    assert_eq!(ranked(&rescored), ranked(&filtered));
+    let mut expected = prefetched
+        .iter()
+        .map(|id| match id {
+            ExtendedPointId::NumId(id) => *id,
+            ExtendedPointId::Uuid(_) => unreachable!(),
+        })
+        .filter(|id| text_of(*id).contains("gamma"))
+        .collect_vec();
+    expected.sort_unstable();
+    let mut ids = rescored.iter().map(id_of).collect_vec();
+    ids.sort_unstable();
+    assert!(
+        ids.len() < prefetched.len(),
+        "some prefetched points lack `gamma`"
+    );
+    assert_eq!(ids, expected, "the prefetched points with `gamma`");
+}
+
+/// One shard, so the statistics cover the whole corpus: every score equals
+/// BM25 by definition, normalized by the document lengths the shard recorded
+/// as it ingested.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_scores_by_definition() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 1).await;
+
+    let points = query(
+        &collection,
+        request(text_query("alpha gamma"), POINTS as usize, 0),
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let Bm25Params { k1, b } = Bm25Params::default();
+    let counts = |i: u64| {
+        let text = text_of(i);
+        let count = |term| text.split(' ').filter(|t| *t == term).count() as ScoreType;
+        (count("alpha"), count("gamma"))
+    };
+    let n = POINTS as ScoreType;
+    let avgdl = (0..POINTS)
+        .map(|i| {
+            let (alpha, gamma) = counts(i);
+            alpha + gamma
+        })
+        .sum::<ScoreType>()
+        / n;
+    let df_gamma = (0..POINTS).filter(|&i| counts(i).1 > 0.0).count() as ScoreType;
+    let expected = |i: u64| {
+        let (alpha, gamma) = counts(i);
+        let norm = k1 * (1.0 - b + b * (alpha + gamma) / avgdl);
+        let term = |tf: ScoreType, df: ScoreType| {
+            if tf == 0.0 {
+                0.0
+            } else {
+                fancy_idf(n, df).max(0.0) * tf * (k1 + 1.0) / (tf + norm)
+            }
+        };
+        term(alpha, n) + term(gamma, df_gamma)
+    };
+
+    assert_eq!(points.len(), POINTS as usize);
+    for point in &points {
+        let reference = expected(id_of(point));
+        assert!(
+            (point.score - reference).abs() <= 1e-4 * reference.max(1.0),
+            "point {}: engine {}, reference {reference}",
+            id_of(point),
+            point.score,
+        );
+    }
+}
+
+/// A corpus-scoped `idf` gathers `N`, `df` and `avgdl` over the corpus alone,
+/// and does not filter: every point scores by BM25 by definition over the
+/// corpus, those outside it included.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_scores_over_the_idf_corpus() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 1).await;
+
+    // Half of these hold `gamma`, against 30 of all 35 points, and they are
+    // the shortest documents.
+    let corpus = 0..10;
+    let corpus_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(
+        corpus
+            .clone()
+            .map(ExtendedPointId::from)
+            .collect::<AHashSet<_>>(),
+    )));
+    let points = query(
+        &collection,
+        ShardQueryRequest {
+            params: Some(SearchParams {
+                idf: Some(IdfParams::Corpus(IdfCorpusParams {
+                    corpus: corpus_filter,
+                })),
+                ..SearchParams::default()
+            }),
+            ..request(text_query("alpha gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let Bm25Params { k1, b } = Bm25Params::default();
+    let counts = |i: u64| {
+        let text = text_of(i);
+        let count = |term| text.split(' ').filter(|t| *t == term).count() as ScoreType;
+        (count("alpha"), count("gamma"))
+    };
+    let n = corpus.clone().count() as ScoreType;
+    let avgdl = corpus
+        .clone()
+        .map(|i| {
+            let (alpha, gamma) = counts(i);
+            alpha + gamma
+        })
+        .sum::<ScoreType>()
+        / n;
+    let df_gamma = corpus.filter(|&i| counts(i).1 > 0.0).count() as ScoreType;
+    let expected = |i: u64| {
+        let (alpha, gamma) = counts(i);
+        let norm = k1 * (1.0 - b + b * (alpha + gamma) / avgdl);
+        let term = |tf: ScoreType, df: ScoreType| {
+            if tf == 0.0 {
+                0.0
+            } else {
+                fancy_idf(n, df).max(0.0) * tf * (k1 + 1.0) / (tf + norm)
+            }
+        };
+        term(alpha, n) + term(gamma, df_gamma)
+    };
+
+    assert_eq!(points.len(), POINTS as usize);
+    for point in &points {
+        let reference = expected(id_of(point));
+        assert!(
+            (point.score - reference).abs() <= 1e-4 * reference.max(1.0),
+            "point {}: engine {}, reference {reference}",
+            id_of(point),
+            point.score,
+        );
+    }
+}
+
+/// A text rescore takes the `idf` corpus from its own params: every prefetched
+/// point scores as the corpus-scoped text query scores it, not as the global
+/// one does.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_rescore_scores_over_the_idf_corpus() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 1).await;
+    let corpus = || SearchParams {
+        idf: Some(IdfParams::Corpus(IdfCorpusParams {
+            corpus: Filter::new_must(Condition::HasId(HasIdCondition::from(
+                (0..10).map(ExtendedPointId::from).collect::<AHashSet<_>>(),
+            ))),
+        })),
+        ..SearchParams::default()
+    };
+    // Ranks low ids first, all of which hold `alpha`.
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![0.0, -1.0, 0.0, 0.0].into(),
+        "",
+    )));
+
+    let rescored = query(
+        &collection,
+        ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(dense),
+                limit: 8,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            params: Some(corpus()),
+            ..request(text_query("alpha gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+    let scores = |points: Vec<ScoredPoint>| {
+        points
+            .iter()
+            .map(|point| (id_of(point), point.score))
+            .collect::<HashMap<_, _>>()
+    };
+    let over_corpus = scores(
+        query(
+            &collection,
+            ShardQueryRequest {
+                params: Some(corpus()),
+                ..request(text_query("alpha gamma"), POINTS as usize, 0)
+            },
+            ShardSelectorInternal::All,
+        )
+        .await,
+    );
+    let global = scores(
+        query(
+            &collection,
+            request(text_query("alpha gamma"), POINTS as usize, 0),
+            ShardSelectorInternal::All,
+        )
+        .await,
+    );
+
+    assert_eq!(rescored.len(), 8);
+    for point in &rescored {
+        let id = id_of(point);
+        assert_eq!(point.score, over_corpus[&id], "point {id}");
+        assert_ne!(point.score, global[&id], "point {id}");
+    }
+}

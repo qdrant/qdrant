@@ -27,6 +27,20 @@ impl<S: UniversalRead> OnDiskPostingsEnum<S> {
         }
     }
 
+    pub fn total_tokens(&self) -> u64 {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.total_tokens(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.total_tokens(),
+        }
+    }
+
+    pub fn posting_count(&self) -> usize {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.posting_count(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.posting_count(),
+        }
+    }
+
     pub fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         match self {
             OnDiskPostingsEnum::Ids(postings) => postings.posting_len(token_id),

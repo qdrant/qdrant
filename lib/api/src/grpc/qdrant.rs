@@ -7,6 +7,7 @@
 /// with the proto support for the language.
 ///
 /// The JSON representation for `Struct` is a JSON object.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
@@ -20,6 +21,7 @@ pub struct Struct {
 /// variants, absence of any variant indicates an error.
 ///
 /// The JSON representation for `Value` is a JSON value.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
@@ -30,6 +32,7 @@ pub struct Value {
 /// Nested message and enum types in `Value`.
 pub mod value {
     /// The kind of value.
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
@@ -59,6 +62,7 @@ pub mod value {
 /// `ListValue` is a wrapper around a repeated field of values.
 ///
 /// The JSON representation for `ListValue` is a JSON array.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
@@ -70,6 +74,7 @@ pub struct ListValue {
 /// `Value` type union.
 ///
 /// The JSON representation for `NullValue` is JSON `null`.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -95,6 +100,7 @@ impl NullValue {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PointId {
@@ -103,6 +109,7 @@ pub struct PointId {
 }
 /// Nested message and enum types in `PointId`.
 pub mod point_id {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum PointIdOptions {
@@ -114,6 +121,7 @@ pub mod point_id {
         Uuid(::prost::alloc::string::String),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GeoPoint {
@@ -122,6 +130,7 @@ pub struct GeoPoint {
     #[prost(double, tag = "2")]
     pub lat: f64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -143,6 +152,7 @@ pub struct Filter {
     #[validate(nested)]
     pub min_should: ::core::option::Option<MinShould>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -151,18 +161,21 @@ pub struct MinShould {
     #[validate(nested)]
     pub conditions: ::prost::alloc::vec::Vec<Condition>,
     #[prost(uint64, tag = "2")]
+    #[validate(range(min = 1, message = "min_count must be greater than 0"))]
     pub min_count: u64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     #[validate(nested)]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
 pub mod condition {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum ConditionOneOf {
@@ -180,32 +193,50 @@ pub mod condition {
         Nested(super::NestedCondition),
         #[prost(message, tag = "7")]
         HasVector(super::HasVectorCondition),
+        #[prost(message, tag = "8")]
+        Slice(super::SliceCondition),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IsEmptyCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IsNullCondition {
     #[prost(string, tag = "1")]
     pub key: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HasVectorCondition {
     #[prost(string, tag = "1")]
     pub has_vector: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SliceCondition {
+    /// Total number of disjoint deterministic slices the id space is split into, must be >= 1
+    #[prost(uint32, tag = "1")]
+    pub total: u32,
+    /// Which slice to select, must be less than `total`
+    #[prost(uint32, tag = "2")]
+    pub index: u32,
+}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -218,6 +249,7 @@ pub struct NestedCondition {
     #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FieldCondition {
@@ -251,14 +283,19 @@ pub struct FieldCondition {
     #[prost(bool, optional, tag = "10")]
     pub is_null: ::core::option::Option<bool>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Match {
-    #[prost(oneof = "r#match::MatchValue", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(
+        oneof = "r#match::MatchValue",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+    )]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
 /// Nested message and enum types in `Match`.
 pub mod r#match {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum MatchValue {
@@ -292,20 +329,29 @@ pub mod r#match {
         /// Match any word in the text
         #[prost(string, tag = "10")]
         TextAny(::prost::alloc::string::String),
+        /// Match keywords starting with the given prefix
+        #[prost(string, tag = "11")]
+        Prefix(::prost::alloc::string::String),
+        /// Match keywords containing the given substring
+        #[prost(string, tag = "12")]
+        Substring(::prost::alloc::string::String),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RepeatedStrings {
     #[prost(string, repeated, tag = "1")]
     pub strings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RepeatedIntegers {
     #[prost(int64, repeated, tag = "1")]
     pub integers: ::prost::alloc::vec::Vec<i64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Range {
@@ -318,6 +364,7 @@ pub struct Range {
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -335,36 +382,47 @@ pub struct DatetimeRange {
     #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GeoBoundingBox {
     /// north-west corner
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub top_left: ::core::option::Option<GeoPoint>,
     /// south-east corner
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub bottom_right: ::core::option::Option<GeoPoint>,
 }
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GeoRadius {
     /// Center of the circle
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub center: ::core::option::Option<GeoPoint>,
     /// In meters
     #[prost(float, tag = "2")]
     pub radius: f32,
 }
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoLineString {
     /// Ordered sequence of GeoPoints representing the line
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
 /// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
 /// consist of a minimum of 4 points.
 /// Additionally, the first and last points of each GeoLineString must be the same.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -372,16 +430,19 @@ pub struct GeoPolygon {
     /// The exterior line bounds the surface
     #[prost(message, optional, tag = "1")]
     #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior")
+        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior"),
+        nested
     )]
     pub exterior: ::core::option::Option<GeoLineString>,
     /// Interior lines (if present) bound holes within the surface
     #[prost(message, repeated, tag = "2")]
     #[validate(
-        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors")
+        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors"),
+        nested
     )]
     pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ValuesCount {
@@ -394,6 +455,7 @@ pub struct ValuesCount {
     #[prost(uint64, optional, tag = "4")]
     pub lte: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -415,8 +477,10 @@ pub struct VectorParams {
     #[prost(message, optional, tag = "4")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Deprecated: use `memory` instead.
     /// If true - serve vectors from disk.
     /// If set to false, the vectors will be loaded in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Data type of the vectors
@@ -425,7 +489,13 @@ pub struct VectorParams {
     /// Configuration for multi-vector search
     #[prost(message, optional, tag = "7")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
+    /// Memory placement of the original vector storage.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    /// `Pinned` is not supported for dense vector storage.
+    #[prost(enumeration = "Memory", optional, tag = "8")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -439,11 +509,19 @@ pub struct VectorParamsDiff {
     #[prost(message, optional, tag = "2")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
+    /// Deprecated: use `memory` instead.
     /// If true - serve vectors from disk.
     /// If set to false, the vectors will be loaded in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Memory placement of the original vector storage.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    /// `Pinned` is not supported for dense vector storage.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -452,6 +530,7 @@ pub struct VectorParamsMap {
     #[validate(nested)]
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -463,6 +542,7 @@ pub struct VectorParamsDiffMap {
         VectorParamsDiff,
     >,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -473,6 +553,7 @@ pub struct VectorsConfig {
 }
 /// Nested message and enum types in `VectorsConfig`.
 pub mod vectors_config {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -482,6 +563,7 @@ pub mod vectors_config {
         ParamsMap(super::VectorParamsMap),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -492,6 +574,7 @@ pub struct VectorsConfigDiff {
 }
 /// Nested message and enum types in `VectorsConfigDiff`.
 pub mod vectors_config_diff {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Config {
@@ -501,6 +584,7 @@ pub mod vectors_config_diff {
         ParamsMap(super::VectorParamsDiffMap),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SparseVectorParams {
@@ -511,6 +595,7 @@ pub struct SparseVectorParams {
     #[prost(enumeration = "Modifier", optional, tag = "2")]
     pub modifier: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SparseVectorConfig {
@@ -520,6 +605,7 @@ pub struct SparseVectorConfig {
         SparseVectorParams,
     >,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MultiVectorConfig {
@@ -527,6 +613,7 @@ pub struct MultiVectorConfig {
     #[prost(enumeration = "MultiVectorComparator", tag = "1")]
     pub comparator: i32,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -539,6 +626,7 @@ pub struct GetCollectionInfoRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -550,12 +638,14 @@ pub struct CollectionExistsRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionExists {
     #[prost(bool, tag = "1")]
     pub exists: bool,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CollectionExistsResponse {
@@ -565,10 +655,12 @@ pub struct CollectionExistsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListCollectionsRequest {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionDescription {
@@ -576,6 +668,7 @@ pub struct CollectionDescription {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCollectionInfoResponse {
@@ -585,6 +678,7 @@ pub struct GetCollectionInfoResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsResponse {
@@ -594,6 +688,7 @@ pub struct ListCollectionsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MaxOptimizationThreads {
@@ -602,6 +697,7 @@ pub struct MaxOptimizationThreads {
 }
 /// Nested message and enum types in `MaxOptimizationThreads`.
 pub mod max_optimization_threads {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(
         Clone,
@@ -636,6 +732,7 @@ pub mod max_optimization_threads {
             }
         }
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Variant {
@@ -645,6 +742,7 @@ pub mod max_optimization_threads {
         Setting(i32),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OptimizerStatus {
@@ -653,18 +751,23 @@ pub struct OptimizerStatus {
     #[prost(string, tag = "2")]
     pub error: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionWarning {
     #[prost(string, tag = "1")]
     pub message: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HnswConfigDiff {
     /// Number of edges per node in the index graph.
     /// Larger the value - more accurate the search, more space required.
+    /// Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    /// may still be built when the effective payload M is positive (see payload_m).
+    /// This setting alone does not guarantee exact search.
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building.
@@ -686,11 +789,14 @@ pub struct HnswConfigDiff {
     /// On small CPUs, less threads are used.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
-    /// Number of additional payload-aware links per node in the index graph.
-    /// If not set - regular M parameter will be used.
+    /// Number of additional payload-aware links per node. If unset, the value of m is used.
+    /// An effective value of 0 disables these additional links. A positive value allows
+    /// them for indexed payload fields with HNSW enabled, even when m is 0.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
@@ -699,7 +805,12 @@ pub struct HnswConfigDiff {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[prost(bool, optional, tag = "7")]
     pub inline_storage: ::core::option::Option<bool>,
+    /// Memory placement of the HNSW graph.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "8")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -708,14 +819,21 @@ pub struct SparseIndexConfig {
     /// Note: this is number of vectors, not KiloBytes.
     #[prost(uint64, optional, tag = "1")]
     pub full_scan_threshold: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// Store inverted index on disk. If set to false, the index will be stored in RAM.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Datatype used to store weights in the index.
     #[prost(enumeration = "Datatype", optional, tag = "3")]
     #[validate(custom(function = "crate::grpc::validate::validate_sparse_datatype"))]
     pub datatype: ::core::option::Option<i32>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -732,6 +850,7 @@ pub struct WalConfigDiff {
     #[validate(range(min = 1))]
     pub wal_retain_closed: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -758,7 +877,7 @@ pub struct OptimizersConfigDiff {
     pub default_segment_number: ::core::option::Option<u64>,
     /// Deprecated:
     ///
-    /// Do not create segments larger this size (in kilobytes).
+    /// Do not create segments larger than this size (in kilobytes).
     /// Large segments might require disproportionately long indexation times,
     /// therefore it makes sense to limit the size of segments.
     ///
@@ -814,6 +933,7 @@ pub struct OptimizersConfigDiff {
     #[prost(bool, optional, tag = "10")]
     pub prevent_unoptimized: ::core::option::Option<bool>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -825,10 +945,17 @@ pub struct ScalarQuantization {
     #[prost(float, optional, tag = "2")]
     #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: ::core::option::Option<f32>,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -836,10 +963,17 @@ pub struct ProductQuantization {
     /// Compression ratio
     #[prost(enumeration = "CompressionRatio", tag = "1")]
     pub compression: i32,
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BinaryQuantizationQueryEncoding {
@@ -848,6 +982,7 @@ pub struct BinaryQuantizationQueryEncoding {
 }
 /// Nested message and enum types in `BinaryQuantizationQueryEncoding`.
 pub mod binary_quantization_query_encoding {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(
         Clone,
@@ -891,6 +1026,7 @@ pub mod binary_quantization_query_encoding {
             }
         }
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Variant {
@@ -898,11 +1034,14 @@ pub mod binary_quantization_query_encoding {
         Setting(i32),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BinaryQuantization {
+    /// Deprecated: use `memory` instead.
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
     /// Binary quantization encoding method
@@ -913,16 +1052,28 @@ pub struct BinaryQuantization {
     /// It can increase the accuracy of search at the cost of performance.
     #[prost(message, optional, tag = "3")]
     pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TurboQuantization {
+    /// Deprecated: use `memory` instead.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
     #[prost(enumeration = "TurboQuantBitSize", optional, tag = "2")]
     pub bits: ::core::option::Option<i32>,
+    /// Memory placement of quantized vectors.
+    /// Overrides the deprecated `always_ram` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -933,6 +1084,7 @@ pub struct QuantizationConfig {
 }
 /// Nested message and enum types in `QuantizationConfig`.
 pub mod quantization_config {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
@@ -946,10 +1098,12 @@ pub mod quantization_config {
         Turboquant(super::TurboQuantization),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Disabled {}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -960,6 +1114,7 @@ pub struct QuantizationConfigDiff {
 }
 /// Nested message and enum types in `QuantizationConfigDiff`.
 pub mod quantization_config_diff {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Quantization {
@@ -975,6 +1130,7 @@ pub mod quantization_config_diff {
         Turboquant(super::TurboQuantization),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1046,17 +1202,20 @@ pub struct StrictModeConfig {
     /// Max number of payload indexes in a collection
     #[prost(uint64, optional, tag = "19")]
     pub max_payload_index_count: ::core::option::Option<u64>,
+    /// Deprecated: memory is node-wide, use the global quota config instead. Removal planned for 1.21.
     /// Reject memory-consuming update operations when process resident memory exceeds this percentage of total RAM (cgroup-aware, 1-100).
     /// Delete-style operations are still allowed so memory can be freed.
+    #[deprecated]
     #[prost(uint32, optional, tag = "21")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: ::core::option::Option<u32>,
-    /// Reject disk-consuming update operations when the filesystem hosting Qdrant storage exceeds this percentage of total capacity (1-100).
-    /// Free space is sampled with a small TTL cache so the gate may take a few seconds to react. Delete-style operations are still allowed so disk can be freed.
-    #[prost(uint32, optional, tag = "22")]
-    #[validate(range(min = 1, max = 100))]
-    pub max_disk_usage_percent: ::core::option::Option<u32>,
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants.
+    /// Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must`
+    /// of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys.
+    #[prost(bool, optional, tag = "23")]
+    pub require_tenant_filter: ::core::option::Option<bool>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1068,6 +1227,7 @@ pub struct StrictModeSparseConfig {
         StrictModeSparse,
     >,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1077,6 +1237,7 @@ pub struct StrictModeSparse {
     #[validate(range(min = 1))]
     pub max_length: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1088,6 +1249,7 @@ pub struct StrictModeMultivectorConfig {
         StrictModeMultivector,
     >,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1097,6 +1259,28 @@ pub struct StrictModeMultivector {
     #[validate(range(min = 1))]
     pub max_vectors: ::core::option::Option<u64>,
 }
+/// Params of the payload storage
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PayloadStorageParams {
+    /// Memory placement of the payload storage.
+    /// Overrides the deprecated `on_disk_payload` flag if both are set.
+    /// `Pinned` is not supported for payload storage.
+    #[prost(enumeration = "Memory", optional, tag = "1")]
+    pub memory: ::core::option::Option<i32>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IdTrackerParams {
+    /// Memory placement of the point id mapping in indexed segments:
+    /// `Cold` keeps it on disk and reads it on demand, `Cached` keeps it on disk
+    /// but primes the page cache with it on load, `Pinned` keeps it in RAM.
+    #[prost(enumeration = "Memory", optional, tag = "1")]
+    pub memory: ::core::option::Option<i32>,
+}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1120,12 +1304,14 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Number of shards in the collection, default is 1 for standalone, otherwise
-    /// equal to the number of nodes. Minimum is 1
+    /// Number of shards in the collection. If not specified, selected
+    /// automatically. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub shard_number: ::core::option::Option<u32>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, optional, tag = "8")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Wait timeout for operation commit in seconds, if not specified - default
@@ -1161,7 +1347,14 @@ pub struct CreateCollection {
     /// Arbitrary JSON metadata for the collection
     #[prost(map = "string, message", tag = "18")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Configuration of the payload storage
+    #[prost(message, optional, tag = "19")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[prost(message, optional, tag = "20")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1212,6 +1405,7 @@ pub struct UpdateCollection {
     #[prost(map = "string, message", tag = "10")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1229,6 +1423,7 @@ pub struct DeleteCollection {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CollectionOperationResponse {
@@ -1239,6 +1434,7 @@ pub struct CollectionOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1246,7 +1442,9 @@ pub struct CollectionParams {
     /// Number of shards in collection
     #[prost(uint32, tag = "3")]
     pub shard_number: u32,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, tag = "4")]
     pub on_disk_payload: bool,
     /// Configuration for vectors
@@ -1271,7 +1469,14 @@ pub struct CollectionParams {
     /// Define number of milliseconds to wait before attempting to read from another replica.
     #[prost(uint64, optional, tag = "11")]
     pub read_fan_out_delay_ms: ::core::option::Option<u64>,
+    /// Configuration of the payload storage
+    #[prost(message, optional, tag = "12")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Configuration of the point id tracker
+    #[prost(message, optional, tag = "13")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1284,7 +1489,9 @@ pub struct CollectionParamsDiff {
     #[prost(uint32, optional, tag = "2")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
+    /// Deprecated: use `payload.memory` instead.
     /// If true - point's payload will not be stored in memory
+    #[deprecated]
     #[prost(bool, optional, tag = "3")]
     pub on_disk_payload: ::core::option::Option<bool>,
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
@@ -1293,7 +1500,14 @@ pub struct CollectionParamsDiff {
     /// Define number of milliseconds to wait before attempting to read from another replica.
     #[prost(uint64, optional, tag = "5")]
     pub read_fan_out_delay_ms: ::core::option::Option<u64>,
+    /// Update params of the payload storage
+    #[prost(message, optional, tag = "6")]
+    pub payload: ::core::option::Option<PayloadStorageParams>,
+    /// Update params of the point id tracker
+    #[prost(message, optional, tag = "7")]
+    pub id_tracker: ::core::option::Option<IdTrackerParams>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
@@ -1319,13 +1533,16 @@ pub struct CollectionConfig {
     #[prost(map = "string, message", tag = "7")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct KeywordIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1333,9 +1550,28 @@ pub struct KeywordIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// If set, enable prefix matching (`match: { "prefix": ... }`) on this field.
+    #[prost(message, optional, tag = "4")]
+    pub prefix: ::core::option::Option<KeywordPrefixParams>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "5")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "6")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+/// Prefix matching options for the keyword index. Has no options yet:
+/// presence of this message enables prefix matching.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeywordPrefixParams {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IntegerIndexParams {
     /// If true - support direct lookups. Default is true.
     #[prost(bool, optional, tag = "1")]
@@ -1348,7 +1584,9 @@ pub struct IntegerIndexParams {
     /// Default is false.
     #[prost(bool, optional, tag = "3")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk. Default is false.
+    #[deprecated]
     #[prost(bool, optional, tag = "4")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1356,11 +1594,23 @@ pub struct IntegerIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "5")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "6")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "7")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FloatIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// If true - use this key to organize storage of the collection data.
@@ -1372,11 +1622,23 @@ pub struct FloatIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GeoIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1384,7 +1646,17 @@ pub struct GeoIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "4")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StopwordsSet {
@@ -1395,6 +1667,7 @@ pub struct StopwordsSet {
     #[prost(string, repeated, tag = "2")]
     pub custom: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TextIndexParams {
@@ -1410,7 +1683,9 @@ pub struct TextIndexParams {
     /// Maximal token length
     #[prost(uint64, optional, tag = "4")]
     pub max_token_len: ::core::option::Option<u64>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Stopwords for the text index
@@ -1431,23 +1706,53 @@ pub struct TextIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "10")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "11")]
+    pub memory: ::core::option::Option<i32>,
+    /// Enable ranking points by BM25 over this field.
+    /// Changing it rebuilds the index.
+    /// Default: disabled.
+    #[prost(message, optional, tag = "12")]
+    pub scoring: ::core::option::Option<TextScoringParams>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].title`.
+    /// The field must be inside the array's elements. Every query on the field, not only nested filters,
+    /// treats each element as its own document: a condition matches a point when a single element
+    /// matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when
+    /// one of its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "13")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TextScoringParams {
+    /// How documents are ranked
+    #[prost(enumeration = "TextScoringType", tag = "1")]
+    pub r#type: i32,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StemmingAlgorithm {
-    #[prost(oneof = "stemming_algorithm::StemmingParams", tags = "1")]
+    #[prost(oneof = "stemming_algorithm::StemmingParams", tags = "1, 2")]
     pub stemming_params: ::core::option::Option<stemming_algorithm::StemmingParams>,
 }
 /// Nested message and enum types in `StemmingAlgorithm`.
 pub mod stemming_algorithm {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum StemmingParams {
         /// Parameters for snowball stemming
         #[prost(message, tag = "1")]
         Snowball(super::SnowballParams),
+        /// Explicitly disable stemming (overrides the language default)
+        #[prost(message, tag = "2")]
+        Disabled(super::DisabledStemmer),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SnowballParams {
@@ -1455,10 +1760,18 @@ pub struct SnowballParams {
     #[prost(string, tag = "1")]
     pub language: ::prost::alloc::string::String,
 }
+/// Marker selecting the "no stemming" algorithm.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DisabledStemmer {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BoolIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1466,11 +1779,23 @@ pub struct BoolIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "3")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "4")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DatetimeIndexParams {
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// If true - use this key to organize storage of the collection data.
@@ -1482,14 +1807,26 @@ pub struct DatetimeIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UuidIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
+    #[deprecated]
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
@@ -1497,7 +1834,17 @@ pub struct UuidIndexParams {
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
+    /// Memory placement of the index.
+    /// Overrides the deprecated `on_disk` flag if both are set.
+    #[prost(enumeration = "Memory", optional, tag = "4")]
+    pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1511,6 +1858,7 @@ pub struct PayloadIndexParams {
 }
 /// Nested message and enum types in `PayloadIndexParams`.
 pub mod payload_index_params {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum IndexParams {
@@ -1540,6 +1888,7 @@ pub mod payload_index_params {
         UuidIndexParams(super::UuidIndexParams),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PayloadSchemaInfo {
@@ -1553,6 +1902,7 @@ pub struct PayloadSchemaInfo {
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateQueueInfo {
@@ -1563,6 +1913,7 @@ pub struct UpdateQueueInfo {
     #[prost(uint64, optional, tag = "2")]
     pub deferred_points: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
@@ -1596,7 +1947,11 @@ pub struct CollectionInfo {
     /// Update queue info
     #[prost(message, optional, tag = "12")]
     pub update_queue: ::core::option::Option<UpdateQueueInfo>,
+    /// Time of the collection creation, absent for collections created before it was recorded
+    #[prost(message, optional, tag = "13")]
+    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1610,6 +1965,7 @@ pub struct ChangeAliases {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AliasOperations {
@@ -1618,6 +1974,7 @@ pub struct AliasOperations {
 }
 /// Nested message and enum types in `AliasOperations`.
 pub mod alias_operations {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Action {
@@ -1629,6 +1986,7 @@ pub mod alias_operations {
         DeleteAlias(super::DeleteAlias),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAlias {
@@ -1639,6 +1997,7 @@ pub struct CreateAlias {
     #[prost(string, tag = "2")]
     pub alias_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RenameAlias {
@@ -1649,6 +2008,7 @@ pub struct RenameAlias {
     #[prost(string, tag = "2")]
     pub new_alias_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteAlias {
@@ -1656,10 +2016,12 @@ pub struct DeleteAlias {
     #[prost(string, tag = "1")]
     pub alias_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListAliasesRequest {}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1672,6 +2034,7 @@ pub struct ListCollectionAliasesRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AliasDescription {
@@ -1682,6 +2045,7 @@ pub struct AliasDescription {
     #[prost(string, tag = "2")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAliasesResponse {
@@ -1691,6 +2055,7 @@ pub struct ListAliasesResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1699,6 +2064,7 @@ pub struct CollectionClusterInfoRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardKey {
@@ -1707,6 +2073,7 @@ pub struct ShardKey {
 }
 /// Nested message and enum types in `ShardKey`.
 pub mod shard_key {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Key {
@@ -1718,6 +2085,7 @@ pub mod shard_key {
         Number(u64),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LocalShardInfo {
@@ -1734,6 +2102,7 @@ pub struct LocalShardInfo {
     #[prost(message, optional, tag = "4")]
     pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RemoteShardInfo {
@@ -1750,6 +2119,7 @@ pub struct RemoteShardInfo {
     #[prost(message, optional, tag = "4")]
     pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardTransferInfo {
@@ -1767,6 +2137,7 @@ pub struct ShardTransferInfo {
     #[prost(bool, tag = "4")]
     pub sync: bool,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReshardingInfo {
@@ -1779,6 +2150,7 @@ pub struct ReshardingInfo {
     #[prost(enumeration = "ReshardingDirection", tag = "4")]
     pub direction: i32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoResponse {
@@ -1800,7 +2172,11 @@ pub struct CollectionClusterInfoResponse {
     /// Resharding operations
     #[prost(message, repeated, tag = "6")]
     pub resharding_operations: ::prost::alloc::vec::Vec<ReshardingInfo>,
+    /// Time spent to process
+    #[prost(double, tag = "7")]
+    pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MoveShard {
@@ -1816,6 +2192,7 @@ pub struct MoveShard {
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
     pub method: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReplicateShard {
@@ -1831,6 +2208,7 @@ pub struct ReplicateShard {
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
     pub method: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AbortShardTransfer {
@@ -1844,6 +2222,7 @@ pub struct AbortShardTransfer {
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RestartTransfer {
@@ -1859,6 +2238,7 @@ pub struct RestartTransfer {
     #[prost(enumeration = "ShardTransferMethod", tag = "4")]
     pub method: i32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicatePoints {
@@ -1872,6 +2252,7 @@ pub struct ReplicatePoints {
     #[prost(message, optional, tag = "3")]
     pub filter: ::core::option::Option<Filter>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1881,6 +2262,7 @@ pub struct Replica {
     #[prost(uint64, tag = "2")]
     pub peer_id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateShardKey {
@@ -1900,6 +2282,7 @@ pub struct CreateShardKey {
     #[prost(enumeration = "ReplicaState", optional, tag = "5")]
     pub initial_state: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteShardKey {
@@ -1907,6 +2290,7 @@ pub struct DeleteShardKey {
     #[prost(message, optional, tag = "1")]
     pub shard_key: ::core::option::Option<ShardKey>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1930,6 +2314,7 @@ pub struct UpdateCollectionClusterSetupRequest {
 }
 /// Nested message and enum types in `UpdateCollectionClusterSetupRequest`.
 pub mod update_collection_cluster_setup_request {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Operation {
@@ -1951,12 +2336,17 @@ pub mod update_collection_cluster_setup_request {
         ReplicatePoints(super::ReplicatePoints),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct UpdateCollectionClusterSetupResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateShardKeyRequest {
@@ -1971,6 +2361,7 @@ pub struct CreateShardKeyRequest {
     #[prost(uint64, optional, tag = "3")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteShardKeyRequest {
@@ -1985,6 +2376,7 @@ pub struct DeleteShardKeyRequest {
     #[prost(uint64, optional, tag = "3")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1993,24 +2385,34 @@ pub struct ListShardKeysRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CreateShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct DeleteShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardKeyDescription {
     #[prost(message, optional, tag = "1")]
     pub key: ::core::option::Option<ShardKey>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListShardKeysResponse {
@@ -2020,6 +2422,7 @@ pub struct ListShardKeysResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2029,6 +2432,8 @@ pub enum Datatype {
     Uint8 = 2,
     Float16 = 3,
     Turbo4 = 4,
+    Turbo8 = 5,
+    Turbo16 = 6,
 }
 impl Datatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2042,6 +2447,8 @@ impl Datatype {
             Self::Uint8 => "Uint8",
             Self::Float16 => "Float16",
             Self::Turbo4 => "Turbo4",
+            Self::Turbo8 => "Turbo8",
+            Self::Turbo16 => "Turbo16",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2052,10 +2459,53 @@ impl Datatype {
             "Uint8" => Some(Self::Uint8),
             "Float16" => Some(Self::Float16),
             "Turbo4" => Some(Self::Turbo4),
+            "Turbo8" => Some(Self::Turbo8),
+            "Turbo16" => Some(Self::Turbo16),
             _ => None,
         }
     }
 }
+/// Memory placement of a component's data.
+/// Data is always persisted on disk regardless of this setting;
+/// it only controls how the data is held in RAM.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Memory {
+    Unknown = 0,
+    /// Data is not pre-loaded from disk to RAM; cached with usage.
+    Cold = 1,
+    /// Data is pre-loaded into disk-cache RAM on start, but may be evicted under memory pressure.
+    Cached = 2,
+    /// Data is loaded in RAM and never evicted.
+    Pinned = 3,
+}
+impl Memory {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "MemoryUnknown",
+            Self::Cold => "Cold",
+            Self::Cached => "Cached",
+            Self::Pinned => "Pinned",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MemoryUnknown" => Some(Self::Unknown),
+            "Cold" => Some(Self::Cold),
+            "Cached" => Some(Self::Cached),
+            "Pinned" => Some(Self::Pinned),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2084,6 +2534,7 @@ impl Modifier {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2108,6 +2559,7 @@ impl MultiVectorComparator {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2144,6 +2596,7 @@ impl Distance {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2184,6 +2637,7 @@ impl CollectionStatus {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2232,6 +2686,7 @@ impl PayloadSchemaType {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2259,6 +2714,7 @@ impl QuantizationType {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2295,6 +2751,7 @@ impl CompressionRatio {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2325,6 +2782,7 @@ impl BinaryQuantizationEncoding {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2333,6 +2791,7 @@ pub enum TurboQuantBitSize {
     Bits15 = 1,
     Bits2 = 2,
     Bits4 = 3,
+    Bits8 = 4,
 }
 impl TurboQuantBitSize {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2345,6 +2804,7 @@ impl TurboQuantBitSize {
             Self::Bits15 => "Bits1_5",
             Self::Bits2 => "Bits2",
             Self::Bits4 => "Bits4",
+            Self::Bits8 => "Bits8",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2354,10 +2814,12 @@ impl TurboQuantBitSize {
             "Bits1_5" => Some(Self::Bits15),
             "Bits2" => Some(Self::Bits2),
             "Bits4" => Some(Self::Bits4),
+            "Bits8" => Some(Self::Bits8),
             _ => None,
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2387,6 +2849,7 @@ impl ShardingMethod {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2396,6 +2859,7 @@ pub enum TokenizerType {
     Whitespace = 2,
     Word = 3,
     Multilingual = 4,
+    Code = 5,
 }
 impl TokenizerType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2409,6 +2873,7 @@ impl TokenizerType {
             Self::Whitespace => "Whitespace",
             Self::Word => "Word",
             Self::Multilingual => "Multilingual",
+            Self::Code => "Code",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2419,10 +2884,37 @@ impl TokenizerType {
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
             "Multilingual" => Some(Self::Multilingual),
+            "Code" => Some(Self::Code),
             _ => None,
         }
     }
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum TextScoringType {
+    Bm25 = 0,
+}
+impl TextScoringType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Bm25 => "Bm25",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Bm25" => Some(Self::Bm25),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2497,6 +2989,7 @@ impl ReplicaState {
     }
 }
 /// Resharding direction, scale up or down in number of shards
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -2526,6 +3019,7 @@ impl ReshardingDirection {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -3880,6 +4374,7 @@ pub mod collections_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3889,6 +4384,7 @@ pub struct GetCollectionInfoRequestInternal {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3903,7 +4399,11 @@ pub struct InitiateShardTransferRequest {
     /// Id of the temporary shard
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
+    /// Peer ID of the transfer source, checked against the registered shard transfer
+    #[prost(uint64, optional, tag = "3")]
+    pub from_peer_id: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3926,6 +4426,7 @@ pub struct WaitForShardStateRequest {
     #[validate(range(min = 1))]
     pub timeout: u64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3941,6 +4442,7 @@ pub struct GetShardRecoveryPointRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetShardRecoveryPointResponse {
@@ -3951,12 +4453,14 @@ pub struct GetShardRecoveryPointResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoveryPoint {
     #[prost(message, repeated, tag = "1")]
     pub clocks: ::prost::alloc::vec::Vec<RecoveryPointClockTag>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RecoveryPointClockTag {
@@ -3969,6 +4473,7 @@ pub struct RecoveryPointClockTag {
     #[prost(uint64, tag = "4")]
     pub token: u64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3987,6 +4492,7 @@ pub struct UpdateShardCutoffPointRequest {
     #[prost(message, optional, tag = "3")]
     pub cutoff: ::core::option::Option<RecoveryPoint>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4011,6 +4517,7 @@ pub struct GetShardOptimizationsRequest {
     #[prost(bool, tag = "5")]
     pub with_idle_segments: bool,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetShardOptimizationsResponse {
@@ -4021,6 +4528,7 @@ pub struct GetShardOptimizationsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -4036,6 +4544,7 @@ pub struct GetShardMemoryReportRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetShardMemoryReportResponse {
@@ -4857,6 +5366,7 @@ pub mod collections_internal_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WriteOrdering {
@@ -4864,6 +5374,7 @@ pub struct WriteOrdering {
     #[prost(enumeration = "WriteOrderingType", tag = "1")]
     pub r#type: i32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadConsistency {
@@ -4872,6 +5383,7 @@ pub struct ReadConsistency {
 }
 /// Nested message and enum types in `ReadConsistency`.
 pub mod read_consistency {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Value {
@@ -4884,12 +5396,14 @@ pub mod read_consistency {
         Factor(u64),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SparseIndices {
     #[prost(uint32, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Document {
@@ -4903,6 +5417,7 @@ pub struct Document {
     #[prost(map = "string, message", tag = "4")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Image {
@@ -4916,6 +5431,7 @@ pub struct Image {
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InferenceObject {
@@ -4929,6 +5445,7 @@ pub struct InferenceObject {
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
@@ -4949,6 +5466,7 @@ pub struct Vector {
 }
 /// Nested message and enum types in `Vector`.
 pub mod vector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Vector {
@@ -4969,6 +5487,7 @@ pub mod vector {
         Object(super::InferenceObject),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorOutput {
@@ -4989,6 +5508,7 @@ pub struct VectorOutput {
 }
 /// Nested message and enum types in `VectorOutput`.
 pub mod vector_output {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Vector {
@@ -5003,12 +5523,14 @@ pub mod vector_output {
         MultiDense(super::MultiDenseVector),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DenseVector {
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SparseVector {
@@ -5017,6 +5539,7 @@ pub struct SparseVector {
     #[prost(uint32, repeated, tag = "2")]
     pub indices: ::prost::alloc::vec::Vec<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MultiDenseVector {
@@ -5025,6 +5548,7 @@ pub struct MultiDenseVector {
 }
 /// Vector type to be used in queries.
 /// Ids will be substituted with their corresponding vectors from the collection.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5035,6 +5559,7 @@ pub struct VectorInput {
 }
 /// Nested message and enum types in `VectorInput`.
 pub mod vector_input {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -5054,6 +5579,7 @@ pub mod vector_input {
         Object(super::InferenceObject),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ShardKeySelector {
@@ -5063,6 +5589,7 @@ pub struct ShardKeySelector {
     #[prost(message, optional, tag = "2")]
     pub fallback: ::core::option::Option<ShardKey>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5098,6 +5625,7 @@ pub struct UpsertPoints {
     #[prost(enumeration = "UpdateMode", optional, tag = "8")]
     pub update_mode: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5125,6 +5653,7 @@ pub struct DeletePoints {
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5155,6 +5684,7 @@ pub struct GetPoints {
     #[prost(uint64, optional, tag = "8")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5187,6 +5717,7 @@ pub struct UpdatePointVectors {
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5199,6 +5730,7 @@ pub struct PointVectors {
     #[validate(nested)]
     pub vectors: ::core::option::Option<Vectors>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5230,6 +5762,7 @@ pub struct DeletePointVectors {
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5264,6 +5797,7 @@ pub struct SetPayloadPoints {
     #[prost(uint64, optional, tag = "9")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5295,6 +5829,7 @@ pub struct DeletePayloadPoints {
     #[prost(uint64, optional, tag = "8")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5323,6 +5858,7 @@ pub struct ClearPayloadPoints {
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5355,6 +5891,7 @@ pub struct CreateFieldIndexCollection {
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5383,6 +5920,7 @@ pub struct DeleteFieldIndexCollection {
 /// Dense vector creation parameters.
 /// Only includes immutable properties that define the vector space.
 /// Storage type, index, and quantization are configured separately.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5397,12 +5935,13 @@ pub struct DenseVectorCreationConfig {
     /// Configuration for multi-vector search (e.g., ColBERT)
     #[prost(message, optional, tag = "3")]
     pub multivector_config: ::core::option::Option<MultiVectorConfig>,
-    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4)
+    /// Data type of the vectors (Float32, Float16, Uint8, Turbo4, Turbo8, Turbo16)
     #[prost(enumeration = "Datatype", optional, tag = "4")]
     pub datatype: ::core::option::Option<i32>,
 }
 /// Sparse vector creation parameters.
 /// Only includes immutable properties that define the vector space.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5415,6 +5954,7 @@ pub struct SparseVectorCreationConfig {
     #[validate(custom(function = "crate::grpc::validate::validate_sparse_datatype"))]
     pub datatype: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5446,6 +5986,7 @@ pub struct CreateVectorNameRequest {
 /// Nested message and enum types in `CreateVectorNameRequest`.
 pub mod create_vector_name_request {
     /// Configuration for the new vector - either dense or sparse
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum VectorConfig {
@@ -5457,6 +5998,7 @@ pub mod create_vector_name_request {
         SparseConfig(super::SparseVectorCreationConfig),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5481,6 +6023,7 @@ pub struct DeleteVectorNameRequest {
     #[prost(message, optional, tag = "5")]
     pub ordering: ::core::option::Option<WriteOrdering>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PayloadIncludeSelector {
@@ -5488,6 +6031,7 @@ pub struct PayloadIncludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PayloadExcludeSelector {
@@ -5495,6 +6039,7 @@ pub struct PayloadExcludeSelector {
     #[prost(string, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WithPayloadSelector {
@@ -5503,6 +6048,7 @@ pub struct WithPayloadSelector {
 }
 /// Nested message and enum types in `WithPayloadSelector`.
 pub mod with_payload_selector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -5515,6 +6061,7 @@ pub mod with_payload_selector {
         Exclude(super::PayloadExcludeSelector),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5523,6 +6070,7 @@ pub struct NamedVectors {
     #[validate(nested)]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectorsOutput {
@@ -5532,6 +6080,7 @@ pub struct NamedVectorsOutput {
         VectorOutput,
     >,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5542,6 +6091,7 @@ pub struct Vectors {
 }
 /// Nested message and enum types in `Vectors`.
 pub mod vectors {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum VectorsOptions {
@@ -5551,6 +6101,7 @@ pub mod vectors {
         Vectors(super::NamedVectors),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsOutput {
@@ -5559,6 +6110,7 @@ pub struct VectorsOutput {
 }
 /// Nested message and enum types in `VectorsOutput`.
 pub mod vectors_output {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum VectorsOptions {
@@ -5568,6 +6120,7 @@ pub mod vectors_output {
         Vectors(super::NamedVectorsOutput),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct VectorsSelector {
@@ -5575,6 +6128,7 @@ pub struct VectorsSelector {
     #[prost(string, repeated, tag = "1")]
     pub names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WithVectorsSelector {
@@ -5583,6 +6137,7 @@ pub struct WithVectorsSelector {
 }
 /// Nested message and enum types in `WithVectorsSelector`.
 pub mod with_vectors_selector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum SelectorOptions {
@@ -5594,6 +6149,7 @@ pub mod with_vectors_selector {
         Include(super::VectorsSelector),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -5617,6 +6173,7 @@ pub struct QuantizationSearchParams {
     #[validate(range(min = 1.0))]
     pub oversampling: ::core::option::Option<f64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -5639,9 +6196,23 @@ pub struct AcornSearchParams {
     #[validate(range(min = 0.0, max = 1.0))]
     pub max_selectivity: ::core::option::Option<f64>,
 }
+/// Population over which IDF statistics are computed for scoring - the IDF corpus.
+/// Only applicable to sparse vectors with the IDF modifier enabled, and to BM25 over a text index.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IdfParams {
+    /// Filter defining the corpus: IDF statistics are computed over the points matching this filter.
+    /// If unset, statistics are collection-wide (global) - same as omitting `idf` entirely.
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub corpus: ::core::option::Option<Filter>,
+}
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
     /// Larger the value - more accurate the result, more time required for search.
@@ -5664,7 +6235,13 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub acorn: ::core::option::Option<AcornSearchParams>,
+    /// Which population IDF statistics are computed over.
+    /// If unset, statistics are collection-wide (global).
+    #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
+    pub idf: ::core::option::Option<IdfParams>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5719,6 +6296,7 @@ pub struct SearchPoints {
     #[prost(message, optional, tag = "15")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5741,6 +6319,7 @@ pub struct SearchBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WithLookup {
@@ -5754,6 +6333,7 @@ pub struct WithLookup {
     #[prost(message, optional, tag = "3")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5818,6 +6398,7 @@ pub struct SearchPointGroups {
     #[prost(message, optional, tag = "16")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StartFrom {
@@ -5826,6 +6407,7 @@ pub struct StartFrom {
 }
 /// Nested message and enum types in `StartFrom`.
 pub mod start_from {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Value {
@@ -5839,6 +6421,7 @@ pub mod start_from {
         Datetime(::prost::alloc::string::String),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OrderBy {
@@ -5852,6 +6435,7 @@ pub struct OrderBy {
     #[prost(message, optional, tag = "3")]
     pub start_from: ::core::option::Option<StartFrom>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5892,6 +6476,7 @@ pub struct ScrollPoints {
     #[prost(uint64, optional, tag = "11")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LookupLocation {
@@ -5904,6 +6489,7 @@ pub struct LookupLocation {
     #[prost(message, optional, tag = "3")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5972,6 +6558,7 @@ pub struct RecommendPoints {
     #[prost(message, optional, tag = "20")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5994,6 +6581,7 @@ pub struct RecommendBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6073,6 +6661,7 @@ pub struct RecommendPointGroups {
     #[prost(message, optional, tag = "21")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TargetVector {
@@ -6081,6 +6670,7 @@ pub struct TargetVector {
 }
 /// Nested message and enum types in `TargetVector`.
 pub mod target_vector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Target {
@@ -6088,6 +6678,7 @@ pub mod target_vector {
         Single(super::VectorExample),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorExample {
@@ -6096,6 +6687,7 @@ pub struct VectorExample {
 }
 /// Nested message and enum types in `VectorExample`.
 pub mod vector_example {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Example {
@@ -6105,6 +6697,7 @@ pub mod vector_example {
         Vector(super::Vector),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextExamplePair {
@@ -6113,6 +6706,7 @@ pub struct ContextExamplePair {
     #[prost(message, optional, tag = "2")]
     pub negative: ::core::option::Option<VectorExample>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6168,6 +6762,7 @@ pub struct DiscoverPoints {
     #[prost(message, optional, tag = "14")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6190,6 +6785,7 @@ pub struct DiscoverBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6218,6 +6814,7 @@ pub struct CountPoints {
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6234,6 +6831,7 @@ pub struct RecommendInput {
     #[prost(enumeration = "RecommendStrategy", optional, tag = "3")]
     pub strategy: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6247,6 +6845,7 @@ pub struct ContextInputPair {
     #[validate(nested)]
     pub negative: ::core::option::Option<VectorInput>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6260,6 +6859,7 @@ pub struct DiscoverInput {
     #[validate(nested)]
     pub context: ::core::option::Option<ContextInput>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6269,6 +6869,7 @@ pub struct ContextInput {
     #[validate(nested)]
     pub pairs: ::prost::alloc::vec::Vec<ContextInputPair>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6286,6 +6887,7 @@ pub struct RelevanceFeedbackInput {
     #[validate(nested)]
     pub strategy: ::core::option::Option<FeedbackStrategy>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6298,6 +6900,7 @@ pub struct FeedbackItem {
     #[prost(float, tag = "2")]
     pub score: f32,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -6308,6 +6911,7 @@ pub struct FeedbackStrategy {
 }
 /// Nested message and enum types in `FeedbackStrategy`.
 pub mod feedback_strategy {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -6316,6 +6920,7 @@ pub mod feedback_strategy {
         Naive(super::NaiveFeedbackStrategy),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -6328,6 +6933,7 @@ pub struct NaiveFeedbackStrategy {
     #[prost(float, tag = "3")]
     pub c: f32,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6338,19 +6944,21 @@ pub struct Formula {
     #[prost(map = "string, message", tag = "2")]
     pub defaults: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22"
     )]
     #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
 }
 /// Nested message and enum types in `Expression`.
 pub mod expression {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -6410,16 +7018,29 @@ pub mod expression {
         /// Linear decay
         #[prost(message, tag = "19")]
         LinDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
+        /// Inverse hyperbolic cosine
+        #[prost(message, tag = "20")]
+        Acosh(::prost::alloc::boxed::Box<super::Expression>),
+        /// Maximum
+        #[prost(message, tag = "21")]
+        Max(super::MaxExpression),
+        /// Minimum
+        #[prost(message, tag = "22")]
+        Min(super::MinExpression),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoDistance {
+    /// The origin geo point to measure from
     #[prost(message, optional, tag = "1")]
     pub origin: ::core::option::Option<GeoPoint>,
+    /// Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used
     #[prost(string, tag = "2")]
     pub to: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6428,6 +7049,7 @@ pub struct MultExpression {
     #[validate(nested)]
     pub mult: ::prost::alloc::vec::Vec<Expression>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6436,6 +7058,25 @@ pub struct SumExpression {
     #[validate(nested)]
     pub sum: ::prost::alloc::vec::Vec<Expression>,
 }
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxExpression {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub max: ::prost::alloc::vec::Vec<Expression>,
+}
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MinExpression {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub min: ::prost::alloc::vec::Vec<Expression>,
+}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6449,6 +7090,7 @@ pub struct DivExpression {
     #[prost(float, optional, tag = "3")]
     pub by_zero_default: ::core::option::Option<f32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6460,6 +7102,7 @@ pub struct PowExpression {
     #[validate(nested)]
     pub exponent: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6482,6 +7125,7 @@ pub struct DecayParamsExpression {
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6497,6 +7141,7 @@ pub struct NearestInputWithMmr {
     pub mmr: ::core::option::Option<Mmr>,
 }
 /// Maximal Marginal Relevance (MMR) algorithm for re-ranking the points.
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -6520,6 +7165,7 @@ pub struct Mmr {
     pub candidates_limit: ::core::option::Option<u32>,
 }
 /// Parameterized reciprocal rank fusion
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6535,16 +7181,18 @@ pub struct Rrf {
     #[prost(float, repeated, tag = "2")]
     pub weights: ::prost::alloc::vec::Vec<f32>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
 /// Nested message and enum types in `Query`.
 pub mod query {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -6581,8 +7229,58 @@ pub mod query {
         /// Search with feedback from some oracle.
         #[prost(message, tag = "11")]
         RelevanceFeedback(super::RelevanceFeedbackInput),
+        /// Rank by BM25 over the text index of the payload field named by `using`.
+        #[prost(message, tag = "12")]
+        Text(super::TextQuery),
     }
 }
+/// Rank by BM25 over the text index of the payload field named by `using`,
+/// which must have `scoring` set. A point scores when it holds any of the
+/// query's terms: required or excluded terms belong in the request's filter.
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TextQuery {
+    /// Text to search for, tokenized by the field's text index.
+    #[prost(string, tag = "1")]
+    pub query: ::prost::alloc::string::String,
+    /// Parameters of the scorer, keyed by its name. They must match the
+    /// `scoring` type of the field's text index. If absent, the scorer runs
+    /// with its defaults.
+    #[prost(oneof = "text_query::Scoring", tags = "2")]
+    #[validate(nested)]
+    pub scoring: ::core::option::Option<text_query::Scoring>,
+}
+/// Nested message and enum types in `TextQuery`.
+pub mod text_query {
+    /// Parameters of the scorer, keyed by its name. They must match the
+    /// `scoring` type of the field's text index. If absent, the scorer runs
+    /// with its defaults.
+    #[allow(clippy::all)]
+    #[derive(serde::Serialize)]
+    #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
+    pub enum Scoring {
+        /// BM25 parameters, for a field scored with BM25.
+        #[prost(message, tag = "2")]
+        Bm25(super::Bm25Params),
+    }
+}
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct Bm25Params {
+    /// Term frequency saturation. Default is 1.2.
+    #[prost(float, optional, tag = "1")]
+    #[validate(range(min = 0.0))]
+    pub k: ::core::option::Option<f32>,
+    /// Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
+    #[prost(float, optional, tag = "2")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub b: ::core::option::Option<f32>,
+}
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6599,6 +7297,7 @@ pub struct PrefetchQuery {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "3")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6621,6 +7320,7 @@ pub struct PrefetchQuery {
     #[prost(message, optional, tag = "8")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6643,6 +7343,7 @@ pub struct QueryPoints {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6685,6 +7386,7 @@ pub struct QueryPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6706,6 +7408,7 @@ pub struct QueryBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6728,6 +7431,7 @@ pub struct QueryPointGroups {
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying.
     /// If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6779,6 +7483,7 @@ pub struct QueryPointGroups {
     #[prost(message, optional, tag = "17")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6815,6 +7520,7 @@ pub struct FacetCounts {
     #[prost(message, optional, tag = "8")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FacetValue {
@@ -6823,6 +7529,7 @@ pub struct FacetValue {
 }
 /// Nested message and enum types in `FacetValue`.
 pub mod facet_value {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Variant {
@@ -6837,6 +7544,7 @@ pub mod facet_value {
         BoolValue(bool),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FacetHit {
@@ -6847,6 +7555,7 @@ pub struct FacetHit {
     #[prost(uint64, tag = "2")]
     pub count: u64,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -6884,6 +7593,7 @@ pub struct SearchMatrixPoints {
     #[prost(message, optional, tag = "8")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixPairs {
@@ -6891,6 +7601,7 @@ pub struct SearchMatrixPairs {
     #[prost(message, repeated, tag = "1")]
     pub pairs: ::prost::alloc::vec::Vec<SearchMatrixPair>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixPair {
@@ -6904,6 +7615,7 @@ pub struct SearchMatrixPair {
     #[prost(float, tag = "3")]
     pub score: f32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixOffsets {
@@ -6920,6 +7632,7 @@ pub struct SearchMatrixOffsets {
     #[prost(message, repeated, tag = "4")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsUpdateOperation {
@@ -6931,6 +7644,7 @@ pub struct PointsUpdateOperation {
 }
 /// Nested message and enum types in `PointsUpdateOperation`.
 pub mod points_update_operation {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PointStructList {
@@ -6947,6 +7661,7 @@ pub mod points_update_operation {
         #[prost(enumeration = "super::UpdateMode", optional, tag = "4")]
         pub update_mode: ::core::option::Option<i32>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SetPayload {
@@ -6965,6 +7680,7 @@ pub mod points_update_operation {
         #[prost(string, optional, tag = "4")]
         pub key: ::core::option::Option<::prost::alloc::string::String>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct OverwritePayload {
@@ -6983,6 +7699,7 @@ pub mod points_update_operation {
         #[prost(string, optional, tag = "4")]
         pub key: ::core::option::Option<::prost::alloc::string::String>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeletePayload {
@@ -6995,6 +7712,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "3")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct UpdateVectors {
@@ -7008,6 +7726,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "3")]
         pub update_filter: ::core::option::Option<super::Filter>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeleteVectors {
@@ -7021,6 +7740,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "3")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[allow(clippy::all)]
     #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7032,6 +7752,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ClearPayload {
@@ -7042,6 +7763,7 @@ pub mod points_update_operation {
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Operation {
@@ -7069,6 +7791,7 @@ pub mod points_update_operation {
         ClearPayload(ClearPayload),
     }
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7093,6 +7816,7 @@ pub struct UpdateBatchPoints {
     #[prost(uint64, optional, tag = "5")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsOperationResponse {
@@ -7104,6 +7828,7 @@ pub struct PointsOperationResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateResult {
@@ -7114,6 +7839,7 @@ pub struct UpdateResult {
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct OrderValue {
@@ -7122,6 +7848,7 @@ pub struct OrderValue {
 }
 /// Nested message and enum types in `OrderValue`.
 pub mod order_value {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -7131,6 +7858,7 @@ pub mod order_value {
         Float(f64),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
@@ -7156,6 +7884,7 @@ pub struct ScoredPoint {
     #[prost(message, optional, tag = "8")]
     pub order_value: ::core::option::Option<OrderValue>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GroupId {
@@ -7164,6 +7893,7 @@ pub struct GroupId {
 }
 /// Nested message and enum types in `GroupId`.
 pub mod group_id {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Kind {
@@ -7178,6 +7908,7 @@ pub mod group_id {
         StringValue(::prost::alloc::string::String),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointGroup {
@@ -7191,6 +7922,7 @@ pub struct PointGroup {
     #[prost(message, optional, tag = "3")]
     pub lookup: ::core::option::Option<RetrievedPoint>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GroupsResult {
@@ -7198,6 +7930,7 @@ pub struct GroupsResult {
     #[prost(message, repeated, tag = "1")]
     pub groups: ::prost::alloc::vec::Vec<PointGroup>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
@@ -7209,6 +7942,7 @@ pub struct SearchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryResponse {
@@ -7220,6 +7954,7 @@ pub struct QueryResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchResponse {
@@ -7231,6 +7966,7 @@ pub struct QueryBatchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryGroupsResponse {
@@ -7242,12 +7978,14 @@ pub struct QueryGroupsResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchBatchResponse {
@@ -7259,6 +7997,7 @@ pub struct SearchBatchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchGroupsResponse {
@@ -7270,6 +8009,7 @@ pub struct SearchGroupsResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountResponse {
@@ -7281,6 +8021,7 @@ pub struct CountResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollResponse {
@@ -7295,12 +8036,14 @@ pub struct ScrollResponse {
     #[prost(message, optional, tag = "4")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CountResult {
     #[prost(uint64, tag = "1")]
     pub count: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievedPoint {
@@ -7317,6 +8060,7 @@ pub struct RetrievedPoint {
     #[prost(message, optional, tag = "6")]
     pub order_value: ::core::option::Option<OrderValue>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResponse {
@@ -7328,6 +8072,7 @@ pub struct GetResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendResponse {
@@ -7339,6 +8084,7 @@ pub struct RecommendResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendBatchResponse {
@@ -7350,6 +8096,7 @@ pub struct RecommendBatchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoverResponse {
@@ -7361,6 +8108,7 @@ pub struct DiscoverResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoverBatchResponse {
@@ -7372,6 +8120,7 @@ pub struct DiscoverBatchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendGroupsResponse {
@@ -7383,6 +8132,7 @@ pub struct RecommendGroupsResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateBatchResponse {
@@ -7394,6 +8144,7 @@ pub struct UpdateBatchResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetResponse {
@@ -7405,6 +8156,7 @@ pub struct FacetResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixPairsResponse {
@@ -7416,6 +8168,7 @@ pub struct SearchMatrixPairsResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixOffsetsResponse {
@@ -7427,6 +8180,7 @@ pub struct SearchMatrixOffsetsResponse {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7439,6 +8193,7 @@ pub struct PointsSelector {
 }
 /// Nested message and enum types in `PointsSelector`.
 pub mod points_selector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PointsSelectorOneOf {
@@ -7448,12 +8203,14 @@ pub mod points_selector {
         Filter(super::Filter),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsIdsList {
     #[prost(message, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
+#[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7469,6 +8226,7 @@ pub struct PointStruct {
 /// ---
 ///
 /// ## ----------- Measurements collector ----------
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Usage {
@@ -7477,36 +8235,48 @@ pub struct Usage {
     #[prost(message, optional, tag = "2")]
     pub inference: ::core::option::Option<InferenceUsage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InferenceUsage {
     #[prost(map = "string, message", tag = "1")]
     pub models: ::std::collections::HashMap<::prost::alloc::string::String, ModelUsage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModelUsage {
     #[prost(uint64, tag = "1")]
     pub tokens: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HardwareUsage {
-    #[prost(uint64, tag = "1")]
-    pub cpu: u64,
-    #[prost(uint64, tag = "2")]
-    pub payload_io_read: u64,
-    #[prost(uint64, tag = "3")]
-    pub payload_io_write: u64,
-    #[prost(uint64, tag = "4")]
-    pub payload_index_io_read: u64,
-    #[prost(uint64, tag = "5")]
-    pub payload_index_io_write: u64,
-    #[prost(uint64, tag = "6")]
-    pub vector_io_read: u64,
-    #[prost(uint64, tag = "7")]
-    pub vector_io_write: u64,
+    #[prost(uint64, optional, tag = "1")]
+    pub cpu: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub payload_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub payload_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "4")]
+    pub payload_index_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "5")]
+    pub payload_index_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "6")]
+    pub vector_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "7")]
+    pub vector_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "8")]
+    pub remote_io_cached_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "9")]
+    pub remote_io_non_cached_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "10")]
+    pub updated_bytes: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "11")]
+    pub updated_indexed_bytes: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7543,6 +8313,7 @@ impl WriteOrderingType {
     }
 }
 /// Defines the mode of the upsert operation
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7576,6 +8347,7 @@ impl UpdateMode {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7609,6 +8381,7 @@ impl ReadConsistencyType {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7654,6 +8427,7 @@ impl FieldType {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7682,6 +8456,7 @@ impl Direction {
     }
 }
 /// How to use positive and negative vectors to find the results, default is `AverageVector`.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7719,6 +8494,7 @@ impl RecommendStrategy {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7753,6 +8529,7 @@ impl Fusion {
 /// Available sampling methods:
 ///
 /// * `random` - Random sampling
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7777,6 +8554,7 @@ impl Sample {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -8221,6 +8999,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `Query` instead.
+        #[deprecated]
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
@@ -8241,6 +9022,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `QueryBatch` instead.
+        #[deprecated]
         pub async fn search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchBatchPoints>,
@@ -8266,6 +9050,9 @@ pub mod points_client {
         }
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` instead.
+        #[deprecated]
         pub async fn search_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPointGroups>,
@@ -8311,6 +9098,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `Query` with a `recommend` query instead.
+        #[deprecated]
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPoints>,
@@ -8334,6 +9124,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `QueryBatch` with `recommend` queries instead.
+        #[deprecated]
         pub async fn recommend_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendBatchPoints>,
@@ -8360,6 +9153,9 @@ pub mod points_client {
         }
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` with a `recommend` query instead.
+        #[deprecated]
         pub async fn recommend_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPointGroups>,
@@ -8403,6 +9199,9 @@ pub mod points_client {
         /// distance to the target. The context part of the score for each pair is
         /// calculated +1 if the point is closer to a positive than to a negative part
         /// of a pair, and -1 otherwise.
+        ///
+        /// Deprecated: use `Query` with a `discover` or `context` query instead.
+        #[deprecated]
         pub async fn discover(
             &mut self,
             request: impl tonic::IntoRequest<super::DiscoverPoints>,
@@ -8425,6 +9224,9 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        ///
+        /// Deprecated: use `QueryBatch` with `discover` or `context` queries instead.
+        #[deprecated]
         pub async fn discover_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::DiscoverBatchPoints>,
@@ -8753,12 +9555,16 @@ pub mod points_server {
         >;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `Query` instead.
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions
+        ///
+        /// Deprecated: use `QueryBatch` instead.
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPoints>,
@@ -8768,6 +9574,8 @@ pub mod points_server {
         >;
         /// Retrieve closest points based on vector similarity and given filtering
         /// conditions, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` instead.
         async fn search_groups(
             &self,
             request: tonic::Request<super::SearchPointGroups>,
@@ -8782,6 +9590,8 @@ pub mod points_server {
         ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `Query` with a `recommend` query instead.
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPoints>,
@@ -8791,6 +9601,8 @@ pub mod points_server {
         >;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples.
+        ///
+        /// Deprecated: use `QueryBatch` with `recommend` queries instead.
         async fn recommend_batch(
             &self,
             request: tonic::Request<super::RecommendBatchPoints>,
@@ -8800,6 +9612,8 @@ pub mod points_server {
         >;
         /// Look for the points which are closer to stored positive examples and at
         /// the same time further to negative examples, grouped by a given field
+        ///
+        /// Deprecated: use `QueryGroups` with a `recommend` query instead.
         async fn recommend_groups(
             &self,
             request: tonic::Request<super::RecommendPointGroups>,
@@ -8826,6 +9640,8 @@ pub mod points_server {
         /// distance to the target. The context part of the score for each pair is
         /// calculated +1 if the point is closer to a positive than to a negative part
         /// of a pair, and -1 otherwise.
+        ///
+        /// Deprecated: use `Query` with a `discover` or `context` query instead.
         async fn discover(
             &self,
             request: tonic::Request<super::DiscoverPoints>,
@@ -8834,6 +9650,8 @@ pub mod points_server {
             tonic::Status,
         >;
         /// Batch request points based on { positive, negative } pairs of examples, and/or a target
+        ///
+        /// Deprecated: use `QueryBatch` with `discover` or `context` queries instead.
         async fn discover_batch(
             &self,
             request: tonic::Request<super::DiscoverBatchPoints>,
@@ -10337,6 +11155,35 @@ pub mod points_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointStructRaw {
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    #[prost(map = "string, bytes", tag = "2")]
+    pub vectors: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::vec::Vec<u8>,
+    >,
+    #[prost(map = "string, message", tag = "3")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Byte-encoded payload blob.
+    #[prost(message, optional, tag = "4")]
+    pub raw_payload: ::core::option::Option<RawPayload>,
+}
+/// The whole payload object of a point as a single encoded blob.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RawPayload {
+    /// The encoded payload object, see `encoding` for the format.
+    #[prost(bytes = "vec", tag = "1")]
+    pub payload_bytes: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "RawPayloadEncoding", tag = "2")]
+    pub encoding: i32,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10364,7 +11211,11 @@ pub struct SyncPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Points with storage-native (raw bytes) vectors
+    #[prost(message, repeated, tag = "8")]
+    pub raw_points: ::prost::alloc::vec::Vec<PointStructRaw>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10381,6 +11232,7 @@ pub struct SyncPointsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10396,7 +11248,11 @@ pub struct UpsertPointsInternal {
     /// When absent, falls back to `wait` (backward compatible with older nodes).
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
+    /// Points with storage-native (raw bytes) vectors
+    #[prost(message, repeated, tag = "5")]
+    pub raw_points: ::prost::alloc::vec::Vec<PointStructRaw>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10413,6 +11269,7 @@ pub struct DeletePointsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10429,6 +11286,7 @@ pub struct UpdateVectorsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10445,6 +11303,7 @@ pub struct DeleteVectorsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10461,6 +11320,7 @@ pub struct SetPayloadPointsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10477,6 +11337,7 @@ pub struct DeletePayloadPointsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10493,6 +11354,7 @@ pub struct ClearPayloadPointsInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10511,6 +11373,7 @@ pub struct CreateFieldIndexCollectionInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10529,6 +11392,7 @@ pub struct DeleteFieldIndexCollectionInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10543,6 +11407,7 @@ pub struct CreateVectorNameInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10557,6 +11422,7 @@ pub struct DeleteVectorNameInternal {
     #[prost(enumeration = "WaitUntil", optional, tag = "4")]
     pub wait_override: ::core::option::Option<i32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10570,6 +11436,7 @@ pub struct UpdateOperation {
 }
 /// Nested message and enum types in `UpdateOperation`.
 pub mod update_operation {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Update {
@@ -10601,6 +11468,7 @@ pub mod update_operation {
         DeleteVectorName(super::DeleteVectorNameInternal),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10614,6 +11482,7 @@ pub struct UpdateBatchInternal {
     pub wait_override: ::core::option::Option<i32>,
 }
 /// Has to be backward compatible with `PointsOperationResponse`!
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsOperationResponseInternal {
@@ -10628,6 +11497,7 @@ pub struct PointsOperationResponseInternal {
     pub inference_usage: ::core::option::Option<InferenceUsage>,
 }
 /// Has to be backward compatible with `UpdateResult`!
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateResultInternal {
@@ -10640,6 +11510,7 @@ pub struct UpdateResultInternal {
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClockTag {
@@ -10654,6 +11525,7 @@ pub struct ClockTag {
     #[prost(bool, tag = "5")]
     pub force: bool,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10664,6 +11536,7 @@ pub struct SearchPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10682,6 +11555,7 @@ pub struct SearchBatchPointsInternal {
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10693,6 +11567,7 @@ pub struct RecoQuery {
     #[validate(nested)]
     pub negatives: ::prost::alloc::vec::Vec<Vector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10704,6 +11579,7 @@ pub struct ContextPair {
     #[validate(nested)]
     pub negative: ::core::option::Option<Vector>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10715,6 +11591,7 @@ pub struct DiscoveryQuery {
     #[validate(nested)]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10723,6 +11600,7 @@ pub struct ContextQuery {
     #[validate(nested)]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
@@ -10731,6 +11609,7 @@ pub struct QueryEnum {
 }
 /// Nested message and enum types in `QueryEnum`.
 pub mod query_enum {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Query {
@@ -10754,6 +11633,7 @@ pub mod query_enum {
     }
 }
 /// This is only used internally, so it makes more sense to add it here rather than in points.proto
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10788,6 +11668,7 @@ pub struct CoreSearchPoints {
     #[prost(message, optional, tag = "11")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10806,6 +11687,7 @@ pub struct CoreSearchBatchPointsInternal {
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10816,6 +11698,7 @@ pub struct ScrollPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10826,6 +11709,7 @@ pub struct RecommendPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10836,6 +11720,7 @@ pub struct GetPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -10847,6 +11732,7 @@ pub struct CountPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
 }
 /// A bare vector. No id reference here.
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RawVector {
@@ -10855,6 +11741,7 @@ pub struct RawVector {
 }
 /// Nested message and enum types in `RawVector`.
 pub mod raw_vector {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -10867,6 +11754,7 @@ pub mod raw_vector {
     }
 }
 /// Query variants for raw vectors (ids have been substituted with vectors)
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RawQuery {
@@ -10875,6 +11763,7 @@ pub struct RawQuery {
 }
 /// Nested message and enum types in `RawQuery`.
 pub mod raw_query {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Recommend {
@@ -10883,6 +11772,7 @@ pub mod raw_query {
         #[prost(message, repeated, tag = "2")]
         pub negatives: ::prost::alloc::vec::Vec<super::RawVector>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct RawContextPair {
@@ -10891,6 +11781,7 @@ pub mod raw_query {
         #[prost(message, optional, tag = "2")]
         pub negative: ::core::option::Option<super::RawVector>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Discovery {
@@ -10899,12 +11790,14 @@ pub mod raw_query {
         #[prost(message, repeated, tag = "2")]
         pub context: ::prost::alloc::vec::Vec<RawContextPair>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Context {
         #[prost(message, repeated, tag = "1")]
         pub context: ::prost::alloc::vec::Vec<RawContextPair>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Feedback {
@@ -10915,6 +11808,7 @@ pub mod raw_query {
         #[prost(message, optional, tag = "3")]
         pub strategy: ::core::option::Option<super::FeedbackStrategy>,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct RawFeedbackItem {
@@ -10923,6 +11817,7 @@ pub mod raw_query {
         #[prost(float, tag = "2")]
         pub score: f32,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
@@ -10948,6 +11843,7 @@ pub mod raw_query {
         Feedback(Feedback),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MmrInternal {
@@ -10960,6 +11856,24 @@ pub struct MmrInternal {
     #[prost(uint32, tag = "3")]
     pub candidates_limit: u32,
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TextScoringInternal {
+    /// Payload field with a text index
+    #[prost(string, tag = "1")]
+    pub field: ::prost::alloc::string::String,
+    /// Query text, tokenized on each shard by the field's tokenizer
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+    /// BM25 term frequency saturation
+    #[prost(float, tag = "3")]
+    pub k1: f32,
+    /// BM25 length normalization
+    #[prost(float, tag = "4")]
+    pub b: f32,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryShardPoints {
@@ -10986,15 +11900,17 @@ pub struct QueryShardPoints {
 }
 /// Nested message and enum types in `QueryShardPoints`.
 pub mod query_shard_points {
+    #[allow(clippy::all)]
     #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
     pub mod query {
+        #[allow(clippy::all)]
         #[derive(serde::Serialize)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Score {
@@ -11019,8 +11935,12 @@ pub mod query_shard_points {
             /// Parameterized RRF fusion
             #[prost(message, tag = "7")]
             Rrf(super::super::Rrf),
+            /// BM25 over the text index of a payload field
+            #[prost(message, tag = "8")]
+            Text(super::super::TextScoringInternal),
         }
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Prefetch {
@@ -11040,6 +11960,7 @@ pub mod query_shard_points {
         pub score_threshold: ::core::option::Option<f32>,
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -11058,18 +11979,21 @@ pub struct QueryBatchPointsInternal {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntermediateResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryResultInternal {
     #[prost(message, repeated, tag = "1")]
     pub intermediate_results: ::prost::alloc::vec::Vec<IntermediateResult>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchResponseInternal {
@@ -11083,6 +12007,7 @@ pub struct QueryBatchResponseInternal {
     #[prost(message, optional, tag = "6")]
     pub inference_usage: ::core::option::Option<InferenceUsage>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -11107,6 +12032,7 @@ pub struct FacetCountsInternal {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FacetValueInternal {
@@ -11115,6 +12041,7 @@ pub struct FacetValueInternal {
 }
 /// Nested message and enum types in `FacetValueInternal`.
 pub mod facet_value_internal {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Variant {
@@ -11128,6 +12055,7 @@ pub mod facet_value_internal {
         BoolValue(bool),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FacetHitInternal {
@@ -11136,6 +12064,7 @@ pub struct FacetHitInternal {
     #[prost(uint64, tag = "2")]
     pub count: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetResponseInternal {
@@ -11147,9 +12076,38 @@ pub struct FacetResponseInternal {
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
 }
+/// Encoding of `RawPayload.payload_bytes`.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RawPayloadEncoding {
+    /// serde_json encoding of the whole payload object, uncompressed,
+    /// exactly as stored in gridstore.
+    JsonBytes = 0,
+}
+impl RawPayloadEncoding {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::JsonBytes => "JsonBytes",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "JsonBytes" => Some(Self::JsonBytes),
+            _ => None,
+        }
+    }
+}
 /// Controls how an update operation waits for completion.
 /// When present, fully overrides the `wait` boolean from the wrapped public message.
 /// When absent, the `wait` boolean is used (backward compatible with older nodes).
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -12995,6 +13953,7 @@ pub mod points_internal_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetTelemetryRequest {
@@ -13008,12 +13967,14 @@ pub struct GetTelemetryRequest {
     #[prost(uint64, tag = "3")]
     pub timeout: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CollectionsSelector {
     #[prost(string, repeated, tag = "1")]
     pub only_collections: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTelemetryResponse {
@@ -13022,6 +13983,7 @@ pub struct GetTelemetryResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerTelemetry {
@@ -13038,6 +14000,7 @@ pub struct PeerTelemetry {
     #[prost(message, optional, tag = "4")]
     pub cluster: ::core::option::Option<ClusterTelemetry>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AppTelemetry {
@@ -13051,6 +14014,7 @@ pub struct AppTelemetry {
     #[prost(int64, tag = "3")]
     pub startup: i64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionTelemetry {
@@ -13070,6 +14034,7 @@ pub struct CollectionTelemetry {
     #[prost(map = "uint32, message", tag = "7")]
     pub shard_clean_tasks: ::std::collections::HashMap<u32, ShardCleanStatusTelemetry>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardTransferTelemetry {
@@ -13097,6 +14062,7 @@ pub struct ShardTransferTelemetry {
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReshardingTelemetry {
@@ -13113,6 +14079,7 @@ pub struct ReshardingTelemetry {
     #[prost(enumeration = "ReshardingStage", tag = "6")]
     pub stage: i32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardCleanStatusTelemetry {
@@ -13122,15 +14089,18 @@ pub struct ShardCleanStatusTelemetry {
 /// Nested message and enum types in `ShardCleanStatusTelemetry`.
 pub mod shard_clean_status_telemetry {
     /// Marker message
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Started {}
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Progress {
         #[prost(uint64, tag = "1")]
         pub deleted_points: u64,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Failed {
@@ -13138,13 +14108,16 @@ pub mod shard_clean_status_telemetry {
         pub reason: ::prost::alloc::string::String,
     }
     /// Marker message
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Cancelled {}
     /// Marker message
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Done {}
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Variant {
@@ -13160,6 +14133,7 @@ pub mod shard_clean_status_telemetry {
         Done(Done),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicaSetTelemetry {
@@ -13181,6 +14155,7 @@ pub struct ReplicaSetTelemetry {
     #[prost(message, optional, tag = "6")]
     pub partial_snapshot: ::core::option::Option<PartialSnapshotTelemetry>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LocalShardTelemetry {
@@ -13215,6 +14190,7 @@ pub struct LocalShardTelemetry {
         u64,
     >,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RemoteShardTelemetry {
@@ -13223,6 +14199,7 @@ pub struct RemoteShardTelemetry {
     #[prost(uint64, tag = "2")]
     pub peer_id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PartialSnapshotTelemetry {
@@ -13236,6 +14213,7 @@ pub struct PartialSnapshotTelemetry {
     #[prost(uint64, tag = "3")]
     pub recovery_timestamp: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterTelemetry {
@@ -13244,6 +14222,7 @@ pub struct ClusterTelemetry {
     #[prost(map = "uint64, message", tag = "3")]
     pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClusterStatusTelemetry {
@@ -13264,6 +14243,7 @@ pub struct ClusterStatusTelemetry {
     #[prost(message, optional, tag = "8")]
     pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConsensusThreadStatus {
@@ -13272,6 +14252,7 @@ pub struct ConsensusThreadStatus {
 }
 /// Nested message and enum types in `ConsensusThreadStatus`.
 pub mod consensus_thread_status {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Working {
@@ -13280,15 +14261,18 @@ pub mod consensus_thread_status {
         pub last_update_ms: i64,
     }
     /// Marker message for stopped state
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Stopped {}
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct StoppedWithErr {
         #[prost(string, tag = "1")]
         pub err: ::prost::alloc::string::String,
     }
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Status {
@@ -13300,12 +14284,14 @@ pub mod consensus_thread_status {
         StoppedWithErr(StoppedWithErr),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PeerInfo {
     #[prost(string, tag = "1")]
     pub uri: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -13336,6 +14322,7 @@ impl ReshardingStage {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -13375,6 +14362,7 @@ impl ShardStatus {
         }
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -13408,9 +14396,43 @@ impl StateRole {
         }
     }
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetQuotaUsageRequest {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetQuotaUsageResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<QuotaUsage>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+/// Utilization of the quota-managed resources on the peer that answered.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QuotaUsage {
+    /// Resident memory as a percentage of the memory available to the process,
+    /// absent when the platform does not expose the stat.
+    #[prost(uint32, optional, tag = "1")]
+    pub resident_memory_percent: ::core::option::Option<u32>,
+    /// Used space of the storage filesystem as a percentage of its capacity,
+    /// absent when it cannot be read.
+    #[prost(uint32, optional, tag = "2")]
+    pub disk_usage_percent: ::core::option::Option<u32>,
+    /// Whether this peer is at or over one of the limits it enforces, and so is
+    /// currently refusing updates. Always false while the quota is disabled.
+    #[prost(bool, tag = "3")]
+    pub exceeded: bool,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetConsensusCommitRequest {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetConsensusCommitResponse {
@@ -13421,6 +14443,7 @@ pub struct GetConsensusCommitResponse {
     #[prost(int64, tag = "2")]
     pub term: i64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WaitOnConsensusCommitRequest {
@@ -13434,6 +14457,7 @@ pub struct WaitOnConsensusCommitRequest {
     #[prost(int64, tag = "3")]
     pub timeout: i64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WaitOnConsensusCommitResponse {
@@ -13441,6 +14465,45 @@ pub struct WaitOnConsensusCommitResponse {
     #[prost(bool, tag = "1")]
     pub ok: bool,
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetConsensusAppliedLogRequest {}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AppliedConsensusEntry {
+    /// Raft log index of the entry
+    #[prost(uint64, tag = "1")]
+    pub index: u64,
+    /// Raft term the entry was proposed in
+    #[prost(uint64, tag = "2")]
+    pub term: u64,
+    /// Wall clock when the entry finished applying, milliseconds since the Unix epoch
+    #[prost(uint64, tag = "3")]
+    pub applied_at_ms: u64,
+    /// How long this single entry took to apply, in milliseconds
+    #[prost(uint64, tag = "4")]
+    pub took_ms: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetConsensusAppliedLogResponse {
+    /// Recently applied entries, oldest first
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<AppliedConsensusEntry>,
+    /// Wall clock on the responding peer, milliseconds since the Unix epoch
+    #[prost(uint64, tag = "2")]
+    pub now_ms: u64,
+    /// Entries committed but not yet applied on the responding peer
+    #[prost(uint64, tag = "3")]
+    pub pending_operations: u64,
+    /// Highest entry index the responding peer has applied, from its consensus state
+    #[prost(uint64, optional, tag = "4")]
+    pub last_applied_index: ::core::option::Option<u64>,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAuditLogRequest {
@@ -13460,6 +14523,7 @@ pub struct GetAuditLogRequest {
     #[prost(uint64, tag = "4")]
     pub limit: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetAuditLogResponse {
@@ -13660,6 +14724,58 @@ pub mod qdrant_internal_client {
                 .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetAuditLog"));
             self.inner.unary(req, path, codec).await
         }
+        /// Get how much of its resource quota this peer is using
+        pub async fn get_quota_usage(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetQuotaUsage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetQuotaUsage"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get the log of recently applied consensus entries from this peer
+        pub async fn get_consensus_applied_log(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetConsensusAppliedLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusAppliedLogResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.QdrantInternal/GetConsensusAppliedLog",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.QdrantInternal", "GetConsensusAppliedLog"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -13705,6 +14821,22 @@ pub mod qdrant_internal_server {
             request: tonic::Request<super::GetAuditLogRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetAuditLogResponse>,
+            tonic::Status,
+        >;
+        /// Get how much of its resource quota this peer is using
+        async fn get_quota_usage(
+            &self,
+            request: tonic::Request<super::GetQuotaUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetQuotaUsageResponse>,
+            tonic::Status,
+        >;
+        /// Get the log of recently applied consensus entries from this peer
+        async fn get_consensus_applied_log(
+            &self,
+            request: tonic::Request<super::GetConsensusAppliedLogRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusAppliedLogResponse>,
             tonic::Status,
         >;
     }
@@ -13969,6 +15101,101 @@ pub mod qdrant_internal_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.QdrantInternal/GetQuotaUsage" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetQuotaUsageSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetQuotaUsageRequest>
+                    for GetQuotaUsageSvc<T> {
+                        type Response = super::GetQuotaUsageResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetQuotaUsageRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_quota_usage(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetQuotaUsageSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.QdrantInternal/GetConsensusAppliedLog" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetConsensusAppliedLogSvc<T: QdrantInternal>(pub Arc<T>);
+                    impl<
+                        T: QdrantInternal,
+                    > tonic::server::UnaryService<super::GetConsensusAppliedLogRequest>
+                    for GetConsensusAppliedLogSvc<T> {
+                        type Response = super::GetConsensusAppliedLogResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetConsensusAppliedLogRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as QdrantInternal>::get_consensus_applied_log(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetConsensusAppliedLogSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         let mut response = http::Response::new(
@@ -14009,12 +15236,14 @@ pub mod qdrant_internal_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RaftMessage {
     #[prost(bytes = "vec", tag = "1")]
     pub message: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllPeers {
@@ -14023,6 +15252,7 @@ pub struct AllPeers {
     #[prost(uint64, tag = "2")]
     pub first_peer_id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Peer {
@@ -14031,6 +15261,7 @@ pub struct Peer {
     #[prost(uint64, tag = "2")]
     pub id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14044,12 +15275,14 @@ pub struct AddPeerToKnownMessage {
     #[prost(uint64, tag = "3")]
     pub id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PeerId {
     #[prost(uint64, tag = "1")]
     pub id: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Uri {
@@ -14569,14 +15802,17 @@ pub mod raft_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateFullSnapshotRequest {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListFullSnapshotsRequest {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14586,6 +15822,7 @@ pub struct DeleteFullSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14598,6 +15835,7 @@ pub struct CreateSnapshotRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14610,6 +15848,7 @@ pub struct ListSnapshotsRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14626,6 +15865,7 @@ pub struct DeleteSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -14644,6 +15884,7 @@ pub struct SnapshotDescription {
     #[prost(string, optional, tag = "4")]
     pub checksum: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotResponse {
@@ -14653,6 +15894,7 @@ pub struct CreateSnapshotResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSnapshotsResponse {
@@ -14662,6 +15904,7 @@ pub struct ListSnapshotsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct DeleteSnapshotResponse {
@@ -15350,6 +16593,7 @@ pub mod snapshots_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -15365,6 +16609,7 @@ pub struct CreateShardSnapshotRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -15380,6 +16625,7 @@ pub struct ListShardSnapshotsRequest {
     #[prost(uint32, tag = "2")]
     pub shard_id: u32,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -15399,6 +16645,7 @@ pub struct DeleteShardSnapshotRequest {
     #[validate(length(min = 1))]
     pub snapshot_name: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -15426,7 +16673,11 @@ pub struct RecoverShardSnapshotRequest {
     /// Optional API key used when fetching the snapshot from a remote URL
     #[prost(string, optional, tag = "6")]
     pub api_key: ::core::option::Option<::prost::alloc::string::String>,
+    /// Peer ID of the shard transfer source, checked against the registered shard transfer
+    #[prost(uint64, optional, tag = "7")]
+    pub from_peer_id: ::core::option::Option<u64>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ShardSnapshotLocation {
@@ -15435,6 +16686,7 @@ pub struct ShardSnapshotLocation {
 }
 /// Nested message and enum types in `ShardSnapshotLocation`.
 pub mod shard_snapshot_location {
+    #[allow(clippy::all)]
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Location {
@@ -15446,6 +16698,7 @@ pub mod shard_snapshot_location {
         Path(::prost::alloc::string::String),
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct RecoverSnapshotResponse {
@@ -15453,6 +16706,7 @@ pub struct RecoverSnapshotResponse {
     #[prost(double, tag = "1")]
     pub time: f64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -16025,6 +17279,7 @@ pub mod shard_snapshots_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16042,6 +17297,7 @@ pub struct ListFilesRequest {
     #[validate(length(min = 1))]
     pub prefix_path: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16058,18 +17314,33 @@ pub struct FileExistsRequest {
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileExistsResponse {
     #[prost(bool, tag = "1")]
     pub exists: bool,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListFilesResponse {
-    #[prost(string, repeated, tag = "1")]
-    pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+pub struct ListFilesEntry {
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub size: u64,
+    /// Last modification time, when the underlying storage exposes one.
+    #[prost(message, optional, tag = "3")]
+    pub last_modified: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFilesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub files: ::prost::alloc::vec::Vec<ListFilesEntry>,
+}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16086,12 +17357,14 @@ pub struct FileLengthRequest {
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FileLengthResponse {
     #[prost(uint64, tag = "1")]
     pub length: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16112,12 +17385,14 @@ pub struct ReadBytesRequest {
     #[prost(uint64, tag = "5")]
     pub length: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadBytesResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16138,12 +17413,14 @@ pub struct ReadBytesStreamRequest {
     #[prost(uint64, tag = "5")]
     pub length: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadBytesStreamResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -16160,6 +17437,7 @@ pub struct ReadWholeRequest {
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadWholeResponse {
@@ -16167,6 +17445,7 @@ pub struct ReadWholeResponse {
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
 /// ReadBatch: multiple ranges from a single file (maps to UniversalRead::read_batch).
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadBatchRange {
@@ -16175,6 +17454,7 @@ pub struct ReadBatchRange {
     #[prost(uint64, tag = "2")]
     pub length: u64,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -16194,44 +17474,10 @@ pub struct ReadBatchRequest {
     #[validate(length(min = 1))]
     pub ranges: ::prost::alloc::vec::Vec<ReadBatchRange>,
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadBatchResponse {
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-}
-/// ReadMulti: ranges across multiple files (maps to UniversalRead::read_multi).
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadMultiEntry {
-    #[prost(string, tag = "1")]
-    #[validate(length(min = 1))]
-    pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "2")]
-    pub byte_offset: u64,
-    #[prost(uint64, tag = "3")]
-    pub length: u64,
-}
-#[derive(serde::Serialize)]
-#[derive(validator::Validate)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReadMultiRequest {
-    #[prost(string, tag = "1")]
-    #[validate(
-        length(min = 1, max = 255),
-        custom(function = "common::validation::validate_collection_name_legacy")
-    )]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(message, repeated, tag = "3")]
-    #[validate(length(min = 1), nested)]
-    pub reads: ::prost::alloc::vec::Vec<ReadMultiEntry>,
-}
-#[derive(serde::Serialize)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadMultiResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
@@ -16513,31 +17759,6 @@ pub mod storage_read_client {
                 .insert(GrpcMethod::new("qdrant.StorageRead", "ReadBatch"));
             self.inner.unary(req, path, codec).await
         }
-        /// Maps to UniversalRead::read_multi() — ranges across multiple files.
-        pub async fn read_multi(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadMultiRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadMultiResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.StorageRead/ReadMulti",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.StorageRead", "ReadMulti"));
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -16613,14 +17834,6 @@ pub mod storage_read_server {
             request: tonic::Request<super::ReadBatchRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ReadBatchResponse>,
-            tonic::Status,
-        >;
-        /// Maps to UniversalRead::read_multi() — ranges across multiple files.
-        async fn read_multi(
-            &self,
-            request: tonic::Request<super::ReadMultiRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadMultiResponse>,
             tonic::Status,
         >;
     }
@@ -17029,51 +18242,6 @@ pub mod storage_read_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.StorageRead/ReadMulti" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadMultiSvc<T: StorageRead>(pub Arc<T>);
-                    impl<
-                        T: StorageRead,
-                    > tonic::server::UnaryService<super::ReadMultiRequest>
-                    for ReadMultiSvc<T> {
-                        type Response = super::ReadMultiResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadMultiRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as StorageRead>::read_multi(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadMultiSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 _ => {
                     Box::pin(async move {
                         let mut response = http::Response::new(
@@ -17114,9 +18282,11 @@ pub mod storage_read_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HealthCheckRequest {}
+#[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HealthCheckReply {

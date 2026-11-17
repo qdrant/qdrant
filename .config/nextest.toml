@@ -6,6 +6,11 @@ fail-fast = false
 # Print out output for failing tests as soon as they fail, and also at the end
 # of the run (for easy scrollability).
 failure-output = "immediate-final"
+# Mark slow after 60s; kill after 5m. Legitimate suite outliers top out around ~90s
+# (model_testing harnesses); a hung test previously blocked ubuntu CI for ~50m with no
+# failure output. Termination turns the hang into a failure so nextest dumps captured
+# stdout (seed + stage breadcrumbs) for reproduction.
+slow-timeout = { period = "60s", terminate-after = 5 }
 
 # save junit report
 [profile.ci.junit]
@@ -20,3 +25,12 @@ path = "junit.xml"
 [[profile.default.overrides]]
 filter = 'package(collection) and test(test_hw_metrics_cancellation)'
 threads-required = "num-test-threads"
+
+# The `model_testing` harnesses write gigabytes of storage to TMPDIR. Running them all at once
+# together with other tests can fill it up and fail unrelated tests; allow at most two at a time.
+[test-groups]
+model-testing = { max-threads = 2 }
+
+[[profile.ci.overrides]]
+filter = 'package(collection) and test(/^model_testing::tests::harness/)'
+test-group = "model-testing"

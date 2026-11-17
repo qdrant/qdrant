@@ -1,6 +1,6 @@
 use std::collections::HashSet;
-use std::sync::LazyLock;
 
+use collection::collection::AbortReshardingScope;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
@@ -8,19 +8,18 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;
+use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::consensus_state_machine::apply_collection_config_diffs;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-
-static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
-    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
@@ -52,7 +51,7 @@ impl TableOfContent {
 
                             let number_of_peers = 1; // this is a single node deployment
                             let suggested_shard_number = collection_defaults
-                                .map(|config| config.get_shard_number(number_of_peers));
+                                .map(|config| config.get_shard_number(number_of_peers, 1));
 
                             let shard_number = operation
                                 .create_collection
@@ -139,6 +138,12 @@ impl TableOfContent {
                 test_slow_down.execute(self.this_peer_id).await;
                 Ok(true)
             }
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestTransientError(test_transient_error) => {
+                test_transient_error
+                    .execute(self.this_peer_id)
+                    .map(|()| true)
+            }
         }
     }
 
@@ -147,6 +152,30 @@ impl TableOfContent {
         mut operation: UpdateCollectionOperation,
     ) -> Result<bool, StorageError> {
         let replica_changes = operation.take_shard_replica_changes();
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+
+        // Check every diff against a copy of the config first. A diff rejected in the middle of
+        // the operation must not keep the diffs saved before it.
+        //
+        // `ClusterState::plan_update_collection` checks an operation with the same call, so both
+        // reject the same ones. Once the state machine drives consensus, this call is the only
+        // thing checking a diff on this path, and it goes with the code below it.
+        let config_before = collection.config().await;
+        let mut config_after = config_before.clone();
+        apply_collection_config_diffs(&mut config_after, &operation.update_collection)?;
+
+        // Recreating optimizers cancels in-flight optimizations, so only do it when the update
+        // changes what optimizers are built from. Clients that re-send the same config on every
+        // run would otherwise keep cancelling optimizations, and every cancelled optimization
+        // under writes leaves an extra segment behind.
+        //
+        // Recreating also clears optimizer errors, and re-sending an unchanged config is how
+        // users restart failed optimizers, so keep doing it while an error is recorded.
+        let recreate_optimizers = config_before.is_core_config_updated(&config_after)
+            || collection.has_optimizer_errors().await;
+
         let UpdateCollection {
             vectors,
             hnsw_config,
@@ -157,36 +186,25 @@ impl TableOfContent {
             strict_mode_config: strict_mode,
             metadata,
         } = operation.update_collection;
-        let collection = self
-            .get_collection_unchecked(&operation.collection_name)
-            .await?;
-        let mut recreate_optimizers = false;
-
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = hnsw_config {
             collection.update_hnsw_config_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = vectors {
             collection.update_vectors_from_diff(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = quantization_config {
             collection
                 .update_quantization_config_from_diff(diff)
                 .await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = sparse_vectors {
             collection.update_sparse_vectors_from_other(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
@@ -209,6 +227,10 @@ impl TableOfContent {
         if recreate_optimizers {
             collection.recreate_optimizers_background();
         }
+
+        // Wake up the optimizers, as any update does. Re-sending an unchanged config is how
+        // users start optimizations that wait for a trigger, e.g. after a restart.
+        collection.trigger_optimizers().await;
         Ok(true)
     }
 
@@ -231,7 +253,9 @@ impl TableOfContent {
         let removed_opt = self.collections.write().await.remove(collection_name);
         if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
-                && let Err(err) = removed.abort_resharding(state.key(), true).await
+                && let Err(err) = removed
+                    .abort_resharding(state.key(), true, AbortReshardingScope::default())
+                    .await
             {
                 log::error!(
                     "Failed to abort resharding {} when deleting collection {collection_name}: \
@@ -308,36 +332,19 @@ impl TableOfContent {
         // Prevent search on partially switched collections
         let collection_lock = self.collections.write().await;
         let mut alias_lock = self.alias_persistence.write().await;
-        for action in operation.actions {
-            match action {
-                AliasOperations::CreateAlias(CreateAliasOperation {
-                    create_alias:
-                        CreateAlias {
-                            collection_name,
-                            alias_name,
-                        },
-                }) => {
-                    collection_lock.validate_collection_exists(&collection_name)?;
-                    collection_lock.validate_collection_not_exists(&alias_name)?;
 
-                    alias_lock.insert(alias_name, collection_name)?;
-                }
-                AliasOperations::DeleteAlias(DeleteAliasOperation {
-                    delete_alias: DeleteAlias { alias_name },
-                }) => {
-                    alias_lock.remove(&alias_name)?;
-                }
-                AliasOperations::RenameAlias(RenameAliasOperation {
-                    rename_alias:
-                        RenameAlias {
-                            old_alias_name,
-                            new_alias_name,
-                        },
-                }) => {
-                    alias_lock.rename_alias(&old_alias_name, new_alias_name)?;
-                }
-            };
-        }
+        // Validate and apply `actions` to a copy of the mapping, and save it once at the end.
+        //
+        // Rejecting an action in the middle of the list must not keep the actions before it,
+        // so nothing is persisted until every action is validated.
+        let mut aliases = alias_lock.state().clone();
+
+        apply_alias_actions(&mut aliases, &operation.actions, |collection_name| {
+            collection_lock.collection_exists(collection_name)
+        })?;
+
+        alias_lock.apply_state(aliases)?;
+
         Ok(true)
     }
 
@@ -409,7 +416,9 @@ impl TableOfContent {
             }
 
             ReshardingOperation::Abort(key) => {
-                collection.abort_resharding(key, false).await?;
+                collection
+                    .abort_resharding(key, false, AbortReshardingScope::default())
+                    .await?;
             }
         }
 
@@ -521,12 +530,17 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Restart(transfer_restart) => {
-                let transfers: HashSet<transfer::ShardTransfer> =
-                    collection.state().await.transfers;
-
                 let transfer_key = transfer_restart.key();
 
-                let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
+                // The record must exist. A restart updates the record in place, never
+                // removing it, so a missing record means a stale duplicate restart —
+                // reject it. A restart to an unchanged method is not rejected here; it
+                // is an idempotent no-op inside `restart_shard_transfer`.
+                let Some(old_transfer) = collection
+                    .shards_holder()
+                    .read()
+                    .await
+                    .get_transfer(&transfer_key)
                 else {
                     return Err(StorageError::bad_request(format!(
                         "There is no transfer for shard {} from {} to {}",
@@ -534,67 +548,88 @@ impl TableOfContent {
                     )));
                 };
 
-                if old_transfer.method == Some(transfer_restart.method) {
-                    return Err(StorageError::bad_request(format!(
-                        "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
-                        transfer_restart.shard_id, transfer_restart.from, transfer_restart.to,
-                    )));
-                }
-
-                // Abort and start transfer
-                Box::pin(self.handle_transfer(
-                    collection_id.clone(),
-                    ShardTransferOperations::Abort {
-                        transfer: transfer_restart.key(),
-                        reason: "restart transfer".into(),
-                    },
-                ))
-                .await?;
-
+                // The replacement record: preserve the old sync flag, drop
+                // to_shard_id and any filter, switch to the new method.
                 let new_transfer = ShardTransfer {
                     shard_id: transfer_restart.shard_id,
                     to_shard_id: None,
                     from: transfer_restart.from,
                     to: transfer_restart.to,
-                    sync: old_transfer.sync, // Preserve sync flag from the old transfer
+                    sync: old_transfer.sync,
                     method: Some(transfer_restart.method),
                     filter: None,
                 };
 
-                Box::pin(
-                    self.handle_transfer(
-                        collection_id,
-                        ShardTransferOperations::Start(new_transfer),
-                    ),
-                )
-                .await?;
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = new_transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
+
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    let transfer = new_transfer.clone();
+                    async move {
+                        if let Err(error) =
+                            proposal_sender.send(ConsensusOperations::abort_transfer(
+                                collection_id,
+                                transfer,
+                                "transmission failed",
+                            ))
+                        {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ));
+                    }
+                };
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                collection
+                    .restart_shard_transfer(
+                        transfer_key,
+                        new_transfer,
+                        shard_consensus,
+                        temp_dir,
+                        on_finish,
+                        on_failure,
+                    )
+                    .await?;
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer.key(),
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer.key()).await?;
 
                 collection.finish_shard_transfer(transfer, None).await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {
                 // Validate transfer exists
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
 
                 let collection = self.get_collection_unchecked(&collection_id).await?;
 
                 let current_state = collection
-                    .state()
+                    .shards_holder()
+                    .read()
                     .await
-                    .shards
-                    .get(&transfer.shard_id)
-                    .and_then(|info| info.replicas.get(&transfer.to))
-                    .copied();
+                    .get_shard(transfer.shard_id)
+                    .and_then(|replica_set| replica_set.peer_state(transfer.to));
 
                 let Some(current_state) = current_state else {
                     return Err(StorageError::bad_input(format!(
@@ -641,10 +676,7 @@ impl TableOfContent {
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
-                transfer::helpers::validate_transfer_exists(
-                    &transfer,
-                    &collection.state().await.transfers,
-                )?;
+                collection.validate_transfer_exists(&transfer).await?;
                 log::warn!("Aborting shard transfer: {reason}");
                 collection
                     .abort_shard_transfer_and_resharding(transfer)
@@ -709,17 +741,17 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_payload_index(
-                operation.field_name.clone(),
-                operation.field_schema,
-                collection_hw_acc,
-            )
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
+            .measured(collection_ctx)
             .await?;
 
         // We can solve issues related to this missing index
@@ -740,13 +772,17 @@ impl TableOfContent {
     }
 
     async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_named_vector(operation.vector_name, operation.config, collection_hw_acc)
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_named_vector(operation.vector_name, operation.config)
+            .measured(collection_ctx)
             .await?;
 
         Ok(())
@@ -760,4 +796,72 @@ impl TableOfContent {
 
         Ok(())
     }
+}
+
+/// Apply `actions` to `aliases`, validating each one against `collection_exists`.
+///
+/// Returns on the first invalid action, leaving `aliases` partially updated. `update_aliases`
+/// works on a copy it only saves on success, so a rejected operation changes nothing.
+///
+/// `ClusterState::plan_change_aliases` calls this as well, so that both accept and reject the
+/// same operations. Inline it back here once the state machine drives consensus and this is the
+/// only caller.
+pub(crate) fn apply_alias_actions(
+    aliases: &mut AliasMapping,
+    actions: &[AliasOperations],
+    collection_exists: impl Fn(&str) -> bool,
+) -> Result<(), StorageError> {
+    for action in actions {
+        match action {
+            AliasOperations::CreateAlias(CreateAliasOperation { create_alias }) => {
+                let CreateAlias {
+                    collection_name,
+                    alias_name,
+                } = create_alias;
+
+                // `collection_name` must name a collection, not an alias
+                if !collection_exists(collection_name) {
+                    return Err(StorageError::not_found(format!(
+                        "Collection `{collection_name}` does not exist"
+                    )));
+                }
+
+                if collection_exists(alias_name) {
+                    return Err(StorageError::already_exists(format!(
+                        "Collection `{alias_name}` already exists"
+                    )));
+                }
+
+                aliases.insert(alias_name.clone(), collection_name.clone());
+            }
+
+            AliasOperations::DeleteAlias(DeleteAliasOperation { delete_alias }) => {
+                let DeleteAlias { alias_name } = delete_alias;
+
+                // Deleting an alias that does not exist is a no-op, not an error
+                aliases.remove(alias_name);
+            }
+
+            AliasOperations::RenameAlias(RenameAliasOperation { rename_alias }) => {
+                let RenameAlias {
+                    old_alias_name,
+                    new_alias_name,
+                } = rename_alias;
+
+                if collection_exists(new_alias_name) {
+                    return Err(StorageError::already_exists(format!(
+                        "Collection `{new_alias_name}` already exists"
+                    )));
+                }
+
+                if !aliases.rename(old_alias_name, new_alias_name.clone()) {
+                    return Err(StorageError::not_found(format!(
+                        "Alias {old_alias_name} does not exist"
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

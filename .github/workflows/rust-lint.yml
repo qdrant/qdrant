@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ '**' ]
 
+concurrency:
+  # Pushes to dev/master get a unique group and always run to completion
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -23,12 +31,13 @@ jobs:
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       with:
         components: rustfmt, clippy
-    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       with:
-        key: clippy
+        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
+        save-if: ${{ github.ref == 'refs/heads/dev' }}
     - name: Update apt
       run: sudo apt-get update
     - name: Install dependencies
@@ -41,3 +50,18 @@ jobs:
       run: cargo clippy --workspace --all-targets -- -D warnings
     - name: Check cargo clippy warnings for all targets and features
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  ast-grep:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Install uv
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+    - name: Install ast-grep
+      run: uv tool install ast-grep-cli==0.44.1
+    - name: Test ast-grep rules (tools/ast-grep/rule-tests)
+      run: sg test --config tools/ast-grep/sgconfig.yml --skip-snapshot-tests
+    - name: Check ast-grep rules (tools/ast-grep/rules)
+      run: sg scan --config tools/ast-grep/sgconfig.yml

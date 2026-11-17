@@ -79,11 +79,23 @@ def test_partial_snapshot(
 ):
     assert_project_root()
 
+    # Wait for the write peer to finish indexing before the recover_read
+    # collection snapshot is taken. Otherwise the snapshot can capture a
+    # mid-optimization appendable segment that the write peer later drops;
+    # partial recovery merges into the read peer and preserves that leftover,
+    # so assert_files_consistency fails (see test_partial_snapshot[100-True-0--5]).
     write_peer, read_peer = bootstrap_peers(
         tmp_path,
         bootstrap_points = bootstrap_points,
         recover_read = recover_read,
+        wait_for_green = True,
     )
+
+    if recover_read:
+        # Same race as test_partial_snapshot_empty: after collection-snapshot
+        # recovery, async optimization on the read peer can reshape segments
+        # before we take the partial snapshot.
+        wait_collection_green(read_peer, COLLECTION)
 
     if append_points > 0:
         upsert(write_peer, append_points, offset = bootstrap_points)
@@ -94,6 +106,11 @@ def test_partial_snapshot(
     if update_points < 0:
         delete(write_peer, -update_points)
 
+    if append_points > 0 or update_points != 0:
+        # Mutations (especially appends with indexing_threshold=1) can start
+        # another optimization; wait so the partial snapshot is not mid-opt.
+        wait_collection_green(write_peer, COLLECTION)
+
     recover_partial_snapshot_from(read_peer, write_peer)
     assert_consistency(read_peer, write_peer)
 
@@ -101,7 +118,11 @@ def test_partial_snapshot(
 def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
+    # The write peer sleeps while creating the partial snapshot, so the read peer holds its recovery
+    # lock at least that long and the concurrent requests below are rejected deterministically
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000, write_env = {
+        "QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY": "3",
+    })
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
     futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
@@ -113,7 +134,11 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert_project_root()
 
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000)
+    # The read peer holds the search lock at least this long while applying the partial snapshot,
+    # so the searches below are rejected deterministically
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000, read_env = {
+        "QDRANT__STAGING__PARTIAL_SNAPSHOT_RECOVERY_DELAY": "3",
+    })
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
     recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
@@ -133,6 +158,11 @@ def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1000, recover_read= True, wait_for_green = True)
+
+    # Wait for the read peer to settle too: an async optimization reshaping its
+    # segments after recovery would make its manifest diverge from the write
+    # peer's files, turning the expected empty (304) partial snapshot into a 200.
+    wait_collection_green(read_peer, COLLECTION)
 
     # Collection snapshot doesn't affect partial snapshot recovery timestamp
     recovery_ts = get_telemetry_collections(read_peer)[0]['shards'][0]['partial_snapshot']['recovery_timestamp']
@@ -212,20 +242,20 @@ def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
     assert_http_ok(resp)
 
 
-def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False):
-    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green)
-    read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None)
+def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False, write_env = None, read_env = None):
+    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green, env=write_env)
+    read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None, env=read_env)
     return write_peer, read_peer
 
-def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False):
-    write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
+def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False, env = None):
+    write_peer = bootstrap_peer(tmp / "write", 6331, "write_", env)
     bootstrap_collection(write_peer, shards, bootstrap_points)
     if wait_for_green:
         wait_collection_green(write_peer, collection_name=COLLECTION)
     return write_peer
 
-def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None):
-    read_peer = bootstrap_peer(tmp / "read", 63331, "read_")
+def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None, env = None):
+    read_peer = bootstrap_peer(tmp / "read", 63331, "read_", env)
 
     if recover_from_url is None:
         bootstrap_collection(read_peer, shards)
@@ -234,12 +264,12 @@ def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | N
 
     return read_peer
 
-def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
+def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = "", extra_env = None):
     path.mkdir(exist_ok = True)
 
     config = {
         "QDRANT__LOG_LEVEL": "debug,collection::common::file_utils=trace",
-        "QDRANT__FEATURE_FLAGS__USE_MUTABLE_ID_TRACKER_WITHOUT_ROCKSDB": "true",
+        **(extra_env or {}),
     }
 
     uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)

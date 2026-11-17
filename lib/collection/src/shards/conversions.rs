@@ -18,8 +18,8 @@ use tonic::Status;
 use crate::operations::conversions::write_ordering_to_proto;
 use crate::operations::payload_ops::{DeletePayloadOp, SetPayloadOp};
 use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointSyncOperation,
-    WriteOrdering,
+    ConditionalInsertOperationInternal, PointInsertOperationsInternal, PointStructRawPersisted,
+    PointSyncOperation, PointSyncRawOperation, WriteOrdering,
 };
 use crate::operations::types::CollectionResult;
 use crate::operations::vector_ops::UpdateVectorsOp;
@@ -58,6 +58,42 @@ pub fn internal_sync_points(
                 .into_iter()
                 .map(api::grpc::qdrant::PointStruct::try_from)
                 .collect::<Result<Vec<_>, Status>>()?,
+            raw_points: Vec::new(),
+            from_id: from_id.map(PointIdType::into),
+            to_id: to_id.map(PointIdType::into),
+            ordering: ordering.map(write_ordering_to_proto),
+            timeout: wait_timeout,
+        }),
+    })
+}
+
+#[allow(clippy::unnecessary_wraps)]
+pub fn internal_sync_points_raw(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    points_sync_operation: PointSyncRawOperation,
+    wait: WaitUntil,
+    wait_timeout: Option<u64>,
+    ordering: Option<WriteOrdering>,
+) -> CollectionResult<SyncPointsInternal> {
+    let PointSyncRawOperation {
+        points,
+        from_id,
+        to_id,
+    } = points_sync_operation;
+    Ok(SyncPointsInternal {
+        shard_id,
+        clock_tag: clock_tag.map(ClockTag::into),
+        wait_override: wait_override_to_proto(wait),
+        sync_points: Some(SyncPoints {
+            collection_name,
+            wait: Some(wait.needs_callback()),
+            points: Vec::new(),
+            raw_points: points
+                .into_iter()
+                .map(api::grpc::qdrant::PointStructRaw::from)
+                .collect(),
             from_id: from_id.map(PointIdType::into),
             to_id: to_id.map(PointIdType::into),
             ordering: ordering.map(write_ordering_to_proto),
@@ -79,6 +115,7 @@ pub fn internal_upsert_points(
         shard_id,
         clock_tag: clock_tag.map(ClockTag::into),
         wait_override: wait_override_to_proto(wait),
+        raw_points: Vec::new(),
         upsert_points: Some(UpsertPoints {
             collection_name,
             wait: Some(wait.needs_callback()),
@@ -89,6 +126,37 @@ pub fn internal_upsert_points(
                     .map(api::grpc::qdrant::PointStruct::try_from)
                     .collect::<Result<Vec<_>, Status>>()?,
             },
+            ordering: ordering.map(write_ordering_to_proto),
+            shard_key_selector: None,
+            update_filter: None,
+            timeout: wait_timeout,
+            update_mode: None, // Default mode (Upsert)
+        }),
+    })
+}
+
+#[allow(clippy::unnecessary_wraps)]
+pub fn internal_upsert_points_raw(
+    shard_id: Option<ShardId>,
+    clock_tag: Option<ClockTag>,
+    collection_name: String,
+    points: Vec<PointStructRawPersisted>,
+    wait: WaitUntil,
+    wait_timeout: Option<u64>,
+    ordering: Option<WriteOrdering>,
+) -> CollectionResult<UpsertPointsInternal> {
+    Ok(UpsertPointsInternal {
+        shard_id,
+        clock_tag: clock_tag.map(ClockTag::into),
+        wait_override: wait_override_to_proto(wait),
+        raw_points: points
+            .into_iter()
+            .map(api::grpc::qdrant::PointStructRaw::from)
+            .collect(),
+        upsert_points: Some(UpsertPoints {
+            collection_name,
+            wait: Some(wait.needs_callback()),
+            points: Vec::new(),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: None,
@@ -125,6 +193,7 @@ pub fn internal_conditional_upsert_points(
         shard_id,
         clock_tag: clock_tag.map(ClockTag::into),
         wait_override: wait_override_to_proto(wait),
+        raw_points: Vec::new(),
         upsert_points: Some(UpsertPoints {
             collection_name,
             wait: Some(wait.needs_callback()),
@@ -443,8 +512,12 @@ pub fn internal_create_index(
     wait_timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
-    let (field_type, field_index_params) = create_index
-        .field_schema
+    let CreateIndex {
+        field_name,
+        field_schema,
+    } = create_index;
+
+    let (field_type, field_index_params) = field_schema
         .map(|field_schema| match field_schema {
             PayloadFieldSchema::FieldType(field_type) => {
                 (api::grpc::qdrant::FieldType::from(field_type) as i32, None)
@@ -464,7 +537,7 @@ pub fn internal_create_index(
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name,
             wait: Some(wait.needs_callback()),
-            field_name: create_index.field_name.to_string(),
+            field_name: field_name.to_string(),
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
@@ -580,5 +653,7 @@ pub fn try_scored_point_from_grpc(
         vector,
         shard_key: convert_shard_key_from_grpc_opt(shard_key),
         order_value: order_value.map(TryFrom::try_from).transpose()?,
+        // A location is only valid in the process that searched the segment.
+        location: None,
     })
 }

@@ -1,19 +1,22 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::path::PathBuf;
-use std::{iter, slice};
+use std::slice;
 
 use ahash::HashMapExt as _;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::MmapFlusher;
+use common::ambient::hw::HwMetric;
+use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, EncodedVectorsWrite};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
+mod live_reload;
 mod offsets;
 
 pub use offsets::{
@@ -40,38 +43,36 @@ pub struct MultivectorOffset {
 
 pub trait MultivectorOffsets {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
-
-    fn iter_offsets(
-        &self,
-        ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
 }
 
 #[allow(clippy::len_without_is_empty)]
 pub trait MultivectorOffsetsStorage: Sized {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
 
-    fn iter_offsets(
+    /// Invoke `callback(index, offset)` for each `ids[index]`, in order.
+    fn for_each_offset(
         &self,
         ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)>;
+        callback: impl FnMut(usize, MultivectorOffset),
+    ) -> OperationResult<()>;
 
     fn len(&self) -> usize;
-
-    fn upsert_offset(
-        &mut self,
-        id: PointOffsetType,
-        offset: MultivectorOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>;
-
-    fn flusher(&self) -> MmapFlusher;
 
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf>;
 
     fn heap_size_bytes(&self) -> usize;
+}
+
+pub trait MultivectorOffsetsStorageWrite: MultivectorOffsetsStorage {
+    fn upsert_offset(
+        &mut self,
+        id: PointOffsetType,
+        offset: MultivectorOffset,
+    ) -> std::io::Result<()>;
+
+    fn flusher(&self) -> Flusher;
 }
 
 pub struct QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
@@ -97,8 +98,16 @@ where
         &self.quantized_storage
     }
 
+    pub fn storage_mut(&mut self) -> &mut QuantizedStorage {
+        &mut self.quantized_storage
+    }
+
     pub fn offsets_storage(&self) -> &TMultivectorOffsetsStorage {
         &self.offsets
+    }
+
+    pub fn offsets_storage_mut(&mut self) -> &mut TMultivectorOffsetsStorage {
+        &mut self.offsets
     }
 
     pub fn new(
@@ -121,8 +130,8 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         debug_assert_eq!(point_ids.len(), scores.len());
@@ -130,11 +139,11 @@ where
         if QuantizedStorage::is_in_ram_or_mmap() {
             // This function is optimized of in-ram access
             // it doesn't do extra mem copies and assume reference access
-            self.score_points_batch_in_mem_like(point_ids, scorer, scores, hw_counter);
+            self.score_points_batch_in_mem_like(point_ids, scorer, scores)
         } else {
             // Optimized for remote access from external storage,
             // does memory copy, but minimizes assessed to external storage
-            self.score_points_batch_uring_like(point_ids, scorer, scores, hw_counter);
+            self.score_points_batch_uring_like(point_ids, scorer, scores)
         }
     }
 
@@ -144,19 +153,30 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
+        // `scorer` takes an infallible closure, so a failed read is kept here
+        // and returned once the point it failed on is scored.
+        let failed = Cell::new(None);
         for (index, &point_id) in point_ids.iter().enumerate() {
             scores[index] = scorer(&|query| {
-                self.score_point_max_similarity(query, point_id, hw_counter) // inhibit rustfmt
+                self.score_point_max_similarity(query, point_id)
+                    .unwrap_or_else(|err| {
+                        failed.set(Some(err));
+                        ScoreType::NEG_INFINITY
+                    })
             });
+            if let Some(err) = failed.take() {
+                return Err(err);
+            }
         }
+        Ok(())
     }
 
     #[inline]
@@ -165,80 +185,116 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
-        self.for_each_in_multi_batch(
-            point_ids,
-            |index, multi_vector| {
-                scores[index] = scorer(&|query| {
-                    self.score_vector_max_similarity(query, multi_vector, hw_counter)
-                });
-            },
-            hw_counter,
-        );
+        self.for_each_in_multi_batch(point_ids, |index, multi_vector| {
+            scores[index] = scorer(&|query| self.score_vector_max_similarity(query, multi_vector));
+        })
     }
 
+    /// Read the quantized sub-vectors for a batch of multi-vector points and hand
+    /// each point's complete multi-vector to `callback`.
+    ///
+    /// Every point is a multi-vector: a run of `count` quantized sub-vectors stored
+    /// contiguously in `quantized_storage`, starting at `MultivectorOffset::start`.
+    /// To read them in one batched pass we:
+    ///
+    /// 1. resolve each point's offset and flatten every sub-vector into
+    ///    `sub_vector_offsets` (one storage offset per sub-vector), keeping the
+    ///    index-aligned `owners` array that records, per sub-vector, which point it
+    ///    belongs to and how long that point's multi-vector is;
+    /// 2. read all sub-vectors in a single batched pass and regroup them back into
+    ///    per-point multi-vectors before invoking `callback(point_index, &[..])`.
     fn for_each_in_multi_batch(
         &self,
         point_ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, &[Cow<'_, [u8]>]),
-        hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         debug_assert!(point_ids.len() <= u32::MAX as usize);
 
+        /// Identifies, for a single sub-vector read, the multi-vector it is part of.
         #[derive(Copy, Clone)]
-        struct State {
-            index: u32,
-            count: u32,
+        struct SubVectorOwner {
+            /// Position within `point_ids` of the point this sub-vector belongs to
+            /// (also the slot `callback` reports this point's result to).
+            point_index: u32,
+            /// Number of sub-vectors that make up this point's multi-vector, i.e. how
+            /// many reads must be regrouped before the multi-vector is complete.
+            multi_vector_len: u32,
         }
 
-        let mut state = Vec::with_capacity(point_ids.len());
-        let mut chunks = Vec::with_capacity(point_ids.len());
+        // Flattened reads: `sub_vector_offsets[i]` is the storage offset of the i-th
+        // sub-vector to read, and `owners[i]` says which point owns it. The two arrays
+        // grow together and stay index-aligned.
+        let mut owners = Vec::with_capacity(point_ids.len());
+        let mut sub_vector_offsets = Vec::with_capacity(point_ids.len());
 
-        for (index, offset) in self.offsets.iter_offsets(point_ids) {
-            for _ in 0..offset.count {
-                state.push(State {
-                    index: index as u32,
-                    count: offset.count,
-                });
-            }
+        self.offsets
+            .for_each_offset(point_ids, |point_index, offset| {
+                for _ in 0..offset.count {
+                    owners.push(SubVectorOwner {
+                        point_index: point_index as u32,
+                        multi_vector_len: offset.count,
+                    });
+                }
 
-            chunks.extend(offset.start..offset.start + offset.count);
-        }
+                sub_vector_offsets.extend(offset.start..offset.start + offset.count);
+            })?;
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(chunks.len() * self.quantized_vector_size());
+        let mul = usize::from(self.quantized_storage.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(sub_vector_offsets.len() * self.quantized_vector_size() * mul);
 
-        let mut multi_vectors = ahash::HashMap::new();
+        // Reads may complete in any order, so we buffer each point's sub-vectors
+        // (keyed by `point_index`) and emit the multi-vector once all of them have
+        // arrived — `owners[sub_vector_index]` maps every read back to its point
+        // regardless of completion order. Single-sub-vector points skip the buffer
+        // (and the owning copy it would require) and are emitted directly.
+        let mut partial_multi_vectors: ahash::HashMap<u32, SmallVec<[Cow<'_, [u8]>; 4]>> =
+            ahash::HashMap::new();
 
-        for (chunk_index, vector) in self.quantized_storage.iter_batch(&chunks) {
-            let State { index, count } = state[chunk_index];
+        self.quantized_storage.for_each_batch(
+            &sub_vector_offsets,
+            |sub_vector_index, sub_vector| {
+                let SubVectorOwner {
+                    point_index,
+                    multi_vector_len,
+                } = owners[sub_vector_index];
 
-            if count == 1 {
-                callback(index as _, slice::from_ref(&vector));
-                continue;
-            }
+                if multi_vector_len == 1 {
+                    // The whole multi-vector is this one sub-vector: hand it directly
+                    // without buffering, no copy.
+                    callback(point_index as _, slice::from_ref(&sub_vector));
+                    return;
+                }
 
-            let multi_vector = multi_vectors
-                .entry(index)
-                .or_insert_with(SmallVec::<[_; 4]>::new);
+                // This sub-vector must outlive the reads of the point's remaining
+                // sub-vectors, so it has to be owned. `into_owned` takes the Vec
+                // directly when the backend already returned an owned buffer (as the
+                // io_uring-like backends this path targets do) — only a borrowed Cow
+                // (e.g. mmap) would copy here, and that case doesn't reach this path.
+                let buffer = partial_multi_vectors.entry(point_index).or_default();
+                buffer.push(Cow::Owned(sub_vector.into_owned()));
 
-            multi_vector.push(vector);
+                if buffer.len() == multi_vector_len as usize {
+                    // Last sub-vector of this point arrived. Remove the buffer to take
+                    // ownership of the completed multi-vector (and keep the map empty
+                    // once every point is emitted), then hand it to the callback.
+                    let multi_vector = partial_multi_vectors
+                        .remove(&point_index)
+                        .expect("multi-vector buffered");
+                    callback(point_index as _, &multi_vector);
+                }
+            },
+        )?;
 
-            if multi_vector.len() == count as usize {
-                let multi_vector = multi_vectors.remove(&index).expect("multi-vector exists");
-                callback(index as _, &multi_vector);
-            }
-        }
-
-        debug_assert!(multi_vectors.is_empty());
+        debug_assert!(partial_multi_vectors.is_empty());
+        Ok(())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors.
@@ -247,7 +303,6 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         multi_vector: &[Cow<'_, [u8]>],
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let mut sum = 0.0;
 
@@ -256,9 +311,7 @@ where
 
             // manual `max_by` for performance
             for vector in multi_vector {
-                let sim = self
-                    .quantized_storage
-                    .score(inner_query, vector, hw_counter);
+                let sim = self.quantized_storage.score(inner_query, vector);
 
                 if max_sim < sim {
                     max_sim = sim;
@@ -278,25 +331,27 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        let offset = self.offsets.get_offset(point_id);
+    ) -> OperationResult<ScoreType> {
+        let mut offset = MultivectorOffset::default();
+        self.offsets
+            .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
 
-        for (_, vector) in self.quantized_storage.iter_batch(&offsets) {
-            for (query_idx, query) in query.iter().enumerate() {
-                let sim = self.quantized_storage.score(query, &vector, hw_counter);
+        self.quantized_storage
+            .for_each_batch(&offsets, |_, vector| {
+                for (query_idx, query) in query.iter().enumerate() {
+                    let sim = self.quantized_storage.score(query, &vector);
 
-                if max_sim[query_idx] < sim {
-                    max_sim[query_idx] = sim;
+                    if max_sim[query_idx] < sim {
+                        max_sim[query_idx] = sim;
+                    }
                 }
-            }
-        }
+            })?;
 
-        max_sim.into_iter().sum()
+        Ok(max_sim.into_iter().sum())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -304,7 +359,6 @@ where
         &self,
         vector_a_index: PointOffsetType,
         vector_b_index: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
@@ -313,11 +367,9 @@ where
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for b in 0..offset_b.count {
-                let sim = self.quantized_storage.score_internal(
-                    offset_a.start + a,
-                    offset_b.start + b,
-                    hw_counter,
-                );
+                let sim = self
+                    .quantized_storage
+                    .score_internal(offset_a.start + a, offset_b.start + b);
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -354,8 +406,8 @@ where
         QuantizedStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.quantized_storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.quantized_storage.is_cold()
     }
 
     fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {
@@ -369,36 +421,31 @@ where
             .collect()
     }
 
-    fn iter_batch(&self, _: &[PointOffsetType]) -> impl Iterator<Item = (usize, Cow<'_, [u8]>)> {
-        unimplemented!("quantized multi-vector storage does not support `iter_batch`");
-
-        #[allow(unreachable_code)]
-        iter::empty()
+    fn for_each_batch(
+        &self,
+        _: &[PointOffsetType],
+        _: impl FnMut(usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
+        unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 
-    fn score(&self, _: &Self::EncodedQuery, _: &[u8], _: &HardwareCounterCell) -> f32 {
+    fn score(&self, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
         unimplemented!("quantized multi-vector storage does not support `score`");
     }
 
-    fn score_point(
+    fn score_points(
         &self,
         query: &Vec<QuantizedStorage::EncodedQuery>,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i, hw_counter),
-        }
+        offsets: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> std::io::Result<()> {
+        self.score_points_batch(offsets, |score| score(query), scores)
+            .map_err(std::io::Error::other)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {
         match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j, hw_counter),
+            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j),
         }
     }
 
@@ -419,12 +466,46 @@ where
         Some(query)
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn vectors_count(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.files();
+        files.extend(self.offsets.files());
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.immutable_files();
+        files.extend(self.offsets.immutable_files());
+        files
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            quantized_storage,
+            offsets,
+            dim: _,
+            multi_vector_config: _,
+        } = self;
+
+        quantized_storage.heap_size_bytes() + offsets.heap_size_bytes()
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
+        match enabled {}
+    }
+}
+
+impl<QuantizedStorage, TMultivectorOffsetsStorage> EncodedVectorsWrite
+    for QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
+where
+    QuantizedStorage: EncodedVectorsWrite,
+    TMultivectorOffsetsStorage: MultivectorOffsetsStorageWrite,
+{
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
             flattened_vectors: vector,
@@ -454,21 +535,14 @@ where
         };
 
         for (i, inner_vector) in multi_vector.multi_vectors().enumerate() {
-            self.quantized_storage.upsert_vector(
-                offset.start + i as PointOffsetType,
-                inner_vector,
-                hw_counter,
-            )?;
+            self.quantized_storage
+                .upsert_vector(offset.start + i as PointOffsetType, inner_vector)?;
         }
-        self.offsets.upsert_offset(id, offset, hw_counter)?;
+        self.offsets.upsert_offset(id, offset)?;
         Ok(())
     }
 
-    fn vectors_count(&self) -> usize {
-        self.offsets.len()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
+    fn flusher(&self) -> Flusher {
         let quantized_storage_flusher = self.quantized_storage.flusher();
         let offsets_flusher = self.offsets.flusher();
         Box::new(move || {
@@ -476,40 +550,6 @@ where
             offsets_flusher()?;
             Ok(())
         })
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.quantized_storage.files();
-        files.extend(self.offsets.files());
-        files
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        let mut files = self.quantized_storage.immutable_files();
-        files.extend(self.offsets.immutable_files());
-        files
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self {
-            quantized_storage,
-            offsets,
-            dim: _,
-            multi_vector_config: _,
-        } = self;
-
-        quantized_storage.heap_size_bytes() + offsets.heap_size_bytes()
-    }
-
-    type SupportsBytes = False;
-    fn score_bytes(
-        &self,
-        enabled: Self::SupportsBytes,
-        _: &Self::EncodedQuery,
-        _: &[u8],
-        _: &HardwareCounterCell,
-    ) -> f32 {
-        match enabled {}
     }
 }
 
@@ -521,12 +561,5 @@ where
 {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets.get_offset(idx)
-    }
-
-    fn iter_offsets(
-        &self,
-        ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = (usize, MultivectorOffset)> {
-        self.offsets.iter_offsets(ids)
     }
 }

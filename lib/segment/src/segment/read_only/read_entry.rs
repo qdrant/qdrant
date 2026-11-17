@@ -1,0 +1,373 @@
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use ahash::{AHashMap, AHashSet};
+use common::types::{DeferredBehavior, TelemetryDetail};
+use uuid::Uuid;
+
+use super::ReadOnlySegment;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
+use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::{OrderBy, OrderValue};
+use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
+use crate::data_types::vectors::{QueryVector, VectorInternal};
+use crate::entry::entry_point::ReadSegmentEntry;
+use crate::id_tracker::IdTrackerRead;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::{PayloadIndexRead, UniversalReadExt};
+use crate::json_path::JsonPath;
+use crate::telemetry::SegmentTelemetry;
+use crate::types::{
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
+};
+
+/// Read-only counterpart of `impl ReadSegmentEntry for Segment`.
+///
+/// A `ReadOnlySegment` never accepts appends, so `is_appendable()` is always
+/// `false` and the `appendable_flag` passed into the view builders is hard-coded
+/// accordingly. All other operations delegate to the shared `SegmentReadView`,
+/// exactly like the mutable `Segment`.
+impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
+    fn is_proxy(&self) -> bool {
+        false
+    }
+
+    fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
+        self.with_view(|view| view.point_version(point_id))
+    }
+
+    fn search_batch(
+        &self,
+        vector_name: &VectorName,
+        query_vectors: &[&QueryVector],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        self.with_view(|view| {
+            view.search_batch(
+                vector_name,
+                query_vectors,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                params,
+                query_context,
+            )
+        })
+    }
+
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        self.with_view(|view| view.share_filter(filter, users, query_context))
+    }
+
+    fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| {
+            view.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                query_context,
+            )
+        })
+    }
+
+    fn rescore_with_formula(&self, ctx: Arc<FormulaContext>) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| view.rescore_with_formula(ctx))
+    }
+
+    fn vector(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+    ) -> OperationResult<Option<VectorInternal>> {
+        self.with_view(|view| view.vector(vector_name, point_id))
+    }
+
+    fn vector_with_behavior(
+        &self,
+        vector_name: &VectorName,
+        point_id: PointIdType,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Option<VectorInternal>> {
+        self.with_view(|view| view.vector_with_behavior(vector_name, point_id, deferred_behavior))
+    }
+
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors<'_>> {
+        self.with_view(|view| {
+            let mut result = NamedVectors::default();
+            for vector_name in view.vector_data.keys() {
+                if let Some(vec) =
+                    view.vector_with_behavior(vector_name, point_id, DeferredBehavior::VisibleOnly)?
+                {
+                    result.insert(vector_name.clone(), vec);
+                }
+            }
+            Ok(result)
+        })
+    }
+
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
+        self.with_view(|view| view.payload(point_id))
+    }
+
+    fn retrieve(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| {
+            view.retrieve(
+                point_ids,
+                with_payload,
+                with_vector,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
+    }
+
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| {
+            view.retrieve_at(
+                points,
+                with_payload,
+                with_vector,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
+    }
+
+    fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        self.with_view(|view| {
+            view.retrieve_raw(point_ids, with_vector, is_stopped, deferred_behavior)
+        })
+    }
+
+    fn read_filtered<'a>(
+        &'a self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Vec<PointIdType>> {
+        self.with_view(|view| {
+            view.read_filtered(offset, limit, filter, is_stopped, deferred_behavior)
+        })
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
+        self.with_view(|view| {
+            view.read_ordered_filtered(limit, filter, order_by, is_stopped, deferred_behavior)
+        })
+    }
+
+    fn read_random_filtered(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointIdType>> {
+        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped))
+    }
+
+    fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
+        self.with_view(|view| view.read_range(from, to))
+    }
+
+    fn unique_values(
+        &self,
+        key: &JsonPath,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<BTreeSet<FacetValue>> {
+        self.with_view(|view| view.facet_values(key, filter, is_stopped))
+    }
+
+    fn facet(
+        &self,
+        request: &FacetParams,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
+        self.with_view(|view| view.approximate_facet(request, is_stopped))
+    }
+
+    fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
+        self.id_tracker
+            .borrow()
+            .internal_id_with_behavior(point_id, deferred_behavior)
+            .is_some()
+    }
+
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        self.with_view(|view| view.has_points(point_ids, deferred_behavior))
+    }
+
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        self.with_view(|view| view.point_versions(point_ids))
+    }
+
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+    ) -> OperationResult<CardinalityEstimation> {
+        self.with_view(|view| view.estimate_point_count(filter))
+    }
+
+    fn vector_names(&self) -> Vec<VectorNameBuf> {
+        let mut names: Vec<_> = self.vector_data.keys().cloned().collect();
+        names.sort_unstable();
+        names
+    }
+
+    fn is_empty(&self) -> bool {
+        self.id_tracker.borrow().total_point_count() == 0
+    }
+
+    fn available_point_count(&self) -> usize {
+        self.id_tracker.borrow().available_point_count()
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.id_tracker.borrow().deleted_point_count()
+    }
+
+    fn available_point_count_without_deferred(&self) -> usize {
+        self.with_view(|view| view.available_point_count_without_deferred())
+    }
+
+    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
+        self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
+    }
+
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        Ok(self.with_view(|view| view.max_available_vectors_size_in_bytes()))
+    }
+
+    fn segment_uuid(&self) -> Uuid {
+        self.uuid
+    }
+
+    fn segment_type(&self) -> SegmentType {
+        self.segment_type
+    }
+
+    fn info(&self) -> OperationResult<SegmentInfo> {
+        // A read-only segment is never appendable.
+        self.with_view(|view| view.build_info(self.uuid, self.segment_type, false))
+    }
+
+    fn size_info(&self) -> SegmentInfo {
+        // A read-only segment is never appendable.
+        self.with_view(|view| view.build_size_info(self.uuid, self.segment_type, false))
+    }
+
+    fn config(&self) -> &SegmentConfig {
+        &self.segment_config
+    }
+
+    fn is_appendable(&self) -> bool {
+        false
+    }
+
+    fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
+        self.payload_index
+            .borrow()
+            .with_view(|v| v.indexed_fields())
+    }
+
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationResult<SegmentTelemetry> {
+        self.with_view(|view| {
+            // A read-only segment is never appendable.
+            view.build_telemetry(
+                self.uuid,
+                self.segment_type,
+                false,
+                &self.segment_config,
+                detail,
+            )
+        })
+    }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
+        self.with_view(|view| view.fill_query_context(query_context))
+    }
+
+    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+        self.with_view(|view| view.point_is_deferred(point_id))
+    }
+
+    fn deferred_point_ids(&self) -> Vec<PointIdType> {
+        self.with_view(|view| view.deferred_point_ids())
+    }
+
+    fn deferred_point_count(&self) -> usize {
+        self.with_view(|view| view.deferred_point_count())
+    }
+
+    fn has_deferred_points(&self) -> bool {
+        self.with_view(|view| view.has_deferred_points())
+    }
+}

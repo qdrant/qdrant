@@ -1,21 +1,23 @@
 use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::iter;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::Blob;
 use common::types::PointOffsetType;
-use gridstore::Blob;
+use common::universal_io::UserData;
 use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::utils::check_each_sequential;
 use crate::index::payload_config::StorageType;
 
 /// In-memory state shared by `MutableMapIndex` and `ReadOnlyAppendableMapIndex`.
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`MapIndexRead`] method is the same, so it lives here once.
 pub(in crate::index::field_index::map_index) struct InMemoryMapIndex<N: MapIndexKey + ?Sized>
 where
@@ -28,18 +30,24 @@ where
     /// Amount of point which have at least one indexed payload value
     pub(in crate::index::field_index::map_index) indexed_points: usize,
     pub(in crate::index::field_index::map_index) values_count: usize,
+    /// Ordered mirror of `map`'s keys, maintained only when the index is
+    /// built with the `prefix` option; enables prefix range scans. Like
+    /// `map`, keys are never removed when their postings become empty.
+    pub(in crate::index::field_index::map_index) sorted_keys:
+        Option<BTreeSet<<N as MapIndexKey>::Owned>>,
 }
 
 impl<N: MapIndexKey + ?Sized> InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(in crate::index::field_index::map_index) fn empty() -> Self {
+    pub(in crate::index::field_index::map_index) fn empty(prefix_index: bool) -> Self {
         Self {
             map: HashMap::new(),
             point_to_values: Vec::new(),
             indexed_points: 0,
             values_count: 0,
+            sorted_keys: prefix_index.then(BTreeSet::new),
         }
     }
 
@@ -56,9 +64,16 @@ where
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
 
         for value in values {
-            let entry = self.map.entry(value);
-            self.point_to_values[idx as usize].push(entry.key().clone());
-            entry.or_default().insert(idx);
+            let entry = self.map.entry(value.clone());
+            if let (Entry::Vacant(_), Some(sorted_keys)) = (&entry, &mut self.sorted_keys) {
+                sorted_keys.insert(value.clone());
+            }
+            let inserted = entry.or_default().insert(idx);
+
+            // only insert into forward index if it is not a duplicate
+            if inserted {
+                self.point_to_values[idx as usize].push(value);
+            }
         }
 
         self.indexed_points += 1;
@@ -103,30 +118,32 @@ where
     }
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndexRead<N> for InMemoryMapIndex<N>
+impl<'a, N: MapIndexKey + ?Sized + 'a> MapIndexRead<'a, N> for InMemoryMapIndex<N>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        self.point_to_values
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
             .get(idx as usize)
             .map(|values| values.iter().any(|v| check_fn(v.borrow())))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
-    fn get_values<'a>(
-        &'a self,
-        idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>
-    where
-        N: 'a,
-    {
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&N) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
+    }
+
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get(idx as usize)?
@@ -151,11 +168,11 @@ where
         self.map.len()
     }
 
-    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
         self.map
             .get(value)
             .map(|ids| Box::new(ids.iter()) as IdIter)
@@ -182,7 +199,6 @@ where
 
     fn for_each_value_map(
         &self,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.map
@@ -212,7 +228,13 @@ where
             point_to_values,
             indexed_points: _,
             values_count: _,
+            sorted_keys,
         } = self;
+
+        let sorted_keys_bytes = sorted_keys.as_ref().map_or(0, |keys| {
+            keys.len() * size_of::<<N as MapIndexKey>::Owned>()
+                + keys.iter().map(|k| N::owned_heap_bytes(k)).sum::<usize>()
+        });
 
         let hashmap_entry_overhead = std::mem::size_of::<u64>() + std::mem::size_of::<usize>();
         let map_base_bytes = map.capacity()
@@ -229,6 +251,6 @@ where
                 .iter()
                 .map(|v| v.capacity() * std::mem::size_of::<<N as MapIndexKey>::Owned>())
                 .sum::<usize>();
-        map_bytes + ptv_bytes
+        map_bytes + ptv_bytes + sorted_keys_bytes
     }
 }

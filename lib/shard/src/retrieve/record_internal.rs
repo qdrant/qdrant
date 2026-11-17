@@ -21,7 +21,7 @@ pub struct RecordInternal {
 }
 
 impl RecordInternal {
-    pub fn new_empty(id: PointIdType) -> Self {
+    pub const fn new_empty(id: PointIdType) -> Self {
         Self {
             id,
             payload: None,

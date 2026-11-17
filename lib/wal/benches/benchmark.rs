@@ -3,12 +3,13 @@ use std::hint::black_box;
 use crc::{CRC_32_ISCSI, Crc};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::Rng;
+use rand::rngs::SmallRng;
 
 pub const CASTAGNOLI: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 pub fn criterion_benchmark_4k(c: &mut Criterion) {
     let mut buffer = [0u8; 8192];
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     rng.fill_bytes(&mut buffer);
 
     let mut group = c.benchmark_group("8k");
@@ -30,7 +31,7 @@ pub fn criterion_benchmark_4k(c: &mut Criterion) {
 
 pub fn criterion_benchmark_1024k(c: &mut Criterion) {
     let mut buffer = [0u8; 1048576];
-    let mut rng = rand::rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     rng.fill_bytes(&mut buffer);
 
     let mut group = c.benchmark_group("1M");

@@ -1,0 +1,598 @@
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt};
+use parking_lot::Mutex;
+
+mod async_io;
+
+use crate::ambient::AmbientFutureExt as _;
+use crate::mmap::AdviceSetting;
+use crate::universal_io::{
+    CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
+    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
+};
+
+#[derive(Clone, Debug)]
+pub struct FileInfo {
+    /// Length in bytes of the entire file
+    pub size: u64,
+    /// Last modification time, when the listing backend exposes one
+    pub last_modified: Option<std::time::SystemTime>,
+    /// Entity tag, when the listing backend exposes one (object stores)
+    pub etag: Option<String>,
+}
+
+impl FileInfo {
+    /// Return true if both `FileInfo` have all data and it's equal.
+    pub fn full_eq(&self, other: &FileInfo) -> bool {
+        let Self {
+            size,
+            last_modified: Some(last_modified),
+            etag: Some(etag),
+        } = self
+        else {
+            return false;
+        };
+
+        let Self {
+            size: other_size,
+            last_modified: Some(other_last_modified),
+            etag: Some(other_etag),
+        } = other
+        else {
+            return false;
+        };
+
+        size == other_size && last_modified == other_last_modified && etag == other_etag
+    }
+}
+
+impl From<&ListedFile> for FileInfo {
+    fn from(file: &ListedFile) -> Self {
+        Self {
+            size: file.size,
+            last_modified: file.last_modified,
+            etag: file.etag.clone(),
+        }
+    }
+}
+
+impl From<ListedFile> for FileInfo {
+    fn from(file: ListedFile) -> Self {
+        Self {
+            size: file.size,
+            last_modified: file.last_modified,
+            etag: file.etag,
+        }
+    }
+}
+
+/// Filesystem wrapper that snapshots the file listing and serves read-only
+/// opens from explicitly prefetched handles. The only [`CachedReadFs`]
+/// implementation.
+///
+/// The write side is a passthrough: writable opens and
+/// [`UniversalWriteFs`] forward to the wrapped filesystem and do NOT
+/// update the snapshot — reads that must observe a post-snapshot mutation
+/// need a fresh [`CachedFs::cache_file_info`].
+///
+/// Opens produce the *wrapped* backend's file type (`Fs::File`), so
+/// components generic over `impl UniversalReadFs<File = S>` accept a raw
+/// backend and this wrapper interchangeably, and stored handle types never
+/// mention the wrapper.
+///
+/// Until [`CachedFs::cache_file_info`] takes the listing snapshot, the
+/// wrapper is a passthrough: listing, existence checks and opens forward to
+/// the inner filesystem unchanged (prefetched handles are still consumed
+/// first).
+///
+/// Once the snapshot is taken, listing and existence checks are answered
+/// from it without touching the inner filesystem, and opens of paths absent
+/// from the snapshot fail with `NotFound` locally — probing for optional
+/// files is free. Opens first consume any handle registered via
+/// [`CachedFs::schedule_prefetch`]; opens of listed files that were not
+/// scheduled fall back to a plain inner open.
+///
+/// Prefetched handles are take-once: [`UniversalReadFs::open`] removes the
+/// handle from the pool and returns it owned. The pool is shared across
+/// clones.
+pub struct CachedFs<Fs>
+where
+    Fs: UniversalReadFs,
+    Fs::File: 'static,
+{
+    fs: Fs,
+    prefix_path: PathBuf,
+    /// `None` until [`CachedFs::cache_file_info`] takes the listing
+    /// snapshot; the wrapper forwards to `fs` until then.
+    files_info: Option<HashMap<PathBuf, FileInfo>>,
+    /// Previous listing snapshot.
+    previous_files_info: Option<HashMap<PathBuf, FileInfo>>,
+    files_prefetched: Arc<Mutex<HashMap<PathBuf, ScheduledFile<Fs::File>>>>,
+}
+
+enum ScheduledFile<S: 'static> {
+    Future(BoxFuture<'static, UioResult<S>>),
+    Ready(UioResult<S>),
+    Unchanged,
+}
+
+impl<S> Debug for ScheduledFile<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScheduledFile::Future(_) => write!(f, "Future"),
+            ScheduledFile::Ready(_) => write!(f, "Ready"),
+            ScheduledFile::Unchanged => write!(f, "Unchanged"),
+        }
+    }
+}
+
+/// Manual impl: `derive(Clone)` would add a spurious `Fs::File: Clone`
+/// bound for the projection in `files_prefetched`, even though the
+/// `Arc` field is unconditionally cloneable (rust-lang/rust#26925).
+impl<Fs: UniversalReadFs> Clone for CachedFs<Fs> {
+    fn clone(&self) -> Self {
+        let Self {
+            fs,
+            prefix_path,
+            files_info,
+            previous_files_info,
+            files_prefetched,
+        } = self;
+        Self {
+            fs: fs.clone(),
+            prefix_path: prefix_path.clone(),
+            files_info: files_info.clone(),
+            previous_files_info: previous_files_info.clone(),
+            files_prefetched: files_prefetched.clone(),
+        }
+    }
+}
+
+impl<Fs: UniversalReadFs> CachedFs<Fs> {
+    pub fn new(fs: Fs, prefix_path: &Path) -> UioResult<Self> {
+        Ok(Self {
+            fs,
+            prefix_path: prefix_path.to_path_buf(),
+            files_info: None,
+            previous_files_info: None,
+            files_prefetched: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    /// The wrapped inner filesystem.
+    ///
+    /// Components that keep a filesystem handle for *later* opens (e.g. live
+    /// reload attaching files that appear after the snapshot) must retain
+    /// this raw handle, not the `CachedReadFs`: the snapshot goes stale the
+    /// moment the underlying directory changes.
+    pub fn inner(&self) -> &Fs {
+        &self.fs
+    }
+
+    /// File info from the snapshot; `None` before [`CachedFs::cache_file_info`].
+    pub fn file_info(&self, path: &Path) -> Option<&FileInfo> {
+        self.files_info.as_ref()?.get(path)
+    }
+
+    /// Previous file info from the snapshot; `None` before [`CachedFs::cache_file_info`] is called twice.
+    pub fn previous_file_info(&self, path: &Path) -> Option<&FileInfo> {
+        self.previous_files_info.as_ref()?.get(path)
+    }
+
+    /// Files matching `prefix_path` in the snapshot; empty before
+    /// [`CachedFs::cache_file_info`].
+    ///
+    /// A path matches when its component at the prefix's final position
+    /// starts with the prefix's final component (`dir/chunk_` matches
+    /// `dir/chunk_1.dat` and everything under `dir/chunk_extra/`) — the
+    /// same name-based matching as the local backends, immune to mixed
+    /// `/` and `\` separators on Windows.
+    fn cached_list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
+        let dir = prefix_path.parent().unwrap_or(Path::new(""));
+        let name_prefix = prefix_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        self.files_info
+            .iter()
+            .flatten()
+            .filter(|(path, _)| {
+                path.strip_prefix(dir)
+                    .ok()
+                    .and_then(|rel| rel.components().next())
+                    .is_some_and(|first| {
+                        first
+                            .as_os_str()
+                            .to_string_lossy()
+                            .starts_with(&name_prefix)
+                    })
+            })
+            .map(|(path, info)| ListedFile {
+                path: path.clone(),
+                size: info.size,
+                last_modified: info.last_modified,
+                etag: info.etag.clone(),
+            })
+            .collect()
+    }
+
+    pub(crate) fn cached_select_files<P: AsRef<Path>>(&self, paths: &[P]) -> Vec<ListedFile> {
+        paths
+            .iter()
+            .filter_map(|p| {
+                let path = p.as_ref();
+                let info = self.file_info(path)?;
+                Some(ListedFile {
+                    path: path.to_path_buf(),
+                    size: info.size,
+                    last_modified: info.last_modified,
+                    etag: info.etag.clone(),
+                })
+            })
+            .collect()
+    }
+
+    fn apply_file_info(&mut self, list: Vec<ListedFile>) {
+        let files_info: HashMap<_, _> = list
+            .into_iter()
+            .map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified,
+                     etag,
+                 }| {
+                    let info = FileInfo {
+                        size,
+                        last_modified,
+                        etag,
+                    };
+                    (path, info)
+                },
+            )
+            .collect();
+
+        self.files_info = Some(files_info);
+    }
+
+    /// Set or remove file info in the snapshot depending on whether `file_info` is `Some`.
+    pub fn set_file_info(&mut self, path: PathBuf, file_info: Option<FileInfo>) {
+        if let Some(info) = file_info {
+            self.files_info
+                .get_or_insert_with(HashMap::new)
+                .insert(path, info);
+        } else {
+            self.files_info.as_mut().and_then(|info| info.remove(&path));
+        }
+    }
+}
+
+impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
+    /// Async counterpart of [`CachedReadFs::cache_file_info`].
+    pub async fn cache_file_info_async(&mut self) -> UioResult<()> {
+        let list = self.fs.list_files_async(&self.prefix_path).await?;
+        self.apply_file_info(list);
+        Ok(())
+    }
+
+    /// Selectively populate the file info cache for `paths` instead of listing the whole prefix.
+    pub async fn select_cache_file_info_async<P: AsRef<Path> + Send + Sync>(
+        &mut self,
+        paths: &[P],
+    ) -> UioResult<()> {
+        let list = self.fs.select_files_async(paths).await?;
+        self.apply_file_info(list);
+        Ok(())
+    }
+}
+
+/// The `UniversalReadFsAsync`-bound impls: `schedule_open` / `reschedule_open`
+/// park the inner filesystem's `open_async` futures in the prefetch pool, and
+/// `cache_file_info_async` awaits its LIST. Everything else on `CachedFs`
+/// (including consuming parked futures in `open`) works over a plain
+/// `UniversalReadFs`.
+impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
+    type Inner = Fs;
+
+    fn inner(&self) -> &Self::Inner {
+        &self.fs
+    }
+
+    /// Take a LIST snapshot of the filesystem and drop prefetched files.
+    fn cache_file_info(&mut self) -> UioResult<()> {
+        let list = self.fs.list_files(&self.prefix_path)?;
+        self.apply_file_info(list);
+        Ok(())
+    }
+
+    fn rotate_cache_file_info(&mut self) {
+        if self.files_info.is_some() {
+            self.previous_files_info = self.files_info.take();
+            self.files_prefetched.lock().clear();
+        }
+    }
+
+    fn schedule_open_with<Fut>(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Fs::OpenExtra>,
+        then: impl FnOnce(Fs::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Fs::File>> + Send + 'static,
+    {
+        let mut files_prefetched = self.files_prefetched.lock();
+
+        if files_prefetched.contains_key(path) {
+            return;
+        }
+
+        let open_options = open_arguments.unwrap_or(OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::PreferBackground,
+            advice: AdviceSetting::Global,
+        });
+
+        let mut open_extra = open_extra.unwrap_or_default();
+        if let Some(info) = self.files_info.as_ref() {
+            let Some(info) = info.get(path) else {
+                // The file was not listed, set NotFound eagerly.
+                files_prefetched.insert(
+                    path.to_path_buf(),
+                    ScheduledFile::Ready(Err(UniversalIoError::NotFound {
+                        path: path.to_path_buf(),
+                    })),
+                );
+                return;
+            };
+
+            open_extra = open_extra.with_known_len(info.size);
+        }
+
+        // Clone the fs handle so that the future can own it.
+        let fs = self.fs.clone();
+        let path_owned = path.to_path_buf();
+        let mut fut = Box::pin(
+            async move {
+                let file = fs.open_async(path_owned, open_options, open_extra).await?;
+                then(file).await
+            }
+            .in_current_ambient(),
+        );
+
+        // Poll once, so that real async work begins right away
+        let scheduled = match fut.as_mut().now_or_never() {
+            Some(file) => ScheduledFile::Ready(file),
+            None => ScheduledFile::Future(fut),
+        };
+        files_prefetched.insert(path.to_path_buf(), scheduled);
+    }
+
+    // TODO(uio): merge into `schedule_open`? might make it simpler to use
+    fn reschedule_open(
+        &self,
+        path: &Path,
+        open_arguments: Option<OpenOptions>,
+        open_extra: Option<Fs::OpenExtra>,
+    ) {
+        // Check if their file info is complete and didn't change.
+        if self
+            .previous_file_info(path)
+            .zip(self.file_info(path))
+            .is_some_and(|(previous, current)| previous.full_eq(current))
+        {
+            self.files_prefetched
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert(ScheduledFile::Unchanged);
+            return;
+        }
+
+        // Otherwise schedule normally
+        self.schedule_open(path, open_arguments, open_extra)
+    }
+
+    fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {
+        let files_prefetched = Arc::clone(&self.files_prefetched);
+
+        let futs = files_prefetched
+            .lock()
+            .extract_if(|_path, scheduled| matches!(scheduled, ScheduledFile::Future(_)))
+            .filter_map(|(path, scheduled)| match scheduled {
+                ScheduledFile::Future(fut) => Some(async move { (path, fut.await) }),
+                ScheduledFile::Ready(_) | ScheduledFile::Unchanged => None,
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        async move {
+            let results = futs.collect::<Vec<_>>().await;
+            let mut lock = files_prefetched.lock();
+            for (path, result) in results {
+                lock.insert(path, ScheduledFile::Ready(result));
+            }
+        }
+    }
+
+    fn prefetch_error(&self) -> UioResult<()> {
+        let files_prefetched = self.files_prefetched.lock();
+        let failed = files_prefetched
+            .iter()
+            .find_map(|(path, scheduled)| match scheduled {
+                ScheduledFile::Ready(Err(err)) if self.file_info(path).is_some() => Some(err),
+                ScheduledFile::Ready(_) | ScheduledFile::Future(_) | ScheduledFile::Unchanged => {
+                    None
+                }
+            });
+        match failed {
+            Some(err) => Err(err.duplicate()),
+            None => Ok(()),
+        }
+    }
+
+    fn discard_prefetched(&self) {
+        self.files_prefetched.lock().clear();
+    }
+
+    fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
+        self.files_info.as_ref()?.get(path).cloned()
+    }
+
+    fn is_file_unchanged(&self, path: &Path) -> bool {
+        self.previous_file_info(path)
+            .zip(self.file_info(path))
+            .is_some_and(|(previous, current)| previous.full_eq(current))
+    }
+}
+
+/// Construction context for [`CachedReadFs`]: the inner filesystem's own
+/// construction context plus the prefix path under which the file listing
+/// snapshot is taken. Always constructed explicitly.
+pub struct CachedReadFsContext<C> {
+    pub inner: C,
+    pub prefix_path: PathBuf,
+}
+
+impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
+    /// The *wrapped* backend's file type: opening through the cache hands
+    /// out the very handles the inner filesystem produced (prefetched or
+    /// fallback-opened), so the wrapper never appears in stored types.
+    type File = Fs::File;
+    type OpenExtra = Fs::OpenExtra;
+    type ContextConfig = CachedReadFsContext<Fs::ContextConfig>;
+
+    fn from_context(context: Self::ContextConfig) -> UioResult<Self> {
+        let CachedReadFsContext { inner, prefix_path } = context;
+        Self::new(Fs::from_context(inner)?, &prefix_path)
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        match &self.files_info {
+            Some(_) => Ok(self.cached_list_files(prefix_path)),
+            None => self.fs.list_files(prefix_path),
+        }
+    }
+
+    fn exists(&self, path: &Path) -> UioResult<bool> {
+        match &self.files_info {
+            Some(files_info) => Ok(files_info.contains_key(path)),
+            None => self.fs.exists(path),
+        }
+    }
+
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Fs::File> {
+        let path = path.as_ref();
+
+        // Writable opens bypass the cache machinery entirely: prefetched
+        // handles are read-only, the snapshot's size may lag appends (a
+        // writer must observe the true length), and the snapshot cannot know
+        // files this writer created after the LIST.
+        if options.writeable {
+            return self.fs.open(path, options, extra);
+        }
+
+        if let Some(file) = self.files_prefetched.lock().remove(path) {
+            return match file {
+                ScheduledFile::Future(future) => futures::executor::block_on(future),
+                ScheduledFile::Ready(result) => result,
+                ScheduledFile::Unchanged => Err(UniversalIoError::UnchangedOpen {
+                    path: path.to_owned(),
+                    since: self.file_info(path).and_then(|info| info.last_modified),
+                }),
+            };
+        }
+
+        // With a snapshot, unlisted paths fail locally — probing for
+        // optional files never reaches the inner filesystem.
+        if let Some(files_info) = &self.files_info
+            && !files_info.contains_key(path)
+        {
+            return Err(UniversalIoError::NotFound {
+                path: path.to_path_buf(),
+            });
+        }
+
+        // The path was never scheduled for prefetch. If a snapshot was taken it
+        // still carries the file's size, so thread it into the open as a known
+        // length — this lets the backend skip a remote `len`/HEAD round-trip
+        // (e.g. `DiskCacheFs` opens straight into `State::Ready`). Without a
+        // snapshot this is a plain cache-bypass open.
+        let extra = match self.file_info(path) {
+            Some(info) => extra.with_known_len(info.size),
+            None => extra,
+        };
+        self.fs.open(path, options, extra)
+    }
+}
+
+impl<Fs: UniversalReadFs> Debug for CachedFs<Fs> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            fs,
+            prefix_path,
+            files_info,
+            previous_files_info,
+            files_prefetched,
+        } = self;
+        f.debug_struct("CachedReadFs")
+            .field("fs", fs)
+            .field("prefix_path", prefix_path)
+            .field("files_info", files_info)
+            .field("previous_files_info", previous_files_info)
+            .field("files_prefetched", &*files_prefetched.lock())
+            .finish()
+    }
+}
+
+impl<Fs> UniversalWriteFs for CachedFs<Fs>
+where
+    Fs: UniversalWriteFs,
+{
+    type AppendFile = Fs::AppendFile;
+
+    fn create(&self, path: &Path, expected_length: usize) -> UioResult<()> {
+        self.fs.create(path, expected_length)
+    }
+
+    fn create_dir(&self, path: &Path) -> UioResult<()> {
+        self.fs.create_dir(path)
+    }
+
+    fn remove(&self, path: &Path) -> UioResult<()> {
+        // Drop any prefetched handle so a pooled open cannot resurrect the
+        // removed file.
+        self.files_prefetched.lock().remove(path);
+        self.fs.remove(path)
+    }
+
+    fn remove_dir(&self, path: &Path) -> UioResult<()> {
+        self.files_prefetched
+            .lock()
+            .retain(|pooled, _| !pooled.starts_with(path));
+        self.fs.remove_dir(path)
+    }
+
+    fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        self.fs.atomic_save(path, bytes)
+    }
+
+    fn open_append(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+    ) -> UioResult<Self::AppendFile> {
+        self.fs.open_append(path, options)
+    }
+}

@@ -74,14 +74,13 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
-        // ToDo: remove this whole thing once we drop rocksdb support
-
         let default_storage_type = PayloadStorageType::Mmap;
 
         SegmentConfig {
             vector_data,
             sparse_vector_data: Default::default(),
             payload_storage_type: payload_storage_type.unwrap_or(default_storage_type),
+            id_tracker_memory: None,
         }
     }
 }
@@ -166,6 +165,7 @@ mod tests {
                         size: 10,
                         distance: Distance::Dot,
                         hnsw_config: Some(HnswConfig {
+                            memory: None,
                             m: 20,
                             ef_construct: 100,
                             full_scan_threshold: 10000,
@@ -186,6 +186,7 @@ mod tests {
                         hnsw_config: None,
                         quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {
+                                memory: None,
                                 r#type: Default::default(),
                                 quantile: Some(0.99),
                                 always_ram: Some(true),
@@ -198,6 +199,7 @@ mod tests {
             .into_iter()
             .collect(),
             index: Indexes::Hnsw(HnswConfig {
+                memory: None,
                 m: 25,
                 ef_construct: 120,
                 full_scan_threshold: 10000,
@@ -262,6 +264,7 @@ mod tests {
                         hnsw_config: None,
                         quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                             scalar: ScalarQuantizationConfig {
+                                memory: None,
                                 r#type: Default::default(),
                                 quantile: Some(0.99),
                                 always_ram: Some(true),
@@ -274,6 +277,7 @@ mod tests {
             .into_iter()
             .collect(),
             index: Indexes::Hnsw(HnswConfig {
+                memory: None,
                 m: 25,
                 ef_construct: 120,
                 full_scan_threshold: 10000,
@@ -286,6 +290,7 @@ mod tests {
             payload_storage_type: None,
             quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
+                    memory: None,
                     r#type: Default::default(),
                     quantile: Some(0.95),
                     always_ram: Some(true),

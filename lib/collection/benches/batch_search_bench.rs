@@ -11,12 +11,12 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
-use rand::rng;
+use rand::rngs::SmallRng;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
@@ -26,11 +26,8 @@ use tempfile::Builder;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 fn create_rnd_batch() -> CollectionUpdateOperations {
-    let mut rng = rng();
+    let mut rng = rand::make_rng::<SmallRng>();
     let num_points = 2000;
     let dim = 100;
     let mut points = Vec::with_capacity(num_points);
@@ -90,6 +87,7 @@ fn batch_search_bench(c: &mut Criterion) {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();
@@ -119,12 +117,11 @@ fn batch_search_bench(c: &mut Criterion) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(
-            rnd_batch.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        ))
+        .block_on(
+            shard
+                .update(rnd_batch.into(), WaitUntil::Visible, None)
+                .measured(AmbientContext::new()),
+        )
         .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
@@ -153,7 +150,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = rng();
+                    let mut rng = rand::make_rng::<SmallRng>();
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
                         let search_query = SearchRequestInternal {
@@ -166,7 +163,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             with_vector: None,
                             score_threshold: None,
                         };
-                        let hw_acc = HwMeasurementAcc::new();
+                        let ctx = AmbientContext::new();
                         let result = shard
                             .core_search(
                                 Arc::new(CoreSearchRequestBatch {
@@ -174,8 +171,8 @@ fn batch_search_bench(c: &mut Criterion) {
                                 }),
                                 &search_runtime_handle,
                                 None,
-                                hw_acc,
                             )
+                            .measured(ctx)
                             .await
                             .unwrap();
                         assert!(!result.is_empty());
@@ -187,7 +184,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-batch-{fid}"), |b| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let mut rng = rng();
+                    let mut rng = rand::make_rng::<SmallRng>();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
@@ -204,10 +201,11 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query.into());
                     }
 
-                    let hw_acc = HwMeasurementAcc::new();
+                    let ctx = AmbientContext::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), &search_runtime_handle, None, hw_acc)
+                        .core_search(Arc::new(search_query), &search_runtime_handle, None)
+                        .measured(ctx)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

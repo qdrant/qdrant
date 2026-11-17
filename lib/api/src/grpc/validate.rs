@@ -1,11 +1,16 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 use common::validation::{validate_range_generic, validate_shard_different_peers};
-use segment::data_types::index::validate_integer_index_params;
+use segment::data_types::index::{validate_integer_index_params, validate_text_index_params};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
+use crate::rest::schema::validate_non_empty_dense;
 
 const TIMESTAMP_MIN_SECONDS: i64 = -62_135_596_800; // 0001-01-01T00:00:00Z
 const TIMESTAMP_MAX_SECONDS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
@@ -225,6 +230,27 @@ impl Validate for grpc::condition::ConditionOneOf {
             ConditionOneOf::HasId(_) => Ok(()),
             ConditionOneOf::IsNull(_) => Ok(()),
             ConditionOneOf::HasVector(_) => Ok(()),
+            ConditionOneOf::Slice(slice_condition) => slice_condition.validate(),
+        }
+    }
+}
+
+impl Validate for grpc::SliceCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::SliceCondition { total, index } = self;
+        let mut errors = ValidationErrors::new();
+        if *total == 0 {
+            errors.add("total", ValidationError::new("must be greater than 0"));
+        } else if index >= total {
+            errors.add(
+                "index",
+                ValidationError::new("must be less than the total number of slices"),
+            );
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
         }
     }
 }
@@ -252,47 +278,53 @@ impl Validate for grpc::update_operation::Update {
 
 impl Validate for grpc::FieldCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        let grpc::FieldCondition {
-            key: _,
-            r#match,
-            range,
-            datetime_range,
-            geo_bounding_box,
-            geo_radius,
-            geo_polygon,
-            values_count,
-            is_empty,
-            is_null,
-        } = self;
+        let all_fields_none = matches!(
+            self,
+            grpc::FieldCondition {
+                key: _,
+                r#match: None,
+                range: None,
+                datetime_range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                is_empty: None,
+                is_null: None,
+            },
+        );
 
-        let all_fields_none = r#match.is_none()
-            && range.is_none()
-            && datetime_range.is_none()
-            && geo_bounding_box.is_none()
-            && geo_radius.is_none()
-            && geo_polygon.is_none()
-            && values_count.is_none()
-            && is_empty.is_none()
-            && is_null.is_none();
+        let mut errors = ValidationErrors::new();
 
         if all_fields_none {
-            let mut errors = ValidationErrors::new();
             errors.add(
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            return Err(errors);
         }
 
-        // Recurse into the geo polygon's own validator. Otherwise FieldCondition
-        // only checks that some field is set, so a malformed polygon (empty,
-        // fewer than 4 points, or an unclosed exterior/interior) is accepted here
-        // and later panics when the geo index processes it.
-        if let Some(geo_polygon) = geo_polygon {
-            geo_polygon.validate()?;
-        }
+        let grpc::FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            datetime_range: _,
+            geo_bounding_box,
+            geo_radius,
+            geo_polygon,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = self;
 
-        Ok(())
+        errors.merge_self("geo_bounding_box", geo_bounding_box.validate());
+        errors.merge_self("geo_radius", geo_radius.validate());
+        errors.merge_self("geo_polygon", geo_polygon.validate());
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
@@ -333,7 +365,7 @@ impl Validate for grpc::Vector {
 impl Validate for grpc::vector::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            grpc::vector::Vector::Dense(_dense) => Ok(()),
+            grpc::vector::Vector::Dense(dense) => validate_non_empty_dense(&dense.data),
             grpc::vector::Vector::Sparse(sparse) => sparse.validate(),
             grpc::vector::Vector::MultiDense(multi) => multi.validate(),
             grpc::vector::Vector::Document(_document) => Ok(()),
@@ -390,6 +422,7 @@ impl Validate for super::qdrant::query::Variant {
             grpc::query::Variant::Formula(q) => q.validate(),
             grpc::query::Variant::Rrf(q) => q.validate(),
             grpc::query::Variant::RelevanceFeedback(q) => q.validate(),
+            grpc::query::Variant::Text(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),
@@ -424,6 +457,8 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::DatetimeKey(_) => Ok(()),
             grpc::expression::Variant::Mult(mult_expression) => mult_expression.validate(),
             grpc::expression::Variant::Sum(sum_expression) => sum_expression.validate(),
+            grpc::expression::Variant::Max(max_expression) => max_expression.validate(),
+            grpc::expression::Variant::Min(min_expression) => min_expression.validate(),
             grpc::expression::Variant::Div(div_expression) => div_expression.validate(),
             grpc::expression::Variant::Neg(expression) => expression.validate(),
             grpc::expression::Variant::Abs(expression) => expression.validate(),
@@ -432,6 +467,7 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::Exp(expression) => expression.validate(),
             grpc::expression::Variant::Log10(expression) => expression.validate(),
             grpc::expression::Variant::Ln(expression) => expression.validate(),
+            grpc::expression::Variant::Acosh(expression) => expression.validate(),
             grpc::expression::Variant::ExpDecay(decay_params_expression) => {
                 decay_params_expression.validate()
             }
@@ -441,6 +477,14 @@ impl Validate for super::qdrant::expression::Variant {
             grpc::expression::Variant::LinDecay(decay_params_expression) => {
                 decay_params_expression.validate()
             }
+        }
+    }
+}
+
+impl Validate for grpc::text_query::Scoring {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::text_query::Scoring::Bm25(params) => params.validate(),
         }
     }
 }
@@ -492,11 +536,17 @@ pub fn validate_geo_polygon_interiors(
     Ok(())
 }
 
-/// Reject the `Turbo4` datatype on sparse vector configs.
+/// Reject the TurboQuant datatypes on sparse vector configs.
 /// `validator` unwraps `Option<i32>` before calling, so we receive `&i32`.
 pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
     if *datatype == grpc::Datatype::Turbo4 as i32 {
         return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    if *datatype == grpc::Datatype::Turbo8 as i32 {
+        return Err(common::validation::sparse_turbo8_unsupported_error());
+    }
+    if *datatype == grpc::Datatype::Turbo16 as i32 {
+        return Err(common::validation::sparse_turbo16_unsupported_error());
     }
     Ok(())
 }
@@ -522,7 +572,9 @@ impl Validate for super::qdrant::payload_index_params::IndexParams {
             }
             grpc::payload_index_params::IndexParams::FloatIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::GeoIndexParams(_) => Ok(()),
-            grpc::payload_index_params::IndexParams::TextIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::TextIndexParams(text_index_params) => {
+                text_index_params.validate()
+            }
             grpc::payload_index_params::IndexParams::BoolIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::DatetimeIndexParams(_) => Ok(()),
             grpc::payload_index_params::IndexParams::UuidIndexParams(_) => Ok(()),
@@ -538,8 +590,31 @@ impl Validate for super::qdrant::IntegerIndexParams {
             is_principal: _,
             on_disk: _,
             enable_hnsw: _,
+            memory: _,
+            nested: _,
         } = &self;
         validate_integer_index_params(lookup, range)
+    }
+}
+
+impl Validate for super::qdrant::TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let super::qdrant::TextIndexParams {
+            tokenizer: _,
+            lowercase: _,
+            min_token_len,
+            max_token_len,
+            on_disk: _,
+            stopwords: _,
+            phrase_matching: _,
+            stemmer: _,
+            ascii_folding: _,
+            enable_hnsw: _,
+            memory: _,
+            scoring: _,
+            nested: _,
+        } = &self;
+        validate_text_index_params(min_token_len, max_token_len)
     }
 }
 
@@ -552,15 +627,110 @@ impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
     }
 }
 
+impl Validate for grpc::GeoPoint {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::GeoPoint { lon, lat } = self;
+        segment::types::GeoPoint::validate(*lon, *lat).map_err(|err| {
+            let error = ValidationError::new("geo_point").with_message(Cow::Owned(err.to_string()));
+            let mut errors = ValidationErrors::new();
+            errors.add("geo", error);
+            errors
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
 
     use crate::grpc::qdrant::{
-        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest,
-        DenseVectorCreationConfig, GeoLineString, GeoPoint, GeoPolygon, SearchPoints,
-        UpdateCollection, create_vector_name_request,
+        CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
+        DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
+        GeoPolygon, GeoRadius, PayloadIndexParams, SearchPoints, TextIndexParams, UpdateCollection,
+        create_vector_name_request, payload_index_params, vector,
     };
+
+    #[test]
+    fn test_dense_vector_rejects_empty_data() {
+        // A non-empty dense vector passes, consistent with sparse/multi-dense.
+        let valid = vector::Vector::Dense(DenseVector {
+            data: vec![1.0, 2.0, 3.0],
+        });
+        assert!(valid.validate().is_ok());
+
+        // An empty dense vector must be rejected the same way empty sparse and
+        // multi-dense vectors already are; otherwise it reaches storage code
+        // that assumes non-zero length (see qdrant/qdrant#9045, #7967).
+        let empty = vector::Vector::Dense(DenseVector { data: vec![] });
+        assert!(empty.validate().is_err());
+    }
+
+    #[test]
+    fn test_geo_field_condition_rejects_out_of_range_coordinates() {
+        // Valid coordinates pass.
+        let valid = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 52.5,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        // Latitude out of range (> 90) is rejected instead of panicking in the
+        // geo index during geohash encoding.
+        let bad_radius = FieldCondition {
+            geo_radius: Some(GeoRadius {
+                center: Some(GeoPoint {
+                    lat: 200.0,
+                    lon: 13.4,
+                }),
+                radius: 1000.0,
+            }),
+            ..Default::default()
+        };
+        assert!(bad_radius.validate().is_err());
+
+        // Longitude out of range (< -180) in a bounding-box corner is rejected.
+        let bad_box = FieldCondition {
+            geo_bounding_box: Some(GeoBoundingBox {
+                top_left: Some(GeoPoint {
+                    lat: 50.0,
+                    lon: -190.0,
+                }),
+                bottom_right: Some(GeoPoint {
+                    lat: 40.0,
+                    lon: 13.4,
+                }),
+            }),
+            ..Default::default()
+        };
+        assert!(bad_box.validate().is_err());
+
+        // A well-formed polygon (>= 4 points, closed ring) whose coordinates are
+        // out of range is rejected; shape validation alone would accept it.
+        let bad_polygon = FieldCondition {
+            geo_polygon: Some(GeoPolygon {
+                exterior: Some(GeoLineString {
+                    points: vec![
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                        GeoPoint {
+                            lat: 100.0,
+                            lon: 0.0,
+                        },
+                        GeoPoint { lat: 1.0, lon: 1.0 },
+                        GeoPoint { lat: 0.0, lon: 0.0 },
+                    ],
+                }),
+                interiors: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(bad_polygon.validate().is_err());
+    }
 
     #[test]
     fn test_good_request() {
@@ -574,15 +744,26 @@ mod tests {
             "good collection request should not error on validation"
         );
 
-        // Collection name validation must not be strict on non-creation
+        // Collection name validation must not be strict on non-creation. On Windows a
+        // backslash is a path separator, so there the same name is a path — it is rejected,
+        // Collection name validation must not be strict on non-creation.
+        // Backslash is a path separator on Windows and rejected in collection names there,
+        // so that `no\path` can't be interpreted as a path (see `check_plain_dir_name`).
         let bad_request = UpdateCollection {
             collection_name: "no\\path".into(),
             ..Default::default()
         };
-        assert!(
-            bad_request.validate().is_ok(),
-            "good collection request should not error on validation"
-        );
+        if cfg!(windows) {
+            assert!(
+                bad_request.validate().is_err(),
+                "backslash collection name is a path on Windows and must error on validation"
+            );
+        } else {
+            assert!(
+                bad_request.validate().is_ok(),
+                "good collection request should not error on validation"
+            );
+        }
 
         // Collection name validation must not be strict on non-creation
         let bad_request = UpdateCollection {
@@ -636,6 +817,30 @@ mod tests {
             bad_request.validate().is_err(),
             "bad collection request should error on validation"
         );
+    }
+
+    #[test]
+    fn test_text_index_rejects_min_token_len_above_max() {
+        let request = |min_token_len, max_token_len| CreateFieldIndexCollection {
+            collection_name: "test".into(),
+            field_name: "description".into(),
+            field_index_params: Some(PayloadIndexParams {
+                index_params: Some(payload_index_params::IndexParams::TextIndexParams(
+                    TextIndexParams {
+                        min_token_len,
+                        max_token_len,
+                        ..Default::default()
+                    },
+                )),
+            }),
+            ..Default::default()
+        };
+
+        assert!(request(Some(10), Some(5)).validate().is_err());
+        assert!(request(Some(5), Some(5)).validate().is_ok());
+        assert!(request(Some(2), Some(20)).validate().is_ok());
+        assert!(request(None, Some(5)).validate().is_ok());
+        assert!(request(Some(10), None).validate().is_ok());
     }
 
     #[test]

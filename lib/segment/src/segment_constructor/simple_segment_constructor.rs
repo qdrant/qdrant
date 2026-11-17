@@ -41,10 +41,12 @@ pub fn build_simple_segment(
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
 pub fn build_simple_segment_with_payload_storage(
@@ -70,13 +72,17 @@ pub fn build_simple_segment_with_payload_storage(
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type,
+            id_tracker_memory: None,
         },
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
-pub fn build_multivec_segment(
+/// Builds a new segment with plain index and two named dense vectors:
+/// [`VECTOR1_NAME`] with `dim1` and [`VECTOR2_NAME`] with `dim2`.
+pub fn build_segment_with_two_named_vecs(
     path: &Path,
     dim1: usize,
     dim2: usize,
@@ -114,21 +120,23 @@ pub fn build_multivec_segment(
             vector_data: vectors_config,
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            id_tracker_memory: None,
         },
         None,
         true,
     )
+    .map(|(segment, _token)| segment)
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use tempfile::Builder;
 
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::only_default_vector;
-    use crate::entry::entry_point::{ReadSegmentEntry as _, SegmentEntry as _};
+    use crate::entry::entry_point::{SegmentEntry as _, StorageSegmentEntry as _};
     use crate::payload_json;
 
     #[test]
@@ -151,28 +159,28 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
-        match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec), &hw_counter) {
+        match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec)) {
             Err(OperationError::WrongVectorDimension { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
         segment
-            .upsert_point(2, 1.into(), only_default_vector(&vec1), &hw_counter)
+            .upsert_point(2, 1.into(), only_default_vector(&vec1))
             .unwrap();
         segment
-            .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter)
+            .upsert_point(2, 2.into(), only_default_vector(&vec2))
             .unwrap();
         segment
-            .upsert_point(2, 3.into(), only_default_vector(&vec3), &hw_counter)
+            .upsert_point(2, 3.into(), only_default_vector(&vec3))
             .unwrap();
         segment
-            .upsert_point(2, 4.into(), only_default_vector(&vec4), &hw_counter)
+            .upsert_point(2, 4.into(), only_default_vector(&vec4))
             .unwrap();
         segment
-            .upsert_point(2, 5.into(), only_default_vector(&vec5), &hw_counter)
+            .upsert_point(2, 5.into(), only_default_vector(&vec5))
             .unwrap();
 
         segment
@@ -181,7 +189,6 @@ mod tests {
                 1.into(),
                 &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
                 &None,
-                &hw_counter,
             )
             .unwrap();
 
@@ -191,7 +198,6 @@ mod tests {
                 2.into(),
                 &payload_json! {"color": vec!["red".to_owned(), "blue".to_owned()]},
                 &None,
-                &hw_counter,
             )
             .unwrap();
 
@@ -201,7 +207,6 @@ mod tests {
                 3.into(),
                 &payload_json! {"color": vec!["red".to_owned(), "yellow".to_owned()]},
                 &None,
-                &hw_counter,
             )
             .unwrap();
 
@@ -211,31 +216,30 @@ mod tests {
                 4.into(),
                 &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
                 &None,
-                &hw_counter,
             )
             .unwrap();
 
         // Replace vectors
         segment
-            .upsert_point(4, 1.into(), only_default_vector(&vec1), &hw_counter)
+            .upsert_point(4, 1.into(), only_default_vector(&vec1))
             .unwrap();
         segment
-            .upsert_point(5, 2.into(), only_default_vector(&vec2), &hw_counter)
+            .upsert_point(5, 2.into(), only_default_vector(&vec2))
             .unwrap();
         segment
-            .upsert_point(6, 3.into(), only_default_vector(&vec3), &hw_counter)
+            .upsert_point(6, 3.into(), only_default_vector(&vec3))
             .unwrap();
         segment
-            .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter)
+            .upsert_point(7, 4.into(), only_default_vector(&vec4))
             .unwrap();
         segment
-            .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter)
+            .upsert_point(8, 5.into(), only_default_vector(&vec5))
             .unwrap();
 
         assert_eq!(segment.version(), 8);
 
         let declined = segment
-            .upsert_point(3, 5.into(), only_default_vector(&vec5), &hw_counter)
+            .upsert_point(3, 5.into(), only_default_vector(&vec5))
             .unwrap();
 
         // Should not be processed due to operation number

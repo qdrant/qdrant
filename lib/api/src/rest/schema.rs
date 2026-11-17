@@ -330,7 +330,9 @@ const fn default_avg_len() -> NotNan<f64> {
 pub struct TextPreprocessingConfig {
     /// Defines which language to use for text preprocessing.
     /// This parameter is used to construct default stopwords filter and stemmer.
-    /// To disable language-specific processing, set this to `"language": "none"`.
+    /// To disable language-specific processing, set `stemmer` to `{"type": "none"}`
+    /// and configure an empty stopword set. The legacy `"language": "none"` hack is
+    /// deprecated and may be rejected in a future release.
     /// If not specified, English is assumed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
@@ -727,6 +729,7 @@ pub struct QueryRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -819,6 +822,9 @@ pub enum Query {
 
     /// Use feedback from an oracle to improve the results
     RelevanceFeedback(RelevanceFeedbackQuery),
+
+    /// Rank by BM25 over the text index of the payload field named by `using`.
+    Text(TextQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -860,6 +866,80 @@ pub struct ContextQuery {
 pub struct OrderByQuery {
     #[validate(nested)]
     pub order_by: OrderByInterface,
+}
+
+/// Rank by BM25 over the text index of the payload field named by `using`, which must have
+/// `scoring` set. A point scores when it holds any of the query's terms: required or excluded
+/// terms belong in the request's `filter`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TextQuery {
+    #[validate(nested)]
+    pub text: TextInterface,
+}
+
+/// The text to search for, or the text with scorer parameters.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected a string, or an object with a query and optional scorer parameters")]
+pub enum TextInterface {
+    Query(String),
+    Struct(TextQueryInput),
+}
+
+impl Validate for TextInterface {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            TextInterface::Query(_) => Ok(()),
+            TextInterface::Struct(input) => input.validate(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct TextQueryInput {
+    /// Text to search for, tokenized by the field's text index.
+    pub query: String,
+    /// Parameters of the scorer, keyed by its name. They must match the `scoring` type of the
+    /// field's text index. If absent, the scorer runs with its defaults.
+    #[validate(nested)]
+    pub scoring: Option<TextQueryScoring>,
+}
+
+/// Parameters of one scorer, keyed by its name.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected parameters of one scorer, keyed by its name, such as bm25")]
+pub enum TextQueryScoring {
+    Bm25(Bm25Scoring),
+}
+
+impl Validate for TextQueryScoring {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            TextQueryScoring::Bm25(scoring) => scoring.validate(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Bm25Scoring {
+    /// BM25 parameters, for a field scored with BM25.
+    #[validate(nested)]
+    pub bm25: Bm25Params,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Bm25Params {
+    /// Term frequency saturation. Default is 1.2.
+    #[validate(range(min = 0.0))]
+    pub k: Option<f32>,
+    /// Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub b: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -933,6 +1013,7 @@ pub struct Prefetch {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -1085,6 +1166,8 @@ pub enum Expression {
     DatetimeKey(DatetimeKeyExpression),
     Mult(MultExpression),
     Sum(SumExpression),
+    Max(MaxExpression),
+    Min(MinExpression),
     Neg(NegExpression),
     Abs(AbsExpression),
     Div(DivExpression),
@@ -1093,6 +1176,7 @@ pub enum Expression {
     Exp(ExpExpression),
     Log10(Log10Expression),
     Ln(LnExpression),
+    Acosh(AcoshExpression),
     LinDecay(LinDecayExpression),
     ExpDecay(ExpDecayExpression),
     GaussDecay(GaussDecayExpression),
@@ -1107,7 +1191,7 @@ pub struct GeoDistance {
 pub struct GeoDistanceParams {
     /// The origin geo point to measure from
     pub origin: GeoPoint,
-    /// Payload field with the destination geo point
+    /// Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used
     pub to: JsonPath,
 }
 
@@ -1131,6 +1215,20 @@ pub struct MultExpression {
 pub struct SumExpression {
     #[validate(nested)]
     pub sum: Vec<Expression>,
+}
+
+/// Largest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MaxExpression {
+    #[validate(nested)]
+    pub max: Vec<Expression>,
+}
+
+/// Smallest of the given expressions. Requires at least one operand.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct MinExpression {
+    #[validate(nested)]
+    pub min: Vec<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -1195,6 +1293,12 @@ pub struct Log10Expression {
 pub struct LnExpression {
     #[validate(nested)]
     pub ln: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct AcoshExpression {
+    #[validate(nested)]
+    pub acosh: Box<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -1400,6 +1504,7 @@ pub struct QueryGroupsRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
+    /// For a `text` query, the payload field whose text index to search.
     pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.

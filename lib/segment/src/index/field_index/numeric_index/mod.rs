@@ -14,13 +14,14 @@ mod value_indexer;
 
 use std::marker::PhantomData;
 
+use blobstore::Blob;
 pub use builders::{NumericIndexBuilder, NumericIndexGridstoreBuilder, NumericIndexMmapBuilder};
 pub use encodable::Encodable;
-use gridstore::Blob;
 pub use numeric_field_index::{
     NumericFieldIndex, NumericFieldIndexRead, NumericFieldIndexView, ReadOnlyNumericFieldIndex,
 };
 pub use numeric_index_read::NumericIndexRead;
+pub use query::{NumericIndexValue, RangeConditionChecker};
 pub use read_only::{NumericValueToJson, ReadOnlyNumericIndex};
 pub use read_ops::StreamRange;
 pub use storage::NumericIndexInner;

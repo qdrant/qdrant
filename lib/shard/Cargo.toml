@@ -13,11 +13,13 @@ workspace = true
 
 [features]
 default = ["api"]
-testing = []
+api = ["dep:api", "dep:tonic"]
+testing = ["common/testing"]
 staging = []
 
 [dependencies]
 api = { path = "../api", optional = true }
+blobstore = { path = "../blobstore" }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
@@ -25,25 +27,24 @@ wal = { path = "../wal" }
 
 ahash = { workspace = true }
 chrono = { workspace = true }
+fnv = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-rmp-serde = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 smallvec = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, optional = true }
 uuid = { workspace = true }
 validator = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
-fs4 = { workspace = true }
 tempfile = { workspace = true }
 
 
@@ -53,6 +54,7 @@ shard = { path = ".", default-features = false, features = ["testing"] }
 
 criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
+prost = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
@@ -60,4 +62,8 @@ tar = { workspace = true }
 
 [[bench]]
 name = "find_duplicated_points"
+harness = false
+
+[[bench]]
+name = "raw_payload_transfer"
 harness = false

@@ -1,66 +1,67 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableFullTextIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::LiveReload;
 use crate::index::field_index::full_text_index::FullTextIndex;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, TokenSet,
-};
+use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
 
 impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
-    type Fs = S::Fs;
+    type File = S;
 
-    fn live_reload(
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        Ok(self.storage.live_preload(fs)?)
+    }
+
+    fn apply_deletions(
         &mut self,
-        fs: &S::Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.inner.inverted_index.remove(*deleted_point);
+        }
+
+        Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
+        self.apply_deletions(deleted_points)?;
 
-        let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
         let inner = &mut self.inner;
-
-        for &deleted_point in deleted_points {
-            inner.inverted_index.remove(deleted_point);
-        }
 
         self.storage
             .view()
             .read_values::<Sequential, _, OperationError>(
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_value: Option<Vec<u8>>| {
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    inner.inverted_index.remove(point_offset);
                     let Some(value) = maybe_value else {
-                        debug_assert!(false, "This should be unreachable");
-                        return Ok(());
+                        return Ok(true);
                     };
                     // The stored document is already tokenized, so we replay the
-                    // post-tokenization half of `MutableFullTextIndex::add_many`:
-                    // register the tokens, then index them (plus the ordered
-                    // document when phrase matching is enabled).
-                    let str_tokens = FullTextIndex::deserialize_document(&value)?;
-                    let tokens = inner.inverted_index.register_tokens(str_tokens);
-                    if phrase_matching {
-                        inner.inverted_index.index_document(
-                            point_offset,
-                            Document::new(tokens.clone()),
-                            hw_counter,
-                        )?;
-                    }
-                    inner.inverted_index.index_tokens(
-                        point_offset,
-                        TokenSet::from_iter(tokens),
-                        hw_counter,
-                    )?;
-                    Ok(())
+                    // post-tokenization half of `MutableFullTextIndex::add_many`.
+                    let doc = FullTextIndex::deserialize_document(&value)?;
+                    inner
+                        .inverted_index
+                        .index_str_tokens(point_offset, doc.tokens, doc.doc_len)?;
+                    Ok(true)
                 },
-                hw_counter.payload_index_io_read_counter(),
+                Some(HwMetric::PayloadIndexIoRead),
             )?;
 
         Ok(())

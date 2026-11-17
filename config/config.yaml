@@ -3,6 +3,7 @@ log_level: INFO
 # Logging configuration
 # Qdrant logs to stdout. You may configure to also write logs to a file on disk.
 # Be aware that this file may grow indefinitely.
+# Log timestamps are in UTC, set the `TZ` environment variable to use a different timezone.
 # logger:
 #   # Logging format, supports `text` and `json`
 #   format: text
@@ -22,18 +23,71 @@ storage:
   snapshots_path: ./snapshots
 
   snapshots_config:
-    # "local" or "s3" - where to store snapshots
+    # Where to store snapshots: "local", "s3", "gcs" or "azure"
     snapshots_storage: local
+
+    # Amazon S3 or any S3-compatible storage. Fields left unset are resolved
+    # from the AWS_* environment and the default credential chain.
     # s3_config:
     #   bucket: ""
+    #   # Optional key prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
     #   region: ""
     #   access_key: ""
     #   secret_key: ""
+    #   # Custom endpoint, for MinIO and similar
+    #   endpoint_url: ""
+    #   # Timeouts and retries, in seconds
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
+
+    # Google Cloud Storage. Without credential fields, Application Default
+    # Credentials are used: GOOGLE_* environment, gcloud config or the
+    # metadata server on GCE and GKE.
+    # gcs_config:
+    #   bucket: ""
+    #   # Optional object name prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
+    #   # Use at most one of the following
+    #   service_account_path: ""
+    #   service_account_key: ""
+    #   application_credentials_path: ""
+    #   # Custom endpoint, for fake-gcs-server and similar
+    #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
+
+    # Azure Blob Storage. Without credential fields, the default chain is
+    # used: AZURE_* environment, managed identity or the Azure CLI.
+    # azure_config:
+    #   account: ""
+    #   container: ""
+    #   # Optional blob name prefix, blobs become <prefix>/snapshots/...
+    #   prefix: ""
+    #   # Use one authentication method
+    #   access_key: ""
+    #   sas_token: ""
+    #   client_id: ""
+    #   client_secret: ""
+    #   tenant_id: ""
+    #   # Custom endpoint, for Azurite and similar
+    #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/
   temp_path: null
 
+  # Deprecated: use `payload.memory` instead.
   # If true - point payloads will not be stored in memory.
   # It will be read from the disk every time it is requested.
   # This setting saves RAM by (slightly) increasing the response time.
@@ -41,6 +95,12 @@ storage:
   #
   # Default: true
   on_disk_payload: true
+
+  # Default payload storage configuration for newly created collections.
+  # Overrides the deprecated `on_disk_payload` flag if both are set.
+  # payload:
+  #   # Memory placement of the payload storage: cold or cached.
+  #   memory: cold
 
   # Load-time memory mode. Only affects how segments are loaded on startup;
   # does not modify any persisted configuration. Intended as a recovery knob
@@ -66,6 +126,9 @@ storage:
 
     # Number of WAL segments to create ahead of actual data requirement
     wal_segments_ahead: 0
+
+    # Number of closed WAL segments to keep
+    wal_retain_closed: 1
 
   # Normal node - receives all updates and answers all queries
   node_type: "Normal"
@@ -107,6 +170,16 @@ storage:
     # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
     #async_scorer: false
 
+    # Whether components readable through either a memory mapping or io_uring should use
+    # io_uring. Only has an effect on Linux.
+    #
+    # - unset (default): the immutable vector storages follow `async_scorer`, nothing else
+    #   uses io_uring.
+    # - "disabled": no component uses io_uring.
+    # - "auto": use io_uring for components with a `cold` memory placement, where reads hit
+    #   the disk. Components meant to sit in RAM keep using mmap, which is faster there.
+    #io_uring: disabled
+
     # Maximum number of collections to load concurrently.
     #max_concurrent_collection_loads: 1
     # Maximum number of local shards to load concurrently when loading a collection.
@@ -131,7 +204,7 @@ storage:
     # If `default_segment_number = 0`, will be automatically selected by the number of available CPUs
     default_segment_number: 0
 
-    # Do not create segments larger this size (in KiloBytes).
+    # Do not create segments larger than this size (in KiloBytes).
     # Large segments might require disproportionately long indexation times,
     # therefore it makes sense to limit the size of segments.
     #
@@ -171,6 +244,9 @@ storage:
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    # Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    # may still be built when the effective payload M is positive (see payload_m).
+    # This setting alone does not guarantee exact search.
     m: 16
 
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
@@ -190,10 +266,17 @@ storage:
     # On small CPUs, less threads are used.
     max_indexing_threads: 0
 
+    # Deprecated: use `memory` instead.
     # Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
     on_disk: false
 
-    # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    # Memory placement of the HNSW index: cold, cached or pinned.
+    # Overrides the deprecated `on_disk` flag if both are set.
+    # memory: cached
+
+    # Number of additional payload-aware links per node. If unset, the value of m is used.
+    # An effective value of 0 disables these additional links. A positive value allows
+    # them for indexed payload fields with HNSW enabled, even when m is 0.
     payload_m: null
 
   # Default shard transfer method to use if none is defined.
@@ -212,9 +295,16 @@ storage:
 
     # Default parameters for vectors.
     vectors:
+      # Deprecated: use `memory` instead.
       # Whether vectors should be stored in memory or on disk.
       on_disk: null
 
+      # Memory placement of the vector storage: cold or cached.
+      # Overrides the deprecated `on_disk` flag if both are set.
+      # memory: null
+
+    # Number of shards per node for auto-sharded collections.
+    # If not specified, selected automatically.
     # shard_number_per_node: 1
 
     # Default quantization configuration.
@@ -238,6 +328,10 @@ storage:
       # Allow usage of unindexed fields in filtered updates (eg. delete by payload).
       #unindexed_filtering_update: null
 
+      # Require filter-based reads (eg. search, scroll) to have a top-level `must` match condition
+      # on a tenant key, if the collection has a payload index with `is_tenant: true`.
+      #require_tenant_filter: null
+
       # Max HNSW value allowed in search parameters.
       #search_max_hnsw_ef: null
 
@@ -251,11 +345,49 @@ storage:
   # If null - no limit.
   max_collections: null
 
+  # Cluster-wide resource quotas.
+  #
+  # Memory and disk are node-wide resources, so their limits are configured once for the whole
+  # cluster instead of per collection. Quotas reject updates that would consume more of a resource,
+  # regardless of whether strict mode is enabled for the collection being written to. The deprecated
+  # `max_resident_memory_percent` in a collection's strict mode config can tighten the memory limit
+  # for that collection, but never lift it.
+  #
+  # A limit that is reached has to be cleared by `release_margin_percent` before the node accepts
+  # writes again. Without that margin a resource resting on its limit would put the node in and out
+  # of service on the noise between two readings, restarting a shard recovery every time.
+  #
+  # These values only seed the quota manager on the first start. Afterwards the quota config is read
+  # from (and written to) `quota.json` in the storage directory, which is kept in sync across the
+  # cluster through consensus and can be changed with the `PUT /quotas` API.
+  #
+  # If this section is absent - no quota is enforced.
+  #quotas:
+    # Whether the limits below are enforced.
+    #enabled: false
+
+    # Reject memory-consuming updates once process resident memory reaches this percentage of total
+    # system memory (or of the cgroup limit, if one applies).
+    # If null - resident memory is not capped.
+    #max_resident_memory_percent: null
+
+    # Reject disk-consuming updates once the filesystem hosting the storage directory is filled to
+    # this percentage of its capacity.
+    # If null - disk usage is not capped.
+    #max_disk_usage_percent: null
+
+    # How many percentage points below its limit a resource has to fall before this node starts
+    # accepting work again. Raise it where usage is volatile; 0 releases as soon as usage is back
+    # under the limit.
+    # If null - the built-in default of 5 applies.
+    #release_margin_percent: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
-  # Number of parallel workers used for serving the api. If 0 - equal to the number of available cores.
+  # Number of parallel workers used for serving the api.
+  # If 0 - available cores minus one, with a minimum of 1.
   # If missing - Same as storage.max_search_threads
   max_workers: 0
 
@@ -265,9 +397,22 @@ service:
   # HTTP(S) port to bind the service on
   http_port: 6333
 
+  # Keep-alive timeout for incoming HTTP connections in seconds.
+  # Default: 5
+  # http_keep_alive_timeout_sec: 5
+
+  # Timeout for reading HTTP request data from clients in seconds.
+  # Default: 5
+  # http_client_request_timeout_sec: 5
+
+  # Timeout for client disconnect handling in seconds.
+  # Default: 5
+  # http_client_disconnect_timeout_sec: 5
+
   # gRPC port to bind the service on.
-  # If `null` - gRPC is disabled. Default: null
-  # Comment to disable gRPC:
+  # If `null` - gRPC is disabled. Default: 6334
+  # Commenting this key in an overlay does not disable gRPC; the base config
+  # still supplies 6334. Set `null` to disable.
   grpc_port: 6334
 
   # Enable CORS headers in REST API.
@@ -310,13 +455,18 @@ service:
   #
   # jwt_rbac: true
 
-  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
-  # The regular api_key is always forwarded on internal requests, but the
-  # receiving side only verifies it when this flag is enabled. Keep disabled
-  # during a rolling upgrade so older peers (that do not attach a key yet)
-  # can still reach newer peers, then turn it on once every node is upgraded.
+  # Enforce API key authentication on the internal (p2p) gRPC API.
+  # Only `api_key` and `alt_api_key` are accepted there; the read-only key
+  # and JWT tokens are rejected, since peers joining consensus and moving
+  # shards must hold the read-write key.
+  # Peers forward `api_key` (or `alt_api_key` if `api_key` is unset) on
+  # internal requests, so every node must accept the key the others send.
+  # To rotate it, first set the new key as `alt_api_key` on every node, then
+  # swap the two.
+  # Enabled by default, has no effect without an API key.
   #
-  # enforce_internal_auth: true
+  # Uncomment to disable.
+  # enforce_internal_auth: false
 
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.
@@ -343,6 +493,12 @@ cluster:
 
   # Configuration of the inter-cluster communication
   p2p:
+    # Host or IP address to bind the internal (p2p) gRPC listener to.
+    # Defaults to `service.host` when unset. Set this to an internal
+    # interface to keep the internal port off the interface that serves
+    # the public API.
+    #
+    # host: <internal IP of this node>
     # Port for internal communication between peers
     port: 6335
 
@@ -406,3 +562,10 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
+#   # Where to write audit log entries:
+#   #   file            - rolling log files in `dir`
+#   #   stdout / stderr - only the given stream, nothing is written to `dir`
+#   #   file_and_stdout / file_and_stderr - both
+#   # Each entry is a JSON line with `"kind": "audit"`, to tell it apart from regular logs.
+#   # Default: file
+#   output: file

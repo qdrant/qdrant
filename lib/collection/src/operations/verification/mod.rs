@@ -33,14 +33,26 @@ pub struct VerificationPass {
     _inner: (),
 }
 
+/// Points a request reads, for the `require_tenant_filter` check.
+pub enum ReadScope<'a> {
+    /// Reads the points matching this filter, or all points if `None`.
+    Filtered(Option<&'a Filter>),
+    /// Reads no points, reads points by explicit ids, or is scoped by an enclosing request
+    /// (e.g. a prefetch, which inherits the filter of its query).
+    NotApplicable,
+}
+
 /// Trait to verify strict mode for requests.
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
-    /// Whether executing this request can grow process memory usage (e.g. upsert, set payload).
+    /// Whether executing this request can grow process memory or disk usage
+    /// (e.g. upsert, set payload).
     ///
-    /// Used by the process-level resident memory check. Delete-style operations
-    /// should return `false` so they can still run when memory is high — blocking
-    /// them would deadlock the path that frees memory.
+    /// Gates both resource quota checks — resident memory and disk usage — so an
+    /// operation that writes new bytes must return `true` even if it does not grow
+    /// RSS. Delete-style operations should return `false` so they can still run
+    /// when a resource is exhausted; blocking them would deadlock the path that
+    /// frees it.
     fn consumes_memory(&self) -> bool {
         false
     }
@@ -67,6 +79,10 @@ pub trait StrictModeVerification {
     /// if the filter is used for filtered-UPDATES like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
     fn indexed_filter_write(&self) -> Option<&Filter>;
+
+    /// Points this request reads. Filtered reads must be scoped to tenants if
+    /// `require_tenant_filter` is set.
+    fn read_scope(&self) -> ReadScope<'_>;
 
     fn request_exact(&self) -> Option<bool>;
 
@@ -120,6 +136,11 @@ pub trait StrictModeVerification {
                 return Ok(());
             };
 
+            // Before the index check: a filter rejected on its own terms should
+            // not be answered with "create an index for this key", since the
+            // index would not make it acceptable.
+            check_filter_limits(filter, strict_mode_config)?;
+
             // Check for filter indices
             if allow_unindexed_filter == Some(false)
                 && let Some((key, schemas)) = collection.one_unindexed_key(filter)
@@ -140,8 +161,6 @@ pub trait StrictModeVerification {
                 ));
             }
 
-            check_filter_limits(filter, strict_mode_config)?;
-
             Ok(())
         };
 
@@ -157,6 +176,36 @@ pub trait StrictModeVerification {
         Ok(())
     }
 
+    /// Checks that a filtered read is restricted to tenants, if the collection has tenant indexes.
+    fn check_tenant_filter(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        if strict_mode_config.require_tenant_filter != Some(true) {
+            return Ok(());
+        }
+
+        let filter = match self.read_scope() {
+            ReadScope::Filtered(filter) => filter,
+            ReadScope::NotApplicable => return Ok(()),
+        };
+
+        let Some(tenant_keys) = collection.tenant_keys_if_unscoped(filter) else {
+            return Ok(());
+        };
+
+        let tenant_keys_str = tenant_keys
+            .iter()
+            .map(|key| format!("\"{key}\""))
+            .join(", ");
+
+        Err(CollectionError::strict_mode(
+            format!("Request is not restricted to tenants, tenant keys: [{tenant_keys_str}]"),
+            "Add a `match` condition on a tenant key to the top-level `must` of the filter.",
+        ))
+    }
+
     /// Does the verification of all configured parameters. Only implement this function if you know what
     /// you are doing. In most cases implementing `check_custom` is sufficient.
     #[allow(async_fn_in_trait)]
@@ -168,6 +217,7 @@ pub trait StrictModeVerification {
         self.check_custom(collection, strict_mode_config).await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
+        self.check_tenant_filter(collection, strict_mode_config)?;
         self.check_request_exact(strict_mode_config)?;
         self.check_search_params(collection, strict_mode_config)
             .await?;
@@ -179,6 +229,18 @@ fn check_filter_limits(
     filter: &Filter,
     strict_mode_config: &StrictModeConfig,
 ) -> CollectionResult<()> {
+    // Substring matching has no bounded access path: whichever index serves the
+    // field, the condition is answered by looking at every distinct value of
+    // it. Too expensive to allow under strict mode, indexed or not.
+    if let Some(key) = filter.one_substring_match_key() {
+        return Err(CollectionError::strict_mode(
+            format!(
+                "Substring matching is not allowed, used for \"{key}\": it scans every value of the field, with or without an index",
+            ),
+            "Use a prefix match or a full-text match instead.",
+        ));
+    }
+
     // Filter condition count limit
     if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
         let filter_conditions = filter.total_conditions_count();
@@ -228,94 +290,41 @@ pub fn check_search_batch_size(
     )
 }
 
-/// Reject a memory-consuming update if the process resident memory exceeds
-/// the configured percentage of total system memory.
+/// Reject a memory-consuming update when process resident memory has reached the
+/// collection's deprecated `max_resident_memory_percent`.
 ///
-/// `resident_reader` returns the current process resident memory in bytes,
-/// or `None` when the platform does not expose the stat. In production this
-/// is [`::common::memory_usage::resident_bytes`]; tests pass a closure.
+/// Superseded by the node-wide quota, which caps the same resource for every
+/// collection whether or not strict mode is on. This only tightens that cap for
+/// one collection, and is deliberately self-contained so that retiring the
+/// setting in 1.21 is a matter of deleting this function and its single caller.
 ///
-/// Returns `Ok(())` when no threshold is configured, when the reader returns
-/// `None`, or when current usage is below the threshold. Total memory is
-/// cached once — cgroup limits are read at first call, so container memory
-/// limits are respected if present at startup.
-pub fn check_resident_memory(
-    strict_mode_config: &StrictModeConfig,
-    resident_reader: impl FnOnce() -> Option<usize>,
-) -> CollectionResult<()> {
-    let Some(percent) = strict_mode_config.max_resident_memory_percent else {
+/// The measurement comes from the quota manager, the node's single reader of
+/// process memory, so the two checks share one reading rather than each taking
+/// their own.
+#[allow(deprecated)] // this *is* the deprecated setting's enforcement
+pub fn check_resident_memory(strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
+    let Some(limit) = strict_mode_config.max_resident_memory_percent else {
         return Ok(());
     };
 
-    let Some(resident) = resident_reader() else {
+    // Unreadable stats let the update through: a limit we cannot evaluate must
+    // not become a limit of zero.
+    let Some(used_percent) = shard::quota::global().resident_memory_percent(Some(limit)) else {
         return Ok(());
     };
 
-    let total = total_memory_bytes();
-    if total == 0 {
+    if used_percent < limit {
         return Ok(());
     }
 
-    let threshold = total.saturating_mul(u64::from(percent)) / 100;
-    if (resident as u64) >= threshold {
-        let used_percent = (resident as u64).saturating_mul(100) / total;
-        return Err(CollectionError::strict_mode(
-            format!(
-                "Resident memory usage is at {used_percent}% of total memory, exceeding the configured limit of {percent}%",
-            ),
-            "Reduce memory usage (e.g. delete points or free segments) or raise `max_resident_memory_percent` in strict mode.",
-        ));
-    }
-
-    Ok(())
-}
-
-/// Total system memory (or cgroup limit) in bytes. Cached once — total memory
-/// is effectively constant for a running process.
-fn total_memory_bytes() -> u64 {
-    use std::sync::OnceLock;
-    static TOTAL: OnceLock<u64> = OnceLock::new();
-    *TOTAL.get_or_init(|| segment::utils::mem::Mem::new().total_memory_bytes())
-}
-
-/// Reject a disk-consuming update if the filesystem hosting Qdrant storage is
-/// filled above the configured percentage of its total capacity.
-///
-/// `usage_reader` returns the current disk usage snapshot, or `None` when the
-/// stat call failed (e.g. path missing, permission denied). In production this
-/// is [`::common::disk_usage::disk_usage`] which is internally TTL-cached so
-/// hot request paths do not call `statvfs` on every operation.
-///
-/// Returns `Ok(())` when no threshold is configured, when the reader returns
-/// `None`, when `total` is reported as zero, or when current usage is below
-/// the threshold.
-pub fn check_disk_usage(
-    strict_mode_config: &StrictModeConfig,
-    usage_reader: impl FnOnce() -> Option<::common::disk_usage::DiskUsage>,
-) -> CollectionResult<()> {
-    let Some(percent) = strict_mode_config.max_disk_usage_percent else {
-        return Ok(());
-    };
-
-    let Some(usage) = usage_reader() else {
-        return Ok(());
-    };
-
-    if usage.total == 0 {
-        return Ok(());
-    }
-
-    let used_percent = usage.used().saturating_mul(100) / usage.total;
-    if used_percent >= u64::from(percent) {
-        return Err(CollectionError::strict_mode(
-            format!(
-                "Disk usage is at {used_percent}% of total capacity, exceeding the configured limit of {percent}%",
-            ),
-            "Reduce disk usage (e.g. delete points or drop collections) or raise `max_disk_usage_percent` in strict mode.",
-        ));
-    }
-
-    Ok(())
+    Err(CollectionError::strict_mode(
+        format!(
+            "Resident memory usage is at {used_percent}% of total memory, \
+             exceeding the configured limit of {limit}%",
+        ),
+        "Reduce memory usage (e.g. delete points or drop collections), or raise \
+         `max_resident_memory_percent` in the strict mode config of this collection.",
+    ))
 }
 
 pub(crate) fn check_bool_opt(
@@ -397,11 +406,17 @@ impl StrictModeVerification for SearchParams {
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
-        None
+        // The IDF corpus filter is evaluated on the read path and must obey
+        // the same unindexed-field restrictions as a search filter.
+        self.idf.as_ref().and_then(|idf| idf.corpus())
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
@@ -437,19 +452,18 @@ pub fn check_grouping_field(
 
 #[cfg(test)]
 mod test {
-    use std::assert_matches;
     use std::sync::Arc;
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
+    use common::ambient::{AmbientContext, AmbientFutureExt};
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
     };
     use tempfile::Builder;
 
-    use super::{StrictModeVerification, check_disk_usage, check_resident_memory};
+    use super::StrictModeVerification;
     use crate::collection::{Collection, RequestShardTransfer};
     use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
     use crate::operations::point_ops::{FilterSelector, PointsSelector};
@@ -471,9 +485,11 @@ mod test {
         let collection = fixture().await;
 
         test_query_limit(&collection).await;
+        test_scroll_query_limit(&collection).await;
         test_search_params(&collection).await;
         test_filter_read(&collection).await;
         test_filter_write(&collection).await;
+        test_substring_filter(&collection).await;
         test_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
@@ -482,6 +498,43 @@ mod test {
     async fn test_query_limit(collection: &Collection) {
         assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
         assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
+    }
+
+    async fn test_scroll_query_limit(collection: &Collection) {
+        use shard::scroll::ScrollRequestInternal;
+
+        // Default limit (10) exceeds max_query_limit (4), so omitted limit should error
+        let request_omitted_limit = ScrollRequestInternal {
+            offset: None,
+            limit: None,
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_error(request_omitted_limit, collection).await;
+
+        // Explicit limit (10) exceeds max_query_limit (4)
+        let request_explicit_exceeding_limit = ScrollRequestInternal {
+            offset: None,
+            limit: Some(10),
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_error(request_explicit_exceeding_limit, collection).await;
+
+        // Explicit limit (4) matches max_query_limit (4)
+        let request_valid_limit = ScrollRequestInternal {
+            offset: None,
+            limit: Some(4),
+            filter: None,
+            with_payload: None,
+            with_vector: Default::default(),
+            order_by: None,
+        };
+        assert_strict_mode_success(request_valid_limit, collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
@@ -520,6 +573,57 @@ mod test {
             shard_key: None,
         });
         assert_strict_mode_success(allowed_request, collection).await;
+    }
+
+    /// Substring matching is rejected whatever indexes the field has, on read
+    /// and on write, and however deeply it is nested in the filter.
+    async fn test_substring_filter(collection: &Collection) {
+        let substring_filter = |key: &str| {
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                key.try_into().unwrap(),
+                Match::new_substring("abc"),
+            )))
+        };
+
+        // The indexed key rules out a rejection by the unindexed-field check.
+        assert_strict_mode_error_contains(
+            discover_fixture(None, Some(substring_filter(INDEXED_KEY)), None),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // Nested in a sub-filter.
+        assert_strict_mode_error_contains(
+            discover_fixture(
+                None,
+                Some(Filter::new_must(Condition::Filter(substring_filter(
+                    INDEXED_KEY,
+                )))),
+                None,
+            ),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // On the write path.
+        assert_strict_mode_error_contains(
+            PointsSelector::FilterSelector(FilterSelector {
+                filter: substring_filter(INDEXED_KEY),
+                shard_key: None,
+            }),
+            collection,
+            "Substring matching is not allowed",
+        )
+        .await;
+
+        // An exact match on the same key is unaffected.
+        assert_strict_mode_success(
+            discover_fixture(None, Some(filter_fixture(INDEXED_KEY)), None),
+            collection,
+        )
+        .await;
     }
 
     async fn test_request_exact(collection: &Collection) {
@@ -576,133 +680,6 @@ mod test {
             ],
         };
         assert_strict_mode_success(request, collection).await;
-    }
-
-    #[test]
-    fn test_resident_memory_check_disabled_passes() {
-        let cfg = StrictModeConfig::default();
-        // Reader should never be called when no threshold is configured.
-        assert!(check_resident_memory(&cfg, || unreachable!()).is_ok());
-    }
-
-    #[test]
-    fn test_resident_memory_check_no_reader_passes() {
-        // Platforms that don't expose resident memory (reader returns None)
-        // must silently skip the check rather than reject updates.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_resident_memory(&cfg, || None).is_ok());
-    }
-
-    #[test]
-    fn test_resident_memory_check_over_threshold_rejects() {
-        // Force resident usage to effectively all of RAM — any non-zero
-        // threshold must reject.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_resident_memory(&cfg, || Some(usize::MAX));
-        assert_matches!(res, Err(CollectionError::StrictMode { .. }));
-    }
-
-    #[test]
-    fn test_resident_memory_check_under_threshold_passes() {
-        // Zero resident bytes is always under any threshold.
-        let cfg = StrictModeConfig {
-            max_resident_memory_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_resident_memory(&cfg, || Some(0)).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_disabled_passes() {
-        let cfg = StrictModeConfig::default();
-        // Reader should never be called when no threshold is configured.
-        assert!(check_disk_usage(&cfg, || unreachable!()).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_no_reader_passes() {
-        // When the underlying stat fails (returns None), the check must
-        // silently skip rather than reject updates.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(check_disk_usage(&cfg, || None).is_ok());
-    }
-
-    #[test]
-    fn test_disk_usage_check_zero_total_passes() {
-        // A filesystem reporting total=0 (e.g. some pseudo-filesystems) must
-        // not cause a divide-by-zero or a spurious rejection.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        assert!(
-            check_disk_usage(&cfg, || Some(::common::disk_usage::DiskUsage {
-                total: 0,
-                available: 0,
-            }))
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn test_disk_usage_check_over_threshold_rejects() {
-        // 90% full vs. a 50% threshold must reject.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 100,
-            })
-        });
-        assert!(
-            matches!(res, Err(CollectionError::StrictMode { .. })),
-            "expected StrictMode error but got {res:?}",
-        );
-    }
-
-    #[test]
-    fn test_disk_usage_check_under_threshold_passes() {
-        // 10% full vs. a 50% threshold must pass.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 900,
-            })
-        });
-        assert!(res.is_ok(), "expected Ok but got {res:?}");
-    }
-
-    #[test]
-    fn test_disk_usage_check_available_above_total_passes() {
-        // Some quota-backed filesystems report `available > total`. The check
-        // must treat used as saturating-zero and pass.
-        let cfg = StrictModeConfig {
-            max_disk_usage_percent: Some(50),
-            ..StrictModeConfig::default()
-        };
-        let res = check_disk_usage(&cfg, || {
-            Some(::common::disk_usage::DiskUsage {
-                total: 1_000,
-                available: 2_000,
-            })
-        });
-        assert!(res.is_ok(), "expected Ok but got {res:?}");
     }
 
     #[test]
@@ -801,6 +778,25 @@ mod test {
         }
     }
 
+    async fn assert_strict_mode_error_contains<R: StrictModeVerification>(
+        request: R,
+        collection: &Collection,
+        expected: &str,
+    ) {
+        let strict_mode_config = collection.strict_mode_config().await.unwrap();
+        let error = request
+            .check_strict_mode(collection, &strict_mode_config)
+            .await
+            .expect_err("Expected strict mode error but got Ok() value");
+        let CollectionError::StrictMode { description } = &error else {
+            panic!("Expected strict mode error but got {error:#}");
+        };
+        assert!(
+            description.contains(expected),
+            "Expected {expected:?} in strict mode error, got {description:?}",
+        );
+    }
+
     async fn assert_strict_mode_success<R: StrictModeVerification>(
         request: R,
         collection: &Collection,
@@ -880,6 +876,7 @@ mod test {
             strict_mode_config: Some(strict_mode_config.clone()),
             uuid: None,
             metadata: None,
+            created_at: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -915,8 +912,8 @@ mod test {
             .create_payload_index(
                 INDEXED_KEY.parse().unwrap(),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to create payload index");
 

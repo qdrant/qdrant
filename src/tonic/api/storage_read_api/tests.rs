@@ -1,8 +1,12 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use api::grpc::qdrant::{ReadBatchRange, ReadMultiEntry};
+use api::grpc::qdrant::ReadBatchRange;
 use collection::common::snapshots_manager::SnapshotsConfig;
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
@@ -35,6 +39,7 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
         snapshots_config: SnapshotsConfig::default(),
         temp_path: None,
         on_disk_payload: false,
+        payload: None,
         optimizers: OptimizersConfig {
             deleted_threshold: 0.5,
             vacuum_min_vector_number: 100,
@@ -59,6 +64,7 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            io_uring: None,
             load_concurrency: LoadConcurrencyConfig::default(),
         },
         hnsw_index: HnswConfig::default(),
@@ -73,6 +79,7 @@ fn test_storage_config(storage_path: &Path) -> StorageConfig {
         shard_transfer_method: None,
         collection: None,
         max_collections: None,
+        quotas: Default::default(),
     }
 }
 
@@ -254,7 +261,7 @@ async fn list_files_returns_paths_relative_to_shard_dir() {
     write_shard_file(&shard_dir, "index/chunk_2.bin", b"456");
     write_shard_file(&shard_dir, "index/other.bin", b"789");
 
-    let mut paths = service
+    let mut files = service
         .list_files(Request::new(ListFilesRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
             shard_id: TEST_SHARD_ID,
@@ -263,16 +270,23 @@ async fn list_files_returns_paths_relative_to_shard_dir() {
         .await
         .unwrap()
         .into_inner()
-        .paths;
+        .files;
 
-    paths.sort();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
 
+    for entry in &files {
+        assert!(
+            entry.last_modified.is_some(),
+            "local listing must carry a modification time",
+        );
+    }
+    let paths_and_sizes: Vec<_> = files
+        .iter()
+        .map(|entry| (entry.path.as_str(), entry.size))
+        .collect();
     assert_eq!(
-        paths,
-        vec![
-            "index/chunk_1.bin".to_string(),
-            "index/chunk_2.bin".to_string(),
-        ]
+        paths_and_sizes,
+        [("index/chunk_1.bin", 3), ("index/chunk_2.bin", 3)]
     );
 
     drop_service(service, storage_dir).await;
@@ -523,67 +537,6 @@ async fn read_batch_returns_each_requested_slice() {
         vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
     );
 
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_multi_reads_ranges_in_request_order() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    write_shard_file(&shard_dir, "segments/a.bin", b"abcdefghij");
-    write_shard_file(&shard_dir, "segments/b.bin", b"klmnopqrst");
-
-    let response = service
-        .read_multi(Request::new(ReadMultiRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            reads: vec![
-                ReadMultiEntry {
-                    path: "segments/a.bin".to_string(),
-                    byte_offset: 1,
-                    length: 3,
-                },
-                ReadMultiEntry {
-                    path: "segments/b.bin".to_string(),
-                    byte_offset: 2,
-                    length: 4,
-                },
-                ReadMultiEntry {
-                    path: "segments/a.bin".to_string(),
-                    byte_offset: 6,
-                    length: 2,
-                },
-            ],
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    assert_eq!(
-        response.data,
-        vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
-    );
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_multi_rejects_empty_entry_path() {
-    let (service, storage_dir, _shard_dir) = create_service_async().await;
-
-    let err = service
-        .read_multi(Request::new(ReadMultiRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            reads: vec![ReadMultiEntry {
-                path: "".to_string(),
-                byte_offset: 0,
-                length: 1,
-            }],
-        }))
-        .await
-        .unwrap_err();
-
-    assert_eq!(err.code(), Code::InvalidArgument);
     drop_service(service, storage_dir).await;
 }
 

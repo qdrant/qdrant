@@ -1,37 +1,35 @@
-use std::mem::ManuallyDrop;
+use std::marker::PhantomData;
 use std::ops::Range;
 
-use ::io_uring::types::Fd;
-
-use super::pool::IO_URING_QUEUE_LENGTH;
-use super::{IoUringFile, IoUringRuntime};
+use super::{IoUringFile, IoUringReadRuntime, KERNEL_PAGE_SIZE};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::{
-    BorrowedReadPipeline, OwnedReadPipeline, Result, UniversalIoError, UniversalRead, UserData,
+    ReadPipeline, UioResult, UniversalIoError, UniversalRead as _, UserData,
 };
 
-pub struct BorrowedIoUringPipeline<'file, U>
+pub struct IoUringPipeline<'file, U>
 where
     U: UserData,
 {
-    inner: IoUringPipelineInner<'file, U>,
+    runtime: IoUringReadRuntime<U>,
+    _phantom: PhantomData<&'file ()>,
 }
 
-impl<'file, U> BorrowedReadPipeline<'file, U> for BorrowedIoUringPipeline<'file, U>
-where
-    U: UserData,
-{
+impl<'file, U: UserData> ReadPipeline<'file, U> for IoUringPipeline<'file, U> {
     type File = IoUringFile;
 
-    fn new() -> Result<Self> {
-        Ok(Self {
-            inner: IoUringPipelineInner::new()?,
-        })
+    fn new() -> UioResult<Self> {
+        let pipeline = Self {
+            runtime: IoUringReadRuntime::new()?,
+            _phantom: PhantomData,
+        };
+
+        Ok(pipeline)
     }
 
     fn can_schedule(&mut self) -> bool {
-        self.inner.can_schedule()
+        self.runtime.can_schedule()
     }
 
     fn schedule<P: AccessPattern>(
@@ -40,143 +38,55 @@ where
         file: &'file IoUringFile,
         range: Range<u64>,
         align: usize,
-    ) -> Result<()> {
-        // Safety: `file.fd()` doesn't outlive the inner pipeline because of
-        // `'file` lifetime.
-        unsafe {
-            self.inner
-                .schedule(user_data, file.fd(), file.direct_io, range, align)
-        }
-    }
+    ) -> UioResult<()> {
+        // IoUringPipeline is bound by 'file lifetime, so it can never outlive file
+        // or hold fd longer than file is valid
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
-        self.inner.wait()
-    }
-}
-
-pub struct OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
-    file: ManuallyDrop<IoUringFile>,
-    inner: ManuallyDrop<IoUringPipelineInner<'static, U>>,
-}
-
-impl<U> OwnedReadPipeline<U> for OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
-    type File = IoUringFile;
-
-    fn new(file: IoUringFile) -> Result<Self> {
-        let inner = IoUringPipelineInner::new()?;
-        Ok(Self {
-            file: ManuallyDrop::new(file),
-            inner: ManuallyDrop::new(inner),
-        })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        self.inner.can_schedule()
-    }
-
-    fn schedule<P: AccessPattern>(
-        &mut self,
-        user_data: U,
-        range: Range<u64>,
-        align: usize,
-    ) -> Result<()> {
-        // Safety: `self.file.fd()` doesn't outlive the inner pipeline because
-        // of explicit drop order in `impl Drop`.
-        unsafe {
-            self.inner
-                .schedule(user_data, self.file.fd(), self.file.direct_io, range, align)
-        }
-    }
-
-    fn schedule_whole(&mut self, user_data: U) -> Result<()> {
-        let length = self.file.len::<u8>()?;
-        self.schedule::<Sequential>(user_data, 0..length, 1)
-    }
-
-    fn wait(&mut self) -> Result<Option<(U, ACow<'_>)>> {
-        self.inner.wait()
-    }
-}
-
-impl<U> Drop for OwnedIoUringPipeline<U>
-where
-    U: UserData,
-{
-    fn drop(&mut self) {
-        // Drop `inner` before `file`.
-        let Self { file, inner } = self;
-        let file: IoUringFile = unsafe { ManuallyDrop::take(file) };
-        let inner: IoUringPipelineInner<_> = unsafe { ManuallyDrop::take(inner) };
-        drop(inner);
-        drop(file);
-    }
-}
-
-struct IoUringPipelineInner<'file, U>
-where
-    U: UserData,
-{
-    runtime: IoUringRuntime<'file, U>,
-}
-
-impl<'file, U> IoUringPipelineInner<'file, U>
-where
-    U: UserData,
-{
-    fn new() -> Result<Self> {
-        Ok(Self {
-            runtime: IoUringRuntime::new()?,
-        })
-    }
-
-    fn can_schedule(&mut self) -> bool {
-        let squeue = self.runtime.io_uring.submission();
-        self.runtime.in_progress + squeue.len() < IO_URING_QUEUE_LENGTH as _
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the `fd` will not outlive the pipeline.
-    unsafe fn schedule(
-        &mut self,
-        user_data: U,
-        fd: Fd,
-        direct_io: bool,
-        range: Range<u64>,
-        align: usize,
-    ) -> Result<()> {
-        let mut squeue = self.runtime.io_uring.submission();
-
-        if self.runtime.in_progress + squeue.len() >= IO_URING_QUEUE_LENGTH as _ {
+        if !self.can_schedule() {
             return Err(UniversalIoError::QueueIsFull);
         }
 
         let entry = self
             .runtime
-            .state
-            .read(user_data, fd, range, align, direct_io);
+            .state()
+            .read(user_data, file.fd(), file.direct_io, range, align);
 
-        unsafe {
-            squeue.push(&entry).expect("submission queue is not full");
-        }
+        self.runtime.enqueue(entry)?;
 
         Ok(())
     }
 
-    fn wait(&mut self) -> Result<Option<(U, ACow<'file>)>> {
+    fn schedule_whole(
+        &mut self,
+        user_data: U,
+        file: &'file Self::File,
+        from: u64,
+    ) -> UioResult<()> {
+        let eof = file.len::<u8>()?;
+
+        if from >= eof {
+            return Ok(());
+        }
+
+        let align = if file.direct_io { KERNEL_PAGE_SIZE } else { 1 };
+        self.schedule::<Sequential>(user_data, file, from..eof, align)
+    }
+
+    fn wait(&mut self) -> UioResult<Option<(U, ACow<'file>)>> {
         let next = self.runtime.completed().next();
 
         let enqueued = self.runtime.enqueued();
 
-        if next.is_some() && enqueued > 0 {
-            self.runtime.submit_and_wait(0)?;
-        } else if next.is_none() && enqueued + self.runtime.in_progress > 0 {
+        if next.is_some() {
+            // Refill the device only while it still has reads outstanding.
+            // When everything submitted so far has already completed — the
+            // page cache is warm and reads finish inline — the entries
+            // enqueued meanwhile wait and go down in one submission once the
+            // ready completions run out, instead of one syscall per read.
+            if enqueued > 0 && self.runtime.outstanding() > 0 {
+                self.runtime.submit_and_wait(0)?;
+            }
+        } else if enqueued + self.runtime.in_progress() > 0 {
             self.runtime.submit_and_wait(1)?;
         }
 
@@ -184,7 +94,7 @@ where
             return Ok(None);
         };
 
-        let (user_data, resp) = result?;
-        Ok(Some((user_data, ACow::Owned(resp.expect_read()))))
+        let (user_data, buffer) = result?;
+        Ok(Some((user_data, ACow::Owned(buffer))))
     }
 }

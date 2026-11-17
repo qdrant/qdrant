@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use common::universal_io::UniversalRead;
 
 use super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
@@ -5,6 +9,7 @@ use super::on_disk_text_index::OnDiskFullTextIndex;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 
 mod lifecycle;
+mod live_reload;
 mod read_ops;
 
 /// Read-only counterpart of [`FullTextIndex`][1], parameterised by a
@@ -30,10 +35,9 @@ mod read_ops;
 /// [4]: crate::index::field_index::map_index::read_only::ReadOnlyMapIndex
 /// [5]: super::read_ops
 /// [6]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
-#[allow(clippy::large_enum_variant)]
 pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
-    Appendable(ReadOnlyAppendableFullTextIndex<S>),
+    Appendable(Box<ReadOnlyAppendableFullTextIndex<S>>),
     /// Loads into RAM from immutable format
     Immutable(ImmutableFullTextIndex<S>),
     /// Directly reads from storage in immutable format
@@ -42,20 +46,27 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFileOps};
+    use common::ambient;
+    use common::bitvec::BitSlice;
+    use common::sorted_slice::SortedSlice;
+    use common::types::PointOffsetType;
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
+    use rstest::rstest;
     use tempfile::TempDir;
 
     use super::super::FullTextIndex;
     use super::ReadOnlyFullTextIndex;
     use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-    use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
+    use crate::index::field_index::{
+        LiveReload, PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer,
+    };
     use crate::json_path::JsonPath;
-    use crate::types::{FieldCondition, Match};
+    use crate::types::{FieldCondition, Match, MatchPhrase, Memory};
 
     fn test_config() -> TextIndexParams {
         TextIndexParams {
+            memory: None,
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
             min_token_len: None,
@@ -67,7 +78,125 @@ mod tests {
             stemmer: None,
             ascii_folding: None,
             enable_hnsw: None,
+            scoring: None,
+            nested: None,
         }
+    }
+
+    /// A record without a length cannot serve a scoring index. The read-only
+    /// side has no payload to rebuild from, so it reports the index absent
+    /// rather than answering a length of zero for every point.
+    #[test]
+    fn appendable_without_lengths_is_absent_under_scoring() {
+        use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
+
+        let dir = TempDir::with_prefix("ro_fulltext_no_lengths").unwrap();
+        let config = test_config();
+        let _scope = ambient::test_guard();
+
+        // `test_config` sets no `scoring`, so nothing records a length.
+        {
+            let mut index =
+                FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
+                    .unwrap()
+                    .unwrap();
+            index
+                .add_point(0, &[&serde_json::json!("the quick brown fox")])
+                .unwrap();
+            index.flusher()().unwrap();
+        }
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        let without_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
+            &fs,
+            dir.path().to_path_buf(),
+            PointOffsetType::MAX,
+            BitSlice::empty(),
+            config.clone(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            without_scoring.is_some(),
+            "the same records open without scoring"
+        );
+        drop(without_scoring);
+
+        let with_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
+            &fs,
+            dir.path().to_path_buf(),
+            PointOffsetType::MAX,
+            BitSlice::empty(),
+            config,
+            true,
+        )
+        .unwrap();
+        assert!(
+            with_scoring.is_none(),
+            "records without lengths must not open under scoring",
+        );
+    }
+
+    /// The immutable read-only open under scoring reports an index without a
+    /// length sidecar absent: the read-only side cannot rebuild, so the field is
+    /// dropped until the writer has, rather than served without lengths.
+    /// Without scoring the same files open, and with the sidecar both do.
+    #[rstest]
+    fn immutable_without_lengths_is_absent_under_scoring(
+        #[values(Memory::Cold, Memory::Pinned)] memory: Memory,
+    ) {
+        use common::bitvec::BitVec;
+
+        use crate::data_types::index::TextScoringParams;
+        use crate::index::field_index::FieldIndexBuilderTrait as _;
+
+        let config = |scoring: bool| TextIndexParams {
+            scoring: scoring.then(TextScoringParams::default),
+            ..test_config()
+        };
+        let deleted = BitVec::new();
+        let _scope = ambient::test_guard();
+        let build = |dir: &TempDir, scoring: bool| {
+            let mut builder = FullTextIndex::builder_mmap(
+                dir.path().to_path_buf(),
+                test_config(),
+                Memory::Cold,
+                &deleted,
+                scoring,
+            );
+            builder.init().unwrap();
+            builder
+                .add_many(0, vec!["the quick brown fox".to_string()])
+                .unwrap();
+            drop(builder.finalize().unwrap());
+        };
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let open = |dir: &TempDir, scoring: bool| {
+            ReadOnlyFullTextIndex::<ReadOnly<MmapFile>>::open_immutable(
+                &fs,
+                dir.path().to_path_buf(),
+                config(scoring),
+                memory,
+                &deleted,
+            )
+            .unwrap()
+        };
+
+        let without = TempDir::with_prefix("ro_fulltext_imm_no_lengths").unwrap();
+        build(&without, false);
+        assert!(open(&without, false).is_some(), "opens without scoring");
+        assert!(
+            open(&without, true).is_none(),
+            "no sidecar under scoring must read as absent",
+        );
+
+        let with = TempDir::with_prefix("ro_fulltext_imm_lengths").unwrap();
+        build(&with, true);
+        assert!(open(&with, true).is_some(), "the sidecar serves scoring");
     }
 
     /// Build an appendable (Gridstore) full-text index on disk, then open it
@@ -79,7 +208,7 @@ mod tests {
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_fulltext_parent_gridstore").unwrap();
         let config = test_config();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let payloads = [
             serde_json::json!("the quick brown fox jumps"),
@@ -93,9 +222,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
             for (idx, payload) in payloads.iter().enumerate() {
-                index
-                    .add_point(idx as u32, &[payload], &hw_counter)
-                    .unwrap();
+                index.add_point(idx as u32, &[payload]).unwrap();
             }
             index.flusher()().unwrap();
         }
@@ -106,9 +233,15 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                BitSlice::empty(),
+                config,
+            )
+            .unwrap()
+            .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyFullTextIndex::Appendable(_)));
@@ -116,27 +249,179 @@ mod tests {
         // Trait dispatch on the parent enum forwards into the leaf:
         // every document was indexed (3 points), and `brown` matches the two
         // that contain it while `lazy` matches only the second.
-        assert_eq!(index.count_indexed_points(), payloads.len());
+        assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
 
         let key = JsonPath::new("test");
         let brown = FieldCondition::new_match(key.clone(), Match::new_text("brown"));
         let lazy = FieldCondition::new_match(key, Match::new_text("lazy"));
 
         assert_eq!(
-            index
-                .filter(&brown, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&brown).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
+        assert_eq!(index.filter(&lazy).unwrap().unwrap().collect_vec(), vec![1]);
+    }
+
+    /// The incremental `LiveReload` path must land on exactly the same state as
+    /// a fresh `open_appendable` over the post-write gridstore.
+    ///
+    /// A writer keeps mutating after the read-only view is open: one point is
+    /// deleted and two are appended. `live_reload` is handed only that delta and
+    /// replays the stored documents itself, so it re-runs the same
+    /// post-tokenization indexing the write path runs. Both token-set matching
+    /// and phrase matching are checked, because the phrase leg is the one that
+    /// depends on the ordered document being indexed as well as the token set.
+    #[rstest]
+    fn live_reload_matches_fresh_open(#[values(false, true)] phrase_matching: bool) {
+        let dir = TempDir::with_prefix("ro_fulltext_live_reload").unwrap();
+        let mut config = test_config();
+        config.phrase_matching = Some(phrase_matching);
+        let _scope = ambient::test_guard();
+
+        let initial = [
+            serde_json::json!("the quick brown fox jumps"),
+            serde_json::json!("over the lazy dog"),
+            serde_json::json!("the brown bear sleeps"),
+        ];
+        // Appended after the read-only view is taken. The last one repeats a
+        // term so the document is not just a set of distinct tokens.
+        let appended = [
+            serde_json::json!("a lazy brown moth"),
+            serde_json::json!("the fox and the fox again"),
+        ];
+
+        let mut writer =
+            FullTextIndex::new_gridstore(dir.path().to_path_buf(), config.clone(), true)
+                .unwrap()
+                .unwrap();
+        for (idx, payload) in initial.iter().enumerate() {
+            writer.add_point(idx as u32, &[payload]).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+
+        // Read-only view of points 0..=2, taken before the writer continues.
+        let mut reloaded: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                BitSlice::empty(),
+                config.clone(),
+            )
+            .unwrap()
+            .unwrap();
+
+        // Writer's delta: drop point 1, append points 3 and 4.
+        writer.remove_point(1).unwrap();
+        for (offset, payload) in appended.iter().enumerate() {
+            writer.add_point((3 + offset) as u32, &[payload]).unwrap();
+        }
+        writer.flusher()().unwrap();
+
+        let deleted: [PointOffsetType; 1] = [1];
+        let added: [PointOffsetType; 2] = [3, 4];
+        reloaded
+            .live_reload(
+                &fs,
+                &SortedSlice::new(&deleted).unwrap(),
+                &SortedSlice::new(&added).unwrap(),
+            )
+            .unwrap();
+
+        let fresh: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                BitSlice::empty(),
+                config,
+            )
+            .unwrap()
+            .unwrap();
+
         assert_eq!(
-            index
-                .filter(&lazy, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
-            vec![1],
+            reloaded.count_indexed_points().unwrap(),
+            fresh.count_indexed_points().unwrap(),
         );
+
+        let key = JsonPath::new("test");
+        let mut conditions = vec![
+            // Spans deleted, surviving and appended points.
+            FieldCondition::new_match(key.clone(), Match::new_text("brown")),
+            // Only ever present on the deleted point.
+            FieldCondition::new_match(key.clone(), Match::new_text("dog")),
+            // Only on appended points.
+            FieldCondition::new_match(key.clone(), Match::new_text("moth")),
+            // Repeated within one appended document.
+            FieldCondition::new_match(key.clone(), Match::new_text("fox")),
+            // Multi-token, so it exercises the posting intersection.
+            FieldCondition::new_match(key.clone(), Match::new_text("lazy brown")),
+        ];
+        if phrase_matching {
+            // Needs the ordered document, not just the token set: "brown fox"
+            // is adjacent in point 0 but not in point 3 ("lazy brown moth").
+            conditions.push(FieldCondition::new_match(
+                key.clone(),
+                Match::Phrase(MatchPhrase::from("brown fox")),
+            ));
+            conditions.push(FieldCondition::new_match(
+                key,
+                Match::Phrase(MatchPhrase::from("lazy brown")),
+            ));
+        }
+
+        for condition in &conditions {
+            let from_reload = reloaded.filter(condition).unwrap().unwrap().collect_vec();
+            let from_fresh = fresh.filter(condition).unwrap().unwrap().collect_vec();
+            assert_eq!(from_reload, from_fresh, "diverged for {condition:?}");
+            // The deleted point must not survive in either.
+            assert!(
+                !from_reload.contains(&1),
+                "point 1 resurrected by {condition:?}"
+            );
+        }
+
+        // Guard the fixture: the comparisons above hold vacuously if nothing
+        // matches, so pin the results that must come from the reloaded delta.
+        let key = JsonPath::new("test");
+        let expect = |condition: &FieldCondition, want: Vec<PointOffsetType>| {
+            let got = reloaded.filter(condition).unwrap().unwrap().collect_vec();
+            assert_eq!(got, want, "unexpected hits for {condition:?}");
+        };
+
+        // Appended point only.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("moth")),
+            vec![3],
+        );
+        // Survivor plus both appended points.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("fox")),
+            vec![0, 4],
+        );
+        // The deleted point was the only holder of this term.
+        expect(
+            &FieldCondition::new_match(key.clone(), Match::new_text("dog")),
+            vec![],
+        );
+
+        if phrase_matching {
+            // Adjacency has to survive the reload, not just term membership:
+            // point 3 has "lazy brown" adjacent, point 0 has "brown fox".
+            expect(
+                &FieldCondition::new_match(
+                    key.clone(),
+                    Match::Phrase(MatchPhrase::from("lazy brown")),
+                ),
+                vec![3],
+            );
+            expect(
+                &FieldCondition::new_match(key, Match::Phrase(MatchPhrase::from("brown fox"))),
+                vec![0],
+            );
+        }
     }
 }

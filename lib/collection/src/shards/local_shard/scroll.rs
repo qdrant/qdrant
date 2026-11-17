@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use ahash::AHashMap;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
@@ -16,6 +17,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
+use shard::operations::point_ops::PointStructRawPersisted;
 use shard::retrieve::record_internal::RecordInternal;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -34,20 +36,14 @@ impl LocalShard {
         batch: Arc<Vec<QueryScrollRequestInternal>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if batch.is_empty() {
             return Ok(vec![]);
         }
 
-        let scrolls = batch.iter().map(|request| {
-            self.query_scroll(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc.clone(),
-            )
-        });
+        let scrolls = batch
+            .iter()
+            .map(|request| self.query_scroll(request, search_runtime_handle, timeout));
 
         // execute all the scrolls concurrently
         let all_scroll_results = try_join_all(scrolls);
@@ -65,7 +61,6 @@ impl LocalShard {
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
             limit,
@@ -89,7 +84,6 @@ impl LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await?
@@ -103,7 +97,6 @@ impl LocalShard {
                     search_runtime_handle,
                     order_by,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await?
@@ -116,7 +109,6 @@ impl LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await?
             }
@@ -132,6 +124,7 @@ impl LocalShard {
                 vector: record.vector,
                 shard_key: record.shard_key,
                 order_value: record.order_value,
+                location: None,
             })
             .collect();
 
@@ -148,7 +141,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
@@ -161,37 +153,34 @@ impl LocalShard {
             };
             segments_guard.split_segments()
         };
-        let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
+        let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     segment.get().read().read_filtered(
                         offset,
                         Some(limit),
                         filter.as_ref(),
                         &is_stopped,
-                        &hw_counter,
                         deferred_behavior,
                     )
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
 
-        let hw_counter = hw_measurement_acc.get_counter_cell();
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_filtered(segment, hw_counter.fork())),
+                    .map(read_filtered),
             ),
         )
         .await
@@ -204,21 +193,16 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let mut records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let mut records_map = self
+            .scroll_records(
                 &point_ids,
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
@@ -226,6 +210,99 @@ impl LocalShard {
             .iter()
             // Use remove to avoid cloning, we take each point ID only once
             .filter_map(|point_id| records_map.remove(point_id))
+            .collect();
+
+        Ok(ordered_records)
+    }
+
+    /// Byte-blob analogue of [`Self::internal_scroll_by_id`]: reads points as
+    /// storage-native raw vector bytes ([`PointStructRawPersisted`]) instead of
+    /// decoded records, avoiding a lossy quantization round-trip during shard
+    /// transfer. Point-id selection is identical to the decoded twin.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn internal_scroll_by_id_raw(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<Vec<PointStructRawPersisted>> {
+        let start = Instant::now();
+        let stopping_guard = StoppingGuard::new();
+        let update_operation_lock = self.update_operation_lock.read().await;
+        let segments = self.segments.clone();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout,
+                    "internal_scroll_by_id_raw",
+                ));
+            };
+            segments_guard.split_segments()
+        };
+        let read_filtered = |segment: LockedSegment| {
+            let filter = filter.cloned();
+            let is_stopped = stopping_guard.get_is_stopped();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
+            let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
+                let work = || {
+                    segment.get().read().read_filtered(
+                        offset,
+                        Some(limit),
+                        filter.as_ref(),
+                        &is_stopped,
+                        deferred_behavior,
+                    )
+                };
+                cpu_utilization.measure(work)
+            });
+            AbortOnDropHandle::new(task)
+        };
+
+        let all_reads = tokio::time::timeout(
+            timeout,
+            try_join_all(
+                non_appendable
+                    .into_iter()
+                    .chain(appendable)
+                    .map(read_filtered),
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "scroll_by_id_raw"))??;
+
+        let point_ids = all_reads
+            .into_iter()
+            .process_results(|iter| iter.flatten().sorted().dedup().take(limit).collect_vec())?;
+
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let mut records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve_raw(
+                segments,
+                &point_ids,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "retrieve_raw"))??;
+
+        drop(update_operation_lock);
+
+        let ordered_records = point_ids
+            .iter()
+            // Use remove to avoid cloning, we take each point ID only once
+            .filter_map(|point_id| records_map.remove(point_id))
+            .map(PointStructRawPersisted::from)
             .collect();
 
         Ok(ordered_records)
@@ -241,7 +318,6 @@ impl LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         order_by: &OrderBy,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
@@ -259,33 +335,28 @@ impl LocalShard {
             segments_guard.split_segments()
         };
 
-        let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let read_ordered_filtered = |segment: LockedSegment| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
             let order_by = order_by.clone();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     segment.get().read().read_ordered_filtered(
                         Some(limit),
                         filter.as_ref(),
                         &order_by,
                         &is_stopped,
-                        &hw_counter,
                         deferred_behavior,
                     )
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -293,7 +364,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_ordered_filtered(segment, &hw_counter)),
+                    .map(read_ordered_filtered),
             ),
         )
         .await
@@ -315,22 +386,16 @@ impl LocalShard {
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
 
-        // Fetch with the requested vector and payload
-        let records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let records_map = self
+            .scroll_records(
                 &point_ids,
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
@@ -356,7 +421,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -370,36 +434,27 @@ impl LocalShard {
             segments_guard.split_segments()
         };
 
-        let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let read_filtered = |segment: LockedSegment| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
                 let work = || -> OperationResult<_> {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
                     Ok((
                         read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(
-                            limit,
-                            filter.as_ref(),
-                            &is_stopped,
-                            &hw_counter,
-                        )?,
+                        read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped)?,
                     ))
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -407,7 +462,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_filtered(segment, &hw_counter)),
+                    .map(read_filtered),
             ),
         )
         .await
@@ -420,6 +475,10 @@ impl LocalShard {
         if availability.iter().all(|&count| count == 0) {
             return Ok(Vec::new());
         }
+        // Cap HashSet capacity at filter-aware candidates in `segments_reads` (not segment sizes).
+        // Unbounded client `limit` would otherwise abort via `handle_alloc_error`.
+        let candidate_count: usize = segments_reads.iter().map(|points| points.len()).sum();
+
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
             CollectionError::service_error(format!(
@@ -428,7 +487,7 @@ impl LocalShard {
         })?;
 
         let mut rng = rand::make_rng::<StdRng>();
-        let mut random_points = HashSet::with_capacity(limit);
+        let mut random_points = HashSet::with_capacity(limit.min(candidate_count));
 
         // Randomly sample points in two stages
         //
@@ -469,24 +528,53 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let records_map = tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                segments,
+        let records_map = self
+            .scroll_records(
                 &selected_points,
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 DeferredBehavior::VisibleOnly,
-            ),
-        )
-        .await
-        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))??;
+            )
+            .await?;
 
         drop(update_operation_lock);
 
         Ok(records_map.into_values().collect())
+    }
+
+    /// Records for scrolled ids; skips retrieval when neither payload nor vectors are requested.
+    #[allow(clippy::too_many_arguments)]
+    async fn scroll_records(
+        &self,
+        point_ids: &[ExtendedPointId],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        deferred_behavior: DeferredBehavior,
+    ) -> CollectionResult<AHashMap<ExtendedPointId, RecordInternal>> {
+        if !with_payload.enable && !with_vector.is_enabled() {
+            return Ok(point_ids
+                .iter()
+                .map(|&id| (id, RecordInternal::new_empty(id)))
+                .collect());
+        }
+
+        tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                self.segments.clone(),
+                point_ids,
+                with_payload,
+                with_vector,
+                search_runtime_handle,
+                timeout,
+                deferred_behavior,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout, "retrieve"))?
     }
 }

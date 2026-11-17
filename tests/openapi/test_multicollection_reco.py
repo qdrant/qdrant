@@ -62,12 +62,12 @@ def test_recommend_with_wrong_vector_size(on_disk_vectors, collection_name, coll
     assert response.ok, response.text
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 3,
-            "positive": [1],
+            "query": {"recommend": {"positive": [1]}},
             "with_vector": False,
             "with_payload": True,
             "lookup_from": {
@@ -127,12 +127,12 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
     assert response.ok, response.text
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 3,
-            "positive": [1],
+            "query": {"recommend": {"positive": [1]}},
             "with_vector": False,
             "with_payload": True,
             "lookup_from": {
@@ -142,19 +142,19 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
         }
     )
     assert response.ok, response.text
-    assert len(response.json()['result']) == 3
+    assert len(response.json()['result']['points']) == 3
     # vector with the largest 1st element
-    assert response.json()['result'][0]['id'] == 8
+    assert response.json()['result']['points'][0]['id'] == 8
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend/batch',
+        api='/collections/{collection_name}/points/query/batch',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "searches": [
                 {
                     "limit": 3,
-                    "positive": [1],
+                    "query": {"recommend": {"positive": [1]}},
                     "with_vector": False,
                     "with_payload": True,
                     "lookup_from": {
@@ -164,7 +164,7 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
                 },
                 {
                     "limit": 3,
-                    "positive": ["00000000-0000-0000-0000-000000000000"],
+                    "query": {"recommend": {"positive": ["00000000-0000-0000-0000-000000000000"]}},
                     "with_vector": False,
                     "with_payload": True,
                     "lookup_from": {
@@ -174,7 +174,7 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
                 },
                 {
                     "limit": 3,
-                    "positive": [1],
+                    "query": {"recommend": {"positive": [1]}},
                     "with_vector": False,
                     "with_payload": True,
                 }
@@ -183,21 +183,21 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
     )
     assert response.ok, response.text
     assert len(response.json()['result']) == 3
-    assert len(response.json()['result'][0]) == 3
-    assert len(response.json()['result'][1]) == 3
-    assert len(response.json()['result'][2]) == 3
+    assert len(response.json()['result'][0]['points']) == 3
+    assert len(response.json()['result'][1]['points']) == 3
+    assert len(response.json()['result'][2]['points']) == 3
     # vector with the largest 1st element
-    assert response.json()['result'][0][0]['id'] == 8
+    assert response.json()['result'][0]['points'][0]['id'] == 8
     # vector with the largest 2nd element
-    assert response.json()['result'][1][0]['id'] == 7
+    assert response.json()['result'][1]['points'][0]['id'] == 7
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 3,
-            "positive": [1],
+            "query": {"recommend": {"positive": [1]}},
             "lookup_from": {
                 "collection": "unknown_collection",
                 "vector": "other"
@@ -207,12 +207,12 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
     assert response.status_code == 404
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 3,
-            "positive": [1],
+            "query": {"recommend": {"positive": [1]}},
             "lookup_from": {
                 "collection": collection_name2,
                 "vector": "unknown_vector"
@@ -222,12 +222,12 @@ def test_recommend_from_another_collection(on_disk_vectors, collection_name, col
     assert response.status_code == 400, response.text
 
     response = request_with_validation(
-        api='/collections/{collection_name}/points/recommend',
+        api='/collections/{collection_name}/points/query',
         method="POST",
         path_params={'collection_name': collection_name},
         body={
             "limit": 3,
-            "positive": [2],
+            "query": {"recommend": {"positive": [2]}},
             "lookup_from": {
                 "collection": collection_name2,
                 "vector": "unknown_vector"
@@ -292,12 +292,11 @@ def test_recommend_lookup(collection_name, collection_name2):
 
     # check recommend by id + lookup_from
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [1],
-            "negative": [2],
+            "query": {"recommend": {"positive": [1], "negative": [2]}},
             "limit": 10,
             "lookup_from": {
                 "collection": collection_name2,
@@ -306,21 +305,25 @@ def test_recommend_lookup(collection_name, collection_name2):
         },
     )
     assert response.ok, response.text
-    recommend_result_by_id = response.json()["result"]
+    recommend_result_by_id = response.json()["result"]["points"]
 
     # check recommend by vector + lookup_from
     response = request_with_validation(
-        api="/collections/{collection_name}/points/recommend",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [[1.0, 0.0, 0.0, 0.0]],
-            "negative": [[0.0, 0.0, 0.0, 2.0]],
+            "query": {
+                "recommend": {
+                    "positive": [[1.0, 0.0, 0.0, 0.0]],
+                    "negative": [[0.0, 0.0, 0.0, 2.0]],
+                }
+            },
             "limit": 10,
         },
     )
     assert response.ok, response.text
-    recommend_result_by_vector = response.json()["result"]
+    recommend_result_by_vector = response.json()["result"]["points"]
 
     # results should be equivalent
     assert recommend_result_by_id == recommend_result_by_vector, \

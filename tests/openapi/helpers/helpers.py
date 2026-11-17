@@ -206,3 +206,18 @@ def skip_if_no_feature(feature):
     feature_is_enabled = check_feature_enabled(feature)
     if not feature_is_enabled:
         pytest.skip(f"Skipping because the feature {feature} is disabled at runtime.")
+
+
+def is_distributed_mode() -> bool:
+    response = request_with_validation(
+        api='/cluster',
+        method="GET",
+    )
+    assert response.ok
+    # Standalone nodes report `disabled`; any other status means consensus is enabled.
+    return response.json()['result']['status'] != 'disabled'
+
+
+def skip_if_distributed_mode():
+    if is_distributed_mode():
+        pytest.skip("Skipping because Qdrant is running in distributed mode.")

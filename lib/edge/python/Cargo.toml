@@ -1,6 +1,6 @@
 [package]
 name = "qdrant-edge-py"
-version = "0.7.2"
+version = "0.9.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
@@ -19,7 +19,6 @@ abi3 = ["pyo3/abi3-py310"]
 
 
 [dependencies]
-bm25 = { path = "../../bm25" }
 edge = { path = ".." }
 edge-py-codegen = { path = "./codegen" }
 segment = { path = "../../segment", default-features = false }
@@ -40,5 +39,5 @@ version = "2.1"
 features = ["into"]
 
 [dependencies.pyo3]
-version = "0.28.3"
+version = "0.30.1"
 features = ["uuid"]

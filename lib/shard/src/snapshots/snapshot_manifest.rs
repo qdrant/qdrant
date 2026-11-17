@@ -5,6 +5,7 @@ use fs_err as fs;
 use fs_err::File;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
+use segment::pending_changes::PersistedProxyChanges;
 use segment::segment::snapshot::SEGMENT_MANIFEST_FILE_NAME;
 use segment::types::SeqNumberType;
 
@@ -31,7 +32,9 @@ impl SnapshotManifest {
         let mut snapshot_manifest = SnapshotManifest::default();
 
         for segment_entry in fs::read_dir(segments_path)? {
-            let segment_path = segment_entry?.path();
+            let segment_entry = segment_entry?;
+
+            let segment_path = segment_entry.path();
 
             if !segment_path.is_dir() {
                 log::warn!(
@@ -187,5 +190,17 @@ impl RecoveryType {
 
     pub fn is_partial(self) -> bool {
         matches!(self, Self::Partial)
+    }
+
+    /// Whether persisted pending proxy changes are replayed when the recovered segments load.
+    ///
+    /// Partial snapshots are recovered by read replicas in a read/write segregation setup. A read
+    /// replica must not mutate its segments, so it cannot replay the persisted proxy segment
+    /// changes and ignores them instead.
+    pub fn persisted_proxy_changes(self) -> PersistedProxyChanges {
+        match self {
+            Self::Full => PersistedProxyChanges::Replay,
+            Self::Partial => PersistedProxyChanges::Ignore,
+        }
     }
 }

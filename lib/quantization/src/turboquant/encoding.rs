@@ -119,6 +119,28 @@ impl TurboQuantizer {
         );
 
         let mut out = Vec::with_capacity(self.quantized_size());
+
+        if self.bits == TQBits::Bits16 {
+            // Already scaled onto the grid by `quantize_impl`.
+            for val in scaled {
+                let code = val.round().clamp(-32767.0, 32767.0) as i16;
+                out.extend_from_slice(&code.to_le_bytes());
+            }
+            out.extend_from_slice(extras.as_bytes());
+            return out;
+        }
+
+        if self.bits == TQBits::Bits8 {
+            // Already scaled onto the grid by `quantize_impl`.
+            out.extend(scaled.into_iter().map(|val| {
+                crate::turboquant::simd::query8bit::signed_code(
+                    val.round().clamp(-127.0, 127.0) as i32
+                )
+            }));
+            out.extend_from_slice(extras.as_bytes());
+            return out;
+        }
+
         let mut bit_writer = BitWriter::new(&mut out);
 
         let boundaries = self.bits.get_centroid_boundaries();
@@ -158,10 +180,17 @@ impl TurboQuantizer {
         let (dim_part, extras) = self.split_vector(vec);
 
         let centroids = self.bits.get_centroids();
+        let wide = self.bits == TQBits::Bits16;
         let mut reader = BitReader::new(dim_part);
-        reader.set_bits(self.bits.bit_size());
+        if !wide {
+            reader.set_bits(self.bits.bit_size());
+        }
 
-        let iter = (0..self.padded_dim).map(move |_| {
+        let iter = (0..self.padded_dim).map(move |i| {
+            if wide {
+                // 16-bit codes are the grid values themselves.
+                return f64::from(i16::from_le_bytes([dim_part[2 * i], dim_part[2 * i + 1]]));
+            }
             let idx: u8 = reader.read();
             f64::from(centroids[idx as usize])
         });
@@ -171,7 +200,10 @@ impl TurboQuantizer {
 
     /// Size in bytes of a vector quantized by this quantizer.
     pub fn quantized_size(&self) -> usize {
-        Self::quantized_size_for(self.padded_dim, self.bits, self.distance, self.mode)
+        // `self.padded_dim` is already padded; `quantized_size_for` pads its
+        // input again, which is not idempotent for `Bits1_5` (x1.5 twice).
+        let vector_data_size = self.padded_dim * self.bits.bit_size() as usize / u8::BITS as usize;
+        vector_data_size + TqVectorExtras::size_for(self.bits, self.distance, self.mode)
     }
 
     /// Total size in bytes of a quantized vector, including both the packed
@@ -195,6 +227,8 @@ impl TurboQuantizer {
             TQBits::Bits1_5 => (dim * 3 / 2).next_multiple_of(8), // // 16 elements per 3 bytes
             TQBits::Bits2 => dim.next_multiple_of(4), // 4 elements per byte
             TQBits::Bits4 => dim.next_multiple_of(2), // 2 elements per byte
+            TQBits::Bits8 => dim,                     // 1 element per byte
+            TQBits::Bits16 => dim,                    // 2 bytes per element
         }
     }
 
@@ -292,7 +326,14 @@ mod tests {
                 for &distance in SUPPORTED_DISTANCES {
                     let predicted_extra_size = TqVectorExtras::size_for(bits, distance, mode);
 
-                    let tq = TurboQuantizer::new(dim, bits, mode, distance, None);
+                    let tq = TurboQuantizer::new(
+                        dim,
+                        bits,
+                        mode,
+                        distance,
+                        crate::turboquant::TQRotation::Padded,
+                        None,
+                    );
                     let (l2_length, centroid_norm, expected_scaling) = example_extras(distance);
                     let expected_ec = match mode {
                         TQMode::Plus => Some(-0.5),

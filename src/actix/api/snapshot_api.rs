@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use ::common::ambient::AmbientFutureExt;
+use ::common::reason::reason;
 use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
@@ -489,6 +491,9 @@ async fn recover_shard_snapshot(
             request.checksum,
             http_client.as_ref().clone(),
             request.api_key,
+            // No transfer sender to identify: this is a user request. The shard transfer
+            // priority, the only one that clears the shard, cannot be selected here anyway.
+            None,
         )
         .await?;
 
@@ -662,6 +667,7 @@ async fn create_partial_snapshot(
         shard,
         Some(manifest),
     )
+    .unmeasured(reason("Snapshot APIs aren't measured"))
     .await?;
 
     Ok(snapshot_stream)

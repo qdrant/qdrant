@@ -1,0 +1,27 @@
+[package]
+name = "edge-shard-query"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "edge-shard-query"
+path = "src/main.rs"
+
+[dependencies]
+edge = { path = "../..", features = ["serverless"] }
+common = { path = "../../../common/common" }
+io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
+io_bridge_uio_grpc = { path = "../../../common/io_bridge_uio_grpc" }
+
+fs-err = { workspace = true }
+object_store = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }

@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
+use blobstore::error::BlobstoreError;
+use blobstore::{Blob, Blobstore};
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFs;
-use gridstore::config::StorageOptions;
-use gridstore::error::GridstoreError;
-use gridstore::{Blob, Gridstore};
+use common::universal_io::{MmapFs, Populate};
 
 use super::super::MapIndexKey;
 use super::MutableMapIndex;
@@ -13,15 +15,14 @@ use super::in_memory::InMemoryMapIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// Default options for Gridstore storage
-const fn default_gridstore_options(block_size: usize) -> StorageOptions {
-    StorageOptions {
+/// Default options for the backing storage
+fn storage_options(block_size: usize) -> StorageConfig {
+    crate::common::blobstore_config::storage_config(CreateOptions {
+        page_size_bytes: block_size * DEFAULT_REGION_SIZE_BLOCKS * 32, // 4 to 8 MiB = block_size * region_blocks * regions,
         // Size dependent on map value type
-        block_size_bytes: Some(block_size),
-        compression: Some(gridstore::config::Compression::None),
-        page_size_bytes: Some(block_size * 8192 * 32), // 4 to 8 MiB = block_size * region_blocks * regions,
-        region_size_blocks: None,
-    }
+        block_size_bytes: block_size,
+        compression: blobstore::config::Compression::None,
+    })
 }
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
@@ -33,16 +34,24 @@ where
     /// The `create_if_missing` parameter indicates whether to create a new Gridstore if it does
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
     /// loaded.
-    pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+    ///
+    /// `prefix_index` enables in-memory prefix range scans; it is not
+    /// persisted, so it must be re-supplied (from the payload schema) on every
+    /// open.
+    pub fn open_gridstore(
+        path: PathBuf,
+        create_if_missing: bool,
+        prefix_index: bool,
+    ) -> OperationResult<Option<Self>> {
         let store = if create_if_missing {
-            let options = default_gridstore_options(N::gridstore_block_size());
-            Gridstore::open_or_create(MmapFs, path, options).map_err(|err| {
+            let options = storage_options(N::gridstore_block_size());
+            Blobstore::open_or_create(MmapFs, path, options, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(MmapFs, path).map_err(|err| {
+            Blobstore::open(MmapFs, path, Populate::Blocking).map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable map index on gridstore: {err}"
                 ))
@@ -53,20 +62,22 @@ where
         };
 
         // Load in-memory index from Gridstore
-        let mut in_memory_index = InMemoryMapIndex::<N>::empty();
+        let mut in_memory_index = InMemoryMapIndex::<N>::empty(prefix_index);
 
-        let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
-            .iter::<_, GridstoreError>(
+            .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {
                     in_memory_index.add_many_to_map(idx, values);
                     Ok(true)
                 },
-                hw_counter_ref,
+                HwMetric::PayloadIndexIoWrite,
             )
-            // unwrap safety: never returns an error
-            .unwrap();
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to load mutable map index from gridstore: {err}"
+                ))
+            })?;
 
         Ok(Some(Self {
             in_memory_index,
@@ -78,7 +89,6 @@ where
         &mut self,
         idx: PointOffsetType,
         values: Vec<Q>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         Q: Into<<N as MapIndexKey>::Owned> + Clone,
@@ -87,11 +97,9 @@ where
             return Ok(());
         }
 
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
-
         let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
         self.storage
-            .put_value(idx, &values, hw_counter_ref)
+            .put_value(idx, &values, HwMetric::PayloadIndexIoWrite)
             .map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to put value in mutable map index gridstore: {err}"

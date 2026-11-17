@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 use super::{BLOCK_SIZE, CacheController, CachedSlice};
@@ -96,7 +96,7 @@ const TOTAL_FLOATS: usize = NUM_VECTORS * VECTOR_DIM;
 
 /// Generate `NUM_VECTORS` vectors of `VECTOR_DIM` f32s using a seeded RNG.
 fn generate_vectors(seed: u64) -> Vec<f32> {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     (0..TOTAL_FLOATS).map(|_| rng.random::<f32>()).collect()
 }
 
@@ -170,7 +170,7 @@ fn test_cached_slice_vectors_random_access() {
 
     let cached_slice = CachedSlice::open(&cacher, &vectors_path).unwrap();
 
-    let mut rng = StdRng::seed_from_u64(123);
+    let mut rng = SmallRng::seed_from_u64(123);
 
     // Random single-element access.
     for _ in 0..5000 {
@@ -187,6 +187,9 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
+        cached_slice.will_need(std::iter::once(
+            start * size_of::<f32>()..end * size_of::<f32>(),
+        ));
         let cached_vec = cached_slice.get_range::<f32>(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
@@ -210,6 +213,10 @@ fn test_cached_slice_vectors_random_access() {
             "Sub-range mismatch at [{a}..{b}]",
         );
     }
+
+    // Empty and past-EOF hints are ignored.
+    let len_bytes = TOTAL_FLOATS * size_of::<f32>();
+    cached_slice.will_need([0..0, len_bytes - 8..len_bytes + 8].into_iter());
 }
 
 /// Concurrent access test: multiple threads exhaust the pool faster.

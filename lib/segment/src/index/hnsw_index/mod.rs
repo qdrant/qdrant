@@ -1,22 +1,38 @@
 use common::defaults::thread_count_for_hnsw;
+use point_scorer::{FilteredBytesScorer, FilteredScorer};
 
-pub mod build_condition_checker;
+use crate::vector_storage::query_scorer::QueryScorerBytes;
+
 mod config;
 mod entry_points;
+mod graph;
+pub use graph::{HnswGraph, HnswLinksStorage};
 pub mod graph_layers;
+mod graph_layers_batched;
 pub mod graph_layers_builder;
 mod graph_layers_healer;
 pub mod graph_links;
 pub mod hnsw;
 mod links_container;
+mod pipnn;
 pub mod point_scorer;
 mod search_context;
 
 #[cfg(feature = "gpu")]
 pub mod gpu;
 
+/// Scorers used for search over [CompressedWithVectors] format.
+///
+/// [CompressedWithVectors]: graph_links::GraphLinksFormat::CompressedWithVectors
+#[derive(Clone, Copy)]
+pub struct GraphWithVectorsScorers<'a> {
+    pub links: &'a FilteredScorer<'a>,
+    pub links_bytes: &'a FilteredBytesScorer<'a>,
+    pub base: &'a dyn QueryScorerBytes,
+}
+
 /// Maximum number of links per level.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HnswM {
     /// M for all levels except level 0.
     pub m: usize,
@@ -48,18 +64,6 @@ pub mod gpu {
         pub struct LockedGpuDevice<'a> {
             phantom: std::marker::PhantomData<&'a usize>,
         }
-    }
-
-    pub mod gpu_insert_context {
-        /// Placeholder for GPU insertion context to process indexing on.
-        pub struct GpuInsertContext<'a> {
-            phantom: std::marker::PhantomData<&'a usize>,
-        }
-    }
-
-    pub mod gpu_vector_storage {
-        /// Placeholder for GPU vector storage.
-        pub struct GpuVectorStorage {}
     }
 }
 

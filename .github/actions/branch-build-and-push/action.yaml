@@ -54,7 +54,7 @@ runs:
 
         # Authenticate on registries
         if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
-          echo "${{ inputs.dockerhub-password }}" | docker login -u generall --password-stdin
+          echo "${{ inputs.dockerhub-password }}" | docker login -u qdrant --password-stdin
         fi
         if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
           echo "${{ inputs.ghcr-password }}" | docker login ghcr.io -u qdrant --password-stdin

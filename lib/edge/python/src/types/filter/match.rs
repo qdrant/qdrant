@@ -24,6 +24,8 @@ impl FromPyObject<'_, '_> for PyMatch {
             Text(PyMatchText),
             TextAny(PyMatchTextAny),
             Phrase(PyMatchPhrase),
+            Prefix(PyMatchPrefix),
+            Substring(PyMatchSubstring),
             Any(PyMatchAny),
             Except(PyMatchExcept),
         }
@@ -34,6 +36,8 @@ impl FromPyObject<'_, '_> for PyMatch {
                 Match::Text(_) => {}
                 Match::TextAny(_) => {}
                 Match::Phrase(_) => {}
+                Match::Prefix(_) => {}
+                Match::Substring(_) => {}
                 Match::Any(_) => {}
                 Match::Except(_) => {}
             }
@@ -44,6 +48,8 @@ impl FromPyObject<'_, '_> for PyMatch {
             Helper::Text(text) => Match::Text(MatchText::from(text)),
             Helper::TextAny(text_any) => Match::TextAny(MatchTextAny::from(text_any)),
             Helper::Phrase(phrase) => Match::Phrase(MatchPhrase::from(phrase)),
+            Helper::Prefix(prefix) => Match::Prefix(MatchPrefix::from(prefix)),
+            Helper::Substring(substring) => Match::Substring(MatchSubstring::from(substring)),
             Helper::Any(any) => Match::Any(MatchAny::from(any)),
             Helper::Except(except) => Match::Except(MatchExcept::from(except)),
         };
@@ -63,6 +69,8 @@ impl<'py> IntoPyObject<'py> for PyMatch {
             Match::Text(text) => PyMatchText(text).into_bound_py_any(py),
             Match::TextAny(text_any) => PyMatchTextAny(text_any).into_bound_py_any(py),
             Match::Phrase(phrase) => PyMatchPhrase(phrase).into_bound_py_any(py),
+            Match::Prefix(prefix) => PyMatchPrefix(prefix).into_bound_py_any(py),
+            Match::Substring(substring) => PyMatchSubstring(substring).into_bound_py_any(py),
             Match::Any(any) => PyMatchAny(any).into_bound_py_any(py),
             Match::Except(except) => PyMatchExcept(except).into_bound_py_any(py),
         }
@@ -76,6 +84,8 @@ impl Repr for PyMatch {
             Match::Text(text) => PyMatchText::wrap_ref(text).fmt(f),
             Match::TextAny(text_any) => PyMatchTextAny::wrap_ref(text_any).fmt(f),
             Match::Phrase(phrase) => PyMatchPhrase::wrap_ref(phrase).fmt(f),
+            Match::Prefix(prefix) => PyMatchPrefix::wrap_ref(prefix).fmt(f),
+            Match::Substring(substring) => PyMatchSubstring::wrap_ref(substring).fmt(f),
             Match::Any(any) => PyMatchAny::wrap_ref(any).fmt(f),
             Match::Except(except) => PyMatchExcept::wrap_ref(except).fmt(f),
         }
@@ -264,6 +274,66 @@ impl PyMatchPhrase {
     fn _getters(self) {
         // Every field should have a getter method
         let MatchPhrase { phrase: _ } = self.0;
+    }
+}
+
+#[pyclass(name = "MatchPrefix", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyMatchPrefix(pub MatchPrefix);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyMatchPrefix {
+    #[new]
+    pub fn new(prefix: String) -> Self {
+        Self(MatchPrefix { prefix })
+    }
+
+    #[getter]
+    pub fn prefix(&self) -> &str {
+        &self.0.prefix
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyMatchPrefix {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchPrefix { prefix: _ } = self.0;
+    }
+}
+
+#[pyclass(name = "MatchSubstring", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyMatchSubstring(pub MatchSubstring);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyMatchSubstring {
+    #[new]
+    pub fn new(substring: String) -> Self {
+        Self(MatchSubstring { substring })
+    }
+
+    #[getter]
+    pub fn substring(&self) -> &str {
+        &self.0.substring
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyMatchSubstring {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchSubstring { substring: _ } = self.0;
     }
 }
 

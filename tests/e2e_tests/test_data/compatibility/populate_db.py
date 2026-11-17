@@ -21,6 +21,11 @@ def drop_collection(name: str):
 
 
 def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, datatype: str, quantization_config: Optional[dict] = None):
+    # `turbo4` is a dense-only storage datatype, sparse vector configs reject it
+    sparse_index = {"on_disk": on_disk}
+    if datatype != "turbo4":
+        sparse_index["datatype"] = datatype
+
     # create collection with a lower `indexing_threshold_kb` to generate the HNSW index
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}",
@@ -45,10 +50,7 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, dataty
             },
             "sparse_vectors": {
                 "text": {
-                    "index": {
-                        "on_disk": on_disk,
-                        "datatype": datatype,
-                    }
+                    "index": sparse_index,
                 }
             },
             "optimizers_config": {
@@ -65,14 +67,15 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, dataty
 
 
 def create_payload_indexes(name: str, on_disk_payload_index: bool):
-    # keyword
+    # keyword, with the extra on-disk structure backing `match: {"prefix": ...}`
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
         json={
             "field_name": "keyword_field",
             "field_schema": {
                 "type": "keyword",
-                "on_disk": on_disk_payload_index
+                "on_disk": on_disk_payload_index,
+                "prefix": True
             }
         },
     )
@@ -361,6 +364,9 @@ if __name__ == "__main__":
     populate_collection("test_collection_product_x16", on_disk=False, quantization_config={"product": {"compression": "x16"}})
     populate_collection("test_collection_product_x8", on_disk=False, quantization_config={"product": {"compression": "x8"}})
     populate_collection("test_collection_binary", on_disk=False, quantization_config={"binary": {"always_ram": True}})
+    populate_collection("test_collection_turbo_bits1_5", on_disk=False, quantization_config={"turbo": {"bits": "bits1_5"}})
+    populate_collection("test_collection_turbo_bits4", on_disk=False, quantization_config={"turbo": {"bits": "bits4"}})
     populate_collection("test_collection_mmap_field_index", on_disk=True, on_disk_payload_index=True)
     populate_collection("test_collection_vector_datatype_u8", on_disk=True, datatype="uint8")
     populate_collection("test_collection_vector_datatype_f16", on_disk=True, datatype="float16")
+    populate_collection("test_collection_vector_datatype_turbo4", on_disk=True, datatype="turbo4")

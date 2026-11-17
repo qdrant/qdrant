@@ -26,6 +26,14 @@ impl MemoryReporter for IdTrackerEnum {
                 // Purely in-memory, no files.
                 ComponentMemoryUsage::ram_only(tracker.ram_usage_bytes() as u64)
             }
+            IdTrackerEnum::DiskIdTracker(tracker) => {
+                // Mapping stays on disk; only versions + the deleted bitvec are resident.
+                ComponentMemoryUsage::from_files_and_ram(
+                    tracker.files(),
+                    FileStorageIntent::OnDisk,
+                    tracker.ram_usage_bytes() as u64,
+                )
+            }
         }
     }
 }

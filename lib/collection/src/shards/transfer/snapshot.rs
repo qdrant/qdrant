@@ -15,7 +15,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::SharedShardHolder;
+use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -172,15 +172,14 @@ pub(super) async fn transfer_snapshot(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
     );
 
-    let shard_holder_read = shard_holder.read().await;
-    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
-
-    let transferring_shard = shard_holder_read.get_shard(shard_id);
-    let Some(replica_set) = transferring_shard else {
+    let replica_set = shard_holder.read().await.get_shard(shard_id).cloned();
+    let Some(replica_set) = replica_set else {
         return Err(CollectionError::service_error(format!(
             "Shard {shard_id} cannot be queue proxied because it does not exist"
         )));
     };
+
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
     // Queue proxy local shard
     progress.lock().set_stage(TransferStage::Proxifying);
@@ -207,16 +206,27 @@ pub(super) async fn transfer_snapshot(
             "/collections/{encoded_collection_name}/shards/{shard_id}/snapshot",
         ));
     } else {
-        // Create shard snapshot
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-        let snapshot_description = shard_holder_read
-            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-            .await?
-            .await?;
 
-        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
+        // Setup can wait for update-queue capacity, so use the cloned replica set
+        // without holding the shard holder lock for either setup or snapshot creation.
+        let snapshot_creator = ShardHolder::create_shard_snapshot(
+            &replica_set,
+            snapshots_path,
+            collection_id,
+            shard_id,
+            temp_dir,
+        )
+        .await?;
+
+        let snapshot_description = snapshot_creator.await?;
+
+        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves,
+        //       shard snapshot may not be cleaned up...
+        let snapshot_temp_path = shard_holder
+            .read()
+            .await
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
             .await
             .map_err(|err| {
@@ -250,11 +260,12 @@ pub(super) async fn transfer_snapshot(
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_id,
-            shard_id,
+            remote_shard.id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
             local_api_key,
+            transfer_config.from,
         )
         .await
         .map_err(|err| {

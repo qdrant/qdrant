@@ -3,9 +3,10 @@ use std::borrow::Cow;
 use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::ReadOnlyChunkedMultiDenseVectorStorage;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
@@ -14,6 +15,28 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     flattened_to_multi_vector, read_multi_vector,
 };
 use crate::vector_storage::{MultiVectorStorageRead, VectorOffsetType, VectorStorageRead};
+
+impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVectorStorage<T, S> {
+    fn for_each_flat_multi<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, &[T]),
+    ) -> OperationResult<()> {
+        let point_offsets = keys
+            .into_iter()
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+
+        super::for_each_vector::<P, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+            |(user_data, point_offset), flattened| {
+                callback(user_data, point_offset, flattened);
+                Ok(())
+            },
+        )
+    }
+}
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> MultiVectorStorageRead<T>
     for ReadOnlyChunkedMultiDenseVectorStorage<T, S>
@@ -33,19 +56,26 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> MultiVectorStorageRead<T>
         read_multi_vector::<T, P, _>(&self.offsets, &self.vectors, key)
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         let point_offsets = keys.iter().copied().enumerate();
 
-        let vectors =
-            super::iter_vectors::<Sequential, _, _, _>(&self.offsets, &self.vectors, point_offsets);
-
-        for (index, flattened) in vectors {
-            let vector = TypedMultiDenseVectorRef::new(&flattened, self.vector_dim());
-            callback(index, vector)
-        }
+        super::for_each_vector::<Sequential, _, _, _>(
+            &self.offsets,
+            &self.vectors,
+            point_offsets,
+            |index, flattened| {
+                let vector = TypedMultiDenseVectorRef::new(flattened, self.vector_dim());
+                callback(index, vector);
+                Ok(())
+            },
+        )
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -86,8 +116,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -98,25 +128,18 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    fn read_vectors<P: AccessPattern, U: Copy>(
+    fn read_vectors<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
-        let point_offsets = keys
-            .into_iter()
-            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
-
-        let vectors =
-            super::iter_vectors::<P, _, _, _>(&self.offsets, &self.vectors, point_offsets);
-
-        for ((user_data, point_offset), flattened) in vectors {
+    ) -> OperationResult<()> {
+        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
             let vector = CowVector::MultiDense(T::into_float_multivector(
-                flattened_to_multi_vector(flattened, self.vectors.dim()),
+                flattened_to_multi_vector(Cow::Borrowed(flattened), self.vectors.dim()),
             ));
 
             callback(user_data, point_offset, vector);
-        }
+        })
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -134,5 +157,19 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_bitslice()
+    }
+
+    fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
+        &self,
+        keys: impl IntoIterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
+    ) -> OperationResult<()> {
+        self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
+            callback(
+                user_data,
+                point_offset,
+                bytemuck::cast_slice(flattened).to_vec(),
+            );
+        })
     }
 }

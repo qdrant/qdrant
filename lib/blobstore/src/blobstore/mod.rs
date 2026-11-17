@@ -1,0 +1,489 @@
+pub(crate) mod gridstore;
+mod logstore;
+mod reader;
+pub(crate) mod view;
+
+#[cfg(test)]
+mod tests;
+
+use std::path::PathBuf;
+
+use common::ambient::hw::HwMetric;
+use common::generic_consts::AccessPattern;
+use common::universal_io::{
+    MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFs,
+    UserData,
+};
+use gridstore::Gridstore;
+pub use logstore::Logstore;
+pub use reader::BlobstoreReader;
+use reader::CONFIG_FILENAME;
+pub use view::BlobstoreView;
+
+use crate::Result;
+use crate::blob::Blob;
+use crate::config::StorageConfig;
+use crate::error::BlobstoreError;
+use crate::tracker::PointOffset;
+#[cfg(test)]
+use crate::tracker::ValuePointer;
+
+pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), BlobstoreError> + Send>;
+
+/// Number of point offsets read at once when iterating over all values.
+const ITER_BATCH_SIZE: PointOffset = 256;
+
+/// Pass the values of one iteration batch to `callback` in ascending order of point offsets.
+///
+/// `read` fills the batch; async backends complete its reads in any order. Returns whether
+/// iteration should continue.
+fn iter_batch_in_order<V, E>(
+    batch: &mut Vec<(PointOffset, V)>,
+    read: impl FnOnce(&mut Vec<(PointOffset, V)>) -> std::result::Result<(), E>,
+    mut callback: impl FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+) -> std::result::Result<bool, E> {
+    batch.clear();
+    read(batch)?;
+    batch.sort_unstable_by_key(|&(point_offset, _)| point_offset);
+    for (point_offset, value) in batch.drain(..) {
+        if !callback(point_offset, value)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Read-write storage for values of type `V`.
+///
+/// Operates in one of two modes, specified on creation and automatically selected when opening:
+///
+/// - [`Mode::Mutable`](crate::config::Mode::Mutable): backed by the inner `Gridstore` — values
+///   can be updated and deleted, freed blocks are tracked and reused.
+/// - [`Mode::AppendOnly`](crate::config::Mode::AppendOnly): backed by the inner `Logstore` —
+///   append-only variant for serverless deployments, values cannot be updated or deleted, and
+///   must be put in monotonically increasing point offset order.
+///
+/// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
+#[derive(Debug)]
+pub struct Blobstore<V, S = MmapFile>
+where
+    S: UniversalWrite + UniversalAppend + 'static,
+{
+    /// The inner storages hold no filesystem of their own: opens, creates and
+    /// removes go through this one, passed down per call.
+    fs: S::Fs,
+    inner: BlobstoreInner<V, S>,
+}
+
+#[derive(Debug)]
+enum BlobstoreInner<V, S>
+where
+    S: UniversalWrite + UniversalAppend + 'static,
+{
+    Gridstore(Gridstore<V, S>),
+    Logstore(Logstore<V, S>),
+}
+
+impl<V, S> Blobstore<V, S>
+where
+    V: Blob,
+    S: UniversalWrite + UniversalAppend + 'static,
+{
+    /// List all files belonging to this storage.
+    pub fn files(&self) -> Vec<PathBuf> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.files(),
+            BlobstoreInner::Logstore(storage) => storage.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.immutable_files(),
+            BlobstoreInner::Logstore(storage) => storage.immutable_files(),
+        }
+    }
+
+    /// Opens an existing storage, or initializes a new one.
+    /// Depends on the existence of the config file at the `base_path`.
+    ///
+    /// In case of opening, it ignores the `create_options` parameter.
+    pub fn open_or_create(
+        fs: S::Fs,
+        base_path: PathBuf,
+        config_if_create: StorageConfig,
+        populate: Populate,
+    ) -> Result<Self> {
+        let config_path = base_path.join(CONFIG_FILENAME);
+        if fs.exists(&config_path)? {
+            Self::open(fs, base_path, populate)
+        } else {
+            fs.create_dir(&base_path)?;
+            Self::new(fs, base_path, config_if_create)
+        }
+    }
+
+    /// Initializes a new storage in the mode of the given config variant.
+    ///
+    /// `base_path` is the directory where the storage files will be stored.
+    /// It should exist already.
+    pub fn new(fs: S::Fs, base_path: PathBuf, config: StorageConfig) -> Result<Self> {
+        config
+            .validate()
+            .map_err(BlobstoreError::validation_error)?;
+        let inner = match config {
+            StorageConfig::Mutable(config) => {
+                BlobstoreInner::Gridstore(Gridstore::new(&fs, base_path, config)?)
+            }
+            StorageConfig::AppendOnly(config) => {
+                BlobstoreInner::Logstore(Logstore::new(&fs, base_path, config)?)
+            }
+        };
+        Ok(Self { fs, inner })
+    }
+
+    /// Open an existing storage at the given path.
+    ///
+    /// The operating mode is automatically selected based on the persisted config.
+    pub fn open(fs: S::Fs, base_path: PathBuf, populate: Populate) -> Result<Self> {
+        let inner = match reader::read_config(&fs, &base_path)? {
+            StorageConfig::Mutable(config) => {
+                BlobstoreInner::Gridstore(Gridstore::open(&fs, base_path, config, populate)?)
+            }
+            StorageConfig::AppendOnly(config) => {
+                BlobstoreInner::Logstore(Logstore::open(&fs, base_path, config, populate)?)
+            }
+        };
+        Ok(Self { fs, inner })
+    }
+
+    /// Put a value in the storage.
+    ///
+    /// Returns true if the value existed previously and was updated, false if it was newly inserted.
+    ///
+    /// In append-only mode values must be put at monotonically increasing point offsets, and
+    /// cannot be overwritten.
+    pub fn put_value(
+        &mut self,
+        point_offset: PointOffset,
+        value: &V,
+        hw_metric: HwMetric,
+    ) -> Result<bool> {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => {
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
+            }
+        }
+    }
+
+    /// Put an already serialized value in the storage.
+    ///
+    /// `value_bytes` must be the value in its [`Blob`] encoding, uncompressed — the same bytes
+    /// `V::to_bytes` would produce. Compression is applied here with the local storage config,
+    /// so callers can exchange these bytes between storages with different compression settings.
+    ///
+    /// Returns true if the value existed previously and was updated, false if it was newly inserted.
+    ///
+    /// In append-only mode values must be put at monotonically increasing point offsets, and
+    /// cannot be overwritten.
+    pub fn put_value_bytes(
+        &mut self,
+        point_offset: PointOffset,
+        value_bytes: Vec<u8>,
+        hw_metric: HwMetric,
+    ) -> Result<bool> {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => {
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
+            }
+        }
+    }
+
+    /// Whether this storage supports [`Self::delete_value`].
+    ///
+    /// Logstore rejects deletes; callers that only need a soft deletion marker must
+    /// skip the hard delete themselves.
+    pub fn supports_delete(&self) -> bool {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => true,
+            BlobstoreInner::Logstore(_) => false,
+        }
+    }
+
+    /// Delete a value from the storage.
+    ///
+    /// Returns None if the point_offset, page, or value was not found.
+    /// Returns the deleted value otherwise.
+    ///
+    /// Not supported in append-only mode, returns an error.
+    pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.delete_value(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.delete_value(point_offset),
+        }
+    }
+
+    /// Clear the storage, going back to the initial state.
+    ///
+    /// Completely wipes the storage, and recreates it in the same mode.
+    pub fn clear(&mut self) -> Result<()> {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.clear(&self.fs),
+            BlobstoreInner::Logstore(storage) => storage.clear(&self.fs),
+        }
+    }
+
+    /// Switch to a layout for a storage that is complete and only read from now on, such as one
+    /// of a segment the optimizer built. The next flush persists the new layout; until then the
+    /// storage on disk cannot be opened, so this suits a storage being built.
+    ///
+    /// In the append-only mode the value mappings are stored compacted: opening reads them into
+    /// RAM whole, so a lookup no longer costs a read. The storage stays writable, but every flush
+    /// then rewrites the whole mapping file. The mutable mode is left as is.
+    pub fn make_immutable(&self) -> Result<()> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => Ok(()),
+            BlobstoreInner::Logstore(storage) => storage.make_immutable(&self.fs),
+        }
+    }
+
+    /// Don't journal the value mappings on flush.
+    ///
+    /// In the mutable mode a flush first journals its mapping writes, so a mapping write a crash
+    /// tears is repaired when opening. Only disable this for a new storage that is thrown away on
+    /// a crash, and is durably flushed before it is used. Such as one of a segment being built.
+    ///
+    /// The append-only mode has no journal, appends cannot tear existing mappings.
+    pub fn disable_journal(&mut self) {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.disable_journal(),
+            BlobstoreInner::Logstore(_) => {}
+        }
+    }
+
+    /// Wipe the storage, drop all pages and delete the base directory.
+    ///
+    /// Takes ownership because this function leaves Blobstore in an inconsistent state which does
+    /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
+    pub fn wipe(self) -> Result<()> {
+        let Self { fs, inner } = self;
+        match inner {
+            BlobstoreInner::Gridstore(storage) => storage.wipe(&fs),
+            BlobstoreInner::Logstore(storage) => storage.wipe(&fs),
+        }
+    }
+
+    /// Heap RAM held beyond the page cache of [`Self::files`]: the value mappings, when they are
+    /// held compacted, see [`Self::make_immutable`].
+    pub fn ram_usage_bytes(&self) -> usize {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => 0,
+            BlobstoreInner::Logstore(storage) => storage.ram_usage_bytes(),
+        }
+    }
+
+    /// Return the storage size in bytes.
+    pub fn get_storage_size_bytes(&self) -> Result<usize> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.get_storage_size_bytes(),
+            BlobstoreInner::Logstore(storage) => storage.get_storage_size_bytes(),
+        }
+    }
+
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_metric),
+            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset, hw_metric),
+        }
+    }
+
+    /// Get the serialized value for a given point offset.
+    ///
+    /// The returned bytes are the value in its [`Blob`] encoding, always decompressed — the same
+    /// bytes `V::to_bytes` would produce, valid as [`put_value_bytes`](Self::put_value_bytes)
+    /// input regardless of either storage's compression setting.
+    pub fn get_value_bytes<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<Vec<u8>>> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => {
+                storage.get_value_bytes::<P>(point_offset, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.get_value_bytes::<P>(point_offset, hw_metric)
+            }
+        }
+    }
+
+    /// Iterate over all given values and execute callback for each one.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub fn read_values<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => {
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+        }
+    }
+
+    /// Byte-blob analogue of [`Self::read_values`]: hands the callback each value in its
+    /// [`Blob`] encoding, always decompressed — the same bytes `V::to_bytes` would produce,
+    /// valid as [`put_value_bytes`](Self::put_value_bytes) input regardless of either
+    /// storage's compression setting.
+    pub fn read_values_bytes<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => {
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+        }
+    }
+
+    /// Length of each value's [`Self::read_values_bytes`] bytes, see
+    /// [`BlobstoreView::read_value_lens`].
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let callback = |user_data, point_offset, len| -> Result<_, E> {
+            callback(user_data, point_offset, len)?;
+            Ok(true)
+        };
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.with_view(|view| {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            })?,
+            BlobstoreInner::Logstore(storage) => storage.with_view(|view| {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            })?,
+        };
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.get_pointer(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.get_pointer(point_offset),
+        }
+    }
+
+    pub fn max_point_offset(&self) -> PointOffset {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.max_point_offset(),
+            BlobstoreInner::Logstore(storage) => storage.max_point_offset(),
+        }
+    }
+
+    /// Iterate over all values in ascending order of point offsets and execute callback for each
+    /// one. Missing values are skipped.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub fn iter<F, E>(&self, callback: F, hw_metric: HwMetric) -> Result<(), E>
+    where
+        F: FnMut(PointOffset, V) -> Result<bool, E>,
+        E: From<BlobstoreError>,
+    {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.iter(callback, hw_metric),
+            BlobstoreInner::Logstore(storage) => storage.iter(callback, hw_metric),
+        }
+    }
+}
+
+impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
+    /// Create flusher that durably persists all pending changes when invoked.
+    pub fn flusher(&self) -> Flusher {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.flusher(),
+            BlobstoreInner::Logstore(storage) => storage.flusher(),
+        }
+    }
+
+    /// Populate all parts of the storage into the RAM cache.
+    pub fn populate(&self) -> Result<()> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.populate(),
+            BlobstoreInner::Logstore(storage) => storage.populate(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> crate::Result<()> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.clear_cache(),
+            BlobstoreInner::Logstore(storage) => storage.clear_cache(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl<V, S: UniversalWrite + UniversalAppend + 'static> Blobstore<V, S> {
+    /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
+    fn as_gridstore(&self) -> &Gridstore<V, S> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage,
+            BlobstoreInner::Logstore(_) => panic!("storage is not in mutable mode"),
+        }
+    }
+
+    /// Get the inner Gridstore (mutable mode storage), panics if the storage is in another mode.
+    fn as_gridstore_mut(&mut self) -> &mut Gridstore<V, S> {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage,
+            BlobstoreInner::Logstore(_) => panic!("storage is not in mutable mode"),
+        }
+    }
+
+    /// Get the inner Logstore (append-only mode storage), panics if the storage is in another mode.
+    fn as_logstore(&self) -> &Logstore<V, S> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => panic!("storage is not in append-only mode"),
+            BlobstoreInner::Logstore(storage) => storage,
+        }
+    }
+}

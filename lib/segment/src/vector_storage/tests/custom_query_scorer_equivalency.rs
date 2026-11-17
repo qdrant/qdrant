@@ -1,9 +1,13 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -67,6 +71,7 @@ fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
 
 fn scalar_u8() -> WithQuantization {
     let config = ScalarQuantizationConfig {
+        memory: None,
         r#type: crate::types::ScalarType::Int8,
         quantile: Some(0.5),
         always_ram: Some(true),
@@ -82,6 +87,7 @@ fn scalar_u8() -> WithQuantization {
 
 fn product_x4() -> WithQuantization {
     let config = ProductQuantizationConfig {
+        memory: None,
         compression: crate::types::CompressionRatio::X4,
         always_ram: Some(true),
     }
@@ -95,6 +101,7 @@ fn product_x4() -> WithQuantization {
 
 fn binary() -> WithQuantization {
     let config = BinaryQuantizationConfig {
+        memory: None,
         always_ram: Some(true),
         encoding: None,
         query_encoding: None,
@@ -168,6 +175,7 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &gen_sampler);
 
+        let _scope = ambient::test_guard();
         let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,
@@ -180,14 +188,17 @@ fn scoring_equivalency(
             quantized_vectors.as_ref(),
             None,
             id_tracker.deleted_point_bitslice(),
-            HardwareCounterCell::new(),
         )?;
 
         let points = (0..other_storage.total_vector_count() as _).sample(&mut rng, SAMPLE_SIZE);
 
-        let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
+        let scores = scorer
+            .score_points(&mut points.clone(), 0)
+            .unwrap()
+            .collect_vec();
         let other_scores = other_scorer
             .score_points(&mut points.clone(), 0)
+            .unwrap()
             .collect_vec();
 
         // Compare scores
@@ -235,6 +246,12 @@ fn scoring_equivalency(
 }
 
 #[rstest]
+// `test_attr(ignore = ...)` is required so rstest forwards `#[ignore]` to each
+// generated per-case function. Product-quant cases alone take ~130s on Windows CI.
+#[cfg_attr(
+    target_os = "windows",
+    test_attr(ignore = "slow on Windows, not OS-specific")
+)]
 fn compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,

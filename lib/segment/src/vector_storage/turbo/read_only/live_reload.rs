@@ -1,0 +1,45 @@
+use common::sorted_slice::SortedSlice;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
+
+use super::ReadOnlyChunkedTurboVectorStorage;
+use crate::common::live_reload::LiveReload;
+use crate::common::operation_error::OperationResult;
+
+impl<S: UniversalRead> LiveReload for ReadOnlyChunkedTurboVectorStorage<S> {
+    type File = S;
+
+    fn live_preload<Fs: CachedReadFs<File = S>>(
+        &self,
+        fs: &Fs,
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let futs = self.storage.live_preload(fs)?;
+        self.deleted.live_preload(fs)?;
+        Ok(futs)
+    }
+
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.storage.apply_deletions(deleted_points)?;
+        self.deleted.insert_all(deleted_points);
+        Ok(())
+    }
+
+    /// Reload the chunked vectors, apply `deleted_points`, and fold in the
+    /// persisted deletion of each appended offset — a live point may have a
+    /// deleted vector slot recorded only on disk.
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.storage.live_reload(fs, deleted_points, new_points)?;
+        self.deleted.insert_all(deleted_points);
+        self.deleted.reload_appended::<S>(fs, new_points)?;
+
+        Ok(())
+    }
+}

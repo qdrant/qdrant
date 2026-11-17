@@ -153,6 +153,7 @@ def create_collection(
     sparse_vectors=True,
     default_segment_number=None,
     on_disk_payload=None,
+    read_fan_out_factor=None,
     fail_on_error=True,
 ):
     payload = {
@@ -160,6 +161,7 @@ def create_collection(
         "shard_number": shard_number,
         "replication_factor": replication_factor,
         "write_consistency_factor": write_consistency_factor,
+        "read_fan_out_factor": read_fan_out_factor,
         "sharding_method": sharding_method,
         "optimizers_config": {
             "indexing_threshold": indexing_threshold,
@@ -182,12 +184,13 @@ def create_collection(
         assert_http_ok(r_batch)
 
 
-def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}):
+def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}, fail_on_error=True):
     # Delete collection in peer_url
     r_delete = requests.delete(
         f"{peer_url}/collections/{collection}?timeout={timeout}", headers=headers
     )
-    assert_http_ok(r_delete)
+    if fail_on_error:
+        assert_http_ok(r_delete)
 
 
 def create_field_index(

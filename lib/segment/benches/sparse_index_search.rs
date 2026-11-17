@@ -1,14 +1,14 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
-use common::universal_io::MmapFile;
+use common::universal_io::{MmapFile, MmapFs};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use dataset::Dataset;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools as _;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_from_iter;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
@@ -35,13 +35,13 @@ const TOP: usize = 10;
 const FULL_SCAN_THRESHOLD: usize = 1; // low value to trigger index usage by default
 
 fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
-    let mut rnd = StdRng::seed_from_u64(0);
+    let mut rnd = SmallRng::seed_from_u64(0);
     let query_vectors = (0..NUM_QUERIES)
         // Positive values to test pruning.
         .map(|_| random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM))
         .collect::<Vec<_>>();
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = SmallRng::seed_from_u64(42);
     let random_vectors = (0..NUM_VECTORS).map(|_| random_sparse_vector(&mut rnd, MAX_SPARSE_DIM));
     sparse_vector_index_search_benchmark_impl(c, "random-50k", random_vectors, &query_vectors);
 
@@ -87,13 +87,12 @@ fn sparse_vector_index_search_benchmark_impl(
     let field_value = "important value";
     let payload = payload_json! {field_name: field_value};
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     // all points have the same payload
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
+            .set_payload(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);
@@ -103,10 +102,11 @@ fn sparse_vector_index_search_benchmark_impl(
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
     let sparse_index_config =
-        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
+        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None, None);
     let pb = progress("Indexing (2/2)", vectors_len);
     let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32, MmapFile>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: sparse_index_config,
             id_tracker: sparse_vector_index.id_tracker().clone(),
             vector_storage: sparse_vector_index.vector_storage().clone(),
@@ -183,7 +183,7 @@ fn sparse_vector_index_search_benchmark_impl(
 
     // create payload field index
     payload_index
-        .set_indexed(&field_name.parse().unwrap(), Keyword, &hw_counter)
+        .set_indexed(&field_name.parse().unwrap(), Keyword)
         .unwrap();
 
     drop(payload_index);

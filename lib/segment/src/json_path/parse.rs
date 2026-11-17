@@ -29,10 +29,10 @@ fn json_path(input: &str) -> IResult<&str, JsonPath> {
     let (input, first_key) = alt((raw_str.map(str::to_string), quoted_str)).parse(input)?;
 
     let (input, rest) = many0(alt((
-        (preceded(char('.'), raw_str).map(|s| JsonPathItem::Key(s.to_string()))),
-        (preceded(char('.'), quoted_str).map(JsonPathItem::Key)),
-        (delimited(char('['), number, char(']')).map(JsonPathItem::Index)),
-        (tag("[]").map(|_| JsonPathItem::WildcardIndex)),
+        preceded(char('.'), raw_str).map(|s| JsonPathItem::Key(s.to_string())),
+        preceded(char('.'), quoted_str).map(JsonPathItem::Key),
+        delimited(char('['), number, char(']')).map(JsonPathItem::Index),
+        tag("[]").map(|_| JsonPathItem::WildcardIndex),
     )))
     .parse(input)?;
 

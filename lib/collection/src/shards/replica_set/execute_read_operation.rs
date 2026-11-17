@@ -9,6 +9,7 @@ use rand::seq::SliceRandom as _;
 
 use super::ShardReplicaSet;
 use crate::operations::consistency_params::{ReadConsistency, ReadConsistencyType};
+use crate::operations::routing::RoutingToken;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::resolve::{Resolve, ResolveCondition};
@@ -20,9 +21,14 @@ impl ShardReplicaSet {
     /// 2 - Otherwise uses `read_fan_out_ratio` to compute list of active remote shards.
     /// 3 - Falls back to all remaining shards if the optimization fails.
     /// It does not report failing peer_ids to the consensus.
+    ///
+    /// If `routing_token` is set, replicas are instead ordered deterministically and
+    /// local-replica preference is disabled, so the same token consistently lands on
+    /// the same replica. See [`RoutingToken`] and [`Self::execute_cluster_read_operation`].
     pub async fn execute_read_operation<Res, F>(
         &self,
         read_operation: F,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
     ) -> CollectionResult<Res>
     where
@@ -33,7 +39,7 @@ impl ShardReplicaSet {
         }
 
         let mut responses = self
-            .execute_cluster_read_operation(read_operation, 1, None)
+            .execute_cluster_read_operation(read_operation, 1, routing_token, None)
             .await?;
 
         Ok(responses.pop().unwrap())
@@ -43,6 +49,7 @@ impl ShardReplicaSet {
         &self,
         read_operation: F,
         read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
         local_only: bool,
     ) -> CollectionResult<Res>
     where
@@ -112,6 +119,7 @@ impl ShardReplicaSet {
             .execute_cluster_read_operation(
                 read_operation,
                 required_successful_results,
+                routing_token,
                 Some(remotes),
             )
             .await?;
@@ -144,10 +152,22 @@ impl ShardReplicaSet {
         read_operation(local.get()).await
     }
 
+    /// Fan a read out across the replica set and collect `required_successful_results`
+    /// responses.
+    ///
+    /// Replica ordering depends on `routing_token`:
+    /// - `None` (default): the local replica is preferred (tried first), remaining
+    ///   readable remotes are shuffled randomly to balance load.
+    /// - `Some(token)`: all readable candidates (local + remotes) are ordered by a
+    ///   stable hash of `(token, peer_id)`, identical on every node. Local-replica
+    ///   preference and the local-update fan-out are disabled, and the default
+    ///   fan-out is forced to 0, so the read sticks to the token's primary replica
+    ///   and only falls back (in hash order) on failure. See [`RoutingToken`].
     async fn execute_cluster_read_operation<Res, F>(
         &self,
         read_operation: F,
         required_successful_results: usize,
+        routing_token: Option<RoutingToken>,
         remotes: Option<tokio::sync::RwLockReadGuard<'_, Vec<RemoteShard>>>,
     ) -> CollectionResult<Vec<Res>>
     where
@@ -179,6 +199,12 @@ impl ShardReplicaSet {
 
         let local_is_readable = self.peer_is_readable(self.this_peer_id());
 
+        // With a routing token we route deterministically (see `RoutingToken`):
+        // candidates are ordered by a stable hash of `(token, peer_id)` and the local
+        // replica gets no special preference, so the same token lands on the same
+        // replica regardless of which node received the request.
+        let deterministic_routing = routing_token.is_some();
+
         let local_operation = if local_is_readable {
             let local_operation = async {
                 let Some(local) = local else {
@@ -191,34 +217,62 @@ impl ShardReplicaSet {
                 read_operation(local.get()).await
             };
 
-            Some(local_operation.map(|result| (result, true)).left_future())
+            Some((
+                self.this_peer_id(),
+                local_operation.map(|result| (result, true)).left_future(),
+            ))
         } else {
             None
         };
 
+        let local_count = usize::from(local_operation.is_some());
+
         // TODO(resharding): Handle resharded shard?
-        let mut readable_remotes: Vec<_> = remotes
+        let readable_remotes = remotes
             .iter()
             .filter(|remote| self.peer_is_readable(remote.peer_id))
+            .map(|remote| {
+                (
+                    remote.peer_id,
+                    read_operation(remote)
+                        .map(|result| (result, false))
+                        .right_future(),
+                )
+            });
+
+        // Candidate operations tagged with their peer id, local first (if present).
+        let mut ordered_operations: Vec<_> = local_operation
+            .into_iter()
+            .chain(readable_remotes)
             .collect();
 
-        readable_remotes.shuffle(&mut rand::rng());
+        match routing_token {
+            // Deterministic routing: order every candidate (local included) by the
+            // stable per-peer key. No local-replica preference.
+            Some(token) => {
+                ordered_operations
+                    .sort_by_cached_key(|(peer_id, _)| (token.peer_key(*peer_id), *peer_id));
+            }
+            // Default routing: keep the local replica first, shuffle the remotes to
+            // spread load across them.
+            None => {
+                ordered_operations[local_count..].shuffle(&mut rand::rng());
+            }
+        }
 
-        let remote_operations = readable_remotes.into_iter().map(|remote| {
-            read_operation(remote)
-                .map(|result| (result, false))
-                .right_future()
-        });
-
-        let mut operations = local_operation.into_iter().chain(remote_operations);
+        let mut operations = ordered_operations
+            .into_iter()
+            .map(|(_peer_id, operation)| operation);
 
         // Possible scenarios:
         //
+        // - Deterministic routing: default fan-out is 0, only the primary replica is
+        //   queried (ordered fallback on failure) to keep the read sticky.
         // - Local is available: default fan-out is 0 (no fan-out, unless explicitly requested)
         // - Local is not available: default fan-out is 1
         // - There is no local: default fan-out is 1
 
-        let default_fan_out = if is_local_ready && local_is_readable {
+        let default_fan_out = if deterministic_routing || (is_local_ready && local_is_readable) {
             0
         } else {
             1
@@ -294,7 +348,7 @@ impl ShardReplicaSet {
                     }
                 }
 
-                _ = &mut update_watcher, if local_is_readable && !is_local_operation_resolved => {
+                _ = &mut update_watcher, if local_is_readable && !is_local_operation_resolved && !deterministic_routing => {
                     pending_operations.extend(operations.next());
                     continue;
                 }

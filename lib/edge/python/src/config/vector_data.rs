@@ -1,3 +1,7 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -9,6 +13,60 @@ use segment::types::*;
 
 use super::quantization::*;
 use crate::repr::*;
+
+/// Memory placement of a component (vectors, HNSW graph, indexes, …).
+///
+/// Data is always persisted on disk regardless of this setting; it only
+/// controls how the data is held in RAM. Prefer this over the deprecated
+/// `on_disk` / `always_ram` / `on_disk_payload` flags.
+#[pyclass(name = "Memory", from_py_object, eq, eq_int)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PyMemory {
+    /// Not pre-loaded from disk; paged in on demand.
+    Cold,
+    /// Pre-loaded into the page cache on open; evictable under pressure.
+    Cached,
+    /// Loaded onto the heap and never evicted by cache pressure.
+    Pinned,
+}
+
+#[pymethods]
+impl PyMemory {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMemory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Cold => "Cold",
+            Self::Cached => "Cached",
+            Self::Pinned => "Pinned",
+        };
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<Memory> for PyMemory {
+    fn from(memory: Memory) -> Self {
+        match memory {
+            Memory::Cold => PyMemory::Cold,
+            Memory::Cached => PyMemory::Cached,
+            Memory::Pinned => PyMemory::Pinned,
+        }
+    }
+}
+
+impl From<PyMemory> for Memory {
+    fn from(memory: PyMemory) -> Self {
+        match memory {
+            PyMemory::Cold => Memory::Cold,
+            PyMemory::Cached => Memory::Cached,
+            PyMemory::Pinned => Memory::Pinned,
+        }
+    }
+}
 
 #[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
@@ -139,7 +197,8 @@ pub struct PyHnswIndexConfig(pub HnswConfig);
 #[pymethods]
 impl PyHnswIndexConfig {
     #[new]
-    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None))]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None, memory=None))]
     pub fn new(
         m: usize,
         ef_construct: usize,
@@ -148,6 +207,7 @@ impl PyHnswIndexConfig {
         on_disk: Option<bool>,
         payload_m: Option<usize>,
         inline_storage: Option<bool>,
+        memory: Option<PyMemory>,
     ) -> Self {
         Self(HnswConfig {
             m,
@@ -155,6 +215,7 @@ impl PyHnswIndexConfig {
             full_scan_threshold,
             max_indexing_threads,
             on_disk,
+            memory: memory.map(Memory::from),
             payload_m,
             inline_storage,
         })
@@ -182,7 +243,15 @@ impl PyHnswIndexConfig {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]
@@ -209,6 +278,7 @@ impl PyHnswIndexConfig {
             full_scan_threshold: _,
             max_indexing_threads: _, // not relevant for Qdrant Edge
             on_disk: _,
+            memory: _,
             payload_m: _,
             inline_storage: _,
         } = self.0;
@@ -293,6 +363,8 @@ pub enum PyVectorStorageDatatype {
     Float16,
     Uint8,
     Turbo4,
+    Turbo8,
+    Turbo16,
 }
 
 #[pymethods]
@@ -309,6 +381,8 @@ impl Repr for PyVectorStorageDatatype {
             Self::Float16 => "Float16",
             Self::Uint8 => "Uint8",
             Self::Turbo4 => "Turbo4",
+            Self::Turbo8 => "Turbo8",
+            Self::Turbo16 => "Turbo16",
         };
 
         f.simple_enum::<Self>(repr)
@@ -322,6 +396,8 @@ impl From<VectorStorageDatatype> for PyVectorStorageDatatype {
             VectorStorageDatatype::Float16 => PyVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => PyVectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4 => PyVectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8 => PyVectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16 => PyVectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -333,6 +409,8 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
             PyVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             PyVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
             PyVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            PyVectorStorageDatatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            PyVectorStorageDatatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -363,7 +441,8 @@ impl PyEdgeVectorParams {
 #[pymethods]
 impl PyEdgeVectorParams {
     #[new]
-    #[pyo3(signature = (size, distance, on_disk=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None))]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (size, distance, on_disk=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None, memory=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
@@ -372,11 +451,14 @@ impl PyEdgeVectorParams {
         datatype: Option<PyVectorStorageDatatype>,
         quantization_config: Option<PyQuantizationConfig>,
         hnsw_config: Option<PyHnswIndexConfig>,
+        memory: Option<PyMemory>,
     ) -> Self {
+        #[allow(deprecated)]
         Self(EdgeVectorParams {
             size,
             distance: Distance::from(distance),
             on_disk,
+            memory: memory.map(Memory::from),
             multivector_config: multivector_config.map(MultiVectorConfig::from),
             datatype: datatype.map(VectorStorageDatatype::from),
             quantization_config: quantization_config.map(QuantizationConfig::from),
@@ -396,7 +478,15 @@ impl PyEdgeVectorParams {
 
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
-        self.0.on_disk
+        #[allow(deprecated)]
+        {
+            self.0.on_disk
+        }
+    }
+
+    #[getter]
+    pub fn memory(&self) -> Option<PyMemory> {
+        self.0.memory.map(PyMemory::from)
     }
 
     #[getter]

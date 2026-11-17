@@ -1,5 +1,9 @@
 use crate::operations::types::CollectionResult;
 
+pub fn empty_batch_results<T>(len: usize) -> Vec<Vec<T>> {
+    std::iter::repeat_with(Vec::new).take(len).collect()
+}
+
 /// The function performs batching processing of read requests, that some arbitrary key
 ///
 /// Functions are split into sequential subgroups based on the shard key.
@@ -128,5 +132,14 @@ mod tests {
         );
 
         assert!(run_batch_requests(&[]).is_empty());
+    }
+
+    #[test]
+    fn empty_batch_results_preserves_outer_shape() {
+        assert_eq!(
+            empty_batch_results::<usize>(2),
+            vec![Vec::<usize>::new(), Vec::<usize>::new()],
+        );
+        assert!(empty_batch_results::<usize>(0).is_empty());
     }
 }

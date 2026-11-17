@@ -1,22 +1,25 @@
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 use itertools::Itertools;
 
 use super::super::read_ops::GeoIndexRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
+use crate::index::field_index::utils::check_each_sequential;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
 /// In-memory state shared by [`super::MutableGeoIndex`] and
 /// [`super::read_only::ReadOnlyAppendableGeoIndex`].
 ///
-/// Both wrappers add a different backing storage (`Gridstore` vs
-/// `GridstoreReader`); the in-memory layout that serves every
+/// Both wrappers add a different backing storage (`Blobstore` vs
+/// `BlobstoreReader`); the in-memory layout that serves every
 /// [`GeoIndexRead`] method is the same, so it lives here once.
 pub struct InMemoryGeoIndex {
     /*
@@ -65,15 +68,16 @@ impl InMemoryGeoIndex {
         }
     }
 
-    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+    /// Returns whether the point held any values.
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<bool> {
         if self.point_to_values.len() <= idx as usize {
-            return Ok(()); // Already removed or never actually existed
+            return Ok(false); // Already removed or never actually existed
         }
 
         let removed_geo_points = std::mem::take(&mut self.point_to_values[idx as usize]);
 
         if removed_geo_points.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         self.points_count -= 1;
@@ -96,24 +100,22 @@ impl InMemoryGeoIndex {
                 continue;
             }
 
-            let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
+            if let Entry::Occupied(mut entry) = self.points_map.entry(removed_geo_hash) {
+                let hash_ids = entry.get_mut();
                 hash_ids.remove(&idx);
-                hash_ids.is_empty()
+                if hash_ids.is_empty() {
+                    entry.remove();
+                }
             } else {
                 debug_assert!(
                     false,
                     "Geo index error: no points for hash {removed_geo_hash} was found",
                 );
-                false
-            };
-
-            if is_last {
-                self.points_map.remove(&removed_geo_hash);
             }
         }
 
         self.decrement_hash_point_counts(removed_geo_hashes);
-        Ok(())
+        Ok(true)
     }
 
     /// Assign these geo points to the point offset.
@@ -121,20 +123,15 @@ impl InMemoryGeoIndex {
         &mut self,
         idx: PointOffsetType,
         geo_points: Vec<GeoPoint>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if geo_points.is_empty() {
             return Ok(());
         }
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         let geo_hashes = geo_points
             .iter()
             .map(|geo_point| {
-                hw_cell_wb.incr_delta(size_of_val(geo_point));
+                HwMetric::PayloadIndexIoWrite.bump(size_of_val(geo_point));
                 encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
                     OperationError::service_error(format!("Malformed geo points: {e}"))
                 })
@@ -154,7 +151,7 @@ impl InMemoryGeoIndex {
             self.increment_hash_value_counts(geo_hash);
         }
 
-        hw_cell_wb.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
+        HwMetric::PayloadIndexIoWrite.bump(geo_hashes.len() * size_of::<PointOffsetType>());
         self.increment_hash_point_counts(&geo_hashes);
 
         self.points_values_count += num_geo_points;
@@ -175,14 +172,7 @@ impl InMemoryGeoIndex {
     pub(super) fn increment_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
-            match self.values_per_hash.get_mut(&sub_geo_hash) {
-                None => {
-                    self.values_per_hash.insert(sub_geo_hash, 1);
-                }
-                Some(count) => {
-                    *count += 1;
-                }
-            };
+            *self.values_per_hash.entry(sub_geo_hash).or_insert(0) += 1;
         }
     }
 
@@ -192,18 +182,9 @@ impl InMemoryGeoIndex {
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);
-                if seen_hashes.contains(&sub_geo_hash) {
-                    continue;
+                if seen_hashes.insert(sub_geo_hash) {
+                    *self.points_per_hash.entry(sub_geo_hash).or_insert(0) += 1;
                 }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(&sub_geo_hash) {
-                    None => {
-                        self.points_per_hash.insert(sub_geo_hash, 1);
-                    }
-                    Some(count) => {
-                        *count += 1;
-                    }
-                };
             }
         }
     }
@@ -211,18 +192,16 @@ impl InMemoryGeoIndex {
     fn decrement_hash_value_counts(&mut self, geo_hash: GeoHash) {
         for i in 0..=geo_hash.len() {
             let sub_geo_hash = geo_hash.truncate(i);
-            match self.values_per_hash.get_mut(&sub_geo_hash) {
-                None => {
+            match self.values_per_hash.entry(sub_geo_hash) {
+                Entry::Occupied(mut entry) => *entry.get_mut() -= 1,
+                Entry::Vacant(entry) => {
                     debug_assert!(
                         false,
                         "Hash value count is not found for hash: {sub_geo_hash}",
                     );
-                    self.values_per_hash.insert(sub_geo_hash, 0);
+                    entry.insert(0);
                 }
-                Some(count) => {
-                    *count -= 1;
-                }
-            };
+            }
         }
     }
 
@@ -231,22 +210,18 @@ impl InMemoryGeoIndex {
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);
-                if seen_hashes.contains(&sub_geo_hash) {
-                    continue;
+                if seen_hashes.insert(sub_geo_hash) {
+                    match self.points_per_hash.entry(sub_geo_hash) {
+                        Entry::Occupied(mut entry) => *entry.get_mut() -= 1,
+                        Entry::Vacant(entry) => {
+                            debug_assert!(
+                                false,
+                                "Hash point count is not found for hash: {sub_geo_hash}",
+                            );
+                            entry.insert(0);
+                        }
+                    }
                 }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(&sub_geo_hash) {
-                    None => {
-                        debug_assert!(
-                            false,
-                            "Hash point count is not found for hash: {sub_geo_hash}",
-                        );
-                        self.points_per_hash.insert(sub_geo_hash, 0);
-                    }
-                    Some(count) => {
-                        *count -= 1;
-                    }
-                };
             }
         }
     }
@@ -265,32 +240,33 @@ impl GeoIndexRead for InMemoryGeoIndex {
         self.max_values_per_point
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self.points_per_hash.get(&hash).copied().unwrap_or(0))
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self.values_per_hash.get(&hash).copied().unwrap_or(0))
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
-        self.point_to_values
+    ) -> OperationResult<bool> {
+        Ok(self
+            .point_to_values
             .get(idx as usize)
             .map(|values| values.iter().any(check_fn))
-            .unwrap_or(false)
+            .unwrap_or(false))
+    }
+
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {
@@ -379,7 +355,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
         pph_bytes + vph_bytes + pm_bytes + ptv_bytes
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

@@ -50,17 +50,17 @@ def test_context(collection_name):
         {"positive": random_example(), "negative": random_example()},
     ]
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "context": context,
+            "query": {"context": context},
             "limit": 8,
         },
     )
     assert response.ok, response.json()
 
-    scored_points = response.json()["result"]
+    scored_points = response.json()["result"]["points"]
 
     assert len(scored_points) == 8 - count_ids_in_examples(context, None)
 
@@ -73,33 +73,36 @@ def test_context(collection_name):
 def test_only_target_is_search_with_different_scoring(collection_name):
     target = random_vector()
 
-    # First, search
+    # First, a plain nearest query
     response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "vector": target,
+            "query": target,
             "limit": 8,
         },
     )
     assert response.ok, response.json()
 
-    search_points = response.json()["result"]
+    search_points = response.json()["result"]["points"]
 
     # Then, discover
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target,
+            # `context` must be spelled out: unlike the legacy discover API,
+            # `DiscoverInput` requires the key, and only accepts an explicit
+            # null to mean "no context".
+            "query": {"discover": {"target": target, "context": None}},
             "limit": 8,
         },
     )
     assert response.ok, response.json()
 
-    discover_points = response.json()["result"]
+    discover_points = response.json()["result"]["points"]
 
     assert len(discover_points) == 8
 
@@ -119,12 +122,11 @@ def test_discover_same_context(collection_name):
     ]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target1,
-            "context": context,
+            "query": {"discover": {"target": target1, "context": context}},
             "limit": 8,
             "params": {
                 "exact": True,
@@ -133,19 +135,18 @@ def test_discover_same_context(collection_name):
     )
     assert response.ok, response.json()
 
-    scored_points1 = response.json()["result"]
+    scored_points1 = response.json()["result"]["points"]
 
     assert len(scored_points1) == 8 - count_ids_in_examples(context, target1)
 
     target2 = random_example()
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target2,
-            "context": context,
+            "query": {"discover": {"target": target2, "context": context}},
             "limit": 8,
             "params": {
                 "exact": True,
@@ -154,7 +155,7 @@ def test_discover_same_context(collection_name):
     )
     assert response.ok, response.json()
 
-    scored_points2 = response.json()["result"]
+    scored_points2 = response.json()["result"]["points"]
 
     assert len(scored_points2) == 8 - count_ids_in_examples(context, target2)
 
@@ -190,34 +191,32 @@ def test_discover_same_target(collection_name):
     ]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target,
-            "context": context1,
+            "query": {"discover": {"target": target, "context": context1}},
             "limit": 8,
         },
     )
     assert response.ok, response.json()
 
-    scored_points1 = response.json()["result"]
+    scored_points1 = response.json()["result"]["points"]
 
     assert len(scored_points1) == 8 - count_ids_in_examples(context1, target)
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target,
-            "context": context2,
+            "query": {"discover": {"target": target, "context": context2}},
             "limit": 8,
         },
     )
     assert response.ok, response.json()
 
-    scored_points2 = response.json()["result"]
+    scored_points2 = response.json()["result"]["points"]
 
     assert len(scored_points2) == 8 - count_ids_in_examples(context2, target)
 
@@ -251,12 +250,11 @@ def test_discover_batch(collection_name):
         contexts.append(context)
 
         response = request_with_validation(
-            api="/collections/{collection_name}/points/discover",
+            api="/collections/{collection_name}/points/query",
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "target": target,
-                "context": context,
+                "query": {"discover": {"target": target, "context": context}},
                 "limit": 8,
             },
         )
@@ -267,15 +265,14 @@ def test_discover_batch(collection_name):
     # Batch
     searches = [
         {
-            "target": target,
-            "context": context,
+            "query": {"discover": {"target": target, "context": context}},
             "limit": 8,
         }
         for target, context in zip(targets, contexts)
     ]
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover/batch",
+        api="/collections/{collection_name}/points/query/batch",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
@@ -294,11 +291,14 @@ def test_null_offset(collection_name):
     target = random_example()
 
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": target,
+            # `context` must be spelled out: unlike the legacy discover API,
+            # `DiscoverInput` requires the key, and only accepts an explicit
+            # null to mean "no context".
+            "query": {"discover": {"target": target, "context": None}},
             "limit": 8,
             "offset": None,
         },
@@ -354,17 +354,21 @@ def test_discover_lookup(collection_name, collection_name_lookup):
 
     # check discover by id + lookup_from
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": [0.2, 0.1, 0.9, 0.7],
-            "context": [
-                {
-                    "positive": 1,
-                    "negative": 2
-                },
-            ],
+            "query": {
+                "discover": {
+                    "target": [0.2, 0.1, 0.9, 0.7],
+                    "context": [
+                        {
+                            "positive": 1,
+                            "negative": 2
+                        },
+                    ],
+                }
+            },
             "limit": 10,
             "lookup_from": {
                 "collection": collection_name_lookup,
@@ -373,26 +377,30 @@ def test_discover_lookup(collection_name, collection_name_lookup):
         },
     )
     assert response.ok, response.text
-    discover_result_by_id = response.json()["result"]
+    discover_result_by_id = response.json()["result"]["points"]
 
     # check discover by vector + lookup_from
     response = request_with_validation(
-        api="/collections/{collection_name}/points/discover",
+        api="/collections/{collection_name}/points/query",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "target": [0.2, 0.1, 0.9, 0.7],
-            "context": [
-                {
-                    "positive": [1.0, 0.0, 0.0, 0.0],
-                    "negative": [0.0, 0.0, 0.0, 2.0]
-                },
-            ],
+            "query": {
+                "discover": {
+                    "target": [0.2, 0.1, 0.9, 0.7],
+                    "context": [
+                        {
+                            "positive": [1.0, 0.0, 0.0, 0.0],
+                            "negative": [0.0, 0.0, 0.0, 2.0]
+                        },
+                    ],
+                }
+            },
             "limit": 10,
         },
     )
     assert response.ok, response.text
-    discover_result_by_vector = response.json()["result"]
+    discover_result_by_vector = response.json()["result"]["points"]
 
     # check if results are the same
     assert discover_result_by_id == discover_result_by_vector, f"discover_result_by_id: {discover_result_by_id}, discover_result_by_vector: {discover_result_by_vector}"

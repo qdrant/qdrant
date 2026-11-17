@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use segment::pending_changes::PersistedProxyChanges;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -15,6 +16,7 @@ use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fix_payload_indices() {
+    let _scope = ambient::async_test_guard();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
     let config = create_collection_config();
@@ -44,29 +46,27 @@ async fn test_fix_payload_indices() {
     .await
     .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     let upsert_ops = upsert_operation();
     shard
-        .update(upsert_ops.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
     // Create payload index in shard locally, not in global collection configuration
     let index_op = create_payload_index_operation();
     shard
-        .update(index_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(index_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(
-            delete_point_op.into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -96,6 +96,7 @@ async fn test_fix_payload_indices() {
         Arc::new(Default::default()),
         payload_index_schema,
         true,
+        PersistedProxyChanges::Replay,
         update_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),

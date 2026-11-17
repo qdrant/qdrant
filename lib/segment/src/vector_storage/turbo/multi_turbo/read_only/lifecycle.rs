@@ -1,0 +1,80 @@
+use std::path::Path;
+
+use common::mmap::AdviceSetting;
+use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use quantization::turboquant::TQBits;
+
+use super::ReadOnlyChunkedMultiTurboVectorStorage;
+use crate::common::flags::in_memory_bitvec_flags::InMemoryBitvecFlags;
+use crate::common::operation_error::OperationResult;
+use crate::types::{Distance, MultiVectorConfig};
+use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
+use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
+use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
+use crate::vector_storage::turbo::multi_turbo::OFFSETS_DIR_PATH;
+use crate::vector_storage::turbo::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
+
+impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
+    /// Schedule background prefetch of the files [`Self::open`] will read.
+    ///
+    /// Absent files are skipped rather than reported: the subsequent open is
+    /// the one to produce the error.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        advice: AdviceSetting,
+        populate: Populate,
+    ) -> OperationResult<()> {
+        QuantizedChunkedStorageRead::<S>::preopen(fs, &path.join(VECTORS_DIR_PATH), populate)?;
+        ReadOnlyChunkedVectors::<MultivectorMmapOffset, S>::preopen(
+            fs,
+            &path.join(OFFSETS_DIR_PATH),
+            advice,
+            populate,
+        )?;
+        InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
+        Ok(())
+    }
+
+    /// Open the read-only counterpart of a TurboQuant multivector storage at
+    /// `path`, threading every file open through `fs`; reads the existing layout
+    /// but creates and writes nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        dim: usize,
+        distance: Distance,
+        bits: TQBits,
+        multi_vector_config: MultiVectorConfig,
+        advice: AdviceSetting,
+        populate: Populate,
+    ) -> OperationResult<Self> {
+        let quantizer = shared::build_quantizer(dim, distance, bits);
+
+        let storage = QuantizedChunkedStorageRead::open(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            quantizer.quantized_size(),
+        )?;
+        // The chunked read backend maps lazily; warm it when the profile asks.
+        if !matches!(populate, Populate::No) {
+            storage.populate()?;
+        }
+
+        let offsets =
+            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+
+        let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
+
+        Ok(Self {
+            storage,
+            offsets,
+            quantizer,
+            deleted,
+            distance,
+            dim,
+            multi_vector_config,
+        })
+    }
+}

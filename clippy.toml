@@ -1,5 +1,6 @@
-# For Rust 1.87 until fixed: <https://github.com/hyperium/tonic/issues/2253>
-large-error-threshold = 256
+await-holding-invalid-types = [
+  { path = "common::ambient::Scope" },
+]
 
 disallowed-types = [
   # Use fs_err instead of std::fs and tokio::fs

@@ -62,6 +62,6 @@ pub fn dot_similarity_half(
 ) -> ScoreType {
     v1.iter()
         .zip(v2)
-        .map(|(a, b)| f16::to_f32(a * b))
+        .map(|(a, b)| f16::to_f32(*a) * f16::to_f32(*b))
         .sum::<f32>()
 }

@@ -1,0 +1,364 @@
+//! The write phase for the appendable segment: the one segment of a shard a
+//! batch appends its points to.
+
+use std::path::{Path, PathBuf};
+
+use common::ambient::{self, Handoff};
+use common::types::PointOffsetType;
+use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
+use rayon::ThreadPool;
+use rayon::iter::{
+    IntoParallelRefIterator, IntoParallelRefMutIterator as _, ParallelIterator as _,
+};
+
+use super::AppendableIdTrackerState;
+use crate::common::check_named_vectors;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
+use crate::id_tracker::delete_versions::DeleteVersioning;
+use crate::id_tracker::mutable_id_tracker::update_only::{
+    MappingOperation, UpdateOnlyAppendableIdTracker,
+};
+use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
+use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
+use crate::segment_constructor::get_vector_storage_path;
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorName, VectorNameBuf};
+use crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors;
+use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
+
+/// A segment open for appends: the write target. Every point a batch stores
+/// lands here, in a fresh slot — nothing is ever rewritten in place.
+pub struct AppendableSegment<Fs: UniversalAppendFs> {
+    id_tracker: UpdateOnlyAppendableIdTracker,
+    /// What the id tracker appends through and
+    /// [`store_components`](Self::store_components) opens with.
+    fs: CachedFs<Fs>,
+    segment_path: PathBuf,
+    config: SegmentConfig,
+    /// The components a stored point's data goes into, opened on the first
+    /// [`store_points`](Self::store_points). A batch that only deletes writes
+    /// nothing but the mappings log, so it never pays for these opens.
+    store: Option<StoreComponents<CachedFs<Fs>>>,
+}
+
+/// Everywhere a stored point's data goes. The mappings log that publishes the
+/// point is not here: it belongs to the segment itself, since deletes need it
+/// too.
+struct StoreComponents<Fs: UniversalAppendFs> {
+    payload_storage: UpdateOnlyPayloadStorage<Fs::File>,
+    payload_indexes: UpdateOnlyStructPayloadIndex<Fs::File>,
+    /// The writers of each named vector, dense and sparse alike.
+    vectors: Vec<(VectorNameBuf, VectorComponents<Fs>)>,
+}
+
+/// The writers of one named vector.
+struct VectorComponents<Fs: UniversalAppendFs> {
+    storage: UpdateOnlyVectorStorage<Fs::File>,
+    /// Quantized overlay — only for vectors whose quantization method supports
+    /// incremental appends.
+    quantized: Option<UpdateOnlyQuantizedVectors>,
+}
+
+impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
+    /// Appends many points to the original and quantized (if any) storages in parallel
+    fn append_many(
+        &mut self,
+        fs: &Fs,
+        start_slot: PointOffsetType,
+        points: &[FullyQualifiedPoint],
+        vector_name: &VectorName,
+        pool: &rayon::ThreadPool,
+        handoff: &Handoff,
+    ) -> OperationResult<()> {
+        let vectors: Vec<VectorToStore> = points
+            .iter()
+            .map(|point| {
+                if let Some(vector) = point.updated_vectors.get(vector_name) {
+                    VectorToStore::Decoded(vector)
+                } else if let Some((_, bytes)) = point
+                    .stored_vectors
+                    .iter()
+                    .find(|(name, _)| name == vector_name)
+                {
+                    VectorToStore::Raw(bytes)
+                } else {
+                    VectorToStore::Missing
+                }
+            })
+            .collect();
+
+        let mut original_res = Ok(());
+        let mut quantized_res = Ok(());
+        pool.scope(|s| {
+            s.spawn(|_| {
+                let _scope = handoff.enter_guard();
+                original_res = self
+                    .storage
+                    .append_many(fs, start_slot, vectors.iter().copied());
+            });
+            if let Some(quantized) = &mut self.quantized {
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    quantized_res = quantized.append_many(fs, start_slot, vectors.iter().copied());
+                });
+            }
+        });
+        original_res.and(quantized_res)
+    }
+}
+
+impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
+    fn open(
+        fs: &Fs,
+        pool: &rayon::ThreadPool,
+        segment_path: &Path,
+        config: &SegmentConfig,
+    ) -> OperationResult<Self> {
+        let mut payload_storage = None;
+        let mut payload_indexes = None;
+        let mut dense_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
+        let mut sparse_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
+                });
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_indexes =
+                        Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
+                });
+
+                s.spawn(|_| {
+                    dense_vectors = config
+                        .vector_data
+                        .par_iter()
+                        .map(|(vector_name, vector_config)| {
+                            let path = get_vector_storage_path(segment_path, vector_name);
+
+                            let (original, quantized) = rayon::join(
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyVectorStorage::<Fs::File>::open(
+                                        fs,
+                                        &path,
+                                        vector_config,
+                                    )
+                                },
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyQuantizedVectors::open(fs, &path, vector_config)
+                                },
+                            );
+
+                            let components = VectorComponents {
+                                storage: original?,
+                                quantized: quantized?,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
+
+                s.spawn(|_| {
+                    sparse_vectors = config
+                        .sparse_vector_data
+                        .par_iter()
+                        .map(|(vector_name, _config)| {
+                            let _scope = handoff.enter_guard();
+                            let path = get_vector_storage_path(segment_path, vector_name);
+                            let components = VectorComponents {
+                                storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                                quantized: None,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
+            });
+        });
+
+        let mut vectors = dense_vectors?;
+        vectors.extend(sparse_vectors?);
+
+        Ok(Self {
+            payload_storage: payload_storage.expect("rayon finished")?,
+            payload_indexes: payload_indexes.expect("rayon finished")?,
+            vectors,
+        })
+    }
+}
+
+impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
+    /// Resume the segment directory at `segment_path` from the mappings-log
+    /// state the read phase observed.
+    ///
+    /// Opening is not free of side effects: points left on slots whose
+    /// versions were never committed are retired here, since which components
+    /// got to write their data is unknowable.
+    pub fn open(
+        fs: Fs,
+        segment_path: &Path,
+        config: &SegmentConfig,
+        state: AppendableIdTrackerState,
+    ) -> OperationResult<Self> {
+        let AppendableIdTrackerState {
+            max_claimed_internal_id,
+            pending_inserts,
+            mappings_end,
+        } = state;
+
+        let id_tracker = UpdateOnlyAppendableIdTracker::new(
+            &fs,
+            segment_path,
+            max_claimed_internal_id,
+            pending_inserts,
+            mappings_end,
+        )?;
+
+        let fs = CachedFs::new(fs, segment_path)?;
+
+        Ok(Self {
+            id_tracker,
+            fs,
+            segment_path: segment_path.to_path_buf(),
+            config: config.clone(),
+            store: None,
+        })
+    }
+
+    /// Lends the fs alongside the components, so a caller holding the mutable
+    /// borrow can still pass it down per call.
+    fn store_components(
+        &mut self,
+        pool: &rayon::ThreadPool,
+    ) -> OperationResult<(&CachedFs<Fs>, &mut StoreComponents<CachedFs<Fs>>)> {
+        if self.store.is_none() {
+            self.store = Some(StoreComponents::open(
+                &self.fs,
+                pool,
+                &self.segment_path,
+                &self.config,
+            )?);
+        }
+        Ok((&self.fs, self.store.as_mut().expect("just opened")))
+    }
+
+    /// Append `points` to fresh slots in this segment and update the id tracker.
+    /// Writes component data in parallel before making points visible by publishing versions.
+    ///
+    /// Returns the slot each point landed in, in the order of `points`.
+    pub fn store_points(
+        &mut self,
+        pool: &ThreadPool,
+        points: &mut [FullyQualifiedPoint],
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        if points.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Cosine scores with a plain dot product, so a stored vector has to be
+        // unit length. `stored_vectors` are storage-native bytes, preprocessed
+        // on their way in already.
+        for point in points.iter_mut() {
+            check_named_vectors(&point.updated_vectors, &self.config)?;
+            point.updated_vectors.preprocess(|name| {
+                self.config
+                    .vector_data
+                    .get(name)
+                    .expect("name checked above")
+            });
+        }
+        let points = &*points;
+
+        // Ensure fresh new view of the files
+        self.fs.cache_file_info()?;
+
+        let operations: Vec<MappingOperation> = points
+            .iter()
+            .map(|point| MappingOperation::Insert(point.id))
+            .collect();
+        let inserted = self.id_tracker.insert_operations(&self.fs, &operations)?;
+        let (_, start_slot) = *inserted.first().expect("one slot per insert");
+
+        let (fs, store) = self.store_components(pool)?;
+
+        let payloads = || points.iter().map(|point| &point.payload);
+
+        // Each component owns its files, so none of them waits on another
+        let mut vectors_res = Ok(());
+        let mut payload_res = Ok(());
+        let mut indexes_res = Ok(());
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    vectors_res =
+                        store
+                            .vectors
+                            .par_iter_mut()
+                            .try_for_each(|(vector_name, components)| {
+                                components.append_many(
+                                    fs,
+                                    start_slot,
+                                    points,
+                                    vector_name,
+                                    pool,
+                                    handoff,
+                                )
+                            });
+                });
+
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_res = store
+                        .payload_storage
+                        .append_many(fs, start_slot, payloads());
+                });
+
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    indexes_res = store
+                        .payload_indexes
+                        .append_many(fs, start_slot, payloads());
+                });
+            });
+        });
+        vectors_res.and(payload_res).and(indexes_res)?;
+
+        // Publish: covering the slots with their versions is what makes the
+        // points visible, so everything above must already be durable.
+        let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
+        let versions: Vec<SeqNumberType> = points.iter().map(|point| point.version).collect();
+        self.id_tracker
+            .set_internal_versions(&self.fs, &slots, &versions)?;
+
+        self.fs.rotate_cache_file_info();
+        Ok(slots)
+    }
+
+    /// Retire the given points, addressed by their external ids — the slots
+    /// they occupy play no part here, since a retired mapping is what makes a
+    /// point unreachable. The data on those slots is left where it is.
+    ///
+    /// Only call this for points the batch *deletes*. A point the batch stores
+    /// again needs no retirement — its new mapping supersedes the old slot —
+    /// and asking for one here retires the point outright: a delete addresses
+    /// the external id, so it takes the fresh slot along with the stale one.
+    ///
+    /// `version` is the version of the batch that deletes the points, recorded
+    /// as [`delete_versions`](crate::id_tracker::delete_versions) describes.
+    pub fn tombstone_points(
+        &mut self,
+        points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
+    ) -> OperationResult<()> {
+        self.id_tracker.delete_points(
+            &self.fs,
+            points.iter().map(|(point_id, _internal_id)| *point_id),
+            version,
+            versioning,
+        )
+    }
+}

@@ -1,15 +1,16 @@
 use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::condition_checker::ConditionChecker;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
-use itertools::Either;
+use itertools::{Either, Itertools};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -29,8 +30,8 @@ where
         order_by: &OrderBy,
         limit: Option<usize>,
         condition: &Filter,
+        cardinality_estimation: &CardinalityEstimation,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let numeric_index = self
@@ -40,18 +41,13 @@ where
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = self
-            .payload_index
-            .estimate_cardinality(condition, hw_counter)?;
-
         let start_from = order_by.start_from();
 
         let values_ids_iterator = self
             .payload_index
             .iter_filtered_points(
                 condition,
-                &cardinality_estimation,
-                hw_counter,
+                cardinality_estimation,
                 is_stopped,
                 deferred_behavior,
             )?
@@ -98,7 +94,6 @@ where
         limit: Option<usize>,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let numeric_index = self
@@ -123,27 +118,26 @@ where
         };
 
         let filtered_iter = match filter {
-            None => Either::Left(directed_range_iter),
+            None => Either::Left(directed_range_iter.map(Ok)),
             Some(filter) => {
-                let filter_context = self.payload_index.filter_context(filter, hw_counter)?;
+                let filter_context = self.payload_index.filter_context(filter)?;
 
                 Either::Right(
                     directed_range_iter
-                        .filter(move |(_, internal_id)| filter_context.check(*internal_id)),
+                        .try_filter(move |(_, internal_id)| filter_context.check(*internal_id)),
                 )
             }
         };
 
-        let reads = filtered_iter
-            .stop_if(is_stopped)
-            .filter_map(|(value, internal_id)| {
+        filtered_iter.stop_if(is_stopped).process_results(|it| {
+            it.filter_map(|(value, internal_id)| {
                 self.id_tracker
                     .external_id(internal_id)
                     .map(|external_id| (value, external_id))
             })
             .take(limit.unwrap_or(usize::MAX))
-            .collect();
-        Ok(reads)
+            .collect()
+        })
     }
 
     pub fn read_ordered_filtered<'a>(
@@ -152,7 +146,6 @@ where
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
@@ -161,17 +154,17 @@ where
                 limit,
                 None,
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             ),
             Some(filter) => {
-                if self.should_pre_filter(filter, limit, hw_counter)? {
+                let cardinality_estimation = self.payload_index.estimate_cardinality(filter)?;
+                if self.should_pre_filter(&cardinality_estimation, limit) {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,
                         filter,
+                        &cardinality_estimation,
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 } else {
@@ -180,7 +173,6 @@ where
                         limit,
                         Some(filter),
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 }

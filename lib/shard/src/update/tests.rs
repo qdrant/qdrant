@@ -1,0 +1,1117 @@
+use std::sync::Arc;
+
+use common::ambient;
+use parking_lot::RwLock;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+use segment::entry::ReadSegmentEntry as _;
+use segment::entry::entry_point::SegmentEntry as _;
+use segment::payload_json;
+use segment::types::{
+    Condition, FieldCondition, Filter, Match, MatchValue, PayloadKeyType, PointIdType,
+    ValueVariants,
+};
+use tempfile::Builder;
+
+use crate::fixtures::{
+    build_segment_1, build_segment_2, empty_segment, empty_segment_with_deferred,
+};
+use crate::operations::point_ops::{PointStructRawPersisted, RawVectorsPersisted};
+use crate::segment_holder::{FlushMode, SegmentHolder};
+use crate::update::{
+    clear_payload_by_filter, create_field_index, delete_payload_by_filter, delete_points_by_filter,
+    delete_vectors_by_filter, overwrite_payload_by_filter, set_payload_by_filter, sync_points_raw,
+    upsert_points_raw,
+};
+
+#[test]
+fn test_delete_by_filter_version_bump() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let segment1 = build_segment_1(dir.path());
+    let segment2 = build_segment_2(dir.path());
+
+    let _scope = ambient::test_guard();
+
+    let mut holder = SegmentHolder::default();
+
+    let _sid1 = holder.add_new(segment1);
+    let _sid2 = holder.add_new(segment2);
+
+    const DELETE_OP_NUM: u64 = 16;
+
+    assert!(
+        holder
+            .iter()
+            .all(|i| i.1.get().read().version() < DELETE_OP_NUM)
+    );
+
+    let old_version = holder
+        .flush_all(FlushMode::Sync, false)
+        .expect("Failed to flush test segment holder");
+
+    let segments = Arc::new(RwLock::new(holder));
+
+    // A filter that matches no points.
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "color".parse().unwrap(),
+        Match::Value(MatchValue {
+            value: ValueVariants::String("white".to_string()),
+        }),
+    )));
+
+    let deleted_count = delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter).unwrap();
+    assert_eq!(deleted_count, 0);
+
+    let new_version = segments
+        .read()
+        .flush_all(FlushMode::Sync, false)
+        .expect("Failed to flush test segment holder");
+
+    // Flushing again inrceases by 1 and is now equal to `DELETE_OP_NUM` as we want to acknowledge the empty
+    // delete operation in WAL.
+    assert_eq!(old_version + 1, new_version);
+    assert_eq!(new_version, DELETE_OP_NUM);
+}
+
+fn retrieve_raw_record(
+    holder: &SegmentHolder,
+    segment_id: crate::segment_holder::SegmentId,
+    point_id: u64,
+) -> Option<segment::data_types::segment_record::SegmentRecordRaw> {
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+    let segment = holder.get(segment_id).unwrap().get();
+    let segment = segment.read();
+    segment
+        .retrieve_raw(
+            &[point_id.into()],
+            &segment::types::WithVector::Bool(true),
+            &is_stopped,
+            common::types::DeferredBehavior::WithDeferred,
+        )
+        .unwrap()
+        .remove(&point_id.into())
+}
+
+/// A stored record turned into a point ready to apply, with the blob already decoded.
+fn incoming_raw_point(
+    record: segment::data_types::segment_record::SegmentRecordRaw,
+) -> PointStructRawPersisted {
+    let mut point = PointStructRawPersisted::from(record);
+    point.decode_payload_raw().unwrap();
+    point
+}
+
+/// The payload a raw record carries, parsed; `None` when the point has none
+/// stored or stores an empty one.
+fn stored_payload(
+    record: &segment::data_types::segment_record::SegmentRecordRaw,
+) -> Option<segment::types::Payload> {
+    let payload = record.payload.as_ref()?.decode().unwrap();
+    (!payload.is_empty()).then_some(payload)
+}
+
+#[test]
+fn test_upsert_points_raw_moves_point_from_non_appendable() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut non_appendable = build_segment_1(dir.path()); // points 1-5
+    non_appendable.appendable_flag = false;
+    let appendable = empty_segment(dir.path());
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let new_vector: Vec<f32> = vec![9.0, 8.0, 7.0, 6.0];
+    let new_bytes: Vec<u8> = new_vector.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
+
+    let points = [
+        PointStructRawPersisted {
+            id: 1.into(),
+            vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
+            payload: Some(payload.clone()),
+            payload_raw: None,
+        },
+        PointStructRawPersisted {
+            id: 100.into(),
+            vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())].into(),
+            payload: None,
+            payload_raw: None,
+        },
+    ];
+
+    let updated = upsert_points_raw(&holder, 100, &points, None).unwrap();
+    assert_eq!(updated, 1);
+
+    {
+        let non_app = holder.get(sid_non_app).unwrap().get();
+        let non_app = non_app.read();
+        assert!(!non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred));
+    }
+
+    for point_id in [1, 100] {
+        let record = retrieve_raw_record(&holder, sid_app, point_id)
+            .unwrap_or_else(|| panic!("point {point_id} must be in the appendable segment"));
+        let vectors = record.vectors.expect("vectors were requested");
+        assert_eq!(
+            vectors.to_vec(),
+            vec![(DEFAULT_VECTOR_NAME.to_owned(), new_bytes.clone())],
+            "raw bytes of point {point_id} must round-trip exactly",
+        );
+    }
+
+    let record = retrieve_raw_record(&holder, sid_app, 1).unwrap();
+    assert_eq!(stored_payload(&record), Some(payload));
+    let record = retrieve_raw_record(&holder, sid_app, 100).unwrap();
+    assert_eq!(stored_payload(&record), None);
+}
+
+/// Applying reads the parsed payload, so a point that still holds a blob would be
+/// stored with no payload at all. Both raw entry points refuse it instead.
+#[test]
+fn test_apply_refuses_an_undecoded_payload_blob() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(empty_segment(dir.path()));
+
+    let points = [PointStructRawPersisted {
+        id: PointIdType::from(1),
+        vectors: RawVectorsPersisted::from(vec![(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            [1.0f32, 2.0, 3.0, 4.0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect(),
+        )]),
+        payload: None,
+        payload_raw: Some(segment::types::RawPayload::from_storage_bytes(
+            br#"{"city":"Berlin"}"#.to_vec(),
+        )),
+    }];
+
+    assert!(upsert_points_raw(&holder, 100, &points, None).is_err());
+    assert!(sync_points_raw(&holder, 101, None, None, &points, None).is_err());
+
+    assert!(
+        retrieve_raw_record(&holder, holder.iter().next().unwrap().0, 1).is_none(),
+        "a refused point must not be stored at all",
+    );
+}
+
+#[test]
+fn test_sync_points_raw() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let segment = build_segment_1(dir.path()); // points 1-5
+    let mut holder = SegmentHolder::default();
+    let sid = holder.add_new(segment);
+
+    let point_2 = incoming_raw_point(retrieve_raw_record(&holder, sid, 2).unwrap());
+    let point_2_version_before = holder
+        .get(sid)
+        .unwrap()
+        .get()
+        .read()
+        .point_version(2.into());
+
+    let mut point_3 = incoming_raw_point(retrieve_raw_record(&holder, sid, 3).unwrap());
+    let changed_bytes: Vec<u8> = [9.0f32, 8.0, 7.0, 6.0]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    point_3.vectors = vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into();
+
+    let point_100 = PointStructRawPersisted {
+        id: 100.into(),
+        vectors: vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes.clone())].into(),
+        payload: None,
+        payload_raw: None,
+    };
+
+    let (deleted, new, updated) = sync_points_raw(
+        &holder,
+        100,
+        None,
+        None,
+        &[point_2, point_3, point_100],
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(deleted, 3, "points 1, 4 and 5 are not in the sync set");
+    assert_eq!(new, 1, "point 100 is new");
+    assert_eq!(updated, 1, "only point 3 has different bytes");
+
+    {
+        let segment = holder.get(sid).unwrap().get();
+        let segment = segment.read();
+        for point_id in [1, 4, 5] {
+            assert!(
+                !segment.has_point(
+                    point_id.into(),
+                    common::types::DeferredBehavior::WithDeferred
+                ),
+                "point {point_id} must be deleted",
+            );
+        }
+        assert_eq!(segment.point_version(2.into()), point_2_version_before);
+        assert_eq!(segment.point_version(3.into()), Some(100));
+    }
+
+    let record = retrieve_raw_record(&holder, sid, 3).unwrap();
+    assert_eq!(
+        record.vectors.unwrap().to_vec(),
+        vec![(DEFAULT_VECTOR_NAME.to_owned(), changed_bytes)],
+    );
+}
+
+/// Helper: creates a non-appendable segment with a single point at the given version and city payload.
+fn build_non_appendable_with_city(
+    path: &std::path::Path,
+    point_id: u64,
+    version: u64,
+    city: &str,
+) -> segment::segment::Segment {
+    let _scope = ambient::test_guard();
+    let mut seg = empty_segment(path);
+    seg.upsert_point(
+        version,
+        point_id.into(),
+        only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+    )
+    .unwrap();
+    let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
+    seg.set_payload(version, point_id.into(), &payload, &None)
+        .unwrap();
+    seg.appendable_flag = false;
+    seg
+}
+
+/// Helper: creates an appendable segment with deferred threshold 0 (all points deferred),
+/// containing a single point with the given city payload.
+fn build_deferred_with_city(
+    path: &std::path::Path,
+    point_id: u64,
+    version: u64,
+    city: &str,
+) -> segment::segment::Segment {
+    let _scope = ambient::test_guard();
+    // threshold 0 => every point is deferred
+    let mut seg = empty_segment_with_deferred(path, 0);
+    seg.upsert_point(
+        version,
+        point_id.into(),
+        only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+    )
+    .unwrap();
+    let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
+    seg.set_payload(version, point_id.into(), &payload, &None)
+        .unwrap();
+    assert!(
+        seg.point_is_deferred(point_id.into()),
+        "Point {point_id} should be deferred"
+    );
+    seg
+}
+
+fn city_filter(city: &str) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "city".parse().unwrap(),
+        Match::Value(MatchValue {
+            value: ValueVariants::String(city.to_string()),
+        }),
+    )))
+}
+
+/// Delete by filter with deferred points corner case:
+///   - Non-appendable segment: point 1 at version 1, city=Berlin
+///   - Appendable+deferred segment: point 1 at version 2, city=Amsterdam
+///   - Delete by filter on city=Amsterdam
+///
+/// The deferred point (newest) matches the filter, so both copies must be deleted.
+#[test]
+fn test_delete_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let deleted = delete_points_by_filter(&holder, 10, &filter).unwrap();
+
+    // The deferred version matches the filter => both copies deleted.
+    assert!(deleted > 0, "Should have deleted at least one copy");
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        !app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy should be deleted (matches filter)"
+    );
+    assert!(
+        !non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy should also be deleted (deferred version matched filter)"
+    );
+}
+
+/// Delete by filter with deferred points corner case:
+///   - Non-appendable segment: point 1 at version 1, city=Berlin
+///   - Appendable+deferred segment: point 1 at version 2, city=Amsterdam
+///   - Delete by filter on city=Berlin
+///
+/// The old copy matches the filter, but the newest version is deferred and does NOT
+/// match city=Berlin. The delete must be skipped for all copies so that after
+/// optimization deduplication we're left with the Amsterdam version.
+#[test]
+fn test_delete_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let _deleted = delete_points_by_filter(&holder, 10, &filter).unwrap();
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    // The deferred version (Amsterdam) does NOT match the filter (Berlin),
+    // so both copies must be kept. Once the optimizer kicks in and deduplicates,
+    // only the Amsterdam version will remain.
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept (does not match filter, is newest)"
+    );
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept (deferred version is newer and does not match filter)"
+    );
+}
+
+// --- set_payload_by_filter deferred tests ---
+
+/// Set payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Amsterdam (matches deferred copy)
+///
+/// The deferred point (newest) matches the filter, so the operation should be applied.
+#[test]
+fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let payload: segment::types::Payload = payload_json! {"color": "red"};
+    let updated = set_payload_by_filter(&holder, 10, &payload, &filter, &None, None).unwrap();
+
+    assert!(updated > 0, "Should have updated at least one point");
+}
+
+/// Set payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Berlin (matches old copy only)
+///
+/// The deferred version does NOT match, so the operation must be skipped.
+#[test]
+fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let payload: segment::types::Payload = payload_json! {"color": "red"};
+    let updated = set_payload_by_filter(&holder, 10, &payload, &filter, &None, None).unwrap();
+
+    assert_eq!(
+        updated, 0,
+        "Operation should be skipped (deferred version does not match filter)"
+    );
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept"
+    );
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept"
+    );
+}
+
+// --- delete_payload_by_filter deferred tests ---
+
+/// Delete payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Amsterdam (matches deferred copy)
+///
+/// The deferred point (newest) matches, so the payload key should be deleted.
+#[test]
+fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None).unwrap();
+
+    assert!(updated > 0, "Should have updated at least one point");
+}
+
+/// Delete payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Berlin (matches old copy only)
+///
+/// The deferred version does NOT match, so the operation must be skipped.
+#[test]
+fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None).unwrap();
+
+    assert_eq!(
+        updated, 0,
+        "Operation should be skipped (deferred version does not match filter)"
+    );
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept"
+    );
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept"
+    );
+}
+
+// --- clear_payload_by_filter deferred tests ---
+
+/// Clear payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Amsterdam (matches deferred copy)
+///
+/// The deferred point (newest) matches, so the payload should be cleared.
+#[test]
+fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None).unwrap();
+
+    assert!(updated > 0, "Should have updated at least one point");
+}
+
+/// Clear payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Berlin (matches old copy only)
+///
+/// The deferred version does NOT match, so the operation must be skipped.
+#[test]
+fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None).unwrap();
+
+    assert_eq!(
+        updated, 0,
+        "Operation should be skipped (deferred version does not match filter)"
+    );
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept"
+    );
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept"
+    );
+}
+
+// --- overwrite_payload_by_filter deferred tests ---
+
+/// Overwrite payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Amsterdam (matches deferred copy)
+///
+/// The deferred point (newest) matches, so the payload should be overwritten.
+#[test]
+fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let payload: segment::types::Payload = payload_json! {"color": "red"};
+    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, None).unwrap();
+
+    assert!(updated > 0, "Should have updated at least one point");
+}
+
+/// Overwrite payload by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Berlin (matches old copy only)
+///
+/// The deferred version does NOT match, so the operation must be skipped.
+#[test]
+fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let payload: segment::types::Payload = payload_json! {"color": "red"};
+    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, None).unwrap();
+
+    assert_eq!(
+        updated, 0,
+        "Operation should be skipped (deferred version does not match filter)"
+    );
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept"
+    );
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept"
+    );
+}
+
+// --- delete_vectors_by_filter deferred tests ---
+
+/// Delete vectors by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Amsterdam (matches deferred copy)
+///
+/// The deferred point (newest) matches, so the vector should be deleted.
+#[test]
+fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(non_appendable);
+    holder.add_new(appendable);
+
+    let filter = city_filter("Amsterdam");
+    let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
+    let deleted = delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None).unwrap();
+
+    assert!(deleted > 0, "Should have deleted at least one vector");
+}
+
+/// Delete vectors by filter with deferred points:
+///   - Non-appendable: point 1 v1, city=Berlin
+///   - Deferred: point 1 v2, city=Amsterdam
+///   - Filter: city=Berlin (matches old copy only)
+///
+/// The deferred version does NOT match, so the operation must be skipped.
+#[test]
+fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
+    let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    let filter = city_filter("Berlin");
+    let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
+    let deleted = delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None).unwrap();
+
+    assert_eq!(
+        deleted, 0,
+        "Operation should be skipped (deferred version does not match filter)"
+    );
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    assert!(
+        non_app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Old copy must be kept"
+    );
+    assert!(
+        app.has_point(1.into(), common::types::DeferredBehavior::WithDeferred),
+        "Deferred copy must be kept"
+    );
+}
+
+/// Upsert of a point that lives in a non-appendable segment takes the
+/// CoW-move arm of `apply_points_with_conditional_move`. The moved record
+/// must match in-place upsert semantics (`upsert_with_payload`): named
+/// vectors and payload absent from the incoming point are dropped, not
+/// carried over from the old record.
+#[test]
+fn test_upsert_cow_move_replaces_whole_point() {
+    use std::collections::HashMap;
+
+    use common::types::DeferredBehavior;
+    use segment::data_types::named_vectors::NamedVectors;
+    use segment::entry::entry_point::SegmentEntry;
+    use segment::segment_constructor::simple_segment_constructor::{
+        VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs,
+    };
+    use segment::types::{Distance, PointIdType};
+
+    use crate::operations::point_ops::{
+        PointStructPersisted, VectorPersisted, VectorStructPersisted,
+    };
+    use crate::update::upsert_points;
+
+    const DIM: usize = 4;
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let point_id: PointIdType = 7.into();
+
+    // Old record: both named vectors plus a payload.
+    let seed = |segment: &mut segment::segment::Segment| {
+        segment
+            .upsert_point(
+                100,
+                point_id,
+                NamedVectors::from_pairs([
+                    (VECTOR1_NAME.to_owned(), vec![0.1, 0.2, 0.3, 0.4]),
+                    (VECTOR2_NAME.to_owned(), vec![0.5, 0.6, 0.7, 0.8]),
+                ]),
+            )
+            .unwrap();
+        segment
+            .set_payload(100, point_id, &payload_json! {"city": "Berlin"}, &None)
+            .unwrap();
+    };
+
+    // Incoming upsert: only `vector1`, no payload.
+    let incoming = PointStructPersisted {
+        id: point_id,
+        vector: VectorStructPersisted::Named(HashMap::from([(
+            VECTOR1_NAME.to_owned(),
+            VectorPersisted::Dense(vec![1.0, 1.0, 1.0, 1.0]),
+        )])),
+        payload: None,
+    };
+
+    let check = |segment: &dyn SegmentEntry, path: &str| {
+        assert!(segment.has_point(point_id, DeferredBehavior::WithDeferred));
+        assert!(
+            segment.vector(VECTOR1_NAME, point_id).unwrap().is_some(),
+            "{path}: upserted vector must be present",
+        );
+        assert!(
+            segment.vector(VECTOR2_NAME, point_id).unwrap().is_none(),
+            "{path}: named vector absent from the upsert must be dropped",
+        );
+        assert!(
+            segment.payload(point_id).unwrap().is_empty(),
+            "{path}: payload absent from the upsert must be cleared",
+        );
+    };
+
+    // Oracle: in-place upsert into an appendable segment.
+    let mut in_place =
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+    seed(&mut in_place);
+    let mut holder = SegmentHolder::default();
+    let sid = holder.add_new(in_place);
+    upsert_points(&holder, 101, [&incoming], None).unwrap();
+    let segment = holder.get(sid).unwrap().get();
+    check(&*segment.read(), "in-place");
+
+    // CoW move: the point's segment is non-appendable, so the upsert must
+    // move it into the appendable destination with the same semantics.
+    let mut source =
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+    seed(&mut source);
+    source.appendable_flag = false;
+    let destination =
+        build_segment_with_two_named_vecs(dir.path(), DIM, DIM, Distance::Dot).unwrap();
+    let mut holder = SegmentHolder::default();
+    holder.add_new(source);
+    let sid = holder.add_new(destination);
+    upsert_points(&holder, 101, [&incoming], None).unwrap();
+    let segment = holder.get(sid).unwrap().get();
+    check(&*segment.read(), "CoW move");
+}
+
+/// Failure-direction regression test for the payload index durability fix: an
+/// index built while a payload change is still pending must not let the durable
+/// index config outrun the state the build observed. `create_field_index` flushes
+/// the segment (serialized with the flush pipeline) before building, so the
+/// pending change becomes durable together with the index: after a crash the
+/// reloaded segment sees the cleared payload, the re-applied `CreateFieldIndex`
+/// (WAL replay) stays a truthful no-op (`AlreadyBuilt`), and filtered reads agree
+/// with full scans.
+///
+/// Without the pre-build flush, the reloaded segment resurrects the cleared
+/// payload row while the durable index has no posting for it, and the row stays
+/// invisible to filtered reads forever.
+#[test]
+fn create_field_index_pins_pending_payload_state() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::types::DeferredBehavior;
+    use segment::entry::{NonAppendableSegmentEntry as _, StorageSegmentEntry as _};
+    use segment::segment_constructor::load_segment;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+    use uuid::Uuid;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let key: PayloadKeyType = "city".parse().unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    let is_stopped = AtomicBool::new(false);
+
+    let mut seg = empty_segment(dir.path());
+    seg.upsert_point(1, 0.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+        .unwrap();
+    let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
+    seg.set_payload(2, 0.into(), &payload, &None).unwrap();
+    seg.flush(true).unwrap();
+
+    // Pending payload clear: stays in memory until the next flush cycle.
+    seg.clear_payload(3, 0.into()).unwrap();
+    let segment_path = seg.segment_path.clone();
+
+    let mut holder = SegmentHolder::default();
+    holder.add_new(seg);
+
+    // The build observes the cleared row and must pin it durably before the
+    // index config becomes durable.
+    create_field_index(&holder, 4, &key, Some(&schema)).unwrap();
+
+    // Simulated crash: dropped without any flush after the op.
+    drop(holder);
+
+    let mut segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load after simulated crash");
+
+    // The pre-build flush persisted the pending clear together with the index.
+    let reloaded = segment.payload(0.into()).unwrap();
+    assert!(
+        !reloaded.0.contains_key("city"),
+        "the payload state observed by the index build must be durable",
+    );
+
+    // WAL replay re-applies the CreateFieldIndex op; the config is truthful, so
+    // `AlreadyBuilt` is a correct no-op.
+    segment.create_field_index(4, &key, Some(&schema)).unwrap();
+
+    let hits = segment
+        .read_filtered(
+            None,
+            None,
+            Some(&city_filter("Berlin")),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    assert!(
+        hits.is_empty(),
+        "filtered reads must agree with payload storage: the row was cleared",
+    );
+}
+
+/// The pre-build flush of `create_field_index` durably advances a segment past the
+/// delete halves of its pending copy-on-write moves. The destinations of those moves
+/// must be durable at or beyond the moves FIRST: otherwise the moves' WAL entries stop
+/// being replayable (the durable pre-image is deleted while the only current copy sits
+/// in the unflushed destination) and a graceful close loses the points. The destination
+/// cannot be relied on to flush itself during the same pass: the `already_indexed`
+/// short-circuit skips its flush, e.g. when it is proxy-wrapped by a running
+/// optimization and the proxy reports the field as present. Root cause of the nightly
+/// model-testing reload divergence (#10095).
+#[test]
+fn create_field_index_flushes_cow_destinations_before_source() {
+    use segment::entry::NonAppendableSegmentEntry as _;
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+    use crate::update::set_payload;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let key: PayloadKeyType = "color".parse().unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let mut source = build_segment_1(dir.path()); // points 1-5, version 6
+    source.appendable_flag = false;
+    let mut destination = empty_segment(dir.path());
+    // The destination already carries the index, so its own pre-build flush below is
+    // skipped by the `already_indexed` short-circuit; only the dependency-aware flush
+    // of the source's visit can cover it.
+    destination
+        .create_field_index(7, &key, Some(&schema))
+        .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let source_id = holder.add_new(source);
+    let destination_id = holder.add_new(destination);
+
+    // Durable baseline.
+    holder.flush_all(FlushMode::Sync, true).unwrap();
+
+    // Op 100 modifies point 1, which lives in the non-appendable source: the
+    // copy-on-write arm upserts the updated point into the destination, deletes it from
+    // the source, and records the flush dependency edge.
+    let payload = payload_json! {"other": "value"};
+    let moved = set_payload(&holder, 100, &payload, &[1.into()], &None, None).unwrap();
+    assert_eq!(moved, 1);
+
+    create_field_index(&holder, 200, &key, Some(&schema)).unwrap();
+
+    let source_persisted = holder
+        .get(source_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+    let destination_persisted = holder
+        .get(destination_id)
+        .unwrap()
+        .get()
+        .read()
+        .persistent_version();
+
+    assert!(
+        source_persisted >= 100,
+        "the source's pre-build flush must cover the move's delete half to arm the \
+         hazard, got {source_persisted}",
+    );
+    assert!(
+        destination_persisted >= 100,
+        "the move's destination must be durable at or beyond the move once the source \
+         flushed past it; anything lower durably deletes the WAL replay pre-image while \
+         the only remaining copy is memory-only, got {destination_persisted}",
+    );
+}
+
+/// One update operation is applied to a segment in several separately locked steps, and a flush
+/// pass can land in any of the gaps. `set_payload` walks its points in chunks of
+/// [`PAYLOAD_OP_BATCH_SIZE`], each chunk taking the segment write lock on its own, so a
+/// thousand-point payload update offers 31 such gaps. The first chunk already raises the segment
+/// to the operation's version while most of its points are untouched.
+///
+/// A flush there must not claim that version. Claiming it makes the segment clean at
+/// `version == persisted_version`, so the chunks that follow are never flushed, the WAL entry
+/// that would replay them is acknowledged away, and the points come back missing after a
+/// restart. That is #10402.
+#[test]
+fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::types::DeferredBehavior;
+    use segment::segment_constructor::load_segment;
+    use uuid::Uuid;
+
+    use crate::update::payload::PAYLOAD_OP_BATCH_SIZE;
+    use crate::update::set_payload;
+
+    /// More than one batch, so the operation cannot be applied in a single locked step
+    const POINT_COUNT: u64 = PAYLOAD_OP_BATCH_SIZE as u64 + 8;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let is_stopped = AtomicBool::new(false);
+    let _scope = ambient::test_guard();
+
+    let mut segment = empty_segment(dir.path());
+    let segment_path = segment.segment_path.clone();
+    let ids: Vec<PointIdType> = (1..=POINT_COUNT).map(PointIdType::from).collect();
+    for id in &ids {
+        segment
+            .upsert_point(1, *id, only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+            .unwrap();
+    }
+
+    let mut holder = SegmentHolder::default();
+    let segment_id = holder.add_new(segment);
+    holder.flush_all(FlushMode::Sync, true).unwrap();
+
+    // Operation 10 sets a payload on every point. This is its first batch; the update worker
+    // has not returned, so the last fully applied operation is still 9.
+    let payload = payload_json! {"city": "Berlin"};
+    set_payload(
+        &holder,
+        10,
+        &payload,
+        &ids[..PAYLOAD_OP_BATCH_SIZE],
+        &None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        holder.get(segment_id).unwrap().get().read().version(),
+        10,
+        "the first batch already carries the segment to the operation's version",
+    );
+
+    // A flush pass lands in the gap before the next batch.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(9))
+            .unwrap(),
+        9,
+        "the acknowledged version must leave the unfinished operation replayable",
+    );
+
+    // The remaining batches of the same operation.
+    set_payload(
+        &holder,
+        10,
+        &payload,
+        &ids[PAYLOAD_OP_BATCH_SIZE..],
+        &None,
+        None,
+    )
+    .unwrap();
+
+    // The next pass sees operation 10 finished and must persist the rest of it. Had the pass
+    // above claimed version 10, the segment would look clean here and be skipped.
+    assert_eq!(
+        holder
+            .flush_all_up_to(FlushMode::Sync, false, Some(10))
+            .unwrap(),
+        10,
+    );
+
+    drop(holder);
+    let reloaded = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    let hits = reloaded
+        .read_filtered(
+            None,
+            None,
+            Some(&city_filter("Berlin")),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    assert_eq!(
+        hits.len(),
+        POINT_COUNT as usize,
+        "every point of operation 10 must survive a restart, not just its first batch",
+    );
+}

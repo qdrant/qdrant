@@ -11,9 +11,8 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use mutable_geo_index::InMemoryGeoIndex;
 
 pub use self::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
@@ -21,11 +20,11 @@ use self::immutable_geo_index::ImmutableGeoIndex;
 use self::mutable_geo_index::MutableGeoIndex;
 use self::on_disk_geo_index::OnDiskGeoIndex;
 pub use self::read_only::ReadOnlyGeoIndex;
-pub use self::read_ops::GeoIndexRead;
+pub use self::read_ops::{GeoConditionChecker, GeoIndexRead};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::payload_config::{IndexMutability, StorageType};
-use crate::types::GeoPoint;
+use crate::types::{GeoPoint, Memory};
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -43,22 +42,24 @@ pub enum GeoIndex {
 impl GeoIndex {
     pub fn new_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement at load time (pinned falls back to the
+        // pure-mmap variant). Files are shared between variants; the persisted
+        // configuration is untouched.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let Some(on_disk_index) = OnDiskGeoIndex::open(&MmapFs, path, populate, deleted_points)?
         else {
             return Ok(None);
         };
 
-        let index = if effective_is_on_disk {
-            GeoIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            GeoIndex::OnDisk(on_disk_index)
         };
 
         Ok(Some(index))
@@ -70,13 +71,13 @@ impl GeoIndex {
 
     pub fn builder_mmap(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> GeoIndexMmapBuilder {
         GeoIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoIndex::new(),
-            is_on_disk,
+            memory,
             deleted_points: deleted_points.to_owned(),
         }
     }
@@ -119,44 +120,48 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash, hw_counter),
-            GeoIndex::OnDisk(index) => index.points_of_hash(hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::points_of_hash(index, hash),
+            GeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash),
+            GeoIndex::OnDisk(index) => index.points_of_hash(hash),
         }
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            GeoIndex::Mutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash, hw_counter),
-            GeoIndex::OnDisk(index) => index.values_of_hash(hash, hw_counter),
+            GeoIndex::Mutable(index) => GeoIndexRead::values_of_hash(index, hash),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash),
+            GeoIndex::OnDisk(index) => index.values_of_hash(hash),
         }
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
-    ) -> bool {
+    ) -> OperationResult<bool> {
+        match self {
+            GeoIndex::Mutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
+            GeoIndex::Immutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
+            GeoIndex::OnDisk(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         match self {
             GeoIndex::Mutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::for_each_matching_value(index, items, check_fn, on_match)
             }
             GeoIndex::Immutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::for_each_matching_value(index, items, check_fn, on_match)
             }
-            GeoIndex::OnDisk(index) => index.check_values_any(idx, hw_counter, check_fn),
+            GeoIndex::OnDisk(index) => index.for_each_matching_value(items, check_fn, on_match),
         }
     }
 
@@ -214,11 +219,11 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
             GeoIndex::Mutable(_) => false,
             GeoIndex::Immutable(_) => false,
-            GeoIndex::OnDisk(_) => true,
+            GeoIndex::OnDisk(index) => index.is_cold(),
         }
     }
 

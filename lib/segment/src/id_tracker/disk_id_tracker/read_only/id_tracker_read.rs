@@ -1,0 +1,137 @@
+//! The read surface: [`DiskMappingsSource`] and [`IdTrackerRead`] impls.
+
+use common::bitvec::BitSlice;
+use common::iterator_ext::IteratorExt as _;
+use common::types::{DeferredBehavior, PointOffsetType};
+use common::universal_io::UniversalRead;
+use itertools::Itertools as _;
+
+use super::ReadOnlyDiskIdTracker;
+use crate::common::operation_error::OperationResult;
+use crate::id_tracker::disk_id_tracker::mappings::{DiskMappingsSource, log_lookup_err};
+use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
+use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
+use crate::types::{PointIdType, SeqNumberType};
+
+impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
+    type Backend = S;
+
+    fn mapping_reader(&self) -> &DiskMappingReader<S> {
+        &self.reader
+    }
+
+    /// Out-of-range offsets count as deleted.
+    fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
+        Ok(self
+            .deleted
+            .get(offset as usize)
+            .as_deref()
+            .copied()
+            .unwrap_or(true))
+    }
+
+    fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {
+        Ok(self.deleted.as_bitslice())
+    }
+
+    fn resolve_internal_batch(
+        &self,
+        external_ids: impl IntoIterator<Item = PointIdType>,
+        mut on_live: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        self.reader.lookup_batch(external_ids, |id, offset| {
+            if !self.point_deleted(offset)? {
+                on_live(id, offset);
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
+    type Backend = S;
+
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_, Self::Backend> {
+        PointMappingsRefEnum::Disk(self.mappings_ref_lossy())
+    }
+
+    fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
+        self.versions.get(internal_id)
+    }
+
+    fn internal_id_with_behavior(
+        &self,
+        external_id: PointIdType,
+        _deferred_behavior: DeferredBehavior,
+    ) -> Option<PointOffsetType> {
+        log_lookup_err(self.resolve_internal(external_id))
+    }
+
+    fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
+        log_lookup_err(self.resolve_external(internal_id))
+    }
+
+    /// Deleted offsets are dropped before any read is scheduled (each check is
+    /// an in-memory bit test), then
+    /// one pipelined mapping-read pass delivers each surviving `(offset, id)`
+    /// in read-completion order; nothing is buffered.
+    fn external_ids_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, PointIdType),
+    ) -> OperationResult<()> {
+        internal_ids
+            .into_iter()
+            .try_filter(|&offset| OperationResult::Ok(!self.point_deleted(offset)?))
+            .process_results(|it| self.reader.external_ids_batch(it, callback))?
+    }
+
+    fn internal_versions_batch(
+        &self,
+        internal_ids: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, SeqNumberType),
+    ) -> OperationResult<()> {
+        self.versions.get_batch(internal_ids, callback)
+    }
+
+    /// Batched external→internal resolution; the behavior argument is ignored
+    /// (as in [`internal_id_with_behavior`](IdTrackerRead::internal_id_with_behavior)).
+    fn resolve_external_ids(
+        &self,
+        point_ids: impl IntoIterator<Item = PointIdType>,
+        _deferred_behavior: DeferredBehavior,
+        callback: impl FnMut(PointIdType, PointOffsetType),
+    ) -> OperationResult<()> {
+        self.resolve_internal_batch(point_ids, callback)
+    }
+
+    fn total_point_count(&self) -> usize {
+        self.reader.total_point_count() as usize
+    }
+
+    fn deleted_point_count(&self) -> usize {
+        self.mappings_ref_lossy().deleted().count_ones()
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        self.mappings_ref_lossy().deleted()
+    }
+
+    fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool {
+        // Fail-safe on a storage error: treat the point as deleted (hide it).
+        self.point_deleted(internal_id).unwrap_or_else(|err| {
+            log::error!("disk id tracker deleted check failed: {err}");
+            true
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "read-only disk id tracker"
+    }
+
+    fn iter_internal_versions(
+        &self,
+    ) -> OperationResult<Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>> {
+        self.versions.iter()
+    }
+}

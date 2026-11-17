@@ -245,6 +245,42 @@ impl CacheController {
             GuardResult::Timeout => unreachable!("We didn't set a timeout"),
         }
     }
+
+    /// Fetch a contiguous slice for multiple block requests.
+    ///
+    /// Returns `Some(&[u8])` if all requested blocks are cached consecutively
+    pub(super) fn get_contiguous_from_cache(
+        &self,
+        mut reqs: impl Iterator<Item = BlockRequest>,
+    ) -> Option<&[u8]> {
+        let first_req = reqs.next()?;
+        let first_offset = self.cache.get(&first_req.key)?;
+
+        let mut total_len = first_req.range.len();
+        let mut expected_next_start = first_req.range.end;
+
+        for (i, req) in reqs.enumerate() {
+            // blocks must be logically contiguous to form a valid physical slice
+            if expected_next_start != BLOCK_SIZE || req.range.start != 0 {
+                return None;
+            }
+            expected_next_start = req.range.end;
+
+            let offset = self.cache.get(&req.key)?;
+            let expected_offset = first_offset.0.checked_add((i as u32) + 1)?;
+            if offset.0 != expected_offset {
+                return None;
+            }
+            total_len += req.range.len();
+        }
+
+        let range_start = first_offset.bytes() + first_req.range.start;
+        // SAFETY: blocks are verified to be physically consecutive and logically contiguous.
+        let slice = unsafe {
+            std::slice::from_raw_parts(self.cache_mmap.as_ptr().add(range_start), total_len)
+        };
+        Some(slice)
+    }
 }
 
 /// Result of a cache lookup.
@@ -306,42 +342,48 @@ impl BlocksLifecycle {
     }
 }
 
+/// Per-request accumulator for evicted blocks.
+///
+/// quick_cache 0.7 finalizes evictions when this type is dropped, after the
+/// shard lock is released.
+#[derive(Default)]
+pub(super) struct BlocksRequestState {
+    evicted: Option<BlockOffset>,
+    unused_blocks: Option<Arc<Mutex<Vec<BlockOffset>>>>,
+    blocks_available: Option<Arc<Condvar>>,
+}
+
+impl Drop for BlocksRequestState {
+    fn drop(&mut self) {
+        if let Some(offset) = self.evicted.take()
+            && let Some(unused_blocks) = &self.unused_blocks
+        {
+            let mut pool = unused_blocks.lock();
+            pool.push(offset);
+            if let Some(blocks_available) = &self.blocks_available {
+                blocks_available.notify_one();
+            }
+        }
+    }
+}
+
 impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
     // With `UnitWeighter` every item weighs 1, so inserting one item
     // evicts at most one item. `Option` is sufficient.
-    type RequestState = Option<BlockOffset>;
-
-    fn begin_request(&self) -> Self::RequestState {
-        None
-    }
+    type RequestState = BlocksRequestState;
 
     fn on_evict(&self, state: &mut Self::RequestState, _key: BlockId, val: BlockOffset) {
         debug_assert!(
-            state.is_none(),
+            state.evicted.is_none(),
             "multiple evictions per request with UnitWeighter"
         );
-        *state = Some(val);
+        state.evicted = Some(val);
+        state.unused_blocks = Some(self.unused_blocks.clone());
+        state.blocks_available = Some(self.blocks_available.clone());
     }
 
     fn is_pinned(&self, _key: &BlockId, _val: &BlockOffset) -> bool {
         // TODO: pin blocks that are being read
         false
-    }
-
-    fn before_evict(
-        &self,
-        _state: &mut Self::RequestState,
-        _key: &BlockId,
-        _val: &mut BlockOffset,
-    ) {
-        // do nothing
-    }
-
-    fn end_request(&self, state: Self::RequestState) {
-        if let Some(offset) = state {
-            let mut pool = self.unused_blocks.lock();
-            pool.push(offset);
-            self.blocks_available.notify_one();
-        }
     }
 }

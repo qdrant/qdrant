@@ -2,6 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -9,6 +10,7 @@ use storage::content_manager::collection_verification::{
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
+use super::routing_token::ActixRoutingToken;
 use crate::actix::api::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAuth;
@@ -24,6 +26,7 @@ async fn discover_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let DiscoverRequest {
         discover_request,
@@ -63,11 +66,12 @@ async fn discover_points(
             &collection.collection_name,
             discover_request,
             params.consistency,
+            routing_token,
             shard_selection,
             auth,
             params.timeout(),
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await
         .map(|scored_points| {
             scored_points
@@ -87,6 +91,7 @@ async fn discover_batch_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let request = request.into_inner();
 
@@ -117,10 +122,11 @@ async fn discover_batch_points(
         &collection.collection_name,
         request,
         params.consistency,
+        routing_token,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|batch_scored_points| {
         batch_scored_points

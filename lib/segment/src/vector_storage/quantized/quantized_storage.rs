@@ -1,33 +1,47 @@
 use std::borrow::Cow;
 use std::io::BufWriter;
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::generic_consts::Random;
-use common::mmap::{AdviceSetting, MmapFlusher, advice};
+use common::generic_consts::{AccessPattern, Random, Sequential};
+use common::maybe_uninit::maybe_uninit_fill_from;
+use common::mmap::{AdviceSetting, advice};
+use common::prefetch::{
+    MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
+    prefetch_windows,
+};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UniversalRead,
+    CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult,
+    UniversalKind, UniversalRead, UniversalReadFs,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
+use quantization::encoded_storage::{ConsecutiveRun, consecutive_runs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 
 #[derive(Debug)]
 pub struct QuantizedStorage<S: UniversalRead> {
     storage: ReadOnly<S>,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
+    /// Whether the page cache is left to fill on demand: set until [`Self::populate`]
+    /// primes it, and again after [`Self::clear_cache`] drops it.
+    cold: AtomicBool,
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
     pub fn populate(&self) {
-        if let Err(err) = self.storage.populate() {
-            log::warn!("Failed to populate quantized storage: {err}")
-        };
+        match self.storage.populate() {
+            Ok(()) => self.cold.store(false, Ordering::Relaxed),
+            Err(err) => log::warn!("Failed to populate quantized storage: {err}"),
+        }
     }
 
     pub fn clear_cache(&self) {
@@ -35,26 +49,129 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             storage: mmap,
             quantized_vector_size: _,
             path: _,
+            cold,
         } = self;
+        cold.store(true, Ordering::Relaxed);
         if let Err(err) = mmap.clear_ram_cache() {
             log::warn!("Failed to clear quantized storage RAM cache: {err}")
         }
     }
 }
 
-impl QuantizedStorage<MmapFile> {
-    /// Open the backing file for build-time bulk appends, bypassing the read-only mmap.
+impl<S: UniversalRead> QuantizedStorage<S> {
+    /// Open the backing file for build-time bulk appends, bypassing the read-only handle.
     pub(crate) fn open_appender(&self) -> std::io::Result<BufWriter<fs::File>> {
         Ok(BufWriter::new(open_append(&self.path)?))
     }
 
-    /// Re-mmap after the file grew so reads observe appended vectors. Build-time only.
+    /// Reopen after the file grew so reads observe appended vectors. Build-time only.
     pub(crate) fn reload(&mut self) -> OperationResult<()> {
-        *self = Self::from_file(
-            &MmapFs,
-            &self.path.clone(),
-            self.quantized_vector_size.get(),
-        )?;
+        self.storage.live_reload()?;
+        Ok(())
+    }
+
+    /// Read one vector with the given access pattern.
+    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> UioResult<Cow<'_, [u8]>> {
+        let size = self.quantized_vector_size.get() as u64;
+        self.storage
+            .read(ReadRange::new(size * u64::from(key), size), P::default())
+    }
+
+    /// Run `f` for each vector in the batch, batching the underlying reads.
+    ///
+    /// Async-capable backends (io_uring) get the whole batch submitted in one
+    /// go; mmap-style backends fetch a batch first and then run `f` over it,
+    /// which is more cache friendly than interleaving fetch and use.
+    pub fn for_each_in_batch<F: FnMut(usize, &[u8])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
+        if S::kind().can_be_async() {
+            let size = self.quantized_vector_size.get() as u64;
+            let ranges = keys.iter().enumerate().map(|(idx, &key)| {
+                let range = ReadRange {
+                    byte_offset: size * u64::from(key),
+                    length: size,
+                };
+                (idx, range)
+            });
+
+            let callback = |idx, bytes: &[u8]| {
+                f(idx, bytes);
+                UioResult::Ok(())
+            };
+
+            // Access pattern does not matter for io_uring.
+            self.storage.read_batch(ranges, Random, callback)?;
+            return Ok(());
+        }
+
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
+        let (near, far) = prefetch_windows(self.quantized_vector_size.get());
+
+        // A storage small enough to stay cache-resident has nothing to fetch,
+        // so the hints are pure overhead; skip them. On the rare chance the
+        // size lookup fails, treat the storage as large and keep prefetching.
+        let storage_bytes = self.storage.len::<u8>().unwrap_or(u64::MAX) as usize;
+        let storage_fits_cache = storage_bytes < MIN_PREFETCH_STORAGE_BYTES;
+
+        let read_vector = |key, sequential| {
+            if sequential {
+                self.read_vector::<Sequential>(key)
+            } else {
+                self.read_vector::<Random>(key)
+            }
+        };
+
+        for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
+            let sequential = is_read_with_prefetch_efficient(keys);
+            let mut failed = None;
+            let iter = keys.iter().map(|&key| {
+                read_vector(key, sequential).unwrap_or_else(|err| {
+                    failed.get_or_insert(err);
+                    Cow::Borrowed(&[])
+                })
+            });
+            let vectors = maybe_uninit_fill_from(&mut vectors_buffer, iter).0;
+            if let Some(err) = failed {
+                return Err(err.into());
+            }
+
+            let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
+
+            // Dense-ascending batches stream and cache-resident storages are
+            // already hot; the hardware prefetcher covers both and software
+            // prefetch is pure overhead.
+            if sequential || storage_fits_cache || vectors.len() <= MAX_UNPREFETCHED_BATCH {
+                for (vector_idx, vector) in vectors.iter().enumerate() {
+                    f(batch_offset + vector_idx, vector);
+                }
+            } else {
+                // The gathered `vectors` are borrowed straight from the mmap,
+                // so nothing has touched the bytes yet; without prefetch the
+                // scorer stalls on DRAM at the start of every cold vector.
+                for vector in vectors.iter().take(far).skip(near) {
+                    prefetch_slice_l2(vector);
+                }
+                for vector in vectors.iter().take(near) {
+                    prefetch_slice(vector);
+                }
+
+                for (vector_idx, vector) in vectors.iter().enumerate() {
+                    if far > 0
+                        && let Some(upcoming) = vectors.get(vector_idx + far)
+                    {
+                        prefetch_slice_l2(upcoming);
+                    }
+                    if let Some(upcoming) = vectors.get(vector_idx + near) {
+                        prefetch_slice(upcoming);
+                    }
+                    f(batch_offset + vector_idx, vector);
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -73,21 +190,34 @@ pub struct QuantizedStorageBuilder<S> {
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
-    fn open_options() -> OpenOptions {
+    fn open_options(populate: Populate) -> OpenOptions {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            populate: Populate::No,
+            populate,
             advice: AdviceSetting::Global,
         }
     }
 
+    /// Schedule background prefetch of the data file [`Self::from_file`] reads.
+    ///
+    /// The storage reads lazily through its mmap-style handle; `populate`
+    /// warms the parked handle for the `cached` memory placement.
+    pub fn preopen(fs: &impl CachedReadFs<File = S>, path: &Path, populate: Populate) {
+        fs.schedule_open(path, Some(Self::open_options(populate)), None)
+    }
+
     pub fn from_file(
-        fs: &S::Fs,
+        fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         quantized_vector_size: usize,
     ) -> OperationResult<QuantizedStorage<S>> {
-        let storage = ReadOnly::open(fs, path, Self::open_options(), Default::default())?;
+        let storage = ReadOnly::open(
+            fs,
+            path,
+            Self::open_options(Populate::No),
+            Default::default(),
+        )?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -105,6 +235,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             storage,
             quantized_vector_size,
             path: path.to_path_buf(),
+            cold: AtomicBool::new(true),
         })
     }
 
@@ -138,6 +269,55 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
+    fn is_in_ram_or_mmap() -> bool {
+        true
+    }
+
+    fn is_cold(&self) -> bool {
+        self.cold.load(Ordering::Relaxed)
+    }
+
+    fn vectors_count(&self) -> usize {
+        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            storage: _,
+            quantized_vector_size: _,
+            path: _,
+            cold: _,
+        } = self;
+
+        0
+    }
+
+    fn prefers_contiguous_reads() -> bool {
+        // Exhaustive on purpose: a new backend must decide here rather than
+        // inherit whichever answer a wildcard happened to give it.
+        match S::kind() {
+            // Measured: with the data in the page cache, per-request
+            // submission and completion bookkeeping dominates, so one
+            // contiguous-slice read beats the batched per-vector path at every
+            // density.
+            UniversalKind::IoUring => true,
+            // Random access is cheap; run batching pays only for long enough
+            // runs, which the caller gates on.
+            UniversalKind::Mmap => false,
+            // Local caches over a slower backing store. Plausibly the same
+            // story as io_uring, but unmeasured, so they keep the gate.
+            UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::CachedBlob => false,
+            // Remote: per-vector reads pipeline across a batch, while
+            // contiguous-slice reads would serialize the round trips.
+            UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::UioGrpc => false,
+        }
+    }
+
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index).expect("vector exists")
     }
@@ -146,40 +326,56 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         let start = (self.quantized_vector_size.get() * index as usize) as u64;
         let length = self.quantized_vector_size.get() as u64;
         self.storage
-            .read::<Random, u8>(ReadRange {
-                byte_offset: start,
-                length,
-            })
+            .read(ReadRange::new(start, length), Random)
             .ok()
     }
 
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
+    fn for_each_batch(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, Cow<'_, [u8]>),
     ) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert vector in mmap storage",
-        ))
+        self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
+            .map_err(std::io::Error::other)
     }
 
-    fn is_in_ram_or_mmap() -> bool {
-        true
-    }
+    fn for_each_run(
+        &self,
+        offsets: &[PointOffsetType],
+        mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
+        let size = self.quantized_vector_size.get() as u64;
+        let range = |run: &ConsecutiveRun| {
+            ReadRange::new(size * u64::from(run.start), size * run.len as u64)
+        };
 
-    fn is_on_disk(&self) -> bool {
-        true
-    }
+        if S::kind().can_be_async() {
+            // Pipelined backends (io_uring): keep every run of the batch in
+            // flight together — still one read per run — so scattered ids
+            // don't wait on each read before submitting the next.  Runs come
+            // back in completion order; the access pattern is ignored.
+            let runs = consecutive_runs(offsets).map(|run| ((run.first, run.len), range(&run)));
+            return self
+                .storage
+                .read_batch(runs, Random, |(first, len), bytes: &[u8]| {
+                    callback(first, len, Cow::Borrowed(bytes));
+                    UioResult::Ok(())
+                })
+                .map_err(std::io::Error::other);
+        }
 
-    fn vectors_count(&self) -> usize {
-        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
-    }
-
-    fn flusher(&self) -> MmapFlusher {
-        // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
-        Box::new(|| Ok(()))
+        // Mmap serves a run from either of two mappings; the sequential one
+        // has the kernel read ahead, which only a multi-vector run repays.
+        for run in consecutive_runs(offsets) {
+            let bytes = if run.len > 1 {
+                self.storage.read(range(&run), Sequential)
+            } else {
+                self.storage.read(range(&run), Random)
+            };
+            let bytes = bytes.map_err(std::io::Error::other)?;
+            callback(run.first, run.len, bytes);
+        }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -189,31 +385,19 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self {
-            storage: _,
-            quantized_vector_size: _,
-            path: _,
-        } = self;
-
-        0
-    }
 }
 
-impl<S: UniversalRead<Fs = common::universal_io::MmapFs>> quantization::EncodedStorageBuilder
-    for QuantizedStorageBuilder<S>
-{
-    type Storage = QuantizedStorage<S>;
+impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
+    type Storage = QuantizedStorage<MmapFile>;
     type Error = OperationError;
 
-    fn build(self) -> OperationResult<QuantizedStorage<S>> {
+    fn build(self) -> OperationResult<QuantizedStorage<MmapFile>> {
         self.mmap.flush()?;
 
         let storage = ReadOnly::open(
-            &common::universal_io::MmapFs,
+            &MmapFs,
             &self.path,
-            Self::Storage::open_options(),
+            Self::Storage::open_options(Populate::No),
             (),
         )?;
 
@@ -221,6 +405,7 @@ impl<S: UniversalRead<Fs = common::universal_io::MmapFs>> quantization::EncodedS
             storage,
             quantized_vector_size: self.quantized_vector_size,
             path: self.path,
+            cold: AtomicBool::new(true),
         })
     }
 
@@ -288,5 +473,110 @@ impl<S> QuantizedStorageBuilder<S> {
             path: path.to_path_buf(),
             output_storage: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common::universal_io::{DiskCache, DiskCacheConfig, DiskCacheFs};
+    use quantization::EncodedStorage;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    const VECTOR_SIZE: usize = 68;
+    const COUNT: usize = 300;
+
+    /// `for_each_run` must serve every offset exactly once with the bytes of
+    /// per-point `get_vector_data`, in whatever order the backend completes
+    /// the runs — the contract a scorer writing `scores[first..first + len]`
+    /// relies on.
+    fn runs_match_per_point_reads<S: UniversalRead>(storage: &QuantizedStorage<S>) {
+        let ascending: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+        let scattered: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).step_by(7).collect();
+        let descending: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).rev().collect();
+        let mixed: Vec<PointOffsetType> = vec![2, 3, 4, 8, 9, 1, 250, 251, 252, 253, 0];
+        let empty: Vec<PointOffsetType> = vec![];
+
+        for ids in [&ascending, &scattered, &descending, &mixed, &empty] {
+            let mut seen = vec![false; ids.len()];
+            storage
+                .for_each_run(ids, |first, len, bytes| {
+                    assert_eq!(
+                        bytes.len(),
+                        len * VECTOR_SIZE,
+                        "run bytes must span the run"
+                    );
+                    for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                        let offset = ids[first + i];
+                        assert!(!seen[first + i], "offset {offset} served twice");
+                        seen[first + i] = true;
+                        assert_eq!(
+                            vector.as_slice(),
+                            storage.get_vector_data(offset).as_ref(),
+                            "run bytes diverge at offset {offset}",
+                        );
+                    }
+                })
+                .unwrap();
+            assert!(
+                seen.iter().all(|&served| served),
+                "every offset must be served"
+            );
+        }
+    }
+
+    /// A read past the stored vectors fails the way an unreachable object store does.
+    fn reads_past_the_end_fail<S: UniversalRead>(storage: &QuantizedStorage<S>) {
+        let ids = [0, COUNT as PointOffsetType + 4];
+        assert!(storage.for_each_batch(&ids, |_, _| {}).is_err());
+        assert!(storage.for_each_run(&ids, |_, _, _| {}).is_err());
+    }
+
+    /// `COUNT` vectors of `VECTOR_SIZE` bytes, each filled with a byte pattern
+    /// unique to its index, written as the single-file layout under `dir`.
+    fn write_dataset(dir: &Path) -> PathBuf {
+        let path = dir.join("quantized.data");
+        let data: Vec<u8> = (0..COUNT)
+            .flat_map(|i| (0..VECTOR_SIZE).map(move |b| (i * 31 + b) as u8))
+            .collect();
+        fs::write(&path, data).unwrap();
+        path
+    }
+
+    /// Synchronous backend: the per-run `read` loop with the access hint.
+    #[test]
+    fn mmap_runs_match_per_point_reads() {
+        let dir = TempDir::with_prefix("quantized_storage_mmap").unwrap();
+        let path = write_dataset(dir.path());
+        let storage = QuantizedStorage::<MmapFile>::from_file(&MmapFs, &path, VECTOR_SIZE).unwrap();
+        assert!(!MmapFile::kind().can_be_async());
+        runs_match_per_point_reads(&storage);
+        reads_past_the_end_fail(&storage);
+    }
+
+    /// Pipelined backend: the whole batch of runs goes through `read_batch`.
+    /// The disk cache is the async-capable backend that runs on every
+    /// platform, so this covers the branch io_uring takes on Linux.
+    #[test]
+    fn disk_cache_runs_match_per_point_reads() {
+        let _scope = common::ambient::test_guard();
+        let dir = TempDir::with_prefix("quantized_storage_disk_cache").unwrap();
+        let remote_dir = dir.path().join("remote");
+        let local_dir = dir.path().join("local");
+        fs::create_dir_all(&remote_dir).unwrap();
+        fs::create_dir_all(&local_dir).unwrap();
+        let path = write_dataset(&remote_dir);
+
+        let config = Arc::new(DiskCacheConfig::new(remote_dir, local_dir).unwrap());
+        let cache_fs = DiskCacheFs::<MmapFile>::new(config, MmapFs);
+        let storage =
+            QuantizedStorage::<DiskCache<MmapFile>>::from_file(&cache_fs, &path, VECTOR_SIZE)
+                .unwrap();
+        assert!(DiskCache::<MmapFile>::kind().can_be_async());
+        runs_match_per_point_reads(&storage);
+        reads_past_the_end_fail(&storage);
     }
 }

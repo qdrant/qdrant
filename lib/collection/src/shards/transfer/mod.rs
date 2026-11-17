@@ -21,6 +21,7 @@ pub mod driver;
 pub mod helpers;
 pub mod resharding_stream_records;
 pub mod snapshot;
+mod stream_batches;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
 pub mod wal_delta;
@@ -92,6 +93,9 @@ impl RecoveryStage {
 
 /// Time between consensus confirmation retries.
 const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// Interval at which a transfer driver checks whether a consensus leader is established.
+const LEADER_ESTABLISHED_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
@@ -296,13 +300,6 @@ pub enum ShardTransferMethod {
 }
 
 impl ShardTransferMethod {
-    pub fn is_streaming(&self) -> bool {
-        match self {
-            Self::StreamRecords | Self::ReshardingStreamRecords => true,
-            Self::Snapshot | Self::WalDelta => false,
-        }
-    }
-
     pub fn is_resharding(&self) -> bool {
         match self {
             Self::ReshardingStreamRecords => true,
@@ -324,6 +321,23 @@ pub trait ShardTransferConsensus: Send + Sync {
     ///
     /// Returns `(commit, term)`.
     fn consensus_commit_term(&self) -> (u64, u64);
+
+    /// Whether this peer currently knows a consensus leader.
+    ///
+    /// This is `false` while a (re)started peer has not joined consensus yet, and during leader
+    /// elections.
+    fn is_leader_established(&self) -> bool;
+
+    /// Wait until this peer knows a consensus leader.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn await_leader_established(&self) {
+        while !self.is_leader_established() {
+            sleep(LEADER_ESTABLISHED_POLL_INTERVAL).await;
+        }
+    }
 
     /// After snapshot or WAL delta recovery, propose to switch shard to `Partial`
     ///

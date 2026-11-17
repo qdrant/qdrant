@@ -1,20 +1,26 @@
+use smallvec::SmallVec;
+
 use crate::data_types::vectors::VectorInternal;
-use crate::types::{Payload, PointIdType, VectorNameBuf};
+use crate::types::{Payload, PointIdType, RawPayload, VectorNameBuf};
 
-pub type NamedVectorsOwned = Vec<(VectorNameBuf, VectorInternal)>;
+/// A point almost always has a single (default) named vector, so keep it inline
+/// to avoid a heap allocation on the common retrieve path.
+pub type NamedVectorsOwned = SmallVec<[(VectorNameBuf, VectorInternal); 1]>;
 
+/// Byte-blob analogue of [`NamedVectorsOwned`]: vectors as storage-native bytes.
+pub type NamedVectorBytesOwned = SmallVec<[(VectorNameBuf, Vec<u8>); 1]>;
+
+/// A retrieved point: id, optional vectors, optional payload.
 pub struct SegmentRecord {
     pub id: PointIdType,
     pub vectors: Option<NamedVectorsOwned>,
     pub payload: Option<Payload>,
 }
 
-impl SegmentRecord {
-    pub fn empty(id: PointIdType) -> Self {
-        Self {
-            id,
-            vectors: Some(NamedVectorsOwned::default()),
-            payload: None,
-        }
-    }
+/// Byte-blob analogue of [`SegmentRecord`]: vectors and payload as stored, so a
+/// reader that only relocates the point does not decode them.
+pub struct SegmentRecordRaw {
+    pub id: PointIdType,
+    pub vectors: Option<NamedVectorBytesOwned>,
+    pub payload: Option<RawPayload>,
 }

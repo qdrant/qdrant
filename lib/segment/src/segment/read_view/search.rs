@@ -1,24 +1,30 @@
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::bitvec::BitSliceExt as _;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
-use common::types::{DeferredBehavior, ScoredPointOffset};
+use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
+use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
-use crate::data_types::query_context::{QueryContext, QueryIdfStats, SegmentQueryContext};
-use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
+use crate::data_types::query_context::{
+    IdfScopeStats, QueryContext, QueryIdfStats, SegmentQueryContext,
+};
+use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::query_optimization::resolved_points::check_resolved_points;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, SearchParams, VectorName, VectorNameBuf,
-    WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointAtOffset, PointIdType, RawPayload,
+    ScoredPoint, ScoredPointLocation, SearchParams, VectorName, VectorNameBuf, WithPayload,
+    WithVector,
 };
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -35,103 +41,258 @@ where
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        // Stage 1: resolve external → internal once, into two parallel vectors.
-        // The id tracker owns this: deferred filtering happens inline (no
-        // `point_is_deferred` lookup). The parallel-vector shape lets
-        // a future batched payload / vector fetcher consume `&offsets`
-        // straight without unzipping first.
-        let (resolved_ids, resolved_offsets) = self
-            .id_tracker
-            .resolve_external_ids(point_ids, deferred_behavior);
+        let mut resolved_ids = Vec::with_capacity(point_ids.len());
+        let mut resolved_offsets = Vec::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            deferred_behavior,
+            |point_id, offset| {
+                resolved_ids.push(point_id);
+                resolved_offsets.push(offset);
+            },
+        )?;
+        self.retrieve_resolved(
+            &resolved_ids,
+            &resolved_offsets,
+            with_payload,
+            with_vector,
+            is_stopped,
+        )
+    }
+
+    /// Records of `points`, read by their offsets without looking their ids up.
+    /// A point the segment no longer holds there at its version (deleted,
+    /// rewritten, or deferred where `deferred_behavior` hides it) is left out.
+    pub fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let cutoff = deferred_behavior.apply(self.deferred_internal_id());
+        let mut versions = AHashMap::with_capacity(points.len());
+        self.id_tracker.internal_versions_batch(
+            points.iter().map(|point| point.offset),
+            |offset, version| {
+                versions.insert(offset, version);
+            },
+        )?;
+        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = points
+            .iter()
+            .filter(|point| {
+                let PointAtOffset {
+                    id: _,
+                    offset,
+                    version,
+                } = **point;
+                !cutoff.is_some_and(|cutoff| offset >= cutoff)
+                    && !self.id_tracker.is_deleted_point(offset)
+                    && versions.get(&offset) == Some(&version)
+            })
+            .map(|point| (point.id, point.offset))
+            .unzip();
+        self.retrieve_resolved(
+            &resolved_ids,
+            &resolved_offsets,
+            with_payload,
+            with_vector,
+            is_stopped,
+        )
+    }
+
+    /// Builds the records for points whose internal offsets the caller already
+    /// holds, e.g. search post-processing, where the offsets come straight from
+    /// the vector index.
+    ///
+    /// `resolved_ids` and `resolved_offsets` are parallel arrays: each id is read
+    /// from the offset at the same index. The caller owns visibility — every pair
+    /// it passes is read as given.
+    fn retrieve_resolved(
+        &self,
+        resolved_ids: &[PointIdType],
+        resolved_offsets: &[PointOffsetType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
 
-        // Stage 2: pre-allocate one record per resolved point. The `vectors`
-        // slot is initialised here according to `with_vector`, so the
-        // `WithVector::Bool(false)` path needs no separate clearing pass.
-        let needs_vectors = match with_vector {
-            WithVector::Bool(true) | WithVector::Selector(_) => true,
-            WithVector::Bool(false) => false,
-        };
+        // One blank record per resolved point; `vectors` is `Some` only when
+        // vectors were requested, so the `WithVector::Bool(false)` path needs
+        // no cleanup.
         let mut records: AHashMap<ExtendedPointId, SegmentRecord> = resolved_ids
             .iter()
             .map(|&id| {
                 let record = SegmentRecord {
                     id,
-                    vectors: needs_vectors.then(NamedVectorsOwned::default),
+                    vectors: with_vector.is_enabled().then(SmallVec::new),
                     payload: None,
                 };
                 (id, record)
             })
             .collect();
 
-        // Stage 3: vectors. The external id rides along as the read's user
-        // data — it comes back unchanged in the callback, so no extra
-        // `offset → id` lookup is needed.
-        if needs_vectors {
-            let mut process_vectors = |vector_name: &VectorNameBuf| -> OperationResult<()> {
-                let keys = resolved_ids
-                    .iter()
-                    .zip(&resolved_offsets)
-                    .map(|(&id, &offset)| (id, offset))
-                    .stop_if(is_stopped);
-                self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vec| {
-                    if let Some(record) = records.get_mut(&id) {
-                        record
-                            .vectors
-                            .as_mut()
-                            .expect("needs_vectors path keeps vectors as Some")
-                            .push((vector_name.clone(), vec));
-                    }
-                })
-            };
+        for vector_name in self.requested_vector_names(with_vector) {
+            let keys = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
+            self.vectors_by_offsets(vector_name, keys, |id, _offset, vector| {
+                if let Some(record) = records.get_mut(&id) {
+                    record
+                        .vectors
+                        .as_mut()
+                        .expect("vectors is Some whenever vector names are requested")
+                        .push((vector_name.clone(), vector));
+                }
+            })?;
+        }
 
-            match with_vector {
-                WithVector::Bool(true) => {
-                    for vector_name in self.vector_data.keys() {
-                        process_vectors(vector_name)?;
-                    }
-                }
-                WithVector::Selector(names) => {
-                    for vector_name in names {
-                        process_vectors(vector_name)?;
-                    }
-                }
-                WithVector::Bool(false) => unreachable!("guarded by needs_vectors"),
+        let payloads =
+            self.requested_payloads(resolved_ids, resolved_offsets, with_payload, is_stopped)?;
+        for (id, payload) in payloads {
+            if let Some(record) = records.get_mut(&id) {
+                record.payload = Some(payload);
             }
         }
 
-        // Stage 4: payload. Use the already-resolved offsets to skip another
-        // external→internal lookup per point. The per-iteration shape here
-        // mirrors what a future batched payload fetcher would consume —
-        // `&resolved_offsets` becomes its input directly.
-        if with_payload.enable {
-            let point_offsets = resolved_ids.into_iter().zip(resolved_offsets);
+        Ok(records)
+    }
 
-            self.read_payloads::<Random, _>(
-                point_offsets,
-                |point_id, payload| {
-                    check_stopped(is_stopped)?;
+    /// Byte-blob analogue of [`Self::retrieve`]: vectors and payload are read as
+    /// storage-native bytes to avoid a lossy round-trip of the former and a
+    /// parse-then-encode round-trip of the latter. A caller that needs the
+    /// parsed payload decodes it itself, see [`RawPayload::decode`].
+    pub fn retrieve_raw(
+        &self,
+        point_ids: &[PointIdType],
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
+        let mut resolved_ids = Vec::with_capacity(point_ids.len());
+        let mut resolved_offsets = Vec::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            deferred_behavior,
+            |point_id, offset| {
+                resolved_ids.push(point_id);
+                resolved_offsets.push(offset);
+            },
+        )?;
 
-                    let payload = match &with_payload.payload_selector {
-                        Some(selector) => selector.process(payload),
-                        None => payload,
-                    };
+        // One blank record per resolved point; `vectors` is `Some` only when
+        // vectors were requested, so the `WithVector::Bool(false)` path needs
+        // no cleanup.
+        let mut records: AHashMap<ExtendedPointId, SegmentRecordRaw> = resolved_ids
+            .iter()
+            .map(|&id| {
+                let record = SegmentRecordRaw {
+                    id,
+                    vectors: with_vector.is_enabled().then(SmallVec::new),
+                    payload: None,
+                };
+                (id, record)
+            })
+            .collect();
 
-                    if let Some(record) = records.get_mut(&point_id) {
-                        record.payload = Some(payload);
-                    }
+        for vector_name in self.requested_vector_names(with_vector) {
+            let keys = resolved_keys(&resolved_ids, &resolved_offsets, is_stopped);
+            self.vector_bytes_by_offsets(vector_name, keys, |id, _offset, bytes| {
+                if let Some(record) = records.get_mut(&id) {
+                    record
+                        .vectors
+                        .as_mut()
+                        .expect("vectors is Some whenever vector names are requested")
+                        .push((vector_name.clone(), bytes));
+                }
+            })?;
+        }
 
-                    Ok(())
-                },
-                hw_counter,
-            )?;
+        let payloads = self.requested_payloads_raw(&resolved_ids, &resolved_offsets, is_stopped)?;
+        for (id, payload) in payloads {
+            if let Some(record) = records.get_mut(&id) {
+                record.payload = Some(payload);
+            }
         }
 
         Ok(records)
+    }
+
+    /// The vector names retrieval must read for the given `with_vector`:
+    /// all of them, a selection, or none.
+    fn requested_vector_names<'a>(
+        &'a self,
+        with_vector: &'a WithVector,
+    ) -> impl Iterator<Item = &'a VectorNameBuf> {
+        let (all, selected) = match with_vector {
+            WithVector::Bool(true) => (Some(self.vector_data.keys()), None),
+            WithVector::Bool(false) => (None, None),
+            WithVector::Selector(names) => (None, Some(names.iter())),
+        };
+        all.into_iter()
+            .flatten()
+            .chain(selected.into_iter().flatten())
+    }
+
+    /// Reads each resolved point's (selected) payload, reusing the
+    /// already-resolved offsets. Empty when payload wasn't requested.
+    fn requested_payloads(
+        &self,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
+        with_payload: &WithPayload,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<(ExtendedPointId, Payload)>> {
+        if !with_payload.enable {
+            return Ok(Vec::new());
+        }
+
+        let mut payloads = Vec::with_capacity(resolved_ids.len());
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
+
+        self.read_payloads::<Random, _>(point_offsets, |point_id, payload| {
+            check_stopped(is_stopped)?;
+
+            let payload = match &with_payload.payload_selector {
+                Some(selector) => selector.process(payload),
+                None => payload,
+            };
+
+            payloads.push((point_id, payload));
+
+            Ok(())
+        })?;
+
+        Ok(payloads)
+    }
+
+    /// Raw analogue of [`Self::requested_payloads`]: reads each resolved point's
+    /// payload as stored, without parsing it. Points with no stored payload are
+    /// skipped, so a missing entry means "no payload" rather than "empty
+    /// payload".
+    fn requested_payloads_raw(
+        &self,
+        resolved_ids: &[ExtendedPointId],
+        resolved_offsets: &[PointOffsetType],
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<(ExtendedPointId, RawPayload)>> {
+        let mut payloads = Vec::with_capacity(resolved_ids.len());
+        let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
+
+        self.read_payloads_raw::<Random, _>(point_offsets, |point_id, bytes| {
+            check_stopped(is_stopped)?;
+
+            if let Some(bytes) = bytes {
+                payloads.push((point_id, RawPayload::from_storage_bytes(bytes.to_vec())));
+            }
+
+            Ok(())
+        })?;
+
+        Ok(payloads)
     }
 
     /// Converts raw `ScoredPointOffset` search results into user-facing
@@ -141,38 +302,67 @@ where
         internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        let mut external_ids = AHashMap::with_capacity(internal_result.len());
+        self.id_tracker.external_ids_batch(
+            internal_result.iter().map(|scored| scored.idx),
+            |internal_id, external_id| {
+                external_ids.insert(internal_id, external_id);
+            },
+        )?;
+
+        // Deferred versions never reach post-processing — they are excluded in the
+        // search path itself — so the offsets the index reports are read as they are.
+        debug_assert!(
+            {
+                let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
+                internal_result
+                    .iter()
+                    .all(|scored| !cutoff.is_some_and(|cutoff| scored.idx >= cutoff))
+            },
+            "search returned a deferred point, which a query must not see",
+        );
+
         let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
-                let point_offset = scored_point_offset.idx;
-                let point_id = self.id_tracker.external_id(point_offset);
+                let point_id = external_ids.get(&scored_point_offset.idx).copied();
                 // This can happen if a point was modified between retrieving and post-processing,
                 // but this function locks the segment so it can't be modified during execution.
                 debug_assert!(
                     point_id.is_some(),
-                    "Point with internal ID {point_offset} not found in id tracker"
+                    "Point with internal ID {} not found in id tracker",
+                    scored_point_offset.idx,
                 );
                 point_id.map(|id| (id, scored_point_offset))
             })
             .unzip();
 
-        let mut segment_records = self.retrieve(
+        // The offsets ride along from the index, so no per-point external->internal
+        // lookup happens on the search path.
+        let point_offsets: Vec<_> = scored_offsets.iter().map(|scored| scored.idx).collect();
+        let mut segment_records = self.retrieve_resolved(
             &point_ids,
+            &point_offsets,
             with_payload,
             with_vector,
-            hw_counter,
             is_stopped,
-            DeferredBehavior::VisibleOnly,
+        )?;
+
+        let mut versions = AHashMap::with_capacity(scored_offsets.len());
+        self.id_tracker.internal_versions_batch(
+            scored_offsets.iter().map(|scored| scored.idx),
+            |internal_id, version| {
+                versions.insert(internal_id, version);
+            },
         )?;
 
         let mut results = Vec::with_capacity(point_ids.len());
 
         for (point_id, scored_offset) in point_ids.into_iter().zip(scored_offsets) {
             let ScoredPointOffset {
-                idx: point_offset,
+                idx,
                 score: point_score,
             } = scored_offset;
 
@@ -189,14 +379,11 @@ where
                 continue;
             };
 
-            let point_version =
-                self.id_tracker
-                    .internal_version(point_offset)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "Corrupter id_tracker, no version for point {point_id}"
-                        ))
-                    })?;
+            let point_version = versions.get(&idx).copied().ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Corrupter id_tracker, no version for point {point_id}"
+                ))
+            })?;
 
             let SegmentRecord {
                 id,
@@ -212,6 +399,10 @@ where
                 vector: vectors.map(VectorStructInternal::from),
                 shard_key: None,
                 order_value: None,
+                location: Some(ScoredPointLocation {
+                    segment: self.segment_uuid,
+                    offset: idx,
+                }),
             });
         }
 
@@ -230,12 +421,19 @@ where
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let _scope = query_context.handoff().enter_guard();
         check_query_vectors(vector_name, query_vectors, self.segment_config)?;
+        if let Some(filter) = filter {
+            check_resolved_points(filter, self.segment_uuid)?;
+        }
         let vector_data = self
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context = query_context.get_vector_context(vector_name);
+        let idf_corpus = params
+            .and_then(|params| params.idf.as_ref())
+            .and_then(|idf| idf.corpus());
+        let vector_query_context = query_context.get_vector_context(vector_name, idf_corpus);
         let internal_results = vector_data.vector_index().search(
             query_vectors,
             filter,
@@ -246,8 +444,6 @@ where
 
         check_stopped(&vector_query_context.is_stopped())?;
 
-        let hw_counter = vector_query_context.hardware_counter();
-
         internal_results
             .into_iter()
             .map(|internal_result| {
@@ -255,38 +451,462 @@ where
                     internal_result,
                     with_payload,
                     with_vector,
-                    &hw_counter,
                     &vector_query_context.is_stopped(),
                 )
             })
             .collect()
     }
 
+    /// Rank this segment's points by BM25 over the text index of `field` and
+    /// return the `top` best, highest first.
+    ///
+    /// `terms` must already be tokenized by the field's tokenizer. Their `IDF`
+    /// and the average document length come from the text statistics
+    /// `query_context` was filled with, over every segment of the shard, so a
+    /// point scores the same whichever segment holds it. A point is scored only
+    /// if a query sees it: not deleted (by the id tracker, or by the context's
+    /// deleted points in its place), not deferred, not shadowed, and matching
+    /// `filter`. A segment without a text index on `field` scores nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn score_bm25(
+        &self,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let _scope = query_context.handoff().enter_guard();
+        let context = query_context.get_text_context(field).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "no text statistics were gathered for field {field}",
+            ))
+        })?;
+        let filter_context = filter
+            .map(|filter| self.payload_index.filter_context(filter))
+            .transpose()?;
+        let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
+        let deleted = context.deleted_points().unwrap_or(deleted);
+        let visible = |point_id: PointOffsetType| {
+            let bit = point_id as usize;
+            cutoff.is_none_or(|cutoff| point_id < cutoff)
+                && !deleted.get_bit(bit).unwrap_or(false)
+                && !shadowed.get_bit(bit).unwrap_or(false)
+        };
+        let accept = Bm25Accept::new(&visible, filter_context.as_ref());
+
+        let internal_result = self
+            .payload_index
+            .score_bm25(field, terms, &context, params, &accept, top)?;
+
+        check_stopped(context.is_stopped())?;
+
+        self.process_search_result(
+            internal_result,
+            with_payload,
+            with_vector,
+            context.is_stopped(),
+        )
+    }
+
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_acc = query_context.hardware_usage_accumulator();
-        let hw_counter = hw_acc.get_counter_cell();
+        let handoff = query_context.handoff().clone();
+        let _scope = handoff.enter_guard();
+        let is_stopped = query_context.is_stopped_handle();
 
-        let QueryIdfStats {
-            idf,
-            indexed_vectors,
-        } = query_context.mut_idf_stats();
+        let QueryIdfStats { scopes } = query_context.mut_idf_stats();
 
-        for (vector_name, idf) in idf.iter_mut() {
-            if let Some(vector_data) = self.vector_data.get(vector_name) {
-                let vector_index = vector_data.vector_index();
+        for scope in scopes.iter_mut() {
+            let IdfScopeStats {
+                corpus,
+                idf,
+                indexed_vectors,
+            } = scope;
 
-                let indexed_vector_count = vector_index.indexed_vector_count();
+            for (vector_name, idf) in idf.iter_mut() {
+                if let Some(vector_data) = self.vector_data.get(vector_name) {
+                    let document_count = vector_data.vector_index().fill_idf_statistics(
+                        idf,
+                        corpus.as_ref(),
+                        &is_stopped,
+                    )?;
 
-                if let Some(count) = indexed_vectors.get_mut(vector_name) {
-                    *count += indexed_vector_count;
-                } else {
-                    indexed_vectors.insert(vector_name.clone(), indexed_vector_count);
+                    if let Some(count) = indexed_vectors.get_mut(vector_name) {
+                        *count += document_count;
+                    } else {
+                        indexed_vectors.insert(vector_name.clone(), document_count);
+                    }
                 }
-
-                vector_index.fill_idf_statistics(idf, &hw_counter)?;
             }
         }
+
+        for (field, stats) in query_context.mut_text_stats().iter_mut() {
+            self.payload_index
+                .fill_text_statistics(field, stats, &is_stopped)?;
+        }
         Ok(())
+    }
+}
+
+/// Resolved `(external id, offset)` keys for a vector reader, wired to the
+/// stop signal.
+fn resolved_keys<'a>(
+    resolved_ids: &'a [ExtendedPointId],
+    resolved_offsets: &'a [PointOffsetType],
+    is_stopped: &'a AtomicBool,
+) -> impl Iterator<Item = (ExtendedPointId, PointOffsetType)> + 'a {
+    resolved_ids
+        .iter()
+        .copied()
+        .zip(resolved_offsets.iter().copied())
+        .stop_if(is_stopped)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::Path;
+    use std::sync::atomic::AtomicBool;
+
+    use blobstore::Blob as _;
+    use common::ambient;
+    use common::types::DeferredBehavior;
+    use rstest::rstest;
+    use sparse::common::sparse_vector::SparseVector;
+    use tempfile::Builder;
+
+    use crate::common::operation_error::OperationError;
+    use crate::data_types::named_vectors::NamedVectors;
+    use crate::data_types::segment_record::SegmentRecordRaw;
+    use crate::data_types::vectors::VectorInternal;
+    use crate::entry::entry_point::{ReadSegmentEntry as _, SegmentEntry as _};
+    use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+    use crate::segment::Segment;
+    use crate::segment_constructor::build_segment;
+    use crate::types::{
+        Distance, Indexes, Payload, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
+        VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    };
+    use crate::vector_storage::sparse::StoredSparseVector;
+
+    const DENSE_NAME: &str = "dense";
+    const SPARSE_NAME: &str = "sparse";
+    const DIM: usize = 4;
+
+    /// Two-point segment for the retrieve equivalence tests: point 1 has the
+    /// dense + sparse vectors and a payload, point 2 only the dense vector and
+    /// no payload. Returns the segment and point 1's payload.
+    fn build_two_point_segment(path: &Path) -> (Segment, Payload) {
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DENSE_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: HashMap::from([(
+                SPARSE_NAME.to_owned(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None, None),
+                    storage_type: SparseVectorStorageType::Mmap,
+                    modifier: None,
+                },
+            )]),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        };
+        let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+        let _scope = ambient::test_guard();
+
+        // Point 1: dense + sparse vectors, with payload.
+        let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
+        let mut vectors = NamedVectors::default();
+        vectors.insert(
+            DENSE_NAME.to_owned(),
+            VectorInternal::Dense(vec![0.1, 0.2, 0.3, 0.4]),
+        );
+        vectors.insert(SPARSE_NAME.to_owned(), VectorInternal::Sparse(sparse));
+        segment.upsert_point(100, 1.into(), vectors).unwrap();
+        let payload: Payload = serde_json::from_str(r#"{"city": "Berlin", "count": 3}"#).unwrap();
+        segment.set_full_payload(101, 1.into(), &payload).unwrap();
+
+        // Point 2: dense vector only, no payload.
+        let mut vectors = NamedVectors::default();
+        vectors.insert(
+            DENSE_NAME.to_owned(),
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
+        );
+        segment.upsert_point(102, 2.into(), vectors).unwrap();
+
+        (segment, payload)
+    }
+
+    /// The payload of a raw record in parsed form, whichever representation it
+    /// carries. Empty and absent payloads both read as `None`: a point without
+    /// payload has nothing stored at all, while the parsed form reports it as
+    /// empty.
+    fn raw_record_payload(record: &SegmentRecordRaw) -> Option<Payload> {
+        let payload = record
+            .payload
+            .as_ref()?
+            .decode()
+            .expect("stored blob must be valid json");
+        (!payload.is_empty()).then_some(payload)
+    }
+
+    /// [`SegmentReadView::retrieve`] and [`SegmentReadView::retrieve_raw`]
+    /// have hand-duplicated bodies — this guards them against drifting apart:
+    /// both must return the same records (ids, payloads, vector names), and
+    /// the raw storage-native bytes must decode to exactly the vectors
+    /// `retrieve` returns. Covers every `with_vector` shape — the payload is not
+    /// optional on the raw side, so it is always requested from both;
+    /// `expected_point1_vectors` pins how many vectors the fully-vectored point
+    /// must come back with.
+    #[rstest]
+    #[case::all_vectors(WithVector::Bool(true), 2)]
+    #[case::no_vectors(WithVector::Bool(false), 0)]
+    #[case::empty_selector(WithVector::Selector(vec![]), 0)]
+    #[case::dense_selector(WithVector::Selector(vec![DENSE_NAME.to_owned()]), 1)]
+    #[case::sparse_then_dense_selector(
+        WithVector::Selector(vec![SPARSE_NAME.to_owned(), DENSE_NAME.to_owned()]),
+        2
+    )]
+    #[case::duplicate_name_selector(
+        WithVector::Selector(vec![DENSE_NAME.to_owned(), DENSE_NAME.to_owned()]),
+        2
+    )]
+    fn test_retrieve_and_retrieve_raw_equivalence(
+        #[case] with_vector: WithVector,
+        #[case] expected_point1_vectors: usize,
+    ) {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (segment, payload) = build_two_point_segment(dir.path());
+        let _scope = ambient::test_guard();
+
+        // Id 3 does not exist; both functions must skip it the same way.
+        let point_ids = [1.into(), 2.into(), 3.into()];
+        let with_payload = WithPayload::from(true);
+        // Expectation derived independently of the `needs_vectors` helper the
+        // functions under test share.
+        let vectors_requested = match &with_vector {
+            WithVector::Bool(true) | WithVector::Selector(_) => true,
+            WithVector::Bool(false) => false,
+        };
+        let is_stopped = AtomicBool::new(false);
+
+        let records = segment
+            .retrieve(
+                &point_ids,
+                &with_payload,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        let raw_records = segment
+            .retrieve_raw(
+                &point_ids,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), raw_records.len());
+
+        // Sanity beyond equivalence, so the loop below can't pass vacuously:
+        // the fully-populated point must carry the requested vectors/payload.
+        let point1 = records.get(&1.into()).expect("point 1 must be retrieved");
+        if vectors_requested {
+            let point1_vectors = point1.vectors.as_ref().expect("vectors requested");
+            assert_eq!(point1_vectors.len(), expected_point1_vectors);
+        }
+        assert_eq!(point1.payload.as_ref(), Some(&payload));
+        let raw_point1 = raw_records
+            .get(&1.into())
+            .expect("raw point 1 must be retrieved");
+        assert_eq!(raw_record_payload(raw_point1).as_ref(), Some(&payload));
+        assert_eq!(
+            raw_point1.payload.as_ref().map(|raw| &raw.payload_bytes),
+            Some(&payload.to_bytes()),
+            "the blob must be the payload exactly as the storage keeps it",
+        );
+
+        for (id, record) in &records {
+            let raw_record = raw_records.get(id).expect("raw record for the same id");
+            assert_eq!(record.id, raw_record.id);
+            assert_eq!(
+                record.payload.clone().filter(|payload| !payload.is_empty()),
+                raw_record_payload(raw_record),
+            );
+
+            if !vectors_requested {
+                assert!(record.vectors.is_none(), "vectors were not requested");
+                assert!(raw_record.vectors.is_none(), "vectors were not requested");
+                continue;
+            }
+
+            let vectors = record.vectors.as_ref().expect("vectors requested");
+            let raw_vectors = raw_record.vectors.as_ref().expect("vectors requested");
+            assert_eq!(
+                vectors.len(),
+                raw_vectors.len(),
+                "point {id} must have the same vector names in both results",
+            );
+
+            // Both functions read vector names in the same order.
+            for ((name, vector), (raw_name, bytes)) in vectors.iter().zip(raw_vectors) {
+                assert_eq!(name, raw_name);
+                let decoded = match name.as_str() {
+                    DENSE_NAME => VectorInternal::Dense(
+                        bytes
+                            .as_chunks::<{ size_of::<f32>() }>()
+                            .0
+                            .iter()
+                            .map(|chunk| f32::from_ne_bytes(*chunk))
+                            .collect(),
+                    ),
+                    SPARSE_NAME => VectorInternal::Sparse(
+                        StoredSparseVector::decode_untrusted_bytes(bytes).unwrap(),
+                    ),
+                    other => panic!("unexpected vector name {other}"),
+                };
+                assert_eq!(vector, &decoded, "vector {name} of point {id} must match");
+            }
+        }
+    }
+
+    /// A selector naming a vector the segment doesn't have must fail with the
+    /// exact same error from both functions — the two bodies hit different
+    /// storage readers, so one erroring while the other silently skips is the
+    /// kind of drift this guards against.
+    #[test]
+    fn test_retrieve_and_retrieve_raw_unknown_vector_name_error() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (segment, _payload) = build_two_point_segment(dir.path());
+        let is_stopped = AtomicBool::new(false);
+
+        let point_ids = [1.into()];
+        let with_payload = WithPayload {
+            enable: false,
+            payload_selector: None,
+        };
+        let with_vector = WithVector::Selector(vec!["unknown".to_owned()]);
+
+        let err = segment
+            .retrieve(
+                &point_ids,
+                &with_payload,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .err()
+            .expect("retrieve of an unknown vector name must fail");
+        let raw_err = segment
+            .retrieve_raw(
+                &point_ids,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .err()
+            .expect("retrieve_raw of an unknown vector name must fail");
+
+        assert_eq!(err, raw_err);
+        assert_eq!(err, OperationError::vector_name_not_exists("unknown"));
+    }
+
+    /// A deleted named vector must be skipped by both functions. This is the
+    /// one behavior the two vector readers (`vectors_by_offsets` vs
+    /// `vector_bytes_by_offsets`) implement independently at the storage
+    /// layer, so it gets its own equivalence check.
+    #[test]
+    fn test_retrieve_and_retrieve_raw_deleted_vector_equivalence() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (mut segment, _payload) = build_two_point_segment(dir.path());
+        let _scope = ambient::test_guard();
+        let is_stopped = AtomicBool::new(false);
+
+        assert!(segment.delete_vector(103, 1.into(), DENSE_NAME).unwrap());
+
+        let point_ids = [1.into(), 2.into()];
+        let with_payload = WithPayload {
+            enable: false,
+            payload_selector: None,
+        };
+        let with_vector = WithVector::Bool(true);
+
+        let records = segment
+            .retrieve(
+                &point_ids,
+                &with_payload,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        let raw_records = segment
+            .retrieve_raw(
+                &point_ids,
+                &with_vector,
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), raw_records.len());
+
+        // Point 1's dense vector is deleted: only the sparse one remains, and
+        // its raw bytes still decode to the vector `retrieve` returns.
+        let point1_vectors = records
+            .get(&1.into())
+            .and_then(|record| record.vectors.as_deref())
+            .expect("vectors requested");
+        let raw_point1_vectors = raw_records
+            .get(&1.into())
+            .and_then(|record| record.vectors.as_deref())
+            .expect("vectors requested");
+        let [(name, vector)] = point1_vectors else {
+            panic!("expected exactly the sparse vector, got {point1_vectors:?}");
+        };
+        let [(raw_name, bytes)] = raw_point1_vectors else {
+            panic!("expected exactly the sparse vector in the raw result");
+        };
+        assert_eq!(name, SPARSE_NAME);
+        assert_eq!(raw_name, SPARSE_NAME);
+        let decoded =
+            VectorInternal::Sparse(StoredSparseVector::decode_untrusted_bytes(bytes).unwrap());
+        assert_eq!(vector, &decoded);
+
+        // Point 2 is untouched: same vector names in both results.
+        let point2_names: Vec<_> = records
+            .get(&2.into())
+            .and_then(|record| record.vectors.as_deref())
+            .expect("vectors requested")
+            .iter()
+            .map(|(name, _)| name)
+            .collect();
+        let raw_point2_names: Vec<_> = raw_records
+            .get(&2.into())
+            .and_then(|record| record.vectors.as_deref())
+            .expect("vectors requested")
+            .iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(point2_names, raw_point2_names);
+        assert!(point2_names.contains(&&DENSE_NAME.to_owned()));
     }
 }

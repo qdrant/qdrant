@@ -1,3 +1,10 @@
 [workspace]
 resolver = "3"
 members = [ "examples", "qdrant-edge" ]
+
+# This is a separate workspace, so it does not inherit profiles from the
+# repository root Cargo.toml. Without this override, every example binary
+# statically links qdrant-edge with full debug info (~700 MB per binary),
+# which runs CI runners out of disk at link time.
+[profile.dev]
+debug = "line-tables-only"

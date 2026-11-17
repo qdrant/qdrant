@@ -1,9 +1,7 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use collection::hash_ring::HashRing;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;
+use rand::rngs::SmallRng;
 
 fn hash_ring_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("hash-ring-bench");
@@ -17,7 +15,7 @@ fn hash_ring_bench(c: &mut Criterion) {
         ring_fair.add(i);
     }
 
-    let mut rnd = rand::rng();
+    let mut rnd = rand::make_rng::<SmallRng>();
 
     group.bench_function("hash-ring-fair", |b| {
         b.iter(|| {

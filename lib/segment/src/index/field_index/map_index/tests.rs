@@ -1,13 +1,14 @@
 use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::hint::black_box;
 use std::path::Path;
 
+use blobstore::Blob;
+use common::ambient;
+use common::ambient::hw::{self, HwMetric};
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use ecow::EcoString;
-use gridstore::Blob;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::Builder;
@@ -19,7 +20,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PayloadFieldIndexRead,
     ValueIndexer,
 };
-use crate::types::{IntPayloadType, PayloadKeyType, UuidIntType};
+use crate::types::{FieldCondition, IntPayloadType, Memory, PayloadKeyType, UuidIntType};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -60,30 +61,47 @@ fn save_map_index<N>(
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
 {
-    let hw_counter = HardwareCounterCell::new();
+    save_map_index_with::<N>(data, path, index_type, into_value, true)
+}
+
+/// [`save_map_index`] with the `prefix` index option under test.
+fn save_map_index_with<N>(
+    data: &[Vec<<N as MapIndexKey>::Owned>],
+    path: &Path,
+    index_type: IndexType,
+    into_value: impl Fn(&<N as MapIndexKey>::Owned) -> Value,
+    prefix_index: bool,
+) where
+    N: MapIndexKey + ?Sized,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
+{
+    let _scope = ambient::test_guard();
 
     match index_type {
         IndexType::MutableGridstore => {
-            let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf());
+            let mut builder = MapIndex::<N>::builder_mutable(path.to_path_buf(), prefix_index);
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
-                builder
-                    .add_point(idx as PointOffsetType, &values, &hw_counter)
-                    .unwrap();
+                builder.add_point(idx as PointOffsetType, &values).unwrap();
             }
             builder.finalize().unwrap();
         }
         IndexType::Mmap | IndexType::RamMmap => {
-            let mut builder = MapIndex::<N>::builder_immutable(path, false, &empty_deleted());
+            let mut builder = MapIndex::<N>::builder_immutable(
+                path,
+                Memory::Pinned,
+                &empty_deleted(),
+                prefix_index,
+            );
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
-                builder
-                    .add_point(idx as PointOffsetType, &values, &hw_counter)
-                    .unwrap();
+                builder.add_point(idx as PointOffsetType, &values).unwrap();
             }
             builder.finalize().unwrap();
         }
@@ -98,21 +116,38 @@ fn load_map_index<N: MapIndexKey + ?Sized>(
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    load_map_index_with(data, path, index_type, true)
+}
+
+/// [`load_map_index`] with the `prefix` index option under test. Only the
+/// mutable variant takes it at load time; the others read the prefix index
+/// file written at build time.
+fn load_map_index_with<N: MapIndexKey + ?Sized>(
+    data: &[Vec<<N as MapIndexKey>::Owned>],
+    path: &Path,
+    index_type: IndexType,
+    prefix_index: bool,
+) -> MapIndex<N>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+{
     let index = match index_type {
-        IndexType::MutableGridstore => MapIndex::<N>::new_mutable(path.to_path_buf(), true)
+        IndexType::MutableGridstore => {
+            MapIndex::<N>::new_mutable(path.to_path_buf(), true, prefix_index)
+                .unwrap()
+                .unwrap()
+        }
+        IndexType::Mmap => MapIndex::<N>::new_immutable(path, Memory::Cold, &empty_deleted())
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => MapIndex::<N>::new_immutable(path, true, &empty_deleted())
-            .unwrap()
-            .unwrap(),
-        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, false, &empty_deleted())
+        IndexType::RamMmap => MapIndex::<N>::new_immutable(path, Memory::Pinned, &empty_deleted())
             .unwrap()
             .unwrap(),
     };
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for (idx, values) in data.iter().enumerate() {
         let index_values: HashSet<<N as MapIndexKey>::Owned> = index
-            .get_values(idx as PointOffsetType, &hw_counter)
+            .get_values(idx as PointOffsetType)
             .unwrap()
             .map(|v| MapIndexKey::to_owned(v.as_ref()))
             .collect();
@@ -127,19 +162,21 @@ where
 #[test]
 fn test_uuid_payload_index() {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-    let mut builder =
-        MapIndex::<UuidIntType>::builder_immutable(temp_dir.path(), false, &empty_deleted());
+    let mut builder = MapIndex::<UuidIntType>::builder_immutable(
+        temp_dir.path(),
+        Memory::Pinned,
+        &empty_deleted(),
+        false,
+    );
 
     builder.init().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let uuid: Value = Value::String("baa56dfc-e746-4ec1-bf50-94822535a46c".to_string());
 
     for idx in 0..100 {
-        builder
-            .add_point(idx as PointOffsetType, &[&uuid], &hw_counter)
-            .unwrap();
+        builder.add_point(idx as PointOffsetType, &[&uuid]).unwrap();
     }
 
     let index = builder.finalize().unwrap();
@@ -157,30 +194,31 @@ fn test_uuid_payload_index() {
 #[case(true)]
 fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-    let mut builder =
-        MapIndex::<IntPayloadType>::builder_immutable(temp_dir.path(), on_disk, &empty_deleted());
+    let mut builder = MapIndex::<IntPayloadType>::builder_immutable(
+        temp_dir.path(),
+        Memory::from_on_disk_heap(on_disk),
+        &empty_deleted(),
+        false,
+    );
     builder.init().unwrap();
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for (idx, values) in data.iter().enumerate().rev() {
         let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
         let values: Vec<_> = values.iter().collect();
-        builder
-            .add_point(idx as PointOffsetType, &values, &hw_counter)
-            .unwrap();
+        builder.add_point(idx as PointOffsetType, &values).unwrap();
     }
 
     let index = builder.finalize().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     for (idx, values) in data.into_iter().enumerate().rev() {
         // values themselves don't promise any particular order
         // so we only compare the set of values.
         let values = HashSet::from_iter(values);
         let res: HashSet<_> = index
-            .get_values(idx as u32, &hw_counter)
+            .get_values(idx as u32)
             .unwrap()
             .map(|i| *i as i32)
             .collect();
@@ -205,11 +243,9 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
     save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
     let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         !index
-            .except_cardinality(std::iter::empty(), &hw_counter)
+            .except_cardinality(std::iter::empty())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -247,11 +283,9 @@ fn test_string_disk_map_index(#[case] index_type: IndexType) {
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         !index
-            .except_cardinality(vec![].into_iter(), &hw_counter)
+            .except_cardinality(vec![].into_iter())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -267,11 +301,9 @@ fn test_empty_index(#[case] index_type: IndexType) {
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         index
-            .except_cardinality(std::iter::empty(), &hw_counter)
+            .except_cardinality(std::iter::empty())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -279,22 +311,19 @@ fn test_empty_index(#[case] index_type: IndexType) {
 /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
 #[test]
 fn test_mmap_get_values_hw_counter() {
+    let _scope = ambient::test_guard();
     let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
 
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
     let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap);
 
-    let hw_counter = HardwareCounterCell::new();
     for idx in 0..data.len() {
-        let _values: Vec<_> = index
-            .get_values(idx as PointOffsetType, &hw_counter)
-            .unwrap()
-            .collect();
+        let _values: Vec<_> = index.get_values(idx as PointOffsetType).unwrap().collect();
     }
 
     assert!(
-        hw_counter.payload_index_io_read_counter().get() > 0,
+        hw::pending()[HwMetric::PayloadIndexIoRead] > 0,
         "Expected on-disk mmap get_values to track payload index IO reads, but counter was 0"
     );
 
@@ -302,16 +331,13 @@ fn test_mmap_get_values_hw_counter() {
     save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| (*v).into());
     let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
 
-    let hw_counter2 = HardwareCounterCell::new();
+    let _scope2 = ambient::test_guard();
     for idx in 0..data.len() {
-        let _values: Vec<_> = index2
-            .get_values(idx as PointOffsetType, &hw_counter2)
-            .unwrap()
-            .collect();
+        let _values: Vec<_> = index2.get_values(idx as PointOffsetType).unwrap().collect();
     }
 
     assert_eq!(
-        hw_counter2.payload_index_io_read_counter().get(),
+        hw::pending()[HwMetric::PayloadIndexIoRead],
         0,
         "Expected RAM mmap get_values NOT to track IO reads, but counter was non-zero"
     );
@@ -352,17 +378,17 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
     let deleted = deleted_with(&[1, 2, 5]);
     let new_index = match index_type {
         IndexType::MutableGridstore => {
-            MapIndex::<IntPayloadType>::new_mutable(temp_dir.path().to_path_buf(), true)
+            MapIndex::<IntPayloadType>::new_mutable(temp_dir.path().to_path_buf(), true, false)
                 .unwrap()
                 .unwrap()
         }
         IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
                 .unwrap()
                 .unwrap()
         }
         IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Pinned, &deleted)
                 .unwrap()
                 .unwrap()
         }
@@ -370,7 +396,7 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
 
     assert_eq!(new_index.get_indexed_points(), 3);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for id in [1u32, 2, 5] {
         assert_eq!(
             new_index.values_count(id),
@@ -385,15 +411,15 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
         );
     }
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 3]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 4]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3).collect();
     hits.sort();
     assert_eq!(hits, vec![3, 4]);
 }
@@ -424,19 +450,21 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
 
     let new_index = match index_type {
         IndexType::Mmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), true, &short_deleted)
+            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &short_deleted)
                 .unwrap()
                 .unwrap()
         }
-        IndexType::RamMmap => {
-            MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), false, &short_deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::RamMmap => MapIndex::<IntPayloadType>::new_immutable(
+            temp_dir.path(),
+            Memory::Pinned,
+            &short_deleted,
+        )
+        .unwrap()
+        .unwrap(),
         IndexType::MutableGridstore => unreachable!(),
     };
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     assert!(new_index.values_count(0) > 0, "id 0 should be live");
     assert_eq!(new_index.values_count(1), 0, "id 1 deleted via bitslice");
@@ -454,7 +482,524 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         "id 4 should be live (beyond bitslice)"
     );
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2).collect();
     hits.sort();
     assert_eq!(hits, vec![3]);
+}
+
+/// Run `for_values_map` for the given keys and collect `value -> sorted ids`.
+/// Batched reads (the on-disk variant) may invoke the callback out of order, so
+/// we sort each posting and key by a `BTreeMap`.
+fn collect_for_values_map(
+    index: &MapIndex<IntPayloadType>,
+    keys: &[IntPayloadType],
+) -> BTreeMap<IntPayloadType, Vec<PointOffsetType>> {
+    let _scope = ambient::test_guard();
+    let mut out = BTreeMap::new();
+    MapIndexRead::for_values_map(index, keys.iter(), |key, ids| {
+        let mut ids: Vec<PointOffsetType> = ids.collect();
+        ids.sort_unstable();
+        out.insert(*key, ids);
+        Ok(())
+    })
+    .unwrap();
+    out
+}
+
+/// The on-disk variant overrides `for_values_map` with a batched read; assert it
+/// agrees with the in-memory variants (which use the default per-key impl) and
+/// with the directly-computed expectation.
+#[test]
+fn test_for_values_map_congruence() {
+    // Points 0..5; value 3 spans three points, value 6 only one.
+    #[rustfmt::skip]
+    let data = vec![
+        vec![1, 2, 3],
+        vec![2, 3, 4],
+        vec![3],
+        vec![6],
+        vec![1, 5],
+    ];
+    // Present values (multi- and single-point) plus an absent one (99), which
+    // must still be reported with an empty posting.
+    let query = [1, 2, 3, 4, 5, 99];
+
+    let expected: BTreeMap<IntPayloadType, Vec<PointOffsetType>> = query
+        .iter()
+        .map(|&q| {
+            let ids = data
+                .iter()
+                .enumerate()
+                .filter(|(_, vals)| vals.contains(&q))
+                .map(|(i, _)| i as PointOffsetType)
+                .collect();
+            (q, ids)
+        })
+        .collect();
+
+    for index_type in [
+        IndexType::MutableGridstore,
+        IndexType::Mmap,
+        IndexType::RamMmap,
+    ] {
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+
+        let result = collect_for_values_map(&index, &query);
+        assert_eq!(result, expected, "mismatch for {index_type:?}");
+    }
+}
+
+/// The batched on-disk `for_values_map` must drop deleted points from postings,
+/// mirroring `get_iterator`.
+#[test]
+fn test_for_values_map_on_disk_deleted() {
+    let data = vec![vec![1, 2, 3], vec![2, 3, 4], vec![3], vec![1, 5]];
+
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
+
+    // Load the on-disk variant with points 0 and 2 marked deleted.
+    let deleted = deleted_with(&[0, 2]);
+    let index = MapIndex::<IntPayloadType>::new_immutable(temp_dir.path(), Memory::Cold, &deleted)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(index, MapIndex::OnDisk(_)));
+
+    let result = collect_for_values_map(&index, &[1, 2, 3, 4, 5]);
+
+    // Postings with deleted points {0, 2} removed.
+    let expected: BTreeMap<IntPayloadType, Vec<PointOffsetType>> = [
+        (1, vec![3]),
+        (2, vec![1]),
+        (3, vec![1]),
+        (4, vec![1]),
+        (5, vec![3]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(result, expected);
+}
+
+// --- Prefix matching ---
+
+/// Ground truth for a prefix match: points with at least one value starting
+/// with the prefix.
+fn naive_prefix_points(data: &[Vec<EcoString>], prefix: &str) -> Vec<PointOffsetType> {
+    data.iter()
+        .enumerate()
+        .filter(|(_, values)| values.iter().any(|value| value.starts_with(prefix)))
+        .map(|(idx, _)| idx as PointOffsetType)
+        .collect()
+}
+
+fn prefix_test_data() -> Vec<Vec<EcoString>> {
+    [
+        vec!["https://qdrant.tech", "https://qdrant.tech/docs"],
+        vec!["https://qdrant.tech"],
+        vec!["https://example.com"],
+        vec!["http://example.com", "tag"],
+        vec!["tags"],
+        vec!["αβγ", "αβδ"],
+        vec!["tag"],
+    ]
+    .into_iter()
+    .map(|values| values.into_iter().map(EcoString::from).collect())
+    .collect()
+}
+
+const PREFIX_PROBES: &[&str] = &[
+    "",
+    "h",
+    "http",
+    "http://",
+    "https://",
+    "https://qdrant.",
+    "https://qdrant.tech",
+    "https://qdrant.tech/docs/deep",
+    "tag",
+    "tags",
+    "tagz",
+    "α",
+    "αβ",
+    "αβγ",
+    "nonexistent",
+];
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_prefix_match(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let data = prefix_test_data();
+    let _scope = ambient::test_guard();
+
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
+
+    for prefix in PREFIX_PROBES {
+        let expected = naive_prefix_points(&data, prefix);
+        let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
+
+        // Filter iterator parity with the naive scan.
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "prefix {prefix:?}");
+
+        // Cardinality bounds contain the true count (no deletions here, so
+        // even on-disk counts are accurate).
+        let estimation = index
+            .estimate_cardinality(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("prefix {prefix:?} must be estimated by the index"));
+        assert!(
+            estimation.min <= expected.len() && expected.len() <= estimation.max,
+            "prefix {prefix:?}: {} not in [{}, {}]",
+            expected.len(),
+            estimation.min,
+            estimation.max,
+        );
+
+        // Condition checker parity (forward index path).
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "prefix {prefix:?}, point {idx}",
+            );
+        }
+    }
+}
+
+// --- Substring matching ---
+
+/// Ground truth for a substring match: points with at least one value
+/// containing the substring.
+fn naive_substring_points(data: &[Vec<EcoString>], substring: &str) -> Vec<PointOffsetType> {
+    data.iter()
+        .enumerate()
+        .filter(|(_, values)| values.iter().any(|value| value.contains(substring)))
+        .map(|(idx, _)| idx as PointOffsetType)
+        .collect()
+}
+
+const SUBSTRING_PROBES: &[&str] = &[
+    "",
+    "qdrant",
+    "example.com",
+    "://",
+    "tech/docs",
+    "ag",
+    "tags",
+    "TAG",
+    "β",
+    "βδ",
+    "nonexistent",
+];
+
+/// Substring matching is served by every keyword index variant carrying a
+/// key dictionary, through a full scan of it.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_substring_match(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new()
+        .prefix("substring_index_dir")
+        .tempdir()
+        .unwrap();
+    let data = prefix_test_data();
+    let _scope = ambient::test_guard();
+
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
+
+    for substring in SUBSTRING_PROBES {
+        let expected = naive_substring_points(&data, substring);
+        let condition =
+            FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
+
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "substring {substring:?}");
+
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
+        let estimation = index
+            .estimate_cardinality(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
+        assert!(
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
+        );
+
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "substring {substring:?}, point {idx}",
+            );
+        }
+    }
+}
+
+/// An index built *without* the prefix option has no key dictionary. A prefix
+/// condition is then declined by the index outright, while a substring
+/// condition — which scans the whole dictionary anyway — is served by
+/// enumerating the keys of the map index itself. Both keep the per-point
+/// condition checker.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new().prefix("no_prefix_index").tempdir().unwrap();
+    let data = prefix_test_data();
+    let _scope = ambient::test_guard();
+
+    save_map_index_with::<str>(
+        &data,
+        temp_dir.path(),
+        index_type,
+        |v| v.to_string().into(),
+        false, // no key dictionary
+    );
+    let index: MapIndex<str> = load_map_index_with(&data, temp_dir.path(), index_type, false);
+
+    // Prefix matching is declined without a dictionary: no filter iterator, no
+    // estimate, only the per-point checker.
+    for prefix in PREFIX_PROBES {
+        let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
+        assert!(
+            index.filter(&condition).unwrap().is_none(),
+            "prefix {prefix:?}",
+        );
+        assert!(
+            index.estimate_cardinality(&condition).unwrap().is_none(),
+            "prefix {prefix:?}",
+        );
+
+        let expected = naive_prefix_points(&data, prefix);
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "prefix {prefix:?}, point {idx}",
+            );
+        }
+    }
+
+    // Substring matching falls back to a scan of the map index keys, which must
+    // agree with the dictionary-backed path.
+    for substring in SUBSTRING_PROBES {
+        let expected = naive_substring_points(&data, substring);
+        let condition =
+            FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
+
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "substring {substring:?}");
+
+        // Counting the matching keys would cost the scan itself, so a
+        // substring condition reports the uninformed estimate — it only
+        // claims to be able to produce the points, not how many.
+        let estimation = index
+            .estimate_cardinality(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
+        assert_eq!(
+            (estimation.min, estimation.max),
+            (0, data.len()),
+            "substring {substring:?}",
+        );
+        assert!(
+            !estimation.primary_clauses.is_empty(),
+            "substring {substring:?} must stay usable as a primary clause",
+        );
+
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
+        for idx in 0..data.len() as PointOffsetType {
+            assert_eq!(
+                checker.check(idx).unwrap(),
+                expected.contains(&idx),
+                "substring {substring:?}, point {idx}",
+            );
+        }
+    }
+}
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let mut data = prefix_test_data();
+    let _scope = ambient::test_guard();
+
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let mut index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
+
+    // Delete two points, one of which held the only "http://" value.
+    for deleted in [1, 3] {
+        index.remove_point(deleted).unwrap();
+        data[deleted as usize].clear();
+    }
+
+    for prefix in PREFIX_PROBES {
+        let expected = naive_prefix_points(&data, prefix);
+        let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
+        let mut result: Vec<PointOffsetType> = index
+            .filter(&condition)
+            .unwrap()
+            .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
+            .collect();
+        result.sort_unstable();
+        assert_eq!(result, expected, "prefix {prefix:?}");
+    }
+}
+
+/// Prefix payload blocks follow the geo index principle (`large_hashes`):
+/// only the *smallest* heavy subsets produce blocks, so prefix blocks are
+/// disjoint from each other and from the exact-value blocks.
+#[test]
+fn test_str_prefix_payload_blocks() {
+    let _scope = ambient::test_guard();
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    // 4 points per qdrant url (8 under "https://qdrant.tech" total, sharing
+    // "https://" with 4 more), 4 under "tag*".
+    let data: Vec<Vec<EcoString>> = [
+        ["https://qdrant.tech/docs"; 4].as_slice(),
+        ["https://qdrant.tech/blog"; 4].as_slice(),
+        ["https://example.com"; 4].as_slice(),
+        ["tag"; 2].as_slice(),
+        ["tags"; 2].as_slice(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|value| vec![EcoString::from(*value)])
+    .collect();
+
+    save_map_index::<str>(&data, temp_dir.path(), IndexType::Mmap, |v| {
+        v.to_string().into()
+    });
+    let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), IndexType::Mmap);
+
+    let mut prefix_blocks = Vec::new();
+    let mut value_blocks = Vec::new();
+    index
+        .for_each_payload_block(3, JsonPath::new("test"), &mut |block| {
+            match block.condition.r#match.as_ref().unwrap() {
+                Match::Prefix(prefix) => {
+                    prefix_blocks.push((prefix.prefix.clone(), block.cardinality));
+                }
+                Match::Value(_)
+                | Match::Text(_)
+                | Match::TextAny(_)
+                | Match::Phrase(_)
+                | Match::Substring(_)
+                | Match::Any(_)
+                | Match::Except(_) => value_blocks.push(block.cardinality),
+            }
+            Ok(())
+        })
+        .unwrap();
+
+    // Heavy branching nodes are "https://" (12), "https://qdrant.tech/" (8)
+    // and "tag" (4), but the first two contain heavy exact values (each url
+    // has 4 > 3 postings and gets its own exact-value block), so they are
+    // suppressed — only the smallest heavy subset produces a block. "tag"
+    // covers only light values (2 postings each) and is emitted.
+    assert_eq!(prefix_blocks, vec![("tag".to_string(), 4)]);
+    // Exact-value blocks are unaffected: the three urls with 4 postings each.
+    assert_eq!(value_blocks, vec![4, 4, 4]);
+}
+
+/// `prefix_index.bin` must be tracked by `files()` / `immutable_files()`
+/// (snapshot manifest) exactly when the index is built with the prefix
+/// option.
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
+    use std::ffi::OsStr;
+
+    use super::prefix_index::PREFIX_INDEX_PATH;
+
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let data = prefix_test_data();
+    let _scope = ambient::test_guard();
+
+    let mut builder = MapIndex::<str>::builder_immutable(
+        temp_dir.path(),
+        Memory::Pinned,
+        &empty_deleted(),
+        with_prefix,
+    );
+    builder.init().unwrap();
+    for (idx, values) in data.iter().enumerate() {
+        let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();
+        let values: Vec<_> = values.iter().collect();
+        builder.add_point(idx as PointOffsetType, &values).unwrap();
+    }
+    let index = builder.finalize().unwrap();
+
+    let tracks_file = |files: &[std::path::PathBuf]| {
+        files
+            .iter()
+            .any(|file| file.file_name() == Some(OsStr::new(PREFIX_INDEX_PATH)))
+    };
+
+    assert_eq!(tracks_file(&index.files()), with_prefix);
+    assert_eq!(tracks_file(&index.immutable_files()), with_prefix);
+    // The file must actually exist on disk to be snapshottable.
+    assert_eq!(
+        temp_dir.path().join(PREFIX_INDEX_PATH).exists(),
+        with_prefix
+    );
 }

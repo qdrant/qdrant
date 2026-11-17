@@ -2,23 +2,51 @@ use std::fmt;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
+use edge::{Prefetch, QueryBatchRequest, QueryRequest};
 use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, StartFrom};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
+use shard::query::text::TextScoringQuery;
 use shard::query::*;
 
 use super::*;
 use crate::repr::*;
 
+/// Queries executed together as one planned batch.
+#[pyclass(name = "QueryBatchRequest", from_py_object)]
+#[derive(Clone, Debug, Into)]
+pub struct PyQueryBatchRequest(QueryBatchRequest);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyQueryBatchRequest {
+    #[new]
+    pub fn new(queries: Vec<PyQueryRequest>) -> Self {
+        Self(QueryBatchRequest::new(
+            queries.into_iter().map(Into::into).collect(),
+        ))
+    }
+
+    #[getter]
+    pub fn queries(&self) -> Vec<PyQueryRequest> {
+        self.0.queries.iter().cloned().map(PyQueryRequest).collect()
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
 #[pyclass(name = "QueryRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
-pub struct PyQueryRequest(ShardQueryRequest);
+pub struct PyQueryRequest(QueryRequest);
 
 #[pyclass_repr]
 #[pymethods]
@@ -47,7 +75,7 @@ impl PyQueryRequest {
         score_threshold: Option<f32>,
         params: Option<PySearchParams>,
     ) -> Self {
-        Self(ShardQueryRequest {
+        Self(QueryRequest {
             prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
             offset: offset.unwrap_or(0),
@@ -57,7 +85,7 @@ impl PyQueryRequest {
                 .unwrap_or_default(),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
-            score_threshold: score_threshold.map(OrderedFloat),
+            score_threshold,
             params: params.map(SearchParams::from),
         })
     }
@@ -79,9 +107,7 @@ impl PyQueryRequest {
 
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
-        self.0
-            .score_threshold
-            .map(|threshold| threshold.into_inner())
+        self.0.score_threshold
     }
 
     #[getter]
@@ -96,7 +122,7 @@ impl PyQueryRequest {
 
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
-        self.0.params.map(PySearchParams)
+        self.0.params.clone().map(PySearchParams)
     }
 
     #[getter]
@@ -117,7 +143,7 @@ impl PyQueryRequest {
 impl PyQueryRequest {
     fn _getters(self) {
         // Every field should have a getter method
-        let ShardQueryRequest {
+        let QueryRequest {
             prefetches: _,
             query: _,
             filter: _,
@@ -134,7 +160,7 @@ impl PyQueryRequest {
 #[pyclass(name = "Prefetch", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyPrefetch(ShardPrefetch);
+pub struct PyPrefetch(Prefetch);
 
 #[pyclass_repr]
 #[pymethods]
@@ -156,13 +182,13 @@ impl PyPrefetch {
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
-        Self(ShardPrefetch {
+        Self(Prefetch {
             prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
             query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::from),
-            score_threshold: score_threshold.map(OrderedFloat),
+            score_threshold,
         })
     }
 
@@ -183,7 +209,7 @@ impl PyPrefetch {
 
     #[getter]
     pub fn params(&self) -> Option<PySearchParams> {
-        self.0.params.map(PySearchParams)
+        self.0.params.clone().map(PySearchParams)
     }
 
     #[getter]
@@ -193,9 +219,7 @@ impl PyPrefetch {
 
     #[getter]
     pub fn score_threshold(&self) -> Option<f32> {
-        self.0
-            .score_threshold
-            .map(|threshold| threshold.into_inner())
+        self.0.score_threshold
     }
 
     pub fn __repr__(&self) -> String {
@@ -206,7 +230,7 @@ impl PyPrefetch {
 impl PyPrefetch {
     fn _getters(self) {
         // Every field should have a getter method
-        let ShardPrefetch {
+        let Prefetch {
             prefetches: _,
             query: _,
             limit: _,
@@ -243,6 +267,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
             Formula(PyFormula),
             Sample(PySample),
             Mmr(PyMmr),
+            Text(PyTextQuery),
         }
 
         fn _variants(query: ScoringQuery) {
@@ -253,6 +278,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
                 ScoringQuery::Formula(_) => {}
                 ScoringQuery::Sample(_) => {}
                 ScoringQuery::Mmr(_) => {}
+                ScoringQuery::Text(_) => {}
             }
         }
 
@@ -263,6 +289,7 @@ impl FromPyObject<'_, '_> for PyScoringQuery {
             Helper::Formula(formula) => ScoringQuery::Formula(ParsedFormula::from(formula)),
             Helper::Sample(sample) => ScoringQuery::Sample(SampleInternal::from(sample)),
             Helper::Mmr(mmr) => ScoringQuery::Mmr(MmrInternal::from(mmr)),
+            Helper::Text(text) => ScoringQuery::Text(TextScoringQuery::from(text)),
         };
 
         Ok(Self(query))
@@ -282,6 +309,7 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
             ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
             ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
             ScoringQuery::Mmr(mmr) => PyMmr(mmr).into_bound_py_any(py),
+            ScoringQuery::Text(text) => PyTextQuery(text).into_bound_py_any(py),
         }
     }
 }
@@ -305,6 +333,7 @@ impl Repr for PyScoringQuery {
             ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
             ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
             ScoringQuery::Mmr(mmr) => PyMmr::wrap_ref(mmr).fmt(f),
+            ScoringQuery::Text(text) => PyTextQuery::wrap_ref(text).fmt(f),
         }
     }
 }
@@ -647,5 +676,98 @@ impl PyMmr {
             lambda: _,
             candidates_limit: _,
         } = self.0;
+    }
+}
+
+/// BM25 over the text index of a payload field. The index must be created
+/// with `scoring` on.
+#[pyclass(name = "TextQuery", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyTextQuery(TextScoringQuery);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyTextQuery {
+    #[new]
+    #[pyo3(signature = (field, query, scoring = None))]
+    pub fn new(field: PyJsonPath, query: String, scoring: Option<PyBm25Params>) -> Self {
+        Self(TextScoringQuery {
+            field: JsonPath::from(field),
+            text: query,
+            params: scoring.map(Bm25Params::from).unwrap_or_default(),
+        })
+    }
+
+    #[getter]
+    pub fn field(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.field)
+    }
+
+    #[getter]
+    pub fn query(&self) -> &str {
+        &self.0.text
+    }
+
+    #[getter]
+    pub fn scoring(&self) -> PyBm25Params {
+        PyBm25Params(self.0.params)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyTextQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let TextScoringQuery {
+            field: _,
+            text: _,
+            params: _,
+        } = self.0;
+    }
+}
+
+/// BM25 parameters of a [`PyTextQuery`].
+#[pyclass(name = "Bm25Params", from_py_object)]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyBm25Params(Bm25Params);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyBm25Params {
+    #[new]
+    #[pyo3(signature = (k = None, b = None))]
+    pub fn new(k: Option<f32>, b: Option<f32>) -> Self {
+        let default = Bm25Params::default();
+        Self(Bm25Params {
+            k1: k.unwrap_or(default.k1),
+            b: b.unwrap_or(default.b),
+        })
+    }
+
+    /// Term frequency saturation.
+    #[getter]
+    pub fn k(&self) -> f32 {
+        self.0.k1
+    }
+
+    /// Document length normalization, within `[0, 1]`.
+    #[getter]
+    pub fn b(&self) -> f32 {
+        self.0.b
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyBm25Params {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Bm25Params { k1: _, b: _ } = self.0;
     }
 }

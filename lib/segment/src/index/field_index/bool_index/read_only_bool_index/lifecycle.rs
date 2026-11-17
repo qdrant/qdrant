@@ -1,23 +1,43 @@
 use std::path::Path;
+use std::sync::OnceLock;
 
-use common::universal_io::UniversalRead;
+use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
-use crate::common::flags::read_only_roaring_flags::ReadOnlyRoaringFlags;
-use crate::common::flags::roaring_flags::RoaringFlagsRead;
+use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::UniversalReadExt;
 
-impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
+impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
+    /// Schedule background prefetch of the files [`open`](Self::open) reads, in
+    /// both flag directories.
+    ///
+    /// Returns whether the index exists on disk. Mirrors [`Self::open`]'s
+    /// absence check: only a missing *pair* of flag directories means no index,
+    /// so a half-present (corrupt) layout is reported as existing here and left
+    /// for `open` to reject.
+    pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+    ) -> OperationResult<bool> {
+        let trues = ReadOnlyFlags::<S>::preopen(fs, &path.join(TRUES_DIRNAME), populate)?;
+        let falses = ReadOnlyFlags::<S>::preopen(fs, &path.join(FALSES_DIRNAME), populate)?;
+        Ok(trues || falses)
+    }
+
     /// Open a read-only bool index at `path`, threading every file open through
     /// the filesystem handle `fs`.
     ///
     /// `fs` is the generic filesystem object (e.g. `ReadOnlyFs<MmapFs>`): the
     /// index never touches the local filesystem directly, it opens all of its
-    /// files — the `trues` and `falses` flag directories — through `fs`. Like
-    /// the writable [`MutableBoolIndex::open`][1], `indexed_count`
-    /// (`|trues ∪ falses|`) is derived from the two bitmaps, so `open` takes
-    /// only `fs` and the directory.
+    /// files — the `trues` and `falses` flag directories — through `fs`. Unlike
+    /// the writable [`MutableBoolIndex::open`][1], the counts (`indexed_count`
+    /// and friends) are *not* derived here: doing so would scan both flags
+    /// files. They are computed on first use — see [`Self::counts`].
     ///
     /// Returns [`Ok(None)`] only when both flag directories are absent. If
     /// exactly one of `trues` / `falses` exists, the on-disk layout is
@@ -25,32 +45,33 @@ impl<S: UniversalRead> ReadOnlyBoolIndex<S> {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open(fs: &S::Fs, path: &Path) -> OperationResult<Option<Self>> {
+    ///
+    /// The flags of `deleted` points are cleared, like the writable immutable index does,
+    /// when the bitmaps are materialized.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
-        let trues_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
-        let falses_flags = ReadOnlyRoaringFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
+        let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
+        let falses_flags = ReadOnlyFlags::<S>::open(fs, &path.join(FALSES_DIRNAME))?;
 
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.
             (None, None) => Ok(None),
-            (Some(trues_flags), Some(falses_flags)) => {
-                let indexed_count = trues_flags
-                    .get_bitmap()
-                    .union_len(falses_flags.get_bitmap())
-                    as usize;
-                let trues_count = trues_flags.count_trues();
-                let falses_count = falses_flags.count_trues();
-
+            (Some(mut trues_flags), Some(mut falses_flags)) => {
+                let deleted = deleted.iter_ones().map(|point| point as PointOffsetType);
+                trues_flags.remove(deleted.clone());
+                falses_flags.remove(deleted);
                 Ok(Some(Self {
                     _base_dir: path.to_path_buf(),
                     storage: ReadOnlyStorage {
                         trues_flags,
                         falses_flags,
                     },
-                    indexed_count,
-                    trues_count,
-                    falses_count,
+                    counts: OnceLock::new(),
                 }))
             }
             // Exactly one directory exists: partial/corrupt storage.

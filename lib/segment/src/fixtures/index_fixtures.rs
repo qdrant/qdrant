@@ -1,7 +1,10 @@
+// Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
+// handled here for backward compatibility with the new `memory` parameter
+#![allow(deprecated)]
+
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::{Rng, RngExt};
 
@@ -34,12 +37,11 @@ impl TestRawScorerProducer {
         rng: &mut R,
     ) -> Self {
         let mut storage = new_volatile_dense_vector_storage(dim, distance);
-        let hw_counter = HardwareCounterCell::new();
         for offset in 0..num_vectors as PointOffsetType {
             let rnd_vec = random_vector(rng, dim);
             let rnd_vec = distance.preprocess_vector::<VectorElementType>(rnd_vec);
             storage
-                .insert_vector(offset, VectorRef::from(&rnd_vec), &hw_counter)
+                .insert_vector(offset, VectorRef::from(&rnd_vec))
                 .unwrap();
         }
 
@@ -50,6 +52,7 @@ impl TestRawScorerProducer {
                     r#type: Default::default(),
                     quantile: None,
                     always_ram: Some(true),
+                    memory: None,
                 }
                 .into(),
                 QuantizedVectorsStorageType::Immutable,
@@ -91,7 +94,6 @@ impl TestRawScorerProducer {
             self.quantized_vectors.as_ref(),
             None,
             &self.deleted_points,
-            HardwareCounterCell::new(),
         )
         .unwrap()
     }
@@ -103,7 +105,6 @@ impl TestRawScorerProducer {
             self.quantized_vectors.as_ref(),
             None,
             &self.deleted_points,
-            HardwareCounterCell::new(),
         )
         .unwrap()
     }

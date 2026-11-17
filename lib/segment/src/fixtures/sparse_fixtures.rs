@@ -4,12 +4,13 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
+use common::universal_io::{MmapFile, MmapFs};
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
-use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::inverted_index::InvertedIndexReadWrite;
 
 use crate::common::operation_error::OperationResult;
 use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
@@ -18,13 +19,13 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
-use crate::index::struct_payload_index::StructPayloadIndex;
+use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
 
 /// Prepares a sparse vector index with a given iterator of sparse vectors
-pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
+pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
     data_dir: &Path,
     vectors: impl ExactSizeIterator<Item = SparseVector>,
     full_scan_threshold: usize,
@@ -46,8 +47,8 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir,
-        true,
-        true,
+        StorageType::Appendable,
+        IndexLoadMode::CreateIfMissing,
     )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
@@ -58,10 +59,10 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
 
     let num_vectors = vectors.len();
     let mut num_vectors_not_empty = 0;
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for (idx, vec) in vectors.enumerate() {
         borrowed_storage
-            .insert_vector(idx as PointOffsetType, (&vec).into(), &hw_counter)
+            .insert_vector(idx as PointOffsetType, (&vec).into())
             .unwrap();
         num_vectors_not_empty += usize::from(!vec.is_empty());
     }
@@ -73,9 +74,11 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         num_vectors,
     );
 
-    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type, None);
+    let sparse_index_config =
+        SparseIndexConfig::new(Some(full_scan_threshold), index_type, None, None);
     let sparse_vector_index: SparseVectorIndex<I> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+            fs: &MmapFs,
             config: sparse_index_config,
             id_tracker,
             vector_storage: vector_storage.clone(),
@@ -94,7 +97,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
 }
 
 /// Prepares a sparse vector index with random sparse vectors
-pub fn fixture_sparse_index<I: InvertedIndex + Debug, R: Rng + ?Sized>(
+pub fn fixture_sparse_index<I: InvertedIndexReadWrite<MmapFile> + Debug, R: Rng + ?Sized>(
     rnd: &mut R,
     num_vectors: usize,
     max_dim: usize,

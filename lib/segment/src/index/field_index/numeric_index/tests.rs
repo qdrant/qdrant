@@ -1,10 +1,9 @@
 use std::path::Path;
 
+use blobstore::Blob;
+use common::ambient;
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use gridstore::Blob;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
@@ -15,13 +14,11 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::numeric_point::Numericable;
-use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer,
 };
 use crate::json_path::JsonPath;
-use crate::types::{FieldCondition, FloatPayloadType, Range, RangeInterface};
+use crate::types::{FieldCondition, FloatPayloadType, Memory, Range, RangeInterface};
 
 /// Generous default size for the deleted-points bitslice used in tests.
 ///
@@ -51,6 +48,7 @@ enum IndexType {
     RamMmap,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum IndexBuilder {
     MutableGridstore(NumericIndexGridstoreBuilder<FloatPayloadType, FloatPayloadType>),
     Mmap(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
@@ -64,15 +62,10 @@ impl IndexBuilder {
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
-            IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload, hw_counter),
-            IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload),
+            IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
         }
     }
 }
@@ -94,7 +87,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
             FloatPayloadType,
         >::builder_mmap(
             temp_dir.path(),
-            false,
+            Memory::Pinned,
             &empty_deleted(),
         )),
     };
@@ -114,10 +107,10 @@ fn open_index_from_disk(
         IndexType::MutableGridstore => NumericIndex::new_mutable(temp_dir.to_path_buf(), true)
             .unwrap()
             .unwrap(),
-        IndexType::Mmap => NumericIndex::new_immutable(temp_dir, true, deleted)
+        IndexType::Mmap => NumericIndex::new_immutable(temp_dir, Memory::Cold, deleted)
             .unwrap()
             .unwrap(),
-        IndexType::RamMmap => NumericIndex::new_immutable(temp_dir, false, deleted)
+        IndexType::RamMmap => NumericIndex::new_immutable(temp_dir, Memory::Pinned, deleted)
             .unwrap()
             .unwrap(),
     }
@@ -131,7 +124,7 @@ fn random_index(
     let mut rng = StdRng::seed_from_u64(42);
     let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for i in 0..num_points {
         let values = (0..values_per_point)
@@ -139,7 +132,7 @@ fn random_index(
             .collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(i as PointOffsetType, &values, &hw_counter)
+            .add_point(i as PointOffsetType, &values)
             .unwrap();
     }
     let index = index_builder.finalize().unwrap();
@@ -150,10 +143,7 @@ fn random_index(
 fn cardinality_request(
     index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
     query: Range<FloatPayloadType>,
-    hw_acc: HwMeasurementAcc,
 ) -> CardinalityEstimation {
-    let hw_counter = hw_acc.get_counter_cell();
-
     let ordered_range = Range {
         lt: query.lt.map(OrderedFloat::from),
         gt: query.gt.map(OrderedFloat::from),
@@ -166,10 +156,10 @@ fn cardinality_request(
 
     let result = index
         .inner()
-        .filter(
-            &FieldCondition::new_range(JsonPath::new("unused"), ordered_range),
-            &hw_counter,
-        )
+        .filter(&FieldCondition::new_range(
+            JsonPath::new("unused"),
+            ordered_range,
+        ))
         .unwrap()
         .unwrap()
         .unique()
@@ -196,10 +186,8 @@ fn test_set_empty_payload() {
 
     assert_ne!(values_count, 0);
 
-    let hw_counter = HardwareCounterCell::new();
-
     let payload = serde_json::json!(null);
-    index.add_point(point_id, &[&payload], &hw_counter).unwrap();
+    index.add_point(point_id, &[&payload]).unwrap();
 
     let values_count = index.inner().get_values(point_id).unwrap().count();
 
@@ -221,7 +209,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -231,7 +218,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(1000, 2, index_type);
@@ -243,7 +229,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -253,7 +238,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -264,7 +248,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -275,7 +258,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(110.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 }
 
@@ -336,15 +318,13 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
         vec![2.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_id = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_id, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_id, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
 
@@ -378,15 +358,13 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
 
@@ -401,15 +379,17 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         .unwrap()
         .unwrap(),
         IndexType::Mmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true, &deleted)
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), Memory::Cold, &deleted)
                 .unwrap()
                 .unwrap()
         }
-        IndexType::RamMmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false, &deleted)
-                .unwrap()
-                .unwrap()
-        }
+        IndexType::RamMmap => NumericIndexInner::<FloatPayloadType>::new_mmap(
+            temp_dir.path(),
+            Memory::Pinned,
+            &deleted,
+        )
+        .unwrap()
+        .unwrap(),
     };
 
     test_cond(
@@ -443,15 +423,13 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let mut index = index_builder.finalize().unwrap();
 
@@ -590,15 +568,13 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let mut index = index_builder.finalize().unwrap();
 
@@ -755,14 +731,12 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
     drop(index);
@@ -789,9 +763,81 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
     assert_eq!(index.inner().get_points_count(), 7);
 }
 
-fn test_cond<
-    T: Encodable + Numericable + PartialOrd + Clone + StoredValue + Send + Sync + Default + 'static,
->(
+/// An index whose "no values" mask is stored in the compact `StoredBitmask`
+/// format (written when the `compact_bitmask` feature flag is on) must open
+/// and filter identically to one with the legacy dense bitslice.
+///
+/// Tests run with default feature flags, so the build above writes the legacy
+/// file; convert it to the compact format by hand and reopen.
+#[rstest]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_numeric_index_open_compact_deleted_mask(#[case] index_type: IndexType) {
+    use common::stored_bitmask::save_bitmask;
+    use common::universal_io::MmapFs;
+    use roaring::RoaringBitmap;
+
+    use crate::index::field_index::deleted_mask::{DELETED_MASK_FILE, deleted_mask_path};
+
+    let (temp_dir, mut index_builder) = get_index_builder(index_type);
+
+    // Same setup as `test_numeric_index_reload_short_deleted_bitslice`:
+    // point 4 has an empty payload, so the build marks it in the mask.
+    let values: Vec<Vec<f64>> = vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![], // empty payload at id 4
+        vec![1.0],
+        vec![2.0],
+        vec![2.5],
+        vec![2.6],
+        vec![3.0],
+    ];
+
+    let _scope = ambient::test_guard();
+    values.into_iter().enumerate().for_each(|(idx, values)| {
+        let values = values.iter().map(|v| Value::from(*v)).collect_vec();
+        let values = values.iter().collect_vec();
+        let new_idx = idx as PointOffsetType + 1;
+        index_builder.add_point(new_idx, &values).unwrap();
+    });
+    let index = index_builder.finalize().unwrap();
+    drop(index);
+
+    // Convert the legacy dense mask into the compact format: same bits
+    // (offset 0 = no point at internal id 0, offset 4 = the empty-payload
+    // point), 10 logical flags.
+    // The legacy file only exists when the build ran with `compact_bitmask`
+    // off (the default in tests); tolerate either so a future flag-default
+    // change doesn't break the test.
+    let legacy_path = temp_dir.path().join("deleted.bin");
+    if legacy_path.exists() {
+        fs_err::remove_file(&legacy_path).unwrap();
+    }
+    let ones = RoaringBitmap::from_sorted_iter([0u32, 4]).unwrap();
+    save_bitmask(&MmapFs, &deleted_mask_path(temp_dir.path()), 10, ones).unwrap();
+    assert!(temp_dir.path().join(DELETED_MASK_FILE).exists());
+
+    let mut short_deleted = BitVec::repeat(false, 3);
+    short_deleted.set(1, true);
+    let index = open_index_from_disk(temp_dir.path(), index_type, &short_deleted);
+
+    // Same expectations as the legacy-format test.
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![2, 3, 5, 6, 7, 8, 9],
+    );
+    assert_eq!(index.inner().get_points_count(), 7);
+}
+
+fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,
@@ -806,13 +852,8 @@ fn test_cond<
     };
 
     let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let offsets = index
-        .filter(&condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let _scope = ambient::test_guard();
+    let offsets = index.filter(&condition).unwrap().unwrap().collect_vec();
     assert_eq!(offsets, result);
 }
 
@@ -831,7 +872,6 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(0, 0, index_type);
@@ -843,7 +883,6 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 }
 
@@ -856,13 +895,12 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
 fn test_remove_reopen() {
     use crate::index::field_index::PayloadFieldIndexRead;
 
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
+    let _scope = ambient::test_guard();
     let (temp_dir, mut builder) = get_index_builder(IndexType::Mmap);
     let values = [10.0_f64, 20.0, 30.0, 40.0];
     for (idx, val) in values.iter().enumerate() {
         builder
-            .add_point(idx as PointOffsetType, &[&Value::from(*val)], &hw_counter)
+            .add_point(idx as PointOffsetType, &[&Value::from(*val)])
             .unwrap();
     }
     // Persist on-disk state, then drop so the upcoming reopen sees only the
@@ -877,7 +915,7 @@ fn test_remove_reopen() {
     let index = open_index_from_disk(temp_dir.path(), IndexType::RamMmap, &deleted);
 
     // Deletions reflected in the indexed-point count.
-    assert_eq!(index.inner().count_indexed_points(), 2);
+    assert_eq!(index.inner().count_indexed_points().unwrap(), 2);
 
     // Range query covering all four original values returns only the live
     // ones; deleted points must be filtered out by the immutable index.
@@ -889,10 +927,7 @@ fn test_remove_reopen() {
     };
     let mut hits: Vec<_> = index
         .inner()
-        .filter(
-            &FieldCondition::new_range(JsonPath::new("unused"), range),
-            &hw_counter,
-        )
+        .filter(&FieldCondition::new_range(JsonPath::new("unused"), range))
         .unwrap()
         .unwrap()
         .collect();
@@ -926,17 +961,16 @@ fn test_integer_index_fractional_range_bounds() {
     );
     builder.init().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let v1 = Value::from(1_i64);
     let v2 = Value::from(2_i64);
-    builder.add_point(0, &[&v1], &hw_counter).unwrap();
-    builder.add_point(1, &[&v2], &hw_counter).unwrap();
+    builder.add_point(0, &[&v1]).unwrap();
+    builder.add_point(1, &[&v2]).unwrap();
     let index = builder.finalize().unwrap();
 
     let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
         let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
-        let hw = HardwareCounterCell::new();
-        let mut ids: Vec<_> = index.inner().filter(&cond, &hw).unwrap().unwrap().collect();
+        let mut ids: Vec<_> = index.inner().filter(&cond).unwrap().unwrap().collect();
         ids.sort();
         ids
     };
@@ -980,4 +1014,162 @@ fn test_integer_index_fractional_range_bounds() {
         vec![0],
         "lte: 1.5 must include integer 1 and exclude 2",
     );
+}
+
+/// The optional block-index sidecar over the sorted pairs must be a pure
+/// accelerator: cardinality estimates and filter results must be identical
+/// with the sidecar present and after deleting it (which falls back to plain
+/// binary search over the storage).
+#[test]
+fn test_block_index_fallback_equivalence() {
+    fn collect_results(
+        index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
+        queries: &[Range<OrderedFloat<FloatPayloadType>>],
+    ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
+        let _scope = ambient::test_guard();
+        queries
+            .iter()
+            .map(|query| {
+                let estimation =
+                    query::range_cardinality(index.inner(), &RangeInterface::Float(*query))
+                        .unwrap();
+                let points = index
+                    .inner()
+                    .filter(&FieldCondition::new_range(JsonPath::new("unused"), *query))
+                    .unwrap()
+                    .unwrap()
+                    .collect_vec();
+                (estimation.min, estimation.exp, estimation.max, points)
+            })
+            .collect()
+    }
+
+    // 3000 points x 2 values = 6000 pairs, several 16KiB blocks.
+    let (temp_dir, index) = random_index(3000, 2, IndexType::Mmap);
+    drop(index);
+
+    let block_index_path = temp_dir
+        .path()
+        .join(on_disk_numeric_index::PAIRS_BLOCK_INDEX_PATH);
+    assert!(block_index_path.exists());
+
+    // Random ranges (values live in 0..100), exact-value probes, and bounds
+    // outside the value domain.
+    let mut rng = StdRng::seed_from_u64(7);
+    let mut queries = Vec::new();
+    for _ in 0..100 {
+        let a: FloatPayloadType = rng.random_range(-10.0..110.0);
+        let b: FloatPayloadType = rng.random_range(-10.0..110.0);
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let (lo, hi) = (OrderedFloat(lo), OrderedFloat(hi));
+        queries.push(Range {
+            lt: None,
+            gt: None,
+            gte: Some(lo),
+            lte: Some(hi),
+        });
+        queries.push(Range {
+            lt: Some(hi),
+            gt: Some(lo),
+            gte: None,
+            lte: None,
+        });
+        queries.push(Range {
+            lt: None,
+            gt: None,
+            gte: Some(lo),
+            lte: Some(lo),
+        });
+    }
+
+    let deleted = empty_deleted();
+
+    let with_block_index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &deleted);
+    let with_results = collect_results(&with_block_index, &queries);
+    drop(with_block_index);
+
+    fs_err::remove_file(&block_index_path).unwrap();
+    let without_block_index = open_index_from_disk(temp_dir.path(), IndexType::Mmap, &deleted);
+    let without_results = collect_results(&without_block_index, &queries);
+
+    assert_eq!(with_results, without_results);
+    // Sanity: the query mix actually matches points.
+    assert!(
+        with_results
+            .iter()
+            .any(|(_, _, _, points)| !points.is_empty())
+    );
+}
+
+/// The block-index sidecar must be covered by `preopen`: after
+/// `schedule_prefetch`, `open` must be served from the prefetch pool without
+/// touching the filesystem again. Conversely, an absent sidecar (old segment)
+/// must not fail `preopen` and must open in fallback mode.
+#[test]
+fn test_block_index_preopen() {
+    let _scope = ambient::test_guard();
+    use common::universal_io::{CachedFs, CachedReadFs as _, MmapFile, Populate, ReadOnly};
+
+    use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;
+
+    type Storage = ReadOnly<MmapFile>;
+    type RoFs = <Storage as common::universal_io::UniversalRead>::Fs;
+
+    let (temp_dir, index) = random_index(3000, 2, IndexType::Mmap);
+    drop(index);
+    let block_index_path = temp_dir
+        .path()
+        .join(on_disk_numeric_index::PAIRS_BLOCK_INDEX_PATH);
+    let deleted = empty_deleted();
+
+    // Same order as the segment open path: snapshot, then preopen, then open.
+    use common::universal_io::UniversalReadFs as _;
+    let fs = RoFs::from_context(Default::default()).unwrap();
+    let mut cached_fs = CachedFs::new(fs.clone(), temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+        )
+        .unwrap()
+    );
+    futures::executor::block_on(cached_fs.wait_all());
+
+    // The sidecar read of `open` must now come from the prefetch pool.
+    fs_err::remove_file(&block_index_path).unwrap();
+
+    let index = OnDiskNumericIndex::<FloatPayloadType, Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.pairs_block_index.is_some());
+    drop(index);
+
+    // An absent sidecar (segment built before it was introduced): `preopen`
+    // must not fail on the missing file and `open` must fall back.
+    let mut cached_fs = CachedFs::new(fs, temp_dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert!(
+        OnDiskNumericIndex::<FloatPayloadType, Storage>::preopen(
+            &cached_fs,
+            temp_dir.path(),
+            Populate::PreferBackground,
+        )
+        .unwrap()
+    );
+    let index = OnDiskNumericIndex::<FloatPayloadType, Storage>::open(
+        &cached_fs,
+        temp_dir.path(),
+        Populate::PreferBackground,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(index.storage.pairs_block_index.is_none());
 }

@@ -3,9 +3,9 @@
 use std::hint::black_box;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::typelevel::True;
 use criterion::{Criterion, criterion_group, criterion_main};
-use permutation_iterator::Permutor;
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::{
@@ -13,12 +13,12 @@ use quantization::encoded_vectors_binary::{
 };
 use rand::{RngExt, SeedableRng};
 
-fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
+fn generate_number(rng: &mut rand::rngs::SmallRng) -> f32 {
     let n = f32::signum(rng.random_range(-1.0..1.0));
     if n == 0.0 { 1.0 } else { n }
 }
 
-fn generate_vector(dim: usize, rng: &mut rand::rngs::StdRng) -> Vec<f32> {
+fn generate_vector(dim: usize, rng: &mut rand::rngs::SmallRng) -> Vec<f32> {
     (0..dim).map(|_| generate_number(rng)).collect()
 }
 
@@ -27,7 +27,7 @@ fn binary_bench(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
     let mut vectors: Vec<Vec<f32>> = (0..vectors_count)
         .map(|_| generate_vector(vector_dim, &mut rng))
         .collect();
@@ -42,6 +42,7 @@ fn binary_bench(c: &mut Criterion) {
     );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -59,24 +60,34 @@ fn binary_bench(c: &mut Criterion) {
     let query = generate_vector(vector_dim, &mut rng);
     let encoded_query = encoded_u128.encode_query(&query);
 
-    let hardware_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     group.bench_function("score binary linear access u128", |b| {
         b.iter(|| {
             for i in 0..vectors_count as u32 {
-                let s = encoded_u128.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("score binary random access u128", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u128.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -88,6 +99,7 @@ fn binary_bench(c: &mut Criterion) {
     );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -108,19 +120,30 @@ fn binary_bench(c: &mut Criterion) {
     group.bench_function("score binary linear access u8", |b| {
         b.iter(|| {
             for i in 0..vectors_count as u32 {
-                let s = encoded_u8.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
     });
 
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("score binary random access u8", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u8.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -132,7 +155,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
     let mut vectors: Vec<Vec<f32>> = (0..vectors_count)
         .map(|_| generate_vector(vector_dim, &mut rng))
         .collect();
@@ -147,6 +170,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -164,14 +188,21 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     let query = generate_vector(vector_dim, &mut rng);
     let encoded_query = encoded_u128.encode_query(&query);
 
-    let hardware_counter = HardwareCounterCell::new();
-    let permutor = Permutor::new(vectors_count as u64);
-    let permutation: Vec<u32> = permutor.map(|i| i as u32).collect();
+    let _scope = ambient::test_guard();
+    let permutation: Vec<u32> =
+        rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
+            .into_iter()
+            .map(|i| i as u32)
+            .collect();
 
     group.bench_function("binary u128 scalar query", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u128.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -179,7 +210,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let native_scorer = |query: &[u128], vector: &[u128]| {
         let mut result = 0;
-        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(8)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.as_chunks::<8>().0) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }
@@ -209,6 +240,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -229,7 +261,11 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u8 scalar query", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u8.score_point(&encoded_query, i, &hardware_counter);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -237,7 +273,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
 
     let native_scorer = |query: &[u8], vector: &[u8]| {
         let mut result = 0;
-        for (&b1, b2_chunk) in vector.iter().zip(query.chunks_exact(8)) {
+        for (&b1, b2_chunk) in vector.iter().zip(query.as_chunks::<8>().0) {
             for (i, &b2) in b2_chunk.iter().enumerate() {
                 result += (b1 ^ b2).count_ones() << i;
             }

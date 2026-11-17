@@ -1,6 +1,5 @@
 use std::{error, result};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
@@ -25,14 +24,12 @@ pub fn insert_distributed_vectors(
 
     let mut vector = vec![0.; dim];
 
-    let hw_counter = HardwareCounterCell::new();
-
     for offset in start..end {
         for (item, value) in vector.iter_mut().zip(&mut *sampler) {
             *item = value;
         }
 
-        storage.insert_vector(offset, vector.as_slice().into(), &hw_counter)?;
+        storage.insert_vector(offset, vector.as_slice().into())?;
     }
 
     Ok(())
@@ -48,7 +45,7 @@ pub fn delete_random_vectors(
 
     for offset in offsets {
         storage.delete_vector(offset)?;
-        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()))?;
+        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()), None)?;
     }
 
     Ok(())

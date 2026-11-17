@@ -3,9 +3,10 @@ use std::time::Duration;
 use actix_web::{Responder, get, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
+use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, ScrollRequest};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
@@ -23,6 +24,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
+use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
@@ -37,14 +39,15 @@ struct PointPath {
     id: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn do_get_point(
     toc: &TableOfContent,
     collection_name: &str,
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
+    routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     auth: Auth,
-    hw_counter: HwMeasurementAcc,
 ) -> Result<Option<RecordInternal>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
@@ -58,10 +61,10 @@ async fn do_get_point(
         collection_name,
         request,
         read_consistency,
+        routing_token,
         timeout,
         shard_selection,
         auth,
-        hw_counter,
     )
     .await
     .map(|points| points.into_iter().next())
@@ -75,6 +78,7 @@ async fn get_point(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
         params.timeout_as_secs(),
@@ -107,10 +111,11 @@ async fn get_point(
         &collection.collection_name,
         point_id,
         params.consistency,
+        routing_token,
         params.timeout(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .and_then(|i| {
         i.ok_or_else(|| {
@@ -130,6 +135,7 @@ async fn get_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
         params.timeout_as_secs(),
@@ -166,11 +172,12 @@ async fn get_points(
         &collection.collection_name,
         point_request,
         params.consistency,
+        routing_token,
         params.timeout(),
         shard_selection,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .map_ok(|response| {
         response
             .into_iter()
@@ -190,6 +197,7 @@ async fn scroll_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
+    ActixRoutingToken(routing_token): ActixRoutingToken,
 ) -> impl Responder {
     let ScrollRequest {
         scroll_request,
@@ -228,11 +236,12 @@ async fn scroll_points(
             &collection.collection_name,
             scroll_request,
             params.consistency,
+            routing_token,
             params.timeout(),
             shard_selection,
             auth,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())

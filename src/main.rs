@@ -17,6 +17,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ::common::ambient;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
@@ -25,6 +26,7 @@ use ::common::low_memory::init_low_memory_mode;
 use ::common::memory_usage::set_resident_bytes_reader;
 use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use ::common::mmap::advice::set_global;
+use ::common::reason::reason;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -42,10 +44,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::load_tls_client_config;
@@ -58,10 +57,7 @@ use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
 
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -289,11 +285,26 @@ fn init_channel_service(
     persistent_consensus_state: &Persistent,
     is_distributed_deployment: bool,
 ) -> anyhow::Result<ChannelService> {
+    // Empty API keys are treated as unset (as in `AuthKeys::try_create`), so they
+    // are not attached to outgoing internal requests as empty `api-key` headers.
+    // Peers accept either key, so `alt_api_key` is forwarded when `api_key` is unset.
+    let alt_api_key = settings
+        .service
+        .alt_api_key
+        .clone()
+        .filter(|k| !k.is_empty());
+    let api_key = settings
+        .service
+        .api_key
+        .clone()
+        .filter(|k| !k.is_empty())
+        .or_else(|| alt_api_key.clone());
+
     let mut channel_service = ChannelService::new(
         settings.service.http_port,
         settings.service.enable_tls,
-        settings.service.api_key.clone(),
-        settings.service.alt_api_key.clone(),
+        api_key.clone(),
+        alt_api_key,
     );
 
     if is_distributed_deployment {
@@ -309,7 +320,9 @@ fn init_channel_service(
             connection_timeout,
             settings.cluster.p2p.connection_pool_size,
             tls_config,
-            settings.service.api_key.clone(),
+            api_key,
+            Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms),
+            Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms),
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
@@ -412,7 +425,18 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_default(),
     );
 
+    // Must be in place before the first segment is loaded.
+    segment::common::io_uring::set_io_uring_mode(settings.storage.performance.io_uring);
+
     welcome(&settings);
+
+    //
+    // Optional dial9 Tokio telemetry (compile with `--features dial9`,
+    // enable at runtime with DIAL9_ENABLED=true). Must run before any
+    // TableOfContent Tokio runtimes are constructed.
+    //
+    #[cfg(feature = "dial9")]
+    let _dial9_guard = storage::dial9_telemetry::init(env!("CARGO_PKG_VERSION"));
 
     //
     // Audit logging
@@ -525,13 +549,15 @@ fn main() -> anyhow::Result<()> {
     // Table of content (main entry point for storage)
     //
 
-    let toc = TableOfContent::new(
-        &settings.storage,
-        optimizer_resource_budget,
-        channel_service.clone(),
-        persistent_consensus_state.this_peer_id(),
-        propose_operation_sender.clone(),
-    )?;
+    let toc = ambient::unmeasured(reason("Loading collections on startup"), || {
+        TableOfContent::new(
+            &settings.storage,
+            optimizer_resource_budget,
+            channel_service.clone(),
+            persistent_consensus_state.this_peer_id(),
+            propose_operation_sender.clone(),
+        )
+    })?;
     let runtime_handle = toc.general_runtime_handle().clone();
 
     // Here we load all stored collections.
@@ -813,4 +839,32 @@ fn main() -> anyhow::Result<()> {
     drop(toc_arc);
     drop(settings);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_api_keys_are_not_forwarded_on_internal_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let persistent = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        let mut settings = Settings::new(None).unwrap();
+
+        settings.service.api_key = Some(String::new());
+        settings.service.alt_api_key = Some(String::new());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key, None);
+        assert_eq!(channel_service.alt_api_key, None);
+
+        settings.service.api_key = Some("x".to_string());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key.as_deref(), Some("x"));
+        assert_eq!(channel_service.alt_api_key, None);
+
+        settings.service.api_key = Some(String::new());
+        settings.service.alt_api_key = Some("alt".to_string());
+        let channel_service = init_channel_service(&settings, &persistent, false).unwrap();
+        assert_eq!(channel_service.api_key.as_deref(), Some("alt"));
+    }
 }

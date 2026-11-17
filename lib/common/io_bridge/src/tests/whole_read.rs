@@ -1,0 +1,446 @@
+#![cfg(test)]
+
+use std::future::Future;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use bytes::Bytes;
+use common::ambient;
+use common::generic_consts::Sequential;
+use common::universal_io::{
+    ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
+    OpenExtra as _, OpenOptions, OwnedPipeline, Populate, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
+use futures::stream::{BoxStream, StreamExt};
+
+use crate::read::{AsyncRead, OffsetByteStream};
+use crate::{BlobFile, BridgeRuntime};
+
+/// Request counters shared with every clone of a [`CountingSource`], so a test
+/// can assert how many remote requests of each kind a read path issued.
+#[derive(Clone, Default)]
+struct Counters {
+    len: Arc<AtomicUsize>,
+    whole: Arc<AtomicUsize>,
+    range: Arc<AtomicUsize>,
+    /// Open-ended tail GETs: `read_from` with a positive offset.
+    from: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+struct CountingConfig {
+    data: Bytes,
+    counters: Counters,
+    short_body: bool,
+}
+
+/// Test [`AsyncRead`] backend serving a fixed blob and counting the remote
+/// requests it receives: `len` (HEAD), `read_whole` (single GET) and
+/// `read_range` (ranged GET).
+#[derive(Clone)]
+struct CountingSource {
+    data: Bytes,
+    counters: Counters,
+    /// Announce one byte more than the body carries, like a response cut off mid-body.
+    short_body: bool,
+}
+
+impl CountingSource {
+    fn new(data: &'static [u8]) -> Self {
+        Self {
+            data: Bytes::from_static(data),
+            counters: Counters::default(),
+            short_body: false,
+        }
+    }
+
+    fn config(&self) -> CountingConfig {
+        CountingConfig {
+            data: self.data.clone(),
+            counters: self.counters.clone(),
+            short_body: self.short_body,
+        }
+    }
+}
+
+impl AsyncRead for CountingSource {
+    type Config = CountingConfig;
+
+    fn open(config: &Self::Config) -> UioResult<Self> {
+        Ok(Self {
+            data: config.data.clone(),
+            counters: config.counters.clone(),
+            short_body: config.short_body,
+        })
+    }
+
+    fn list_files(
+        &self,
+        _prefix: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        std::future::ready(Ok(vec![]))
+    }
+
+    fn exists(&self, _path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
+        std::future::ready(Ok(true))
+    }
+
+    fn read_range(
+        &self,
+        _path: &Path,
+        range: Range<u64>,
+    ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+    {
+        self.counters.range.fetch_add(1, Ordering::Relaxed);
+        let bytes = self.data.slice(range.start as usize..range.end as usize);
+        async move { Ok(futures::stream::once(async move { Ok(bytes) }).boxed()) }
+    }
+
+    fn read_from(
+        &self,
+        _path: &Path,
+        from: u64,
+    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+        if from == 0 {
+            self.counters.whole.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.counters.from.fetch_add(1, Ordering::Relaxed);
+        }
+        let size = self.data.len() as u64 + u64::from(self.short_body);
+        let data = self.data.clone();
+        async move {
+            // A positive offset at or past EOF is an unsatisfiable range; mimic
+            // the backend's 416 rather than yielding an empty body, so the
+            // pipeline's empty-tail disambiguation is exercised.
+            if from > 0 && from >= size {
+                return Err(UniversalIoError::S3Config {
+                    description: "requested range not satisfiable".into(),
+                });
+            }
+            let tail = data.slice(from as usize..);
+            Ok((
+                size,
+                futures::stream::once(async move { Ok((0, tail)) }).boxed(),
+            ))
+        }
+    }
+
+    fn len(&self, _path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
+        self.counters.len.fetch_add(1, Ordering::Relaxed);
+        let len = self.data.len() as u64;
+        async move { Ok(len) }
+    }
+
+    fn kind() -> UniversalKind {
+        UniversalKind::S3
+    }
+}
+
+const DATA: &[u8] = b"the quick brown fox jumps over the lazy dog";
+
+#[test]
+fn blob_file_read_whole_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(
+        counters.whole.load(Ordering::Relaxed),
+        1,
+        "read_whole should issue exactly one whole-object GET",
+    );
+    assert_eq!(
+        counters.len.load(Ordering::Relaxed),
+        0,
+        "read_whole must not issue a separate len/HEAD request",
+    );
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn owned_pipeline_tail_read_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    let mut pipeline = OwnedPipeline::new(file).unwrap();
+    let from = 10u64;
+    pipeline.schedule_whole((), from).unwrap();
+    let (_, bytes) = pipeline.wait().unwrap().expect("exactly one read");
+
+    assert_eq!(&bytes[..], &DATA[from as usize..]);
+    assert_eq!(
+        counters.from.load(Ordering::Relaxed),
+        1,
+        "a tail read should issue exactly one open-ended GET",
+    );
+    assert_eq!(
+        counters.len.load(Ordering::Relaxed),
+        0,
+        "a tail read must not issue a separate len/HEAD request",
+    );
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn owned_pipeline_empty_tail_resolves_to_empty_read() {
+    let _scope = ambient::test_guard();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    let mut pipeline = OwnedPipeline::new(file).unwrap();
+    // Offset exactly at EOF: there is no tail to read.
+    pipeline.schedule_whole((), DATA.len() as u64).unwrap();
+    let (_, bytes) = pipeline
+        .wait()
+        .unwrap()
+        .expect("an (empty) read is scheduled");
+
+    assert!(bytes.is_empty(), "an offset at EOF yields an empty read");
+    // The open-ended GET is attempted once, then a single len() confirms the
+    // offset is past EOF — there is no cheaper way to learn the tail is empty.
+    assert_eq!(counters.from.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn disk_cache_read_whole_skips_remote_len() {
+    let _scope = ambient::test_guard();
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let local_dir = tmp.path().to_path_buf();
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: source.config(),
+    })
+    .unwrap();
+
+    let file = fs
+        .open(
+            Path::new("bucket/data.bin"),
+            OpenOptions {
+                writeable: false,
+                populate: Populate::No,
+                ..OpenOptions::new_for_test()
+            },
+            Default::default(),
+        )
+        .unwrap();
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(
+        counters.whole.load(Ordering::Relaxed),
+        1,
+        "disk cache read_whole should issue a single whole-object GET",
+    );
+    assert_eq!(
+        counters.len.load(Ordering::Relaxed),
+        0,
+        "disk cache read_whole must not HEAD the remote for its length",
+    );
+
+    let again = file
+        .read::<_, u8>(ReadRange::new(0, DATA.len() as u64), Sequential)
+        .expect("local read");
+    assert_eq!(&again[..], DATA);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn disk_cache_prefill_open_uses_whole_get_without_head() {
+    let _scope = ambient::test_guard();
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let local_dir = tmp.path().to_path_buf();
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: source.config(),
+    })
+    .unwrap();
+
+    let file = fs
+        .open(
+            Path::new("bucket/data.bin"),
+            OpenOptions {
+                writeable: false,
+                populate: Populate::Blocking,
+                ..OpenOptions::new_for_test()
+            },
+            Default::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        counters.whole.load(Ordering::Relaxed),
+        1,
+        "prefill should issue a single whole-object GET",
+    );
+    assert_eq!(
+        counters.len.load(Ordering::Relaxed),
+        0,
+        "prefill must not HEAD the remote for its length",
+    );
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+}
+
+fn async_prefill_open(
+    source: &CountingSource,
+    local_dir: &Path,
+    known_len: Option<u64>,
+) -> UioResult<impl UniversalRead> {
+    let _scope = ambient::test_guard();
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir.to_path_buf()).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: source.config(),
+    })
+    .unwrap();
+    let mut extra =
+        <DiskCacheFs<BlobFile<CountingSource>> as UniversalReadFs>::OpenExtra::default();
+    if let Some(len) = known_len {
+        extra = extra.with_known_len(len);
+    }
+    futures::executor::block_on(fs.open_async(
+        PathBuf::from("bucket/data.bin"),
+        OpenOptions {
+            writeable: false,
+            populate: Populate::Blocking,
+            ..OpenOptions::new_for_test()
+        },
+        extra,
+    ))
+}
+
+#[test]
+fn disk_cache_async_prefill_streams_whole_get() {
+    let _scope = ambient::test_guard();
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = async_prefill_open(&source, tmp.path(), None).unwrap();
+
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+/// The mirror takes the length of the file as read, not the stale one the open was given.
+#[test]
+fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
+    let _scope = ambient::test_guard();
+    for stale_len in [3, DATA.len() as u64 * 2] {
+        let tmp = tempfile::Builder::new()
+            .prefix("uio_whole_read")
+            .tempdir()
+            .unwrap();
+        let source = CountingSource::new(DATA);
+        let file = async_prefill_open(&source, tmp.path(), Some(stale_len)).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), DATA.len() as u64);
+        assert_eq!(&file.read_whole::<u8>().unwrap()[..], DATA);
+    }
+}
+
+/// A prefill cut off mid-body fails the open without leaving its partial mirror behind.
+#[test]
+fn disk_cache_failed_async_prefill_removes_the_mirror() {
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let source = CountingSource {
+        short_body: true,
+        ..CountingSource::new(DATA)
+    };
+
+    let Err(err) = async_prefill_open(&source, tmp.path(), None) else {
+        panic!("a prefill cut off mid-body must fail the open");
+    };
+    assert!(err.to_string().contains("short read"), "{err}");
+    let leftovers = MmapFs.list_files(&tmp.path().join("data.bin")).unwrap();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[derive(Default)]
+struct TestSink(Vec<(u64, Vec<u8>)>);
+
+impl ChunkSink for TestSink {
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.0.push((offset, bytes.to_vec()));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn blob_file_read_from_into_async_tail_and_empty() {
+    let _scope = ambient::async_test_guard();
+    use common::universal_io::UniversalReadAsync;
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    // Tail read from a positive offset
+    let from = 10u64;
+    let sink = file
+        .read_from_into_async(from, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert_eq!(&sink.0[0].1[..], &DATA[from as usize..]);
+    assert_eq!(sink.0[0].0, from);
+    assert_eq!(counters.from.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+
+    // Empty tail at EOF
+    let sink = file
+        .read_from_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert!(sink.0.is_empty());
+    assert_eq!(counters.from.load(Ordering::Relaxed), 2);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 1);
+}
