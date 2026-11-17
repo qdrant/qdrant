@@ -1,0 +1,24 @@
+[package]
+name = "inference"
+version = "0.1.0"
+edition = "2024"
+description = "Client for the cloud inference service plus the locally-run models (BM25), shared by qdrant and qdrant-serverless"
+
+[dependencies]
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard", default-features = false }
+
+httpdate = "1.0"
+itertools = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+mockito = { workspace = true }
+rand = { workspace = true }
+
+[lints]
+workspace = true
