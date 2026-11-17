@@ -421,7 +421,23 @@ impl ShardReplicaSet {
         let mut all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
             match local.deref() {
                 Some(Shard::Local(local_shard)) if local_is_updatable => {
+                    #[cfg(feature = "staging")]
+                    let abort_after_local_update =
+                        super::staging::abort_after_local_update(&operation.operation);
+
                     let outcome = local_shard.submit_update(operation, local_wait).await?;
+
+                    #[cfg(feature = "staging")]
+                    if abort_after_local_update {
+                        log::warn!(
+                            "Aborting after local update of shard {}:{}, \
+                             before sending it to remote replicas",
+                            self.collection_id,
+                            self.shard_id,
+                        );
+                        std::process::abort();
+                    }
+
                     drop(local);
 
                     let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);

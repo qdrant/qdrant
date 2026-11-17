@@ -5,11 +5,17 @@ The update path writes an operation to the leader's local WAL before it sends th
 the other replicas. If the leader dies in between, the operation exists only on the leader's
 replica, and that replica's clock is one tick ahead of all other replicas.
 
-If the transfer source has not seen a newer tick of that clock, it can't resolve a WAL delta, and
-the transfer falls back to a snapshot transfer.
+- If the transfer source has not seen a newer tick of that clock, it can't resolve a WAL delta,
+  and the transfer falls back to a snapshot transfer.
+- After a restart the leader's clocks start from scratch. Its next update through the same clock
+  reuses the orphan operation's tick with a new token. The ticks are equal again, so the WAL delta
+  transfer succeeds and the orphan operation stays on the receiver only.
 
-The test uses the staging `delay` debug operation and is skipped without it. The leader writes
-`delay` to its local WAL, while remote shards skip it and still report success with the clock tag.
+Both tests use staging features and are skipped without them:
+- the `delay` debug operation, which the leader writes to its local WAL, while remote shards skip
+  it and still report success with the clock tag
+- `QDRANT_STAGING_ABORT_AFTER_LOCAL_UPDATE_POINT_ID`, which aborts the leader right after its local
+  WAL write, when the update touches the given point
 """
 
 import pathlib
@@ -22,6 +28,9 @@ SHARD_ID = 0
 
 # Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::HigherThanCurrent`
 HIGHER_THAN_CURRENT_ERROR = "recovery point requests higher clocks this WAL has"
+
+# Point upserted through the leader that aborts before sending it to other replicas
+ORPHAN_POINT_ID = 1_000_000
 
 # Prevent automatic recovery, so we start the transfer ourselves with a specific method
 TRANSFER_LIMITS_ENV = {
@@ -69,11 +78,40 @@ def assert_receiver_one_tick_ahead(receiver_uri: str, source_uris: list, receive
         assert receiver_tick == source_tick + 1, message
 
 
+def assert_receiver_same_tick_other_token(receiver_uri: str, source_uris: list, receiver_peer_id: int):
+    """Assert no source is behind the receiver on any clock, and that every source has the same
+    tick as the receiver on one clock of the receiver's own peer, but with a different token."""
+    receiver = get_recovery_point(receiver_uri)
+
+    for source_uri in source_uris:
+        source = get_recovery_point(source_uri)
+        message = f"receiver: {receiver}, source {source_uri}: {source}"
+
+        for key, (tick, _token) in receiver.items():
+            assert key in source and tick <= source[key][0], message
+
+        other_token = [
+            key
+            for key, (tick, token) in receiver.items()
+            if source[key][0] == tick and source[key][1] != token
+        ]
+
+        assert len(other_token) == 1, message
+        ((peer_id, _clock_id),) = other_token
+        assert peer_id == receiver_peer_id, message
+
+
 def check_replica_state(peer_uri: str, peer_id: int, expected_state: str) -> bool:
     info = get_collection_cluster_info(peer_uri, COLLECTION_NAME)
     local = [(info["peer_id"], shard["state"]) for shard in info["local_shards"]]
     remote = [(shard["peer_id"], shard["state"]) for shard in info["remote_shards"]]
     return (peer_id, expected_state) in local + remote
+
+
+def has_point(peer_uri: str, point_id: int) -> bool:
+    r = requests.post(f"{peer_uri}/collections/{COLLECTION_NAME}/points", json={"ids": [point_id]})
+    assert_http_ok(r)
+    return len(r.json()["result"]) > 0
 
 
 def scroll_all_points(peer_api_uris: list) -> list:
@@ -147,4 +185,78 @@ def test_wal_delta_transfer_rejects_operation_only_on_receiver(tmp_path: pathlib
     assert HIGHER_THAN_CURRENT_ERROR in a_log.read_text()
 
     # The fallback transfer replaced R's shard, so all replicas are consistent
+    check_data_consistency(scroll_all_points(peer_api_uris))
+
+
+def test_wal_delta_transfer_keeps_operation_only_on_receiver(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    env = {
+        **TRANSFER_LIMITS_ENV,
+        "QDRANT_STAGING_ABORT_AFTER_LOCAL_UPDATE_POINT_ID": str(ORPHAN_POINT_ID),
+    }
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, extra_env=env)
+
+    # The abort failpoint is only available with the staging feature
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    # A is the transfer source, R receives the operation that no other replica has
+    a_uri, c_uri, r_uri = peer_api_uris
+    a_peer_id = get_cluster_info(a_uri)["peer_id"]
+    r_peer_id = get_cluster_info(r_uri)["peer_id"]
+
+    create_collection(a_uri, shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    # Upsert through R, so every replica knows R's clock
+    upsert_random_points(r_uri, 100)
+
+    # R writes the orphan point to its own WAL, then aborts before sending it to A and C
+    try:
+        upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID)
+    except requests.exceptions.ConnectionError:
+        pass
+    else:
+        pytest.fail("R must abort while upserting the orphan point")
+
+    r_process = processes.pop()
+    r_port = r_process.p2p_port
+    r_process.kill()
+
+    # Upsert through A. A fails to reach R and marks it as Dead
+    upsert_random_points(a_uri, 10, offset=1000)
+    wait_for(check_replica_state, a_uri, r_peer_id, "Dead")
+
+    # Restart R without the failpoint, it must see its own replica as Dead
+    r_uri = start_peer(peer_dirs[-1], "peer_0_2_restarted.log", bootstrap_uri, port=r_port, extra_env=TRANSFER_LIMITS_ENV)
+    peer_api_uris[-1] = r_uri
+    wait_for_peer_online(r_uri, "/")
+    wait_for(check_replica_state, r_uri, r_peer_id, "Dead")
+
+    # WAL replay restored the orphan point's tick on R
+    assert_receiver_one_tick_ahead(r_uri, [a_uri, c_uri], r_peer_id)
+
+    # Upsert through R again. R's clocks started from scratch after the restart, so A and C send
+    # back their current tick and R reuses the orphan point's tick with a new token. R's own replica
+    # is Dead, so only A and C get this update
+    upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID + 1)
+    assert_receiver_same_tick_other_token(r_uri, [a_uri, c_uri], r_peer_id)
+
+    # Recover R from A with a WAL delta transfer
+    replicate_shard(a_uri, COLLECTION_NAME, SHARD_ID, a_peer_id, r_peer_id, method="wal_delta")
+    wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
+
+    # Each peer reads from its own replica here, because all of them are Active
+    orphan_on_peers = [has_point(uri, ORPHAN_POINT_ID) for uri in peer_api_uris]
+    if orphan_on_peers == [False, False, True]:
+        pytest.xfail(
+            "WAL delta resolution compares clock ticks but not tokens, "
+            "so the orphan point stays on R only"
+        )
+
     check_data_consistency(scroll_all_points(peer_api_uris))
