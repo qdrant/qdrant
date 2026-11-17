@@ -1,7 +1,7 @@
 //! AWS S3 backend.
 
 use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
-use object_store::aws::{AmazonS3, AmazonS3Builder, Checksum};
+use object_store::aws::{AmazonS3, AmazonS3Builder, AmazonS3ConfigKey, Checksum};
 use url::Url;
 
 use crate::append::{
@@ -12,8 +12,20 @@ use crate::backend::BlobBackend;
 /// SigV4 signing needs a region even for endpoints that ignore it.
 const DEFAULT_REGION: &str = "us-east-1";
 
-/// Host of GCS's S3-compatible XML API.
+/// Host of GCS's S3-compatible XML API. Buckets are addressed either by
+/// path under it (`storage.googleapis.com/{bucket}`) or as its subdomain
+/// (`{bucket}.storage.googleapis.com`).
 const GCS_XML_API_HOST: &str = "storage.googleapis.com";
+
+/// How an endpoint addresses GCS's S3-compatible XML API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GcsXmlApi {
+    /// `storage.googleapis.com`: objects at `/{bucket}/{key}`.
+    PathStyle,
+    /// `{bucket}.storage.googleapis.com`: the bucket is in the host,
+    /// objects at `/{key}`.
+    VirtualHosted,
+}
 
 /// Connection parameters for [`AmazonS3`]. Fed into [`AmazonS3Builder`] by
 /// the [`BlobBackend`] impl below.
@@ -25,7 +37,10 @@ pub struct AwsConfig {
     /// S3-compatible endpoints that ignore it.
     pub region: Option<String>,
     /// Custom endpoint URL — set this for MinIO / RustFS / LocalStack.
-    /// `with_allow_http(true)` is enabled when this is set.
+    /// `with_allow_http(true)` is enabled when this is set. GCS's XML API
+    /// is recognized as `https://storage.googleapis.com` (path-style) or
+    /// `https://{bucket}.storage.googleapis.com` (virtual-hosted; the
+    /// subdomain must be `bucket`).
     pub endpoint: Option<String>,
     /// Enable S3 Express One Zone (`*--x-s3` directory buckets).
     pub s3_express: bool,
@@ -58,7 +73,7 @@ impl BlobBackend for AmazonS3 {
     type Config = AwsConfig;
 
     fn build_store(config: &Self::Config) -> UioResult<Self> {
-        store_builder(config, |name| std::env::var(name).ok())
+        store_builder(config, |name| std::env::var(name).ok())?
             .build()
             .map_err(|err| UniversalIoError::S3Config {
                 description: format!("AmazonS3Builder: {err}"),
@@ -75,22 +90,20 @@ impl BlobBackend for AmazonS3 {
         let (endpoint, region) =
             resolve_endpoint_and_region(config, |name| std::env::var(name).ok());
 
-        let is_gcs = endpoint.as_deref().is_some_and(is_gcs_xml_api);
+        let gcs = match &endpoint {
+            Some(endpoint) => gcs_xml_api(endpoint, &config.bucket)?,
+            None => None,
+        };
 
         let (object_url_base, service) = match &endpoint {
             // Path-style addressing, as object_store uses for custom
             // endpoints. An explicit endpoint stays the operator override
             // (VPC endpoints, FIPS, MinIO & co) and keeps plain "s3"
             // signing.
-            Some(endpoint) => {
-                let mut url = Url::parse(endpoint)
-                    .map_err(|err| s3_config_error(format!("append endpoint url: {err}")))?;
-                url.path_segments_mut()
-                    .map_err(|()| s3_config_error("append endpoint url cannot be a base".into()))?
-                    .pop_if_empty()
-                    .push(&config.bucket);
-                (url, "s3")
-            }
+            Some(endpoint) => (
+                endpoint_object_url_base(endpoint, &config.bucket, gcs)?,
+                "s3",
+            ),
             // S3 Express directory buckets only exist on their zonal
             // endpoint and reject signatures scoped to "s3".
             None if config.s3_express => {
@@ -134,7 +147,7 @@ impl BlobBackend for AmazonS3 {
 
         Ok(Some(if config.s3_express || config.native_append {
             AppendContext::Native(NativeAppend::new(context))
-        } else if is_gcs {
+        } else if gcs.is_some() {
             // GCS implements no `UploadPartCopy`, the part-copy rewrite
             // cannot run there.
             AppendContext::XmlCompose(XmlComposeAppend::new(context))
@@ -146,7 +159,10 @@ impl BlobBackend for AmazonS3 {
 
 /// The [`AmazonS3Builder`] for `config`, with `env` standing in for the
 /// process environment when resolving the endpoint.
-fn store_builder(config: &AwsConfig, env: impl Fn(&str) -> Option<String>) -> AmazonS3Builder {
+fn store_builder(
+    config: &AwsConfig,
+    env: impl Fn(&str) -> Option<String>,
+) -> UioResult<AmazonS3Builder> {
     let mut builder = match &config.credentials {
         AwsCredentials::Default => AmazonS3Builder::from_env(),
         AwsCredentials::Static {
@@ -172,21 +188,101 @@ fn store_builder(config: &AwsConfig, env: impl Fn(&str) -> Option<String>) -> Am
     if let Some(endpoint) = &config.endpoint {
         builder = builder.with_endpoint(endpoint).with_allow_http(true);
     }
-    // GCS's XML API has no bulk `DeleteObjects`: delete one object at a
-    // time there, as for the other S3-compatible stores lacking it.
     let (endpoint, _region) = resolve_endpoint_and_region(config, env);
-    if endpoint.as_deref().is_some_and(is_gcs_xml_api) {
+    let gcs = match &endpoint {
+        Some(endpoint) => gcs_xml_api(endpoint, &config.bucket)?,
+        None => None,
+    };
+    if let Some(gcs) = gcs {
+        // GCS's XML API has no bulk `DeleteObjects`: delete one object at a
+        // time there, as for the other S3-compatible stores lacking it.
         builder = builder.with_disable_bulk_delete(true);
+        // Address the bucket the way the endpoint names it, set explicitly
+        // so the store and the append context (which builds object URLs
+        // itself) agree whatever the environment says.
+        builder = match gcs {
+            GcsXmlApi::PathStyle => builder.with_virtual_hosted_style_request(false),
+            GcsXmlApi::VirtualHosted => {
+                // `object_store` uses a virtual-hosted endpoint verbatim as
+                // the bucket URL: strip any path (a trailing `/` would
+                // double the separator before keys). Set as the
+                // S3-specific endpoint, which wins over the generic one.
+                let url = Url::parse(endpoint.as_deref().unwrap_or_default()).map_err(|err| {
+                    UniversalIoError::S3Config {
+                        description: format!("endpoint url: {err}"),
+                    }
+                })?;
+                builder
+                    .with_virtual_hosted_style_request(true)
+                    .with_config(AmazonS3ConfigKey::S3Endpoint, virtual_hosted_endpoint(&url))
+            }
+        };
     }
-    builder.with_checksum_algorithm(Checksum::CRC64NVME)
+    Ok(builder.with_checksum_algorithm(Checksum::CRC64NVME))
 }
 
-/// Whether `endpoint` is GCS's S3-compatible XML API.
-fn is_gcs_xml_api(endpoint: &str) -> bool {
-    Url::parse(endpoint)
+/// The object-URL base for appends through an explicit `endpoint`,
+/// matching where `store_builder` makes the store put objects: path-style
+/// `{endpoint}/{bucket}`, or the bare origin of a virtual-hosted GCS
+/// endpoint, whose host already names the bucket.
+fn endpoint_object_url_base(
+    endpoint: &str,
+    bucket: &str,
+    gcs: Option<GcsXmlApi>,
+) -> UioResult<Url> {
+    let s3_config_error = |description: String| UniversalIoError::S3Config { description };
+    let mut url = Url::parse(endpoint)
+        .map_err(|err| s3_config_error(format!("append endpoint url: {err}")))?;
+    match gcs {
+        Some(GcsXmlApi::VirtualHosted) => {
+            url = Url::parse(&virtual_hosted_endpoint(&url))
+                .map_err(|err| s3_config_error(format!("append endpoint url: {err}")))?;
+        }
+        Some(GcsXmlApi::PathStyle) | None => {
+            url.path_segments_mut()
+                .map_err(|()| s3_config_error("append endpoint url cannot be a base".into()))?
+                .pop_if_empty()
+                .push(bucket);
+        }
+    }
+    Ok(url)
+}
+
+/// Whether, and how, `endpoint` addresses GCS's S3-compatible XML API for
+/// `bucket`. A `{name}.storage.googleapis.com` endpoint naming a bucket
+/// other than `bucket` is a configuration error: requests would silently
+/// go to the wrong bucket.
+fn gcs_xml_api(endpoint: &str, bucket: &str) -> UioResult<Option<GcsXmlApi>> {
+    let Some(host) = Url::parse(endpoint)
         .ok()
         .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| host == GCS_XML_API_HOST)
+    else {
+        return Ok(None);
+    };
+    if host == GCS_XML_API_HOST {
+        return Ok(Some(GcsXmlApi::PathStyle));
+    }
+    let Some(host_bucket) = host
+        .strip_suffix(GCS_XML_API_HOST)
+        .and_then(|prefix| prefix.strip_suffix('.'))
+        .filter(|prefix| !prefix.is_empty())
+    else {
+        return Ok(None);
+    };
+    if !host_bucket.eq_ignore_ascii_case(bucket) {
+        return Err(UniversalIoError::S3Config {
+            description: format!(
+                "endpoint {endpoint} addresses GCS bucket `{host_bucket}`, \
+                 but the configured bucket is `{bucket}`",
+            ),
+        });
+    }
+    Ok(Some(GcsXmlApi::VirtualHosted))
+}
+
+/// The bucket URL of a virtual-hosted endpoint: its origin, without path.
+fn virtual_hosted_endpoint(url: &Url) -> String {
+    url.origin().ascii_serialization()
 }
 
 /// The availability-zone segment of a directory-bucket name
@@ -343,6 +439,8 @@ mod tests {
             "https://storage.googleapis.com",
             "https://storage.googleapis.com/",
             "https://STORAGE.googleapis.com",
+            "https://bucket.storage.googleapis.com",
+            "https://BUCKET.storage.googleapis.com/",
         ] {
             let context = <AmazonS3 as BlobBackend>::append_context(&with_endpoint(endpoint));
             assert!(
@@ -351,7 +449,13 @@ mod tests {
             );
         }
 
-        for endpoint in ["http://minio:9000", "https://storage.example.com"] {
+        for endpoint in [
+            "http://minio:9000",
+            "https://storage.example.com",
+            "https://bucketstorage.googleapis.com",
+            "https://.storage.googleapis.com",
+            "https://bucket.storage.googleapis.com.example.com",
+        ] {
             let context = <AmazonS3 as BlobBackend>::append_context(&with_endpoint(endpoint));
             assert!(
                 matches!(context, Ok(Some(AppendContext::PartCopy(_)))),
@@ -363,6 +467,72 @@ mod tests {
         native.native_append = true;
         let context = <AmazonS3 as BlobBackend>::append_context(&native);
         assert!(matches!(context, Ok(Some(AppendContext::Native(_)))));
+
+        // A subdomain naming another bucket would silently address it.
+        let other = with_endpoint("https://other.storage.googleapis.com");
+        assert!(matches!(
+            <AmazonS3 as BlobBackend>::append_context(&other),
+            Err(UniversalIoError::S3Config { .. }),
+        ));
+        assert!(matches!(
+            <AmazonS3 as BlobBackend>::build_store(&other),
+            Err(UniversalIoError::S3Config { .. }),
+        ));
+    }
+
+    /// Appends address objects where the store puts them: under
+    /// `/{bucket}` on the path-style endpoint, at the root of the
+    /// virtual-hosted one (whose host already names the bucket).
+    #[test]
+    fn gcs_xml_api_object_urls_agree_with_the_store() {
+        use object_store::signer::Signer as _;
+
+        let key = object_store::path::Path::from("dir/append.dat");
+        for (endpoint, expected) in [
+            (
+                "https://storage.googleapis.com",
+                "https://storage.googleapis.com/bucket/dir/append.dat",
+            ),
+            (
+                "https://storage.googleapis.com/",
+                "https://storage.googleapis.com/bucket/dir/append.dat",
+            ),
+            (
+                "https://bucket.storage.googleapis.com",
+                "https://bucket.storage.googleapis.com/dir/append.dat",
+            ),
+            (
+                "https://bucket.storage.googleapis.com/",
+                "https://bucket.storage.googleapis.com/dir/append.dat",
+            ),
+        ] {
+            let mut config = config(AwsCredentials::Static {
+                access_key_id: "id".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+            });
+            config.endpoint = Some(endpoint.to_string());
+
+            let gcs = gcs_xml_api(endpoint, &config.bucket).unwrap();
+            let mut append_url = endpoint_object_url_base(endpoint, &config.bucket, gcs).unwrap();
+            append_url
+                .path_segments_mut()
+                .unwrap()
+                .pop_if_empty()
+                .extend(key.parts().map(|part| part.as_ref().to_string()));
+            assert_eq!(append_url.as_str(), expected, "append, {endpoint}");
+
+            let store = <AmazonS3 as BlobBackend>::build_store(&config).unwrap();
+            let mut store_url = io_bridge::BridgeRuntime::global()
+                .block_on(store.signed_url(
+                    http::Method::GET,
+                    &key,
+                    std::time::Duration::from_secs(60),
+                ))
+                .unwrap();
+            store_url.set_query(None);
+            assert_eq!(store_url.as_str(), expected, "store, {endpoint}");
+        }
     }
 
     /// GCS's XML API has no bulk `DeleteObjects`, so the store deletes one
@@ -370,10 +540,10 @@ mod tests {
     /// from the environment.
     #[test]
     fn gcs_xml_api_endpoint_disables_bulk_delete() {
-        use object_store::aws::AmazonS3ConfigKey;
-
         let bulk_delete_disabled = |config: &AwsConfig, env: &dyn Fn(&str) -> Option<String>| {
-            store_builder(config, env).get_config_value(&AmazonS3ConfigKey::DisableBulkDelete)
+            store_builder(config, env)
+                .unwrap()
+                .get_config_value(&AmazonS3ConfigKey::DisableBulkDelete)
                 == Some("true".to_string())
         };
         let no_env = |_: &str| None;
@@ -381,6 +551,10 @@ mod tests {
         let mut gcs = config(AwsCredentials::Default);
         gcs.endpoint = Some("https://storage.googleapis.com".to_string());
         assert!(bulk_delete_disabled(&gcs, &no_env));
+
+        let mut gcs_subdomain = config(AwsCredentials::Default);
+        gcs_subdomain.endpoint = Some("https://bucket.storage.googleapis.com".to_string());
+        assert!(bulk_delete_disabled(&gcs_subdomain, &no_env));
 
         let gcs_env = |name: &str| {
             (name == "AWS_ENDPOINT").then(|| "https://storage.googleapis.com".to_string())

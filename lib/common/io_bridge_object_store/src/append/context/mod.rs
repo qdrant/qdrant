@@ -100,7 +100,8 @@ pub enum AppendContext {
     /// uploaded as a temporary object, then composed onto the existing one.
     Compose(ComposeAppend),
     /// GCS through its S3-compatible XML API (the S3 backend pointed at
-    /// `storage.googleapis.com` with HMAC keys): the same compose, issued
+    /// `storage.googleapis.com` or `{bucket}.storage.googleapis.com` with
+    /// HMAC keys): the same compose, issued
     /// over the XML API. Part-copy cannot run there, GCS does not implement
     /// `UploadPartCopy`.
     XmlCompose(XmlComposeAppend),
