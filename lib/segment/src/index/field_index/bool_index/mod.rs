@@ -18,6 +18,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::payload_config::IndexMutability;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::FieldCondition;
 
@@ -118,6 +119,14 @@ impl PayloadFieldIndexRead for BoolIndex {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

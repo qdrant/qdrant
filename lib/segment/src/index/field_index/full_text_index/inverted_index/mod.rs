@@ -1232,7 +1232,16 @@ mod tests {
                 continue;
             };
             let mut_filtered = mut_index.filter(mut_query).unwrap().collect::<Vec<_>>();
+            // Pushed into a sink, the on-disk index reads postings chunk by chunk, one
+            // after another: same points, in any order and possibly repeated.
+            let mut pushed = Vec::new();
+            mmap_index
+                .filter_into(imm_query.clone(), &mut pushed)
+                .unwrap();
+            pushed.sort_unstable();
+            pushed.dedup();
             let imm_filtered = mmap_index.filter(imm_query).unwrap().collect::<Vec<_>>();
+            assert_eq!(pushed, imm_filtered);
             let imm_mmap_filtered = imm_mmap_index
                 .filter(imm_mmap_query)
                 .unwrap()

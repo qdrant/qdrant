@@ -7,6 +7,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Read-only operations available on every payload field index.
@@ -31,6 +32,23 @@ pub trait PayloadFieldIndexRead {
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
+
+    /// Push the points fitting `condition` into `sink`.
+    /// Returns `false`, pushing nothing, if the condition does not match the index type.
+    ///
+    /// The points are those of [`Self::filter`], but may come in any order and repeat. An
+    /// index that can only read its posting lists inside a callback pushes from there,
+    /// instead of collecting every point to return an iterator. Others push the points of
+    /// [`Self::filter`] with [`push_filtered`](crate::index::query_optimization::point_sink::push_filtered).
+    #[must_use = "`false` means the index did not handle the condition"]
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool>
+    where
+        // Generic over the sink, so not callable through `dyn PayloadFieldIndex`.
+        Self: Sized;
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `Ok(None)` if the condition does not match the index type

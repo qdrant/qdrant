@@ -20,6 +20,7 @@ use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -60,6 +61,27 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidMapIndex(idx) => idx.filter(condition),
             FieldIndex::NullIndex(idx) => idx.filter(condition),
             FieldIndex::Nested(idx) => idx.filter(condition),
+        }
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::DatetimeIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::IntMapIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::KeywordIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::FloatIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::GeoIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::BoolIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::FullTextIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::UuidIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::UuidMapIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::NullIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::Nested(idx) => idx.filter_into(condition, sink),
         }
     }
 

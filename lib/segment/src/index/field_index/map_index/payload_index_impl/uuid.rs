@@ -20,6 +20,7 @@ use crate::index::field_index::{
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -53,6 +54,14 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
@@ -92,6 +101,14 @@ where
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

@@ -11,6 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::{ImmutableLayout, StorageType};
+use crate::index::query_optimization::point_sink::{PointSink, push_all};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
@@ -82,6 +83,15 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         query: ParsedQuery,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         self.inverted_index.filter(query)
+    }
+
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<()> {
+        push_all(self.filter_query(query)?, sink);
+        Ok(())
     }
 
     fn estimate_query_cardinality(

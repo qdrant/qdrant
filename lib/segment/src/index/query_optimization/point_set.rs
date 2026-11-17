@@ -4,7 +4,7 @@
 //! A set is either a dense bitset over all point offsets of the segment or a sorted list of
 //! offsets. The bitset costs `total_points / 8` bytes to allocate and zero no matter how
 //! few points it holds, so it only pays off when the set is large or checked many times.
-//! [`PointSet::from_posting`] reads a dense posting list straight into a bitset, without
+//! [`PointSetBuilder`] reads a dense posting list straight into a bitset, without
 //! collecting it first. [`PointSet::union_sets`] and [`PointSet::intersection_sets`] merge
 //! the posting lists of one clause into a single set, reusing one of their bitsets.
 
@@ -12,6 +12,7 @@ use common::bitvec::BitVec;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::PointOffsetType;
 
+use super::point_sink::PointSink;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Cost model constants, in nanoseconds, measured with a micro-benchmark of
@@ -45,6 +46,15 @@ impl PointSetContext {
             total_points,
             expected_checks: 0,
         }
+    }
+
+    /// Whether a posting list of about `expected_len` points is read into a bitset rather
+    /// than a sorted list: only when the bitset is no larger than the list and cheaper
+    /// for the expected checks.
+    fn posting_prefers_bits(&self, expected_len: usize) -> bool {
+        let list_bytes = expected_len.saturating_mul(size_of::<PointOffsetType>());
+        let bits_bytes = self.total_points.div_ceil(8);
+        list_bytes >= bits_bytes && self.prefer_bits(expected_len, false)
     }
 
     /// Whether a bitset is cheaper than a sorted list for a set of `len` points.
@@ -112,33 +122,6 @@ impl PointSet {
         context: PointSetContext,
     ) -> Self {
         if context.prefer_bits(expected_len, false) {
-            let mut bits = BitVec::repeat(false, context.total_points);
-            for point in points {
-                set_bit(&mut bits, point);
-            }
-            return PointSet::Bits(bits);
-        }
-        let mut points: Vec<PointOffsetType> = points.into_iter().collect();
-        sort_unique(&mut points);
-        PointSet::Sorted(points)
-    }
-
-    /// A set read straight from a posting list of about `expected_len` points.
-    ///
-    /// A bitset is filled from the iterator, without collecting the points first, when the
-    /// merged set prefers one and the bitset is no larger than the list would be. A dense
-    /// posting then never holds a list of 4 bytes per point, which `collect` grows by
-    /// doubling: up to 12 bytes per point while it reallocates. A sparse posting is
-    /// collected into a sorted list, so a clause with several of them holds small lists
-    /// rather than one bitset each.
-    pub fn from_posting(
-        points: impl IntoIterator<Item = PointOffsetType>,
-        expected_len: usize,
-        context: PointSetContext,
-    ) -> Self {
-        let list_bytes = expected_len.saturating_mul(size_of::<PointOffsetType>());
-        let bits_bytes = context.total_points.div_ceil(8);
-        if list_bytes >= bits_bytes && context.prefer_bits(expected_len, false) {
             let mut bits = BitVec::repeat(false, context.total_points);
             for point in points {
                 set_bit(&mut bits, point);
@@ -268,6 +251,101 @@ impl PointSet {
     }
 }
 
+/// Builds the [`PointSet`] of a posting list of about `expected_len` points from the
+/// points an index pushes into it, without collecting them first.
+///
+/// A bitset is filled straight from the pushed points when the merged set prefers one
+/// and the bitset is no larger than the list would be. A dense posting then never holds
+/// a list of 4 bytes per point, which `collect` grows by doubling: up to 12 bytes per
+/// point while it reallocates. A sparse posting is collected into a sorted list, so a
+/// clause with several of them holds small lists rather than one bitset each. Nothing
+/// is allocated until the first point arrives.
+#[derive(Debug)]
+pub struct PointSetBuilder {
+    context: PointSetContext,
+    expected_len: usize,
+    state: BuilderState,
+}
+
+#[derive(Debug)]
+enum BuilderState {
+    /// No point pushed yet.
+    Empty,
+    Bits(BitVec),
+    /// Unsorted, possibly repeated points.
+    List(Vec<PointOffsetType>),
+}
+
+impl PointSetBuilder {
+    /// A builder for a posting list of about `expected_len` points.
+    pub fn for_posting(expected_len: usize, context: PointSetContext) -> Self {
+        Self {
+            context,
+            expected_len,
+            state: BuilderState::Empty,
+        }
+    }
+
+    /// The set of the pushed points.
+    pub fn build(self) -> PointSet {
+        match self.state {
+            BuilderState::Empty => PointSet::Sorted(Vec::new()),
+            BuilderState::Bits(bits) => PointSet::Bits(bits),
+            BuilderState::List(mut points) => {
+                sort_unique(&mut points);
+                PointSet::Sorted(points)
+            }
+        }
+    }
+
+    fn start(&self) -> BuilderState {
+        let Self {
+            context,
+            expected_len,
+            state: _,
+        } = *self;
+        if context.posting_prefers_bits(expected_len) {
+            BuilderState::Bits(BitVec::repeat(false, context.total_points))
+        } else {
+            // A list never needs more than one bitset worth of memory up front, even if
+            // the estimation is far off.
+            let max_reserved = context.total_points.div_ceil(8) / size_of::<PointOffsetType>();
+            BuilderState::List(Vec::with_capacity(expected_len.min(max_reserved)))
+        }
+    }
+}
+
+impl PointSink for PointSetBuilder {
+    fn push(&mut self, point: PointOffsetType) {
+        if let BuilderState::Empty = self.state {
+            self.state = self.start();
+        }
+        match &mut self.state {
+            BuilderState::Bits(bits) => set_bit(bits, point),
+            BuilderState::List(points) => points.push(point),
+            BuilderState::Empty => unreachable!("started above"),
+        }
+    }
+
+    fn extend_from_slice(&mut self, points: &[PointOffsetType]) {
+        if points.is_empty() {
+            return;
+        }
+        if let BuilderState::Empty = self.state {
+            self.state = self.start();
+        }
+        match &mut self.state {
+            BuilderState::Bits(bits) => {
+                for &point in points {
+                    set_bit(bits, point);
+                }
+            }
+            BuilderState::List(list) => list.extend_from_slice(points),
+            BuilderState::Empty => unreachable!("started above"),
+        }
+    }
+}
+
 /// Bitsets and sorted lists of `sets`, apart.
 fn split_sets(sets: Vec<PointSet>) -> (Vec<BitVec>, Vec<Vec<PointOffsetType>>) {
     let mut bitsets = Vec::new();
@@ -356,6 +434,18 @@ mod tests {
         }
     }
 
+    fn from_posting(
+        points: impl IntoIterator<Item = PointOffsetType>,
+        expected_len: usize,
+        context: PointSetContext,
+    ) -> PointSet {
+        let mut builder = PointSetBuilder::for_posting(expected_len, context);
+        for point in points {
+            builder.push(point);
+        }
+        builder.build()
+    }
+
     fn members(set: &PointSet, total: u32) -> Vec<PointOffsetType> {
         (0..total + 5).filter(|&id| set.contains(id)).collect()
     }
@@ -398,23 +488,46 @@ mod tests {
     }
 
     #[test]
-    fn from_posting_fills_a_bitset_only_when_it_is_no_larger_than_the_list() {
+    fn builder_fills_a_bitset_only_when_it_is_no_larger_than_the_list() {
         let total = 64_000;
         let ctx = context(total, total);
         // 2000 points * 4 B = 8000 B = the bitset size: bitset.
-        let dense = PointSet::from_posting((0..2000).rev(), 2000, ctx);
+        let dense = from_posting((0..2000).rev(), 2000, ctx);
         assert!(matches!(dense, PointSet::Bits(_)));
         assert_eq!(
             dense.iter().collect::<Vec<_>>(),
             (0..2000).collect::<Vec<_>>()
         );
         // 1000 points: a list is smaller than the bitset.
-        let sparse = PointSet::from_posting((0..1000).rev(), 1000, ctx);
+        let sparse = from_posting((0..1000).rev(), 1000, ctx);
         assert!(matches!(sparse, PointSet::Sorted(_)));
         assert_eq!(
             sparse.iter().collect::<Vec<_>>(),
             (0..1000).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn builder_takes_points_in_any_order_and_repeated() {
+        let total = 64_000;
+        let ctx = context(total, total);
+        // Two "postings" pushed one after another, overlapping, chunk by chunk.
+        let first: Vec<PointOffsetType> = (0..3000).collect();
+        let second: Vec<PointOffsetType> = (2000..5000).collect();
+        let expected: Vec<PointOffsetType> = (0..5000).collect();
+        for expected_len in [100, 5000] {
+            let mut builder = PointSetBuilder::for_posting(expected_len, ctx);
+            for chunk in first.chunks(128).chain(second.chunks(128)) {
+                builder.extend_from_slice(chunk);
+            }
+            builder.push(42);
+            let set = builder.build();
+            assert_eq!(set.iter().collect::<Vec<_>>(), expected);
+            assert_eq!(set.len(), expected.len());
+        }
+        // Nothing pushed: an empty set, and nothing allocated for it.
+        let empty = PointSetBuilder::for_posting(total, ctx).build();
+        assert!(matches!(&empty, PointSet::Sorted(points) if points.capacity() == 0));
     }
 
     #[test]

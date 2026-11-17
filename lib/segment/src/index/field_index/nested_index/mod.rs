@@ -53,6 +53,7 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -422,6 +423,14 @@ impl<I: NestedInnerIndex, M: ElementMapRead> PayloadFieldIndexRead for NestedFie
             let point = map.element_point(element)?;
             (!seen.replace(point as usize, true)).then_some(point)
         }))))
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

@@ -308,3 +308,27 @@ fn next_after_seek_yields_the_seeked_element_again() {
     assert_eq!(lens.advance_until_greater_or_equal(5).unwrap().id, 9);
     assert_eq!(lens.next().unwrap().id, 9);
 }
+
+#[test]
+fn test_for_each_id_chunk_yields_all_ids_in_order() {
+    check_various_lengths(|len| {
+        let mut builder = PostingBuilder::new();
+        // Gaps of 1..=3, so the chunks are bitpacked with more than one bit.
+        let ids: Vec<PointOffsetType> = (0..len).map(|i| i * 2 + i % 3).collect();
+        for &id in &ids {
+            builder.add_id(id);
+        }
+        let list: PostingList<()> = builder.build();
+
+        let mut chunks = Vec::new();
+        list.view()
+            .for_each_id_chunk(|chunk| chunks.push(chunk.to_vec()));
+
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| !chunk.is_empty() && chunk.len() <= CHUNK_LEN)
+        );
+        assert_eq!(chunks.concat(), ids);
+    });
+}

@@ -11,6 +11,7 @@ use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -60,6 +61,14 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyBoolIndex<S> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

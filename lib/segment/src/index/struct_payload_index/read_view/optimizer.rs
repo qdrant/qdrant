@@ -18,7 +18,7 @@ use crate::index::query_estimator::{
 };
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
+use crate::index::query_optimization::point_set::{PointSet, PointSetBuilder, PointSetContext};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, MinShould};
 use crate::vector_storage::VectorStorageRead;
@@ -375,13 +375,12 @@ where
             if !expected_checks.reads_posting(estimation.exp, index.is_cold()) {
                 continue;
             }
-            if let Some(points) = index.filter(condition)? {
-                let context = hint.point_set_context(self.id_tracker.total_point_count());
-                return Ok(Some(PointSet::from_posting(
-                    points,
-                    estimation.exp,
-                    context,
-                )));
+            let context = hint.point_set_context(self.id_tracker.total_point_count());
+            // Pushed straight into the set: an index that reads its postings in a callback
+            // doesn't collect them for an iterator first.
+            let mut builder = PointSetBuilder::for_posting(estimation.exp, context);
+            if index.filter_into(condition, &mut builder)? {
+                return Ok(Some(builder.build()));
             }
         }
         Ok(None)
