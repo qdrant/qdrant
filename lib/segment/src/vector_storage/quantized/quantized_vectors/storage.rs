@@ -1,6 +1,6 @@
 use std::fmt;
 
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::EncodedVectorsU8;
@@ -165,6 +165,42 @@ impl QuantizedVectorStorage {
             QuantizedVectorStorage::TQRamMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::TQMmapMulti(q) => q.heap_size_bytes(),
             QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.heap_size_bytes(),
+        }
+    }
+}
+
+impl QuantizedVectorStorage {
+    /// `score_internal` of a scorer over these vectors, without making the scorer's query.
+    pub(crate) fn score_internal(
+        &self,
+        point_a: PointOffsetType,
+        point_b: PointOffsetType,
+    ) -> ScoreType {
+        match self {
+            QuantizedVectorStorage::ScalarRam(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::ScalarMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::ScalarChunkedMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQRam(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQChunkedMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryRam(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryChunkedMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQRam(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQChunkedMmap(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::ScalarRamMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::ScalarMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQRamMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::PQChunkedMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryRamMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQRamMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQMmapMulti(q) => q.score_internal(point_a, point_b),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => q.score_internal(point_a, point_b),
         }
     }
 }
