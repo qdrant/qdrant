@@ -22,10 +22,7 @@ const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// Timeout for receiving response headers. A server that accepts the connection but never
 /// responds (e.g. a handler blocked on a lock) would otherwise stall the download forever,
 /// as `STREAM_READ_TIMEOUT` only covers the response body.
-#[cfg(not(test))]
 const RESPONSE_TIMEOUT: Duration = STREAM_READ_TIMEOUT;
-#[cfg(test)]
-const RESPONSE_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Read buffer between the HTTP body and the tar unpacker, so the unpacker
 /// doesn't block on the async runtime for every small read.
@@ -172,15 +169,34 @@ pub async fn download_and_unpack_tar(
     compute_checksum: bool,
     recovery_progress: Option<RecoveryProgressHandle>,
 ) -> Result<Option<String>, StorageError> {
+    download_and_unpack_tar_with_response_timeout(
+        client,
+        url,
+        target_dir,
+        compute_checksum,
+        recovery_progress,
+        RESPONSE_TIMEOUT,
+    )
+    .await
+}
+
+async fn download_and_unpack_tar_with_response_timeout(
+    client: &reqwest::Client,
+    url: &Url,
+    target_dir: &Path,
+    compute_checksum: bool,
+    recovery_progress: Option<RecoveryProgressHandle>,
+    response_timeout: Duration,
+) -> Result<Option<String>, StorageError> {
     log::debug!(
         "Streaming tar download from {url} to {}",
         target_dir.display()
     );
 
-    let response = tokio::time::timeout(RESPONSE_TIMEOUT, client.get(url.clone()).send())
+    let response = tokio::time::timeout(response_timeout, client.get(url.clone()).send())
         .await
         .map_err(|_| {
-            StorageError::timeout(RESPONSE_TIMEOUT, format!("waiting for response from {url}"))
+            StorageError::timeout(response_timeout, format!("waiting for response from {url}"))
         })??;
 
     if !response.status().is_success() {
@@ -349,7 +365,14 @@ mod tests {
 
         let result = tokio::time::timeout(
             Duration::from_secs(10),
-            download_and_unpack_tar(&reqwest::Client::new(), &url, temp_dir.path(), false, None),
+            download_and_unpack_tar_with_response_timeout(
+                &reqwest::Client::new(),
+                &url,
+                temp_dir.path(),
+                false,
+                None,
+                Duration::from_millis(100),
+            ),
         )
         .await
         .expect("download must time out on its own");
