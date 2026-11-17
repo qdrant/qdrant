@@ -358,6 +358,13 @@ fn u8_kernels_match_fallback() {
         let max = if depth % 2 == 0 { 127 } else { 2 };
         let operands = TestOperands::new(&mut rng, depth, combine, |rng| rng.random_range(0..=max));
         for (j, &shape) in GEMM_SHAPES.iter().enumerate() {
+            // Its many blocks only at the shallow depths: the depth slices are covered by the
+            // other shapes, and deep, this shape took most of the test's time
+            if depth > 64
+                && let Shape::Rows(600) = shape
+            {
+                continue;
+            }
             let k = [4, 1, 10][j % 3];
             operands.check(&mut rng, shape, k, &mut reused);
         }
