@@ -1372,11 +1372,8 @@ impl RaftMessageBroker {
 
     fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
         let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
-        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(QueuedRaftMessage {
-            index: 0,
-            message: RaftMessage::default(),
-            uri: None,
-        });
+        let (heartbeat_tx, heartbeat_rx) =
+            tokio::sync::watch::channel(QueuedRaftMessage::default());
 
         let task = RaftMessageSender {
             messages: messages_rx,
@@ -1400,7 +1397,7 @@ impl RaftMessageBroker {
 }
 
 /// Raft message queued for a [`RaftMessageSender`] task.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct QueuedRaftMessage {
     /// Sequence number of the message, used to skip outdated heartbeats.
     index: usize,
