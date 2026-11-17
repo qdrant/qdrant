@@ -1209,3 +1209,29 @@ mod recreate_optimizers_state_tests {
         assert!(!state.finish_run(), "no further requests, so it stops");
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see the macro's docs.
+common::impl_send_sync_checked!(Collection {
+    id,
+    shards_holder,
+    collection_config,
+    shared_storage_config,
+    payload_index_schema,
+    optimizers_overwrite,
+    this_peer_id,
+    path,
+    snapshots_path,
+    channel_service,
+    transfer_tasks,
+    request_shard_transfer_cb,
+    notify_peer_failure_cb,
+    abort_shard_transfer_cb,
+    init_time,
+    is_initialized,
+    update_runtime,
+    search_runtime,
+    optimizer_resource_budget,
+    collection_stats_cache,
+    shard_clean_tasks,
+    recreate_optimizers_state,
+});
