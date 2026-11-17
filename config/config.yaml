@@ -115,6 +115,11 @@ storage:
   #   vectors, HNSW graph and payload storage.
   #low_memory_mode: disabled
 
+  # If true - qdrant will run in read-only mode, avoiding any writes to the filesystem.
+  # This is useful for running on read-only filesystems (e.g., containers with readOnlyRootFilesystem).
+  # Default: false
+  #read_only: false
+
   # Maximum number of concurrent updates to shard replicas
   # If `null` - maximum concurrency is used.
   update_concurrency: null

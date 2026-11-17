@@ -125,6 +125,10 @@ pub struct StorageConfig {
     /// Provided value will be used error message for unavailable requests.
     #[serde(default)]
     pub recovery_mode: Option<String>,
+    /// If true - qdrant will run in read-only mode, avoiding any writes to the filesystem.
+    /// This is useful for running on read-only filesystems (e.g., containers with readOnlyRootFilesystem).
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default)]
     pub update_concurrency: Option<NonZeroUsize>,
     /// Default method used for transferring shards.
@@ -166,6 +170,7 @@ impl StorageConfig {
             self.hnsw_global_config.clone(),
             self.performance.load_concurrency.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
+            self.read_only,
         )
     }
 }

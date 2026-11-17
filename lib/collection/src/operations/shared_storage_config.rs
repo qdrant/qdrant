@@ -42,6 +42,8 @@ pub struct SharedStorageConfig {
     pub hnsw_global_config: HnswGlobalConfig,
     pub load_concurrency_config: LoadConcurrencyConfig,
     pub search_thread_count: usize,
+    /// If true - storage will run in read-only mode, avoiding any writes to the filesystem.
+    pub read_only: bool,
 }
 
 impl Default for SharedStorageConfig {
@@ -62,6 +64,7 @@ impl Default for SharedStorageConfig {
             hnsw_global_config: HnswGlobalConfig::default(),
             load_concurrency_config: LoadConcurrencyConfig::default(),
             search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
+            read_only: false,
         }
     }
 }
@@ -84,6 +87,7 @@ impl SharedStorageConfig {
         hnsw_global_config: HnswGlobalConfig,
         load_concurrency_config: LoadConcurrencyConfig,
         search_thread_count: usize,
+        read_only: bool,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -105,6 +109,7 @@ impl SharedStorageConfig {
             hnsw_global_config,
             load_concurrency_config,
             search_thread_count,
+            read_only,
         }
     }
 }

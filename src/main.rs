@@ -133,6 +133,11 @@ struct Args {
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Run in read-only mode, avoiding any writes to the filesystem.
+    /// Useful for running on read-only filesystems (e.g., containers with readOnlyRootFilesystem).
+    #[arg(long, action, default_value_t = false, env = "QDRANT_READ_ONLY")]
+    read_only: bool,
 }
 
 //
@@ -383,13 +388,22 @@ fn main() -> anyhow::Result<()> {
     // Settings & global state
     //
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
+
+    // Merge CLI read-only flag with config setting
+    if args.read_only {
+        settings.storage.read_only = true;
+    }
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
 
     // Set global low-memory mode, sourced from configuration
     init_low_memory_mode(settings.storage.low_memory_mode);
+
+    if settings.storage.read_only {
+        log::info!("Running in read-only mode - filesystem writes will be disabled");
+    }
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
     let reporting_id = TelemetryCollector::generate_id();
@@ -404,7 +418,11 @@ fn main() -> anyhow::Result<()> {
             .with_top_level_directive(settings.log_level.clone()),
     )?;
 
-    remove_started_file_indicator();
+    if !settings.storage.read_only {
+        remove_started_file_indicator();
+    } else {
+        log::debug!("Read-only mode: skipping startup indicator file removal");
+    }
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
@@ -475,7 +493,17 @@ fn main() -> anyhow::Result<()> {
     // Storage directory & filesystem compatibility
     //
 
-    fs::create_dir_all(&settings.storage.storage_path)?;
+    if !settings.storage.read_only {
+        fs::create_dir_all(&settings.storage.storage_path)?;
+    } else {
+        // In read-only mode, verify the storage path exists but don't create it
+        if !settings.storage.storage_path.exists() {
+            log::warn!(
+                "Read-only mode: storage path {} does not exist, Qdrant may not function correctly",
+                settings.storage.storage_path.display()
+            );
+        }
+    }
 
     let mmaps_working = check_filesystem_compatibility(&settings.storage.storage_path);
     let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
@@ -502,15 +530,22 @@ fn main() -> anyhow::Result<()> {
 
     let is_distributed_deployment = settings.cluster.enabled;
 
-    let restored_collections = recover_collections_from_snapshot_args(
-        args.storage_snapshot,
-        args.snapshot,
-        args.force_snapshot,
-        settings.storage.temp_path.as_deref(),
-        &settings.storage.storage_path,
-        persistent_consensus_state.this_peer_id(),
-        is_distributed_deployment,
-    );
+    let restored_collections = if settings.storage.read_only {
+        if args.storage_snapshot.is_some() || args.snapshot.is_some() {
+            log::warn!("Read-only mode: skipping snapshot recovery (--snapshot/--storage-snapshot ignored)");
+        }
+        vec![]
+    } else {
+        recover_collections_from_snapshot_args(
+            args.storage_snapshot,
+            args.snapshot,
+            args.force_snapshot,
+            settings.storage.temp_path.as_deref(),
+            &settings.storage.storage_path,
+            persistent_consensus_state.this_peer_id(),
+            is_distributed_deployment,
+        )
+    };
 
     //
     // Resource budgets
@@ -815,7 +850,11 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "service_debug")]
     spawn_deadlock_checker();
 
-    touch_started_file_indicator();
+    if !settings.storage.read_only {
+        touch_started_file_indicator();
+    } else {
+        log::debug!("Read-only mode: skipping startup indicator file creation");
+    }
 
     #[cfg(all(unix, debug_assertions))]
     {
