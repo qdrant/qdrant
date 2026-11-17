@@ -115,7 +115,9 @@ fn two_way_share(index: &HNSWIndex) -> f64 {
     two_way as f64 / total as f64
 }
 
-const OLD_INTEGER_VALUES: usize = 8;
+// With fewer, the segment is too small: the block of the new value exceeds the largest block
+// the healed graph builds, `BlockFilter::fits`.
+const OLD_INTEGER_VALUES: usize = 4;
 const POINTS_PER_INTEGER_VALUE: usize = 600;
 const NEW_INTEGER_VALUE_POINTS: usize = 350;
 
@@ -189,6 +191,13 @@ fn test_heal_new_integer_value(#[values(0, 16)] m: usize, #[values(false, true)]
         "m={m} range={range}: links among new value points per point: healed \
          {healed_degree:.2}, fresh {fresh_degree:.2}; old links kept: healed {healed_kept:.3}, \
          fresh {fresh_kept:.3}"
+    );
+    // The main graph alone gives each new value point about one such link: without a block for
+    // the new value in the fresh build, the next check would pass without testing anything.
+    assert!(
+        fresh_degree > 4.0,
+        "fresh build made no block for the new value ({fresh_degree:.2}): the test no longer \
+         exercises healing it",
     );
     assert!(
         healed_degree >= fresh_degree / 2.0,
