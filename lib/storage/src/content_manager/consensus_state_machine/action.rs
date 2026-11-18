@@ -26,6 +26,8 @@ use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientErr
 use crate::content_manager::errors::StorageResult;
 use crate::quota::QuotaConfig;
 
+mod display;
+
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
