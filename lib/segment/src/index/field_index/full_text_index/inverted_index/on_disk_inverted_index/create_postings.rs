@@ -166,7 +166,7 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
 
     file.sync_all()?;
     drop(file);
-    common::fs::persist_with_retry(temp_path, &path)?;
+    common::fs::persist_while_held(temp_path, &path)?;
 
     Ok(())
 }

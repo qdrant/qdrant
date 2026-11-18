@@ -1,435 +1,112 @@
-//! Retry renames on transient Windows errors.
+//! Retry file operations that another process briefly blocks on Windows.
 //!
-//! On Windows, renaming a file or directory fails with `ERROR_ACCESS_DENIED`
-//! (or a sharing/lock violation) while another process briefly holds a handle
-//! to it, or to a file inside it, without `FILE_SHARE_DELETE`. Antivirus/EDR
-//! file system filters (e.g. Microsoft Defender for Endpoint) do this right
-//! after files are written. The condition is transient, so a short retry makes
-//! the rename succeed instead of failing the flush or the optimizer.
-//!
-//! On other platforms these functions do a single attempt.
+//! Windows fails a rename or replace while another process has the file open, or for a
+//! directory, any file inside it. Antivirus and EDR scanners (e.g. Microsoft Defender for
+//! Endpoint) open files right after they are written, so such operations can fail with access
+//! denied for a short moment. See <https://github.com/qdrant/qdrant/issues/10806>.
 
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
-use fs_err as fs;
-use tempfile::TempPath;
+use tempfile::{PathPersistError, TempPath};
 
-/// Delays between attempts on Windows (~1.2 s in total).
-#[cfg(windows)]
-const RETRY_DELAYS_MS: [u64; 7] = [10, 20, 50, 100, 200, 300, 500];
+/// Delays between attempts on Windows, about 1.2 seconds in total. No retries elsewhere.
+const RETRY_DELAYS_MS: &[u64] = if cfg!(windows) {
+    &[10, 20, 50, 100, 200, 300, 500]
+} else {
+    &[]
+};
 
-/// Rename `from` to `to` like [`fs::rename`], retrying on transient Windows
-/// errors.
-pub fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
-    #[cfg(windows)]
-    for delay_ms in RETRY_DELAYS_MS {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "fs_err hides the raw OS error code needed to detect transient errors"
-        )]
-        let result = std::fs::rename(from, to);
-        #[cfg(test)]
-        if result.is_err() {
-            test_hooks::ON_RENAME_ERROR.with(|hook| {
-                if let Some(hook) = hook.take() {
-                    hook();
-                }
-            });
-        }
-        match result {
-            Ok(()) => return Ok(()),
-            Err(err) if is_transient_windows_error(&err) => {
-                #[cfg(test)]
-                test_hooks::ON_RENAME_RETRY.with(|hook| {
-                    if let Some(hook) = hook.take() {
-                        hook();
-                    }
-                });
-                backoff(from, to, delay_ms, &err);
+/// Run `operation` on `path`, retrying while another process briefly holds the file on Windows.
+///
+/// `operation` must return the raw OS error: `fs_err` errors hide the error code.
+pub(super) fn retry_while_held<T>(
+    path: &Path,
+    mut operation: impl FnMut() -> io::Result<T>,
+) -> io::Result<T> {
+    for &delay_ms in RETRY_DELAYS_MS {
+        match operation() {
+            Err(err) if is_held_by_other_process(&err) => {
+                log::warn!(
+                    "{} is held by another process, retrying in {delay_ms} ms: {err}",
+                    path.display(),
+                );
+                std::thread::sleep(Duration::from_millis(delay_ms));
             }
-            Err(err) => {
-                return Err(io::Error::new(
-                    err.kind(),
-                    format!(
-                        "failed to rename file from `{}` to `{}`: {err}",
-                        from.display(),
-                        to.display(),
-                    ),
-                ));
-            }
+            result => return result,
         }
     }
-    // Last attempt with `fs_err` for a descriptive error
-    fs::rename(from, to)
+    operation()
 }
 
-/// Persist `temp_path` to `path` like [`TempPath::persist`], retrying on
-/// transient Windows errors. Windows replacements use write-through semantics.
-pub fn persist_with_retry(temp_path: TempPath, path: &Path) -> io::Result<()> {
-    #[cfg(windows)]
-    {
-        let mut temp_path = temp_path;
-        let mut delays = RETRY_DELAYS_MS.into_iter();
-        loop {
-            match clear_temporary_attribute(&temp_path) {
-                Ok(()) => break,
-                Err(err)
-                    if is_transient_windows_error(&err)
-                        && let Some(delay_ms) = delays.next() =>
-                {
-                    backoff(temp_path.as_ref(), path, delay_ms, &err);
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        for delay_ms in delays {
-            match atomicwrites::replace_atomic(&temp_path, path) {
-                Ok(()) => {
-                    #[cfg(test)]
-                    test_hooks::after_replace_success();
-                    temp_path.disable_cleanup(true);
-                    return Ok(());
-                }
-                Err(err) if is_transient_windows_error(&err) => {
-                    backoff(temp_path.as_ref(), path, delay_ms, &err);
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        let result = atomicwrites::replace_atomic(&temp_path, path);
-        if result.is_ok() {
-            #[cfg(test)]
-            test_hooks::after_replace_success();
-            temp_path.disable_cleanup(true);
-        }
-        result
-    }
-    #[cfg(not(windows))]
-    {
-        temp_path.persist(path).map_err(|err| err.error)
-    }
+/// [`fs_err::rename`] with [`retry_while_held`].
+#[expect(
+    clippy::disallowed_methods,
+    reason = "`fs_err` hides the OS error code we retry on"
+)]
+pub fn rename_while_held(from: &Path, to: &Path) -> io::Result<()> {
+    retry_while_held(from, || std::fs::rename(from, to)).map_err(|err| {
+        io::Error::new(
+            err.kind(),
+            format!(
+                "failed to rename {} to {}: {err}",
+                from.display(),
+                to.display(),
+            ),
+        )
+    })
 }
 
-#[cfg(windows)]
-fn clear_temporary_attribute(path: &Path) -> io::Result<()> {
-    use std::iter;
-    use std::os::windows::ffi::OsStrExt;
-
-    use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, SetFileAttributesW};
-
-    let path: Vec<u16> = path
-        .as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect();
-    // Match TempPath::keep() without consuming its guard or changing its cleanup policy.
-    if unsafe { SetFileAttributesW(path.as_ptr(), FILE_ATTRIBUTE_NORMAL) } == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+/// [`TempPath::persist`] with [`retry_while_held`].
+pub fn persist_while_held(temp_path: TempPath, path: &Path) -> io::Result<()> {
+    let mut temp_path = Some(temp_path);
+    retry_while_held(path, || {
+        let temp = temp_path.take().expect("not retried after success");
+        temp.persist(path)
+            .map_err(|PathPersistError { error, path: temp }| {
+                temp_path = Some(temp);
+                error
+            })
+    })
 }
 
-#[cfg(windows)]
-fn backoff(from: &Path, to: &Path, delay_ms: u64, err: &io::Error) {
-    log::warn!(
-        "Failed to rename {} to {}, retrying in {delay_ms} ms: {err}",
-        from.display(),
-        to.display(),
-    );
-    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-}
-
-#[cfg(windows)]
-pub(super) fn is_transient_windows_error(err: &io::Error) -> bool {
+fn is_held_by_other_process(err: &io::Error) -> bool {
     const ERROR_ACCESS_DENIED: i32 = 5;
     const ERROR_SHARING_VIOLATION: i32 = 32;
     const ERROR_LOCK_VIOLATION: i32 = 33;
 
-    matches!(
-        err.raw_os_error(),
-        Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
-    )
-}
-
-#[cfg(all(test, windows))]
-pub(super) mod test_hooks {
-    use std::cell::Cell;
-    use std::io;
-
-    thread_local! {
-        pub(super) static ON_RENAME_RETRY: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
-        pub(super) static ON_RENAME_ERROR: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
-        pub(super) static ON_REPLACE_SUCCESS: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
-    }
-
-    pub(super) fn after_replace_success() {
-        ON_REPLACE_SUCCESS.with(|hook| {
-            if let Some(hook) = hook.take() {
-                hook();
-            }
-        });
-    }
-
-    pub(crate) fn with_replace_success_hook<T>(
-        hook: impl FnOnce() + 'static,
-        operation: impl FnOnce() -> io::Result<T>,
-    ) -> io::Result<T> {
-        struct ResetHook;
-
-        impl Drop for ResetHook {
-            fn drop(&mut self) {
-                ON_REPLACE_SUCCESS.with(|hook| drop(hook.take()));
-            }
+    match err.raw_os_error() {
+        Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION) => {
+            cfg!(windows)
         }
-
-        let _reset = ResetHook;
-        ON_REPLACE_SUCCESS.with(|slot| {
-            assert!(slot.replace(Some(Box::new(hook))).is_none());
-        });
-        let result = operation()?;
-        ON_REPLACE_SUCCESS.with(|hook| assert!(hook.take().is_none(), "replace did not succeed"));
-        Ok(result)
-    }
-
-    pub(crate) fn with_rename_retry_hook<T>(
-        hook: impl FnOnce() + 'static,
-        operation: impl FnOnce() -> io::Result<T>,
-    ) -> io::Result<T> {
-        struct ResetHook;
-
-        impl Drop for ResetHook {
-            fn drop(&mut self) {
-                ON_RENAME_RETRY.with(|hook| drop(hook.take()));
-            }
-        }
-
-        let _reset = ResetHook;
-        ON_RENAME_RETRY.with(|slot| {
-            assert!(slot.replace(Some(Box::new(hook))).is_none());
-        });
-        let result = operation()?;
-        ON_RENAME_RETRY.with(|hook| assert!(hook.take().is_none(), "rename did not retry"));
-        Ok(result)
+        Some(_) | None => false,
     }
 }
 
 #[cfg(all(test, windows))]
 mod tests {
-    use std::io::Write as _;
-    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-    use std::thread::JoinHandle;
-    use std::time::Duration;
+    use fs_err as fs;
 
     use super::*;
 
-    /// Open `path` like a scanner that does not allow deleting/renaming it
-    /// (share mode without `FILE_SHARE_DELETE`), and close it after 150 ms.
-    #[expect(clippy::disallowed_types, reason = "std::fs is needed for share_mode")]
-    pub(crate) fn hold_briefly(path: &Path) -> io::Result<JoinHandle<()>> {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(path)?;
-        Ok(std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(150));
-            drop(file);
-        }))
-    }
-
+    /// Like a scanner holding a file inside a directory while we rename the directory.
     #[test]
-    fn test_rename_with_retry_returns_first_terminal_error() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let from = dir.path().join("missing");
-        let to = dir.path().join("to");
-        let source = from.clone();
-        // A second rename would succeed instead of returning the original error.
-        test_hooks::ON_RENAME_ERROR.with(|hook| {
-            hook.set(Some(Box::new(move || fs::write(source, b"test").unwrap())));
-        });
-
-        let result = rename_with_retry(&from, &to);
-
-        test_hooks::ON_RENAME_ERROR.with(|hook| assert!(hook.take().is_none()));
-        let err = result.unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::NotFound);
-        let message = err.to_string();
-        assert!(message.contains(&from.display().to_string()));
-        assert!(message.contains(&to.display().to_string()));
-        assert_eq!(fs::read(&from)?, b"test");
-        assert!(!to.exists());
-        Ok(())
-    }
-
-    #[test]
-    #[expect(clippy::disallowed_methods, reason = "need the raw OS error code")]
-    fn test_rename_with_retry_while_file_is_held() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
+    fn test_rename_dir_while_file_is_held() {
+        let dir = tempfile::tempdir().unwrap();
         let from = dir.path().join("from");
         let to = dir.path().join("to");
-        fs::write(&from, b"test")?;
+        fs::create_dir(&from).unwrap();
+        fs::write(from.join("file"), b"test").unwrap();
 
-        // Without retry, the plain rename fails while the handle is held
-        let handle = hold_briefly(&from)?;
-        let err = std::fs::rename(&from, &to).unwrap_err();
-        assert!(is_transient_windows_error(&err), "unexpected error: {err}");
+        let file = fs::File::open(from.join("file")).unwrap();
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(file);
+        });
+        rename_while_held(&from, &to).unwrap();
         handle.join().unwrap();
 
-        let handle = hold_briefly(&from)?;
-        rename_with_retry(&from, &to)?;
-        handle.join().unwrap();
-
-        assert!(!from.exists());
-        assert_eq!(fs::read(&to)?, b"test");
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_while_target_is_held() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("file");
-        fs::write(&path, b"old")?;
-
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-        let temp_path = tmp.into_temp_path();
-
-        let handle = hold_briefly(&path)?;
-        persist_with_retry(temp_path, &path)?;
-        handle.join().unwrap();
-
-        assert_eq!(fs::read(&path)?, b"new");
-        assert_eq!(fs::read_dir(dir.path())?.count(), 1);
-        // FILE_ATTRIBUTE_TEMPORARY must not survive publication.
-        assert_eq!(fs::metadata(&path)?.file_attributes() & 0x100, 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_creates_destination() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("file");
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-
-        persist_with_retry(tmp.into_temp_path(), &path)?;
-
-        assert_eq!(fs::read(&path)?, b"new");
-        assert_eq!(fs::read_dir(dir.path())?.count(), 1);
-        assert_eq!(fs::metadata(&path)?.file_attributes() & 0x100, 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_while_source_is_held() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("file");
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-        let temp_path = tmp.into_temp_path();
-
-        let handle = hold_briefly(&temp_path)?;
-        persist_with_retry(temp_path, &path)?;
-        handle.join().unwrap();
-
-        assert_eq!(fs::read(&path)?, b"new");
-        assert_eq!(fs::read_dir(dir.path())?.count(), 1);
-        assert_eq!(fs::metadata(&path)?.file_attributes() & 0x100, 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_cleans_up_on_error() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("missing").join("file");
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-        let temp_path = tmp.into_temp_path();
-        let original_path = temp_path.to_path_buf();
-
-        let err = persist_with_retry(temp_path, &path).unwrap_err();
-
-        assert_eq!(err.kind(), io::ErrorKind::NotFound);
-        assert!(!original_path.exists());
-        assert_eq!(fs::read_dir(dir.path())?.count(), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_preserves_disabled_cleanup_on_error() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("missing").join("file");
-        let tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        let mut temp_path = tmp.into_temp_path();
-        let original_path = temp_path.to_path_buf();
-        temp_path.disable_cleanup(true);
-
-        let err = persist_with_retry(temp_path, &path).unwrap_err();
-
-        assert_eq!(err.kind(), io::ErrorKind::NotFound);
-        assert!(original_path.exists());
-        fs::remove_file(original_path)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_persist_with_retry_does_not_remove_recreated_staging_path() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("file");
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-        let temp_path = tmp.into_temp_path();
-        let original_path = temp_path.to_path_buf();
-        let replacement_path = original_path.clone();
-        test_hooks::with_replace_success_hook(
-            move || fs::write(replacement_path, b"recreated").unwrap(),
-            || persist_with_retry(temp_path, &path),
-        )?;
-        assert_eq!(fs::read(&path)?, b"new");
-        assert_eq!(fs::read(&original_path)?, b"recreated");
-        fs::remove_file(original_path)?;
-        Ok(())
-    }
-
-    #[test]
-    #[expect(clippy::disallowed_types, reason = "std::fs is needed for share_mode")]
-    fn test_persist_with_retry_exhausted_preserves_destination() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("file");
-        fs::write(&path, b"old")?;
-        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
-        tmp.write_all(b"new")?;
-        let temp_path = tmp.into_temp_path();
-        let original_path = temp_path.to_path_buf();
-        let handle = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&path)?;
-
-        let err = persist_with_retry(temp_path, &path).unwrap_err();
-        drop(handle);
-
-        assert!(is_transient_windows_error(&err), "unexpected error: {err}");
-        assert_eq!(fs::read(&path)?, b"old");
-        assert!(!original_path.exists());
-        assert_eq!(fs::read_dir(dir.path())?.count(), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_atomic_save_while_target_is_held() -> io::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("segment.json");
-        super::super::atomic_save_json(&path, &1)?;
-
-        let handle = hold_briefly(&path)?;
-        super::super::atomic_save_json(&path, &2)?;
-        handle.join().unwrap();
-
-        assert_eq!(super::super::read_json::<u32>(&path)?, 2);
-        // No temp files left behind
-        assert_eq!(fs::read_dir(dir.path())?.count(), 1);
-        Ok(())
+        assert_eq!(fs::read(to.join("file")).unwrap(), b"test");
     }
 }

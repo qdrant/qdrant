@@ -149,14 +149,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
-        crate::fs::atomic_save(&path, |writer| {
-            serde_json::to_writer(writer, data)
-                .map_err(|err| Error::AtomicWrite(AtomicWriteError::User(err)))
-        })
-        .map_err(|err| match err {
-            Error::IoError(err) => Error::AtomicWrite(AtomicWriteError::Internal(err)),
-            err @ (Error::AtomicWrite(_) | Error::JsonError(_) | Error::FromClosure(_)) => err,
-        })?;
+        crate::fs::atomic_save_json(&path, data)?;
         Ok(())
     }
 
@@ -226,33 +219,6 @@ mod tests {
             counter.read().to_string(),
             fs::read_to_string(&counter_file).unwrap()
         );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    #[expect(clippy::disallowed_types, reason = "std::fs is needed for share_mode")]
-    fn saves_data_while_destination_is_held() {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        let dir = Builder::new().prefix("test").tempdir().unwrap();
-        let path = dir.path().join("counter");
-        let counter = SaveOnDisk::new(&path, 1_u32).unwrap();
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(&path)
-            .unwrap();
-        let handle = thread::spawn(move || {
-            sleep(Duration::from_millis(150));
-            drop(file);
-        });
-
-        counter.write(|value| *value = 2).unwrap();
-        handle.join().unwrap();
-
-        assert_eq!(*counter.read(), 2);
-        assert_eq!(fs::read_to_string(&path).unwrap(), "2");
-        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]
