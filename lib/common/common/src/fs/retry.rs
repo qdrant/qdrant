@@ -69,38 +69,65 @@ pub fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
 pub fn persist_with_retry(temp_path: TempPath, path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
-        let mut delays = RETRY_DELAYS_MS.into_iter();
         let mut temp_path = temp_path;
-        // Clear Windows temporary attributes, then restore cleanup ownership.
-        let temp_path = loop {
-            match temp_path.keep() {
-                Ok(path) => break TempPath::try_from_path(path)?,
-                Err(err) => {
-                    if is_transient_windows_error(&err.error)
-                        && let Some(delay_ms) = delays.next()
-                    {
-                        backoff(&err.path, path, delay_ms, &err.error);
-                        temp_path = err.path;
-                    } else {
-                        return Err(err.error);
-                    }
-                }
-            }
-        };
-        for delay_ms in delays {
-            match atomicwrites::replace_atomic(&temp_path, path) {
-                Ok(()) => return Ok(()),
-                Err(err) if is_transient_windows_error(&err) => {
-                    backoff(&temp_path, path, delay_ms, &err);
+        let mut delays = RETRY_DELAYS_MS.into_iter();
+        loop {
+            match clear_temporary_attribute(&temp_path) {
+                Ok(()) => break,
+                Err(err)
+                    if is_transient_windows_error(&err)
+                        && let Some(delay_ms) = delays.next() =>
+                {
+                    backoff(temp_path.as_ref(), path, delay_ms, &err);
                 }
                 Err(err) => return Err(err),
             }
         }
-        atomicwrites::replace_atomic(&temp_path, path)
+        for delay_ms in delays {
+            match atomicwrites::replace_atomic(&temp_path, path) {
+                Ok(()) => {
+                    #[cfg(test)]
+                    test_hooks::after_replace_success();
+                    temp_path.disable_cleanup(true);
+                    return Ok(());
+                }
+                Err(err) if is_transient_windows_error(&err) => {
+                    backoff(temp_path.as_ref(), path, delay_ms, &err);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        let result = atomicwrites::replace_atomic(&temp_path, path);
+        if result.is_ok() {
+            #[cfg(test)]
+            test_hooks::after_replace_success();
+            temp_path.disable_cleanup(true);
+        }
+        result
     }
     #[cfg(not(windows))]
     {
         temp_path.persist(path).map_err(|err| err.error)
+    }
+}
+
+#[cfg(windows)]
+fn clear_temporary_attribute(path: &Path) -> io::Result<()> {
+    use std::iter;
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, SetFileAttributesW};
+
+    let path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    // Match TempPath::keep() without consuming its guard or changing its cleanup policy.
+    if unsafe { SetFileAttributesW(path.as_ptr(), FILE_ATTRIBUTE_NORMAL) } == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -134,6 +161,36 @@ pub(super) mod test_hooks {
     thread_local! {
         pub(super) static ON_RENAME_RETRY: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
         pub(super) static ON_RENAME_ERROR: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
+        pub(super) static ON_REPLACE_SUCCESS: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn after_replace_success() {
+        ON_REPLACE_SUCCESS.with(|hook| {
+            if let Some(hook) = hook.take() {
+                hook();
+            }
+        });
+    }
+
+    pub(crate) fn with_replace_success_hook<T>(
+        hook: impl FnOnce() + 'static,
+        operation: impl FnOnce() -> io::Result<T>,
+    ) -> io::Result<T> {
+        struct ResetHook;
+
+        impl Drop for ResetHook {
+            fn drop(&mut self) {
+                ON_REPLACE_SUCCESS.with(|hook| drop(hook.take()));
+            }
+        }
+
+        let _reset = ResetHook;
+        ON_REPLACE_SUCCESS.with(|slot| {
+            assert!(slot.replace(Some(Box::new(hook))).is_none());
+        });
+        let result = operation()?;
+        ON_REPLACE_SUCCESS.with(|hook| assert!(hook.take().is_none(), "replace did not succeed"));
+        Ok(result)
     }
 
     pub(crate) fn with_rename_retry_hook<T>(
@@ -286,7 +343,8 @@ mod tests {
     fn test_persist_with_retry_cleans_up_on_error() -> io::Result<()> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("missing").join("file");
-        let tmp = tempfile::NamedTempFile::new_in(dir.path())?;
+        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
+        tmp.write_all(b"new")?;
         let temp_path = tmp.into_temp_path();
         let original_path = temp_path.to_path_buf();
 
@@ -295,6 +353,42 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         assert!(!original_path.exists());
         assert_eq!(fs::read_dir(dir.path())?.count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_persist_with_retry_preserves_disabled_cleanup_on_error() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("missing").join("file");
+        let tmp = tempfile::NamedTempFile::new_in(dir.path())?;
+        let mut temp_path = tmp.into_temp_path();
+        let original_path = temp_path.to_path_buf();
+        temp_path.disable_cleanup(true);
+
+        let err = persist_with_retry(temp_path, &path).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        assert!(original_path.exists());
+        fs::remove_file(original_path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_persist_with_retry_does_not_remove_recreated_staging_path() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("file");
+        let mut tmp = tempfile::NamedTempFile::new_in(dir.path())?;
+        tmp.write_all(b"new")?;
+        let temp_path = tmp.into_temp_path();
+        let original_path = temp_path.to_path_buf();
+        let replacement_path = original_path.clone();
+        test_hooks::with_replace_success_hook(
+            move || fs::write(replacement_path, b"recreated").unwrap(),
+            || persist_with_retry(temp_path, &path),
+        )?;
+        assert_eq!(fs::read(&path)?, b"new");
+        assert_eq!(fs::read(&original_path)?, b"recreated");
+        fs::remove_file(original_path)?;
         Ok(())
     }
 
