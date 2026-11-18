@@ -51,12 +51,14 @@ impl RecoverableWal {
         &self,
         operation: &mut OperationWithClockTag,
     ) -> shard::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
-        // Serialize outside the locks. Only a rejection corrects the clock tag, and rejected
-        // operations are not written, so the record matches what gets written.
+        // Serialize operation before taking the locks. The clock check below can change
+        // `operation.clock_tag`, but only when it rejects the operation, and then nothing is
+        // written. So we never write a record with an outdated clock tag.
         let record = WalRawRecord::new(operation)?;
 
-        // Take both locks before advancing the clock, in the order `load_from_wal` uses. Nothing
-        // below awaits, so a cancelled caller can't leave the clock claiming an unwritten operation.
+        // Take both locks before advancing the clock, in the order `load_from_wal` uses. If the
+        // caller is cancelled while waiting for a lock, the clock is not advanced yet. After that
+        // nothing awaits, so the clock advance and the WAL write can't be separated by a cancel.
         let mut newest_clocks = self.newest_clocks.lock().await;
         let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;
 
@@ -72,7 +74,8 @@ impl RecoverableWal {
         match wal_lock.write(&record) {
             Ok(op_num) => Ok((op_num, wal_lock)),
             Err(err) => {
-                // The operation is not in the WAL, so the clock must not claim it
+                // The operation is not in the WAL, so undo the clock advance. Otherwise WAL delta
+                // recovery would treat the operation as received and never send it again.
                 newest_clocks.restore_clock(*clock_tag, previous_clock);
                 Err(err)
             }
@@ -464,7 +467,7 @@ mod tests {
     }
 
     /// A write cancelled while waiting for the WAL lock never reaches the WAL, so the recovery
-    /// point must not claim it: WAL delta from a peer that has the operation must still send it.
+    /// point must not include it: a peer that has the operation must still send it in WAL delta.
     #[tokio::test]
     async fn test_resolve_wal_delta_after_cancelled_write() {
         let (a_wal, _a_wal_dir) = fixture_empty_wal();
