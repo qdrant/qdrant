@@ -18,6 +18,7 @@ impl CollectionUpdater {
         segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
         operation_result: &CollectionResult<usize>,
+        replay: bool,
     ) {
         match operation_result {
             Ok(_) => {
@@ -31,6 +32,8 @@ impl CollectionUpdater {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
                     log::error!("Update operation failed: {collection_error}")
+                } else if replay && collection_error.is_missing_point() {
+                    // Expected on replay, see `Self::replay`. The caller reports these.
                 } else {
                     log::warn!("Update operation declined: {collection_error}")
                 }
@@ -38,6 +41,7 @@ impl CollectionUpdater {
         }
     }
 
+    /// Apply a new update operation.
     pub fn update(
         segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
@@ -45,6 +49,50 @@ impl CollectionUpdater {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> CollectionResult<usize> {
+        Self::apply(
+            segments,
+            op_num,
+            operation,
+            update_operation_lock,
+            update_tracker,
+            max_segment_size_bytes,
+            false,
+        )
+    }
+
+    /// Re-apply an operation read back from the WAL during shard recovery.
+    ///
+    /// Same as [`Self::update`], except that a missing point is not logged: replay may start
+    /// before the persisted state of some segments, so replayed operations can target points
+    /// that a later operation already deleted. The caller handles that error instead.
+    pub fn replay(
+        segments: &LockedSegmentHolder,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> CollectionResult<usize> {
+        Self::apply(
+            segments,
+            op_num,
+            operation,
+            update_operation_lock,
+            update_tracker,
+            max_segment_size_bytes,
+            true,
+        )
+    }
+
+    fn apply(
+        segments: &LockedSegmentHolder,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+        replay: bool,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -103,7 +151,7 @@ impl CollectionUpdater {
         });
 
         let operation_result = operation_result.map_err(CollectionError::from);
-        CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
+        CollectionUpdater::handle_update_result(segments, op_num, &operation_result, replay);
         operation_result
     }
 }

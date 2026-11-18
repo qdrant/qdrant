@@ -900,6 +900,8 @@ impl LocalShard {
             .first()
             .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
 
+        let mut skipped_missing_point_ops: usize = 0;
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -926,7 +928,7 @@ impl LocalShard {
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &ambient::unmeasured(reason("Internal operation"), || {
-                CollectionUpdater::update(
+                CollectionUpdater::replay(
                     &self.segments,
                     op_num,
                     update.operation,
@@ -955,6 +957,10 @@ impl LocalShard {
                     log::error!("{err}");
                     return Err(err.clone());
                 }
+                // Replay may start before the persisted state of some segments, so an update
+                // to a point that a later operation deleted is expected to miss. Count these
+                // and report once below instead of logging every one.
+                Err(err) if err.is_missing_point() => skipped_missing_point_ops += 1,
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
@@ -992,6 +998,13 @@ impl LocalShard {
         }
 
         bar.finish();
+        if skipped_missing_point_ops > 0 {
+            log::info!(
+                "Recovering shard {}: skipped {skipped_missing_point_ops} WAL operations on \
+                 points that no longer exist",
+                self.path.display(),
+            );
+        }
         if !show_progress_bar {
             log::info!(
                 "Recovered collection {collection_id}: {wal_entries_to_replay}/{wal_entries_to_replay} (100%)"
