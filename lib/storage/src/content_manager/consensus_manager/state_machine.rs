@@ -1,21 +1,43 @@
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
+
 use collection::shards::CollectionId;
 use parking_lot::MutexGuard;
-use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
+use raft::eraftpb::{ConfChangeTransition, ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{RawNode, Storage};
 use tonic::transport::Uri;
 
 use super::{validation, *};
-use crate::content_manager::consensus_state_machine::{ClusterState, ConsensusStateMachine, Plan};
+use crate::content_manager::consensus_state_machine::{
+    Action, ClusterState, ConsensusStateMachine, Plan,
+};
 
 impl<C: CollectionContainer> ConsensusManager<C> {
     pub(super) fn apply_with_state_machine(
         &self,
+        index: u64,
         operation: &ConsensusOperations,
     ) -> StorageResult<bool> {
-        let plan = self.plan_operation(operation)?;
+        let started = Instant::now();
+
+        let plan = match self.plan_operation(operation) {
+            Ok(plan) => plan,
+            Err(error @ StorageError::ServiceError { .. }) => return Err(error),
+            Err(error) => {
+                log::warn!(
+                    "Rejected consensus entry index={index} operation={operation:?}: {error}"
+                );
+                return Err(error);
+            }
+        };
+
+        log::debug!(
+            "Applying consensus entry index={index} operation={operation:?} result={} actions={}",
+            plan.result,
+            ActionList(&plan.actions),
+        );
 
         for action in &plan.actions {
             if let Err(error) = self.apply_action(action.clone()) {
@@ -25,14 +47,18 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         }
 
-        self.finish_state_machine(std::slice::from_ref(operation), std::slice::from_ref(&plan));
+        let check =
+            self.finish_state_machine(std::slice::from_ref(operation), std::slice::from_ref(&plan));
+        log::debug!(
+            "Applied consensus entry index={index} in {:?}, state check: {check}",
+            started.elapsed(),
+        );
+
         Ok(plan.result)
     }
 
     fn plan_operation(&self, operation: &ConsensusOperations) -> StorageResult<Plan> {
-        let plan = self.prepare_state_machine().machine.plan(operation);
-        log::debug!("Consensus state machine operation {operation:?}: {plan:?}");
-        plan
+        self.prepare_state_machine().machine.plan(operation)
     }
 
     /// Validate the entire batch against temporary state before any membership or storage writes
@@ -66,12 +92,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     /// Advance after successful execution and refresh external changes independently of validation
-    fn finish_state_machine(&self, operations: &[ConsensusOperations], plans: &[Plan]) {
+    fn finish_state_machine(
+        &self,
+        operations: &[ConsensusOperations],
+        plans: &[Plan],
+    ) -> StateCheck {
         let report = {
             let persistent = self.persistent.read();
             let mut cached = self.state_machine.lock();
             if cached.needs_reload {
-                return;
+                return StateCheck::Invalidated;
             }
 
             for plan in plans {
@@ -85,35 +115,39 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 self.toc.take_dirty_collections(),
             );
 
-            if Self::should_check_state_machine() {
-                let report = validation::compare(
-                    cached.machine.state(),
-                    self.toc.as_ref(),
-                    &persistent,
-                    operations,
-                );
-                if report.is_some() {
-                    cached.needs_reload = true;
-                }
-                report
-            } else {
-                None
+            if !Self::should_check_state_machine() {
+                return StateCheck::NotSampled;
             }
+
+            let report = validation::compare(
+                cached.machine.state(),
+                self.toc.as_ref(),
+                &persistent,
+                operations,
+            );
+            if report.is_some() {
+                cached.needs_reload = true;
+            }
+            report
         };
 
-        if let Some(report) = report {
-            if cfg!(any(test, debug_assertions)) {
-                panic!(
-                    "Consensus state machine diverged from applied state: {report}; \
-                     operations={operations:?}",
-                );
-            }
+        let Some(report) = report else {
+            return StateCheck::Matched;
+        };
 
-            log::error!(
+        if cfg!(any(test, debug_assertions)) {
+            panic!(
                 "Consensus state machine diverged from applied state: {report}; \
                  operations={operations:?}",
             );
         }
+
+        log::error!(
+            "Consensus state machine diverged from applied state: {report}; \
+             operations={operations:?}",
+        );
+
+        StateCheck::Diverged
     }
 
     pub(super) fn invalidate_state_machine(&self) {
@@ -168,6 +202,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         change: &ConfChangeV2,
         raw_node: &mut RawNode<T>,
     ) -> StorageResult<bool> {
+        let started = Instant::now();
+
         let mut operations = Vec::with_capacity(change.changes.len());
         for single_change in &change.changes {
             let operation = match single_change.change_type() {
@@ -211,10 +247,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 for operation in &operations {
                     self.notify_operation(operation, Err(error.clone()));
                 }
-                log::warn!("Rejected consensus configuration change: {error}");
+                log::warn!(
+                    "Rejected consensus configuration entry index={} changes={}: {error}",
+                    entry.index,
+                    ConfChanges(change),
+                );
                 return Ok(false);
             }
         };
+
+        log::debug!(
+            "Applying consensus configuration entry index={} changes={} actions={}",
+            entry.index,
+            ConfChanges(change),
+            ActionList(batch.iter().flat_map(|plan| &plan.actions)),
+        );
 
         let conf_state = apply_raft_conf_change(raw_node, change)?;
         self.persistent
@@ -233,7 +280,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if stop_consensus {
             self.invalidate_state_machine();
         } else {
-            self.finish_state_machine(&operations, &batch);
+            let check = self.finish_state_machine(&operations, &batch);
+            log::debug!(
+                "Applied consensus configuration entry index={} in {:?}, state check: {check}",
+                entry.index,
+                started.elapsed(),
+            );
         }
 
         for operation in &operations {
@@ -343,4 +395,76 @@ fn apply_raft_conf_change<T: Storage>(
     }
 
     Ok(raw_node.apply_conf_change(change)?)
+}
+
+/// Result of comparing the cached state with applied state after an entry, for entry logs
+#[derive(Copy, Clone, Debug)]
+enum StateCheck {
+    Matched,
+    Diverged,
+    /// Release builds compare a sample of entries
+    NotSampled,
+    /// Something invalidated the cache during execution, so it reloads before the next entry
+    Invalidated,
+}
+
+impl fmt::Display for StateCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let check = match self {
+            StateCheck::Matched => "matched",
+            StateCheck::Diverged => "diverged",
+            StateCheck::NotSampled => "not sampled",
+            StateCheck::Invalidated => "skipped, cache invalidated",
+        };
+
+        f.write_str(check)
+    }
+}
+
+/// Actions in their one-line summaries, as `[first, second]`
+struct ActionList<I>(I);
+
+impl<'a, I> fmt::Display for ActionList<I>
+where
+    I: IntoIterator<Item = &'a Action> + Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+        for (index, action) in self.0.clone().into_iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{action}")?;
+        }
+        f.write_str("]")
+    }
+}
+
+/// Raft peer changes, as `[AddLearnerNode(peer=5)]`, followed by a non-default transition
+struct ConfChanges<'a>(&'a ConfChangeV2);
+
+impl fmt::Display for ConfChanges<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let change = self.0;
+
+        if change.leave_joint() {
+            return f.write_str("[LeaveJoint]");
+        }
+
+        f.write_str("[")?;
+        for (index, single) in change.changes.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{:?}(peer={})", single.change_type(), single.node_id)?;
+        }
+        f.write_str("]")?;
+
+        let transition = change.transition();
+        if transition != ConfChangeTransition::Auto {
+            write!(f, " transition={transition:?}")?;
+        }
+
+        Ok(())
+    }
 }
