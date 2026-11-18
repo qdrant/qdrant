@@ -14,7 +14,9 @@ use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::types::ShardKey;
 
-use crate::content_manager::collection_meta_ops::AliasOperations;
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE,
+};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::rbac::{Auth, CollectionMultipass};
 use crate::{
@@ -93,6 +95,9 @@ impl Dispatcher {
             // List of operations to await for collection to be operational
             let mut expect_operations: Vec<ConsensusOperations> = vec![];
 
+            // Whether to wait for new shard key replicas to become active
+            let mut wait_for_shard_key_activation = false;
+
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(mut op) => {
                     if !op.is_distribution_set() {
@@ -149,7 +154,15 @@ impl Dispatcher {
 
                     CollectionMetaOperations::CreateCollection(op)
                 }
-                CollectionMetaOperations::CreateShardKey(op) => {
+                CollectionMetaOperations::CreateShardKey(mut op) => {
+                    // Resolve the default initial state before proposing.
+                    // Resolving it when applying the operation depends on peer versions
+                    // each peer knows at that point, so peers could choose different states.
+                    if op.initial_state.is_none() {
+                        op.initial_state = Some(self.default_shard_key_initial_state());
+                        wait_for_shard_key_activation = true;
+                    }
+
                     CollectionMetaOperations::CreateShardKey(op)
                 }
 
@@ -233,8 +246,7 @@ impl Dispatcher {
                 CollectionMetaOperations::CreateShardKey(op) => {
                     let collection_name: CollectionName = op.collection_name.clone();
                     let shard_key = op.shard_key.clone();
-                    let initial_state = op.initial_state;
-                    Some((collection_name, shard_key, initial_state))
+                    Some((collection_name, shard_key))
                 }
                 _ => None,
             };
@@ -259,11 +271,11 @@ impl Dispatcher {
             }
 
             // Wait for shards activation
-            if let Some((collection_name, shard_key, initial_state)) = create_shard_key
-                && initial_state.is_none()
+            if let Some((collection_name, shard_key)) = create_shard_key
+                && wait_for_shard_key_activation
             {
-                // Only do if initial state is not set because we only wanted to wait for Active since introducing
-                // the Initial state which needs a transition to Active.
+                // Only do if initial state was not set by the request, because we only wanted to wait
+                // for Active since introducing the Initial state which needs a transition to Active.
                 let remaining_timeout =
                     wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
                 self.wait_for_shard_key_activation(collection_name, shard_key, remaining_timeout)
@@ -296,6 +308,20 @@ impl Dispatcher {
             let toc = self.toc.clone();
             tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
                 .await?
+        }
+    }
+
+    /// Initial state of new shard key replicas, if the request does not set it
+    fn default_shard_key_initial_state(&self) -> ReplicaState {
+        let use_initializing = self
+            .toc
+            .get_channel_service()
+            .all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
+
+        if use_initializing {
+            ReplicaState::Initializing
+        } else {
+            ReplicaState::Active
         }
     }
 
