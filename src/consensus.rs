@@ -377,6 +377,18 @@ impl Consensus {
         // This might happen if Qdrant was stopped or crashed before or while applying an operation.
         // Applying during startup allows us to catch service errors early,
         // before starting consensus thread.
+        let (unapplied, first_unapplied) = {
+            let persistent = state_ref.persistent.read();
+            let unapplied = persistent.unapplied_entities_count();
+            let first_unapplied = persistent.current_unapplied_entry();
+            (unapplied, first_unapplied)
+        };
+        if let Some(first_unapplied) = first_unapplied {
+            log::info!(
+                "Applying {unapplied} consensus entries, starting at index={first_unapplied}, \
+                 that were committed but not applied before Qdrant or the consensus thread stopped",
+            );
+        }
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
         // Node was created with older `applied` index, and `apply_entries` does *not* update it.
@@ -1098,7 +1110,12 @@ impl Consensus {
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             let snapshot = ready.snapshot().clone();
-            log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
+            let meta = snapshot.get_metadata();
+            log::info!(
+                "Applying Raft snapshot index={} term={}",
+                meta.index,
+                meta.term,
+            );
             is_idle = false;
 
             if let Err(err) = store.apply_snapshot(&snapshot)? {

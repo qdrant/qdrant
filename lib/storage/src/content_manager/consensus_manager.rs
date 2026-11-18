@@ -54,6 +54,9 @@ pub mod prelude {
     pub type ConsensusState = super::ConsensusManager<TableOfContent>;
 }
 
+/// Applying an entry blocks Raft ticks and messages on the consensus thread, so log slower entries.
+const SLOW_ENTRY_APPLY: Duration = Duration::from_secs(1);
+
 /// Minimum delay between proposals of our peer metadata while it is outdated in consensus.
 ///
 /// A proposal is dropped if the leader changes before it commits, so this is also the retry delay.
@@ -222,9 +225,17 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn record_message_send_success(&self, peer_address: &Uri) {
-        self.message_send_failures
+        let failures = self
+            .message_send_failures
             .write()
             .remove(&peer_address.to_string());
+
+        if let Some(failures) = failures {
+            log::info!(
+                "Sent message to {peer_address} after {} failed attempts",
+                failures.count,
+            );
+        }
     }
 
     pub fn record_consensus_working(&self) {
@@ -473,7 +484,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
 
-            self.applied_log.record(&entry, apply_started.elapsed());
+            let elapsed = apply_started.elapsed();
+            if elapsed >= SLOW_ENTRY_APPLY {
+                log::warn!(
+                    "Consensus thread blocked for {elapsed:?} \
+                     while applying consensus entry index={entry_index}",
+                );
+            }
+
+            self.applied_log.record(&entry, elapsed);
         }
 
         Ok(false) // do not stop consensus
