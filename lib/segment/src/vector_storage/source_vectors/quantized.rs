@@ -1,0 +1,223 @@
+//! Quantized codes as [`F32Rows`]: each decoded by `symmetric_vector`, the vector whose geometry
+//! the symmetric score scores.
+//!
+//! A row is identified by its stored code, or by its decoded values where the code also stores a
+//! correction the score ignores (`stores_ignored_correction`). So codes that score alike against
+//! every point, up to rounding, have equal identities. A code that scores NaN against itself has
+//! none.
+
+use common::types::PointOffsetType;
+use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
+use quantization::encoded_vectors_tq::EncodedVectorsTQ;
+use quantization::encoded_vectors_u8::EncodedVectorsU8;
+use quantization::{EncodedStorage, EncodedVectors};
+
+use super::{F32Rows, RowIdentity};
+use crate::common::operation_error::OperationResult;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectorStorage, QuantizedVectors,
+};
+
+/// The rows of `quantized`, `None` for product quantization, which has no symmetric vector, and
+/// for multivectors.
+pub(super) fn f32_rows(quantized: &QuantizedVectors) -> Option<Box<dyn F32Rows + '_>> {
+    let rows = match quantized.get_storage() {
+        QuantizedVectorStorage::ScalarRam(q) => codes(q),
+        QuantizedVectorStorage::ScalarMmap(q) => codes(q),
+        QuantizedVectorStorage::ScalarChunkedMmap(q) => codes(q),
+        QuantizedVectorStorage::BinaryRam(q) => codes(q),
+        QuantizedVectorStorage::BinaryMmap(q) => codes(q),
+        QuantizedVectorStorage::BinaryChunkedMmap(q) => codes(q),
+        QuantizedVectorStorage::TQRam(q) => codes(q),
+        QuantizedVectorStorage::TQMmap(q) => codes(q),
+        QuantizedVectorStorage::TQChunkedMmap(q) => codes(q),
+        QuantizedVectorStorage::PQRam(_)
+        | QuantizedVectorStorage::PQMmap(_)
+        | QuantizedVectorStorage::PQChunkedMmap(_)
+        | QuantizedVectorStorage::ScalarRamMulti(_)
+        | QuantizedVectorStorage::ScalarMmapMulti(_)
+        | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
+        | QuantizedVectorStorage::PQRamMulti(_)
+        | QuantizedVectorStorage::PQMmapMulti(_)
+        | QuantizedVectorStorage::PQChunkedMmapMulti(_)
+        | QuantizedVectorStorage::BinaryRamMulti(_)
+        | QuantizedVectorStorage::BinaryMmapMulti(_)
+        | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
+        | QuantizedVectorStorage::TQRamMulti(_)
+        | QuantizedVectorStorage::TQMmapMulti(_)
+        | QuantizedVectorStorage::TQChunkedMmapMulti(_) => return None,
+    };
+    Some(rows)
+}
+
+/// A quantization whose codes decode to rows.
+trait Decode: EncodedVectors + Sync {
+    /// Length of the decoded rows.
+    fn decoded_dim(&self) -> usize;
+
+    /// Appends `code` decoded to `row`, and tells what identifies it.
+    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c>;
+}
+
+/// The codes of one quantization.
+struct Codes<'a, E>(&'a E);
+
+fn codes<E: Decode>(encoded: &E) -> Box<dyn F32Rows + '_> {
+    Box::new(Codes(encoded))
+}
+
+impl<E: Decode> F32Rows for Codes<'_, E> {
+    fn dim(&self) -> usize {
+        self.0.decoded_dim()
+    }
+
+    fn count(&self) -> usize {
+        self.0.vectors_count()
+    }
+
+    fn for_each_in_batch(
+        &self,
+        ids: &[PointOffsetType],
+        f: &mut dyn FnMut(usize, &[f32], RowIdentity<'_>),
+    ) -> OperationResult<()> {
+        let mut row = Vec::with_capacity(self.dim());
+        self.0.for_each_batch(ids, |i, code| {
+            row.clear();
+            let identity = self.0.decode(&code, &mut row);
+            f(i, &row, identity);
+        })?;
+        Ok(())
+    }
+}
+
+impl<S: EncodedStorage + Sync> Decode for EncodedVectorsU8<S> {
+    fn decoded_dim(&self) -> usize {
+        self.symmetric_dim()
+    }
+
+    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
+        row.extend(self.symmetric_vector(code));
+        RowIdentity::Code(code)
+    }
+}
+
+impl<T: BitsStoreType + Sync, S: EncodedStorage + Sync> Decode for EncodedVectorsBin<T, S> {
+    fn decoded_dim(&self) -> usize {
+        self.symmetric_dim()
+    }
+
+    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
+        row.extend(self.symmetric_vector(code));
+        RowIdentity::Code(code)
+    }
+}
+
+impl<S: EncodedStorage + Sync> Decode for EncodedVectorsTQ<S> {
+    fn decoded_dim(&self) -> usize {
+        self.quantizer().get_padded_dim()
+    }
+
+    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
+        let quantizer = self.quantizer();
+        row.extend(quantizer.symmetric_vector(code));
+        if quantizer.score_symmetric(code, code).is_nan() {
+            RowIdentity::ScoresNan
+        } else if quantizer.stores_ignored_correction() {
+            RowIdentity::Values
+        } else {
+            RowIdentity::Code(code)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::ambient;
+    use common::types::PointOffsetType;
+    use rstest::rstest;
+
+    use super::super::test_fixture::{Fixture, POINTS, binary, scalar, turbo};
+    use crate::types::{
+        BinaryQuantizationEncoding as Encoding, Distance, QuantizationConfig,
+        TurboQuantBitSize as Bits, TurboQuantization,
+    };
+
+    /// Pair scores are an affine map of the dot product of the decoded codes, or of their negative
+    /// squared distance for Euclid. Only approximately at 2 and 4 bits of TurboQuant, whose score
+    /// adds a stored TQ+ correction: there the decoded codes still explain the scores ten times
+    /// better than the original vectors do.
+    #[rstest]
+    fn decoded_codes_score_as_the_scorer(
+        #[values(
+            scalar(),
+            binary(Encoding::OneBit),
+            binary(Encoding::OneAndHalfBits),
+            binary(Encoding::TwoBits),
+            turbo(Bits::Bits1),
+            turbo(Bits::Bits1_5),
+            turbo(Bits::Bits2),
+            turbo(Bits::Bits4),
+            turbo(Bits::Bits8)
+        )]
+        config: QuantizationConfig,
+        #[values(Distance::Cosine, Distance::Dot, Distance::Euclid)] distance: Distance,
+    ) {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::new(&config, distance, false);
+        let decoded = fixture.decoded();
+        let scorer = fixture.scorer();
+        let score = |a: usize, b: usize| {
+            f64::from(scorer.score_internal(a as PointOffsetType, b as PointOffsetType))
+        };
+        let geometry = |u: &[f32], v: &[f32]| {
+            let pairs = u.iter().zip(v).map(|(&x, &y)| (f64::from(x), f64::from(y)));
+            match distance {
+                Distance::Euclid => -pairs.map(|(x, y)| (x - y).powi(2)).sum::<f64>(),
+                Distance::Cosine | Distance::Dot => pairs.map(|(x, y)| x * y).sum(),
+                Distance::Manhattan => unreachable!("no Manhattan case"),
+            }
+        };
+        let (mut scores, mut of_decoded, mut of_originals) = (Vec::new(), Vec::new(), Vec::new());
+        for a in 0..POINTS {
+            for b in a + 1..POINTS {
+                // The scores of each vector with itself cancel the lengths L2 stores
+                scores.push(if distance == Distance::Euclid {
+                    score(a, b) - (score(a, a) + score(b, b)) / 2.0
+                } else {
+                    score(a, b)
+                });
+                of_decoded.push(geometry(&decoded[a], &decoded[b]));
+                of_originals.push(geometry(&fixture.vectors[a], &fixture.vectors[b]));
+            }
+        }
+
+        let approximate = match &config {
+            QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
+                match turbo.bits.unwrap_or_default() {
+                    Bits::Bits2 | Bits::Bits4 => true,
+                    Bits::Bits1 | Bits::Bits1_5 | Bits::Bits8 => false,
+                }
+            }
+            QuantizationConfig::Scalar(_)
+            | QuantizationConfig::Product(_)
+            | QuantizationConfig::Binary(_) => false,
+        };
+        let agreement = correlation(&scores, &of_decoded);
+        let least = if approximate {
+            1.0 - (1.0 - correlation(&scores, &of_originals)) / 10.0
+        } else {
+            1.0 - 1e-5
+        };
+        assert!(agreement >= least, "{agreement} below {least}");
+    }
+
+    /// Pearson's correlation coefficient.
+    fn correlation(a: &[f64], b: &[f64]) -> f64 {
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let (mean_a, mean_b) = (mean(a), mean(b));
+        let centered = |v: &[f64], m: f64| v.iter().map(move |x| x - m).collect::<Vec<_>>();
+        let (a, b) = (centered(a, mean_a), centered(b, mean_b));
+        let dot = |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(x, y)| x * y).sum::<f64>();
+        dot(&a, &b) / (dot(&a, &a) * dot(&b, &b)).sqrt()
+    }
+}
