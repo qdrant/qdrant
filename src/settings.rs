@@ -297,6 +297,12 @@ pub struct IndexingServiceConfig {
     /// Build remotely only if the vector data of a vector name is at least this large (D11).
     #[serde(default = "default_min_index_size_bytes")]
     pub min_index_size_bytes: usize,
+    /// Heal an old graph locally only if it holds at least this share of the points of the
+    /// new segment, from 0 to 1. Otherwise the segment is built remotely from scratch, e.g.
+    /// a small indexed segment merged with many unindexed ones. 0 always heals (D12).
+    #[serde(default = "default_min_healing_coverage")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub min_healing_coverage: f64,
     /// Give a task up if the indexer does not call within this time (D6).
     #[serde(default = "default_heartbeat_timeout_sec")]
     #[validate(range(min = 1))]
@@ -326,6 +332,10 @@ pub struct IndexingServiceConfig {
 
 const fn default_min_index_size_bytes() -> usize {
     128 * 1024 * 1024
+}
+
+const fn default_min_healing_coverage() -> f64 {
+    0.5
 }
 
 const fn default_heartbeat_timeout_sec() -> u64 {

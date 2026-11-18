@@ -46,6 +46,10 @@ pub enum OnFailure {
 pub struct RemoteIndexingConfig {
     /// Go remote only if the vector data of the vector name is at least this large (D11).
     pub min_index_size_bytes: usize,
+    /// Heal an old graph locally only if it holds at least this share of the points of the
+    /// new segment, from 0 to 1 (D12). Otherwise the segment is built remotely from scratch:
+    /// healing a graph that covers few of the points costs about as much as a full build.
+    pub min_healing_coverage: f64,
     /// Lease of a running task: it is given up if the indexer does not call within this
     /// time (D6).
     pub heartbeat_timeout: Duration,

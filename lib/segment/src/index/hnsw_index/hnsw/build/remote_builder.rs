@@ -436,7 +436,8 @@ impl GraphBuilderMethod for RemoteBuilder<'_> {
     }
 
     fn seeds_payload_blocks(&self) -> bool {
-        // Remote builds never heal (D12), and neither does the fallback
+        // Remote builds never heal (D12), and neither does the fallback, also when an old graph
+        // was passed over for covering too few points
         self.cpu.seeds_payload_blocks()
     }
 }

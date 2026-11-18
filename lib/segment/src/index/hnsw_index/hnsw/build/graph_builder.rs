@@ -87,8 +87,10 @@ impl<'a> GraphBuilder<'a> {
     /// 5. Otherwise, HNSW.
     ///
     /// With remote indexing, rule 3 comes before rule 2, followed by: a remote indexer, if
-    /// `options.remote` is set (D11, D12). Healing always stays local. The remote method keeps
-    /// the method of rules 4 and 5 as its local fallback; it does not hold a GPU while it waits.
+    /// `options.remote` is set (D11, D12). Healing always stays local, but only an old graph
+    /// holding at least `min_healing_coverage` of the points is healed then: one holding fewer
+    /// is ignored, and the segment is built remotely from scratch. The remote method keeps the
+    /// method of rules 4 and 5 as its local fallback; it does not hold a GPU while it waits.
     pub fn select(
         ctx: GraphBuildContext<'a>,
         pool: &'a ThreadPool,
@@ -106,12 +108,19 @@ impl<'a> GraphBuilder<'a> {
         let local = LocalBuilder::new(ctx, pool, rng, old_index)?;
 
         if let Some(remote) = remote {
-            if old_index.is_some() {
+            let heals = old_index
+                .is_some_and(|old| remote_steps::heals_locally(&remote, old, local.points.len()));
+            if heals {
                 // Healing stays local (D12)
                 remote_steps::kept_local_for_healing();
             } else if (local.ctx.has_main_graph() || has_payload_blocks)
                 && local.points.len() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
             {
+                // An old graph covering too few of the points is not healed: a full build costs
+                // about as much, and the indexer does it
+                if old_index.is_some() {
+                    remote_steps::remote_over_healing();
+                }
                 return Ok(remote_steps::remote_builder(
                     Self::without_gpu(local, None, main_graph),
                     remote,
