@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
-use tokio::sync::Mutex;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -46,7 +45,7 @@ impl TelemetryParam {
 
 #[get("/telemetry")]
 fn telemetry(
-    telemetry_collector: Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: Data<TelemetryCollector>,
     params: Query<TelemetryParam>,
     ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
@@ -62,8 +61,6 @@ fn telemetry(
             per_collection: params.per_collection.unwrap_or(false),
         };
         let telemetry_data = telemetry_collector
-            .lock()
-            .await
             .prepare_data(&auth, detail, None, params.timeout())
             .await?;
         let telemetry_data = if anonymize {
@@ -91,7 +88,7 @@ impl MetricsParam {
 
 #[get("/metrics")]
 async fn metrics(
-    telemetry_collector: Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: Data<TelemetryCollector>,
     params: Query<MetricsParam>,
     config: Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
@@ -106,8 +103,6 @@ async fn metrics(
     let anonymize = params.anonymize.unwrap_or(false);
     let per_collection = params.per_collection.unwrap_or(false);
     let telemetry_data = telemetry_collector
-        .lock()
-        .await
         .prepare_data(
             &auth,
             TelemetryDetail {
