@@ -31,7 +31,15 @@ pub fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
         let result = std::fs::rename(from, to);
         match result {
             Ok(()) => return Ok(()),
-            Err(err) if is_transient_windows_error(&err) => backoff(from, to, delay_ms, &err),
+            Err(err) if is_transient_windows_error(&err) => {
+                #[cfg(test)]
+                test_hooks::ON_RENAME_RETRY.with(|hook| {
+                    if let Some(hook) = hook.take() {
+                        hook();
+                    }
+                });
+                backoff(from, to, delay_ms, &err);
+            }
             Err(_) => break,
         }
     }
@@ -99,6 +107,36 @@ pub(super) fn is_transient_windows_error(err: &io::Error) -> bool {
         err.raw_os_error(),
         Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
     )
+}
+
+#[cfg(all(test, windows))]
+pub(super) mod test_hooks {
+    use std::cell::Cell;
+
+    thread_local! {
+        pub(super) static ON_RENAME_RETRY: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
+    }
+
+    pub(crate) fn with_rename_retry_hook<T>(
+        hook: impl FnOnce() + 'static,
+        operation: impl FnOnce() -> T,
+    ) -> T {
+        struct ResetHook;
+
+        impl Drop for ResetHook {
+            fn drop(&mut self) {
+                ON_RENAME_RETRY.with(|hook| drop(hook.take()));
+            }
+        }
+
+        let _reset = ResetHook;
+        ON_RENAME_RETRY.with(|slot| {
+            assert!(slot.replace(Some(Box::new(hook))).is_none());
+        });
+        let result = operation();
+        ON_RENAME_RETRY.with(|hook| assert!(hook.take().is_none(), "rename did not retry"));
+        result
+    }
 }
 
 #[cfg(all(test, windows))]

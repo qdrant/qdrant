@@ -179,7 +179,8 @@ mod tests {
     )]
     fn test_safe_delete_retries_while_file_is_held() -> io::Result<()> {
         use std::os::windows::fs::OpenOptionsExt;
-        use std::time::Duration;
+
+        use super::super::retry::test_hooks::with_rename_retry_hook;
 
         let base = tempfile::tempdir()?;
         let segments = base.path().join("segments");
@@ -193,14 +194,10 @@ mod tests {
 
         let hold = |name: &str| {
             // Share mode 0: no FILE_SHARE_DELETE, like a scanner's handle
-            let file = std::fs::OpenOptions::new()
+            std::fs::OpenOptions::new()
                 .read(true)
                 .share_mode(0)
-                .open(segments.join(name).join("file"))?;
-            Ok::<_, io::Error>(std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(150));
-                drop(file);
-            }))
+                .open(segments.join(name).join("file"))
         };
 
         // Without retry, the plain rename fails while the handle is held
@@ -210,15 +207,20 @@ mod tests {
             super::super::retry::is_transient_windows_error(&err),
             "unexpected error: {err}"
         );
-        handle.join().unwrap();
+        drop(handle);
 
         let handle = hold("segment1")?;
-        safe_delete_with_suffix(&segments.join("segment1"))?;
-        handle.join().unwrap();
+        with_rename_retry_hook(
+            move || drop(handle),
+            || safe_delete_with_suffix(&segments.join("segment1")),
+        )?;
 
         let handle = hold("segment2")?;
-        safe_delete_in_tmp(&segments.join("segment2"), &tmp)?.close()?;
-        handle.join().unwrap();
+        with_rename_retry_hook(
+            move || drop(handle),
+            || safe_delete_in_tmp(&segments.join("segment2"), &tmp),
+        )?
+        .close()?;
 
         assert_eq!(fs::read_dir(&segments)?.count(), 0);
         assert_eq!(fs::read_dir(&tmp)?.count(), 0);
