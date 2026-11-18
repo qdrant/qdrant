@@ -120,6 +120,7 @@ impl RemoteIndexingClient {
         };
         let remote_config = RemoteIndexingConfig {
             min_index_size_bytes: config.min_index_size_bytes,
+            min_healing_coverage: config.min_healing_coverage,
             heartbeat_timeout: Duration::from_secs(config.heartbeat_timeout_sec),
             queue_timeout: Duration::from_secs(config.queue_timeout_sec),
             on_failure: match config.on_failure {

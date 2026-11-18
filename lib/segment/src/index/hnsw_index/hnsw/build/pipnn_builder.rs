@@ -167,7 +167,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
     }
 
     fn seeds_payload_blocks(&self) -> bool {
-        // Never picked with an old index
+        // Never heals: picked without an old index, or when the old one covers too few points
         false
     }
 }

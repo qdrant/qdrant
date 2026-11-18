@@ -27,7 +27,7 @@ use segment::index::hnsw_index::remote::loopback::{LoopbackBehavior, LoopbackInd
 use segment::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, with_thread_remote_indexer,
 };
-use segment::index::{PayloadIndex, VectorIndexRead};
+use segment::index::{PayloadIndex, VectorIndexEnum, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
@@ -52,6 +52,7 @@ const INT_KEY: &str = "int";
 fn config(on_failure: OnFailure, heartbeat_timeout: Duration) -> RemoteIndexingConfig {
     RemoteIndexingConfig {
         min_index_size_bytes: 0,
+        min_healing_coverage: 0.5,
         heartbeat_timeout,
         queue_timeout: heartbeat_timeout,
         on_failure,
@@ -68,6 +69,17 @@ fn segment(rng: &mut StdRng) -> (TempDir, Segment) {
 /// Like [`segment`], with vectors of `datatype`, and `quantization` built.
 fn segment_with(
     rng: &mut StdRng,
+    datatype: Option<VectorStorageDatatype>,
+    quantization: Option<QuantizationConfig>,
+) -> (TempDir, Segment) {
+    segment_of(rng, NUM_VECTORS, datatype, quantization)
+}
+
+/// Like [`segment_with`], with `num_vectors` points. With the same seed, the points of a
+/// smaller segment are the first ones of a larger one, with the same versions.
+fn segment_of(
+    rng: &mut StdRng,
+    num_vectors: u64,
     datatype: Option<VectorStorageDatatype>,
     quantization: Option<QuantizationConfig>,
 ) -> (TempDir, Segment) {
@@ -90,7 +102,7 @@ fn segment_with(
         id_tracker_memory: None,
     };
     let (mut segment, _token) = build_segment(dir.path(), &config, None, true).unwrap();
-    for n in 0..NUM_VECTORS {
+    for n in 0..num_vectors {
         let vector = random_vector(rng, DIM);
         let payload = payload_json! {INT_KEY: random_int_payload(rng, 1..=1)};
         segment
@@ -100,7 +112,7 @@ fn segment_with(
             .set_full_payload(n as SeqNumberType, n.into(), &payload)
             .unwrap();
     }
-    for n in (0..NUM_VECTORS).step_by(10) {
+    for n in (0..num_vectors).step_by(10) {
         segment.delete_point(NUM_VECTORS + n, n.into()).unwrap();
     }
     segment
@@ -142,6 +154,19 @@ fn build_m(
     m: usize,
     payload_m: Option<usize>,
 ) -> OperationResult<(TempDir, HNSWIndex)> {
+    build_healing(segment, permit, stopped, rng, m, payload_m, &[])
+}
+
+/// Like [`build_m`], with the graphs of `old_indices` to heal.
+fn build_healing(
+    segment: &Segment,
+    permit: Arc<ResourcePermit>,
+    stopped: &AtomicBool,
+    rng: &mut StdRng,
+    m: usize,
+    payload_m: Option<usize>,
+    old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
+) -> OperationResult<(TempDir, HNSWIndex)> {
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let data = &segment.vector_data[DEFAULT_VECTOR_NAME];
     let index = HNSWIndex::build(
@@ -164,7 +189,7 @@ fn build_m(
         },
         VectorIndexBuildArgs {
             permit,
-            old_indices: &[],
+            old_indices,
             gpu_device: None,
             rng,
             stopped,
@@ -360,6 +385,63 @@ fn payload_blocks_only_graph_is_built_remotely() {
 
 /// Runs a build where the indexer misbehaves per `behaviors`. Returns the indexer and whether
 /// the index searches well, i.e. the build fell back or succeeded correctly.
+/// A segment whose first `old_points` points have a graph already, as after merging an indexed
+/// segment with unindexed ones: built remotely or by healing that graph locally.
+/// Returns the number of submissions to the indexer.
+fn submissions_with_old_graph(old_points: u64) -> usize {
+    let stopped = AtomicBool::new(false);
+    let (_old_dir, old_segment) =
+        segment_of(&mut StdRng::seed_from_u64(44), old_points, None, None);
+    let (_old_hnsw_dir, old_index) = build(
+        &old_segment,
+        Arc::new(ResourcePermit::dummy(2)),
+        &stopped,
+        &mut StdRng::seed_from_u64(1),
+    )
+    .unwrap();
+    let old_indices = [Arc::new(AtomicRefCell::new(VectorIndexEnum::Hnsw(
+        old_index,
+    )))];
+
+    let (_dir, segment) = segment_of(&mut StdRng::seed_from_u64(44), NUM_VECTORS, None, None);
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config(OnFailure::Local, Duration::from_secs(10)),
+        vec![LoopbackBehavior::Build],
+    ));
+    let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
+    let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
+        build_healing(
+            &segment,
+            Arc::new(ResourcePermit::dummy(2)),
+            &stopped,
+            &mut StdRng::seed_from_u64(2),
+            16,
+            None,
+            &old_indices,
+        )
+    })
+    .unwrap();
+
+    let (hits, filtered_hits) = accuracy(&segment, &index, &mut StdRng::seed_from_u64(1));
+    assert!(hits >= 450, "{hits}");
+    assert!(filtered_hits >= 450, "{filtered_hits}");
+    indexer.submissions.load(Ordering::SeqCst)
+}
+
+/// An old graph with 30% of the points, below `min_healing_coverage`: built remotely.
+#[test]
+fn old_graph_covering_few_points_is_built_remotely() {
+    let _scope = ambient::test_guard();
+    assert_eq!(submissions_with_old_graph(NUM_VECTORS * 3 / 10), 1);
+}
+
+/// An old graph with 80% of the points: healed locally (D12).
+#[test]
+fn old_graph_covering_most_points_is_healed_locally() {
+    let _scope = ambient::test_guard();
+    assert_eq!(submissions_with_old_graph(NUM_VECTORS * 8 / 10), 0);
+}
+
 fn check_recovers(
     on_failure: OnFailure,
     behaviors: Vec<LoopbackBehavior>,

@@ -48,6 +48,8 @@ pub(in crate::index::hnsw_index) struct OldIndex<'a> {
     /// Mapping from new index to old index.
     /// `new_to_old[new_idx] == Some(old_idx)`.
     pub new_to_old: Vec<Option<PointOffsetType>>,
+    /// Count of points of the new index found in the old graph.
+    reused_points: usize,
 }
 
 impl<'a> OldIndexCandidate<'a> {
@@ -233,11 +235,21 @@ impl<'a> OldIndexCandidate<'a> {
             links_populated: Once::new(),
             old_to_new: self.old_to_new,
             new_to_old,
+            reused_points: self.valid_points,
         }
     }
 }
 
 impl OldIndex<'_> {
+    /// Share of `point_count` points of the new index found in the old graph, from 0 to 1.
+    #[cfg_attr(not(feature = "remote-indexing"), expect(dead_code))]
+    pub fn coverage(&self, point_count: usize) -> f64 {
+        if point_count == 0 {
+            return 0.0;
+        }
+        self.reused_points as f64 / point_count as f64
+    }
+
     /// Read the links of the old graph into the page cache, the first time it is called. Call it
     /// before reading them in random order, as healing and seeding blocks do. Taking the levels
     /// of points does not need it. A graph `evaluate` had to reopen is cold; a graph that was

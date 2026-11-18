@@ -31,6 +31,8 @@ pub struct RemoteIndexingMetrics {
     pub cancelled: AtomicU64,
     /// Large enough builds kept local because an old graph is healed instead (D12).
     pub local_for_healing: AtomicU64,
+    /// Builds sent remote instead of healing an old graph that covers too few of the points.
+    pub remote_over_healing: AtomicU64,
     /// Vector bytes served to indexers.
     pub bytes_served: AtomicU64,
     /// Graph bytes received from indexers.
@@ -57,6 +59,7 @@ pub static REMOTE_INDEXING_METRICS: RemoteIndexingMetrics = RemoteIndexingMetric
     fallbacks: AtomicU64::new(0),
     cancelled: AtomicU64::new(0),
     local_for_healing: AtomicU64::new(0),
+    remote_over_healing: AtomicU64::new(0),
     bytes_served: AtomicU64::new(0),
     graph_bytes_received: AtomicU64::new(0),
     queued_time_ms: AtomicU64::new(0),
@@ -81,6 +84,7 @@ impl RemoteIndexingMetrics {
             fallbacks,
             cancelled,
             local_for_healing,
+            remote_over_healing,
             bytes_served,
             graph_bytes_received,
             queued_time_ms,
@@ -153,6 +157,11 @@ impl RemoteIndexingMetrics {
                 "local_for_healing",
                 "builds large enough for remote indexing, kept local to heal an old graph",
                 get(local_for_healing),
+            ),
+            (
+                "remote_over_healing",
+                "builds sent to remote indexing instead of healing an old graph covering too few points",
+                get(remote_over_healing),
             ),
             (
                 "bytes_served",

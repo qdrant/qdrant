@@ -19,6 +19,7 @@ use super::remote_builder::{RemoteBuilder, worth_remote};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
+use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::hnsw_index::remote::blocks::BlockStream;
 use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
 use crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS;
@@ -75,6 +76,27 @@ pub(super) fn build_args(
         quantized_vectors,
         progress: progress.subtask("remote_build"),
     })
+}
+
+/// Whether `old_index` is worth healing locally rather than building remotely from scratch:
+/// it holds at least `min_healing_coverage` of the `point_count` points to index (D12).
+pub(super) fn heals_locally(
+    remote: &RemoteBuildArgs,
+    old_index: &OldIndex<'_>,
+    point_count: usize,
+) -> bool {
+    let coverage = old_index.coverage(point_count);
+    let min_coverage = remote.indexer.config().min_healing_coverage;
+    debug!("old graph covers {coverage:.3} of the points, heals locally from {min_coverage:.3}");
+    coverage >= min_coverage
+}
+
+/// A remote build goes ahead, although there is an old graph: it covers too few of the points.
+pub(super) fn remote_over_healing() {
+    REMOTE_INDEXING_METRICS
+        .remote_over_healing
+        .fetch_add(1, Ordering::Relaxed);
+    debug!("old graph covers too few points to heal, building remotely");
 }
 
 /// A remote build was possible, but an old graph is worth healing, which stays local (D12).
