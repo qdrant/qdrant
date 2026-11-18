@@ -14,6 +14,7 @@ use super::graph_builder::GraphBuilder;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
+use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::{PayloadFieldSchema, PayloadKeyType};
 use crate::vector_storage::VectorStorageEnum;
@@ -39,6 +40,16 @@ pub(super) fn build_args(
 ) -> Option<RemoteBuildArgs> {
     None
 }
+
+pub(super) fn heals_locally(
+    remote: &RemoteBuildArgs,
+    _old_index: &OldIndex<'_>,
+    _point_count: usize,
+) -> bool {
+    match remote.never {}
+}
+
+pub(super) fn remote_over_healing() {}
 
 pub(super) fn kept_local_for_healing() {}
 
