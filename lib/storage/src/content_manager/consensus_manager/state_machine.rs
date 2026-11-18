@@ -39,12 +39,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             ActionList(&plan.actions),
         );
 
-        for action in &plan.actions {
-            if let Err(error) = self.apply_action(action.clone()) {
-                // An action may have persisted only part of its work. Retry from applied state.
-                self.invalidate_state_machine();
-                return Err(error);
-            }
+        if let Err(error) = self.execute_actions(plan.actions.iter()) {
+            // An action may have persisted only part of its work. Retry from applied state.
+            self.invalidate_state_machine();
+            return Err(error);
         }
 
         let check =
@@ -59,6 +57,34 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     fn plan_operation(&self, operation: &ConsensusOperations) -> StorageResult<Plan> {
         self.prepare_state_machine().machine.plan(operation)
+    }
+
+    /// Execute planned actions in order, naming the failed action and its position in the error
+    fn execute_actions<'a>(
+        &self,
+        actions: impl Iterator<Item = &'a Action> + Clone,
+    ) -> StorageResult<()> {
+        let count = actions.clone().count();
+
+        for (position, action) in actions.enumerate() {
+            self.apply_action(action.clone()).map_err(|error| {
+                let context = format!("Failed to apply action {}/{count} {action}", position + 1);
+                if let StorageError::ServiceError {
+                    description,
+                    backtrace,
+                } = error
+                {
+                    StorageError::ServiceError {
+                        description: format!("{context}: {description}"),
+                        backtrace,
+                    }
+                } else {
+                    StorageError::service_error(format!("{context}: {error}"))
+                }
+            })?;
+        }
+
+        Ok(())
     }
 
     /// Validate the entire batch against temporary state before any membership or storage writes
@@ -268,11 +294,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
 
-        for plan in &batch {
-            for action in &plan.actions {
-                self.apply_action(action.clone())?;
-            }
-        }
+        self.execute_actions(batch.iter().flat_map(|plan| &plan.actions))?;
 
         let stop_consensus = operations.iter().any(|operation| {
             matches!(operation, ConsensusOperations::RemovePeer(peer_id) if *peer_id == self.this_peer_id())

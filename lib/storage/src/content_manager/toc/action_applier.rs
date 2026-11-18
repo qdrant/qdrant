@@ -16,6 +16,9 @@ use crate::content_manager::consensus_state_machine::{
 use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl TableOfContent {
+    /// Apply one planned action, returning runtime failures as service errors for replay.
+    ///
+    /// The consensus manager adds the action to the error description.
     pub(super) fn apply_action_sync(&self, action: Action) -> StorageResult<()> {
         self.general_runtime
             .block_on(self.apply_action(&action))
@@ -23,7 +26,7 @@ impl TableOfContent {
                 if let StorageError::ServiceError { .. } = error {
                     error
                 } else {
-                    StorageError::service_error(format!("Failed to apply {action:?}: {error}"))
+                    StorageError::service_error(error.to_string())
                 }
             })
     }

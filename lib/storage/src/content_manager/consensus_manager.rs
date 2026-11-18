@@ -1737,10 +1737,13 @@ mod tests {
 
         let error = manager.apply_entries(&mut raw).unwrap_err();
 
+        let error = format!("{error:#}");
         assert!(
-            error
-                .to_string()
-                .contains("Failed to apply consensus entry index=")
+            error.starts_with(
+                "Failed to apply consensus entry index=1: Service internal error: \
+                 Failed to apply action 1/1 SetClusterMetadataKey(key=\"owner\"): ",
+            ),
+            "{error}",
         );
         assert!(
             !manager
