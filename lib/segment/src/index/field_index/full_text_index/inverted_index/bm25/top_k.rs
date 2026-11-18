@@ -353,6 +353,85 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
     Ok(into_ranking(heap))
 }
 
+/// Score only `points` (ascending, no duplicates) by seeking every term's
+/// cursor to each one, and keep the `limit` best. `accept` is checked first,
+/// and a point no term hits is left out. Scores and tie-breaks match
+/// [`score_top_k_with`]: terms are summed in term order, points offered in
+/// ascending order.
+pub(super) fn score_points<C: TermCursors, const BLOCK: usize>(
+    query: &Bm25Query,
+    cursors: &mut C,
+    points: &[PointOffsetType],
+    mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
+    accept: &impl ConditionChecker<Error = OperationError>,
+    limit: usize,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    debug_assert!(points.is_sorted_by(|a, b| a < b));
+    let terms = query.terms();
+    if terms.is_empty() || limit == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut heap: BinaryHeap<Reverse<ScoredPointOffset>> =
+        BinaryHeap::with_capacity(limit.min(1024) + 1);
+    let mut threshold = ScoreType::NEG_INFINITY;
+    let mut docs: [PointOffsetType; BLOCK] = [0; BLOCK];
+    let mut hits_end: [usize; BLOCK] = [0; BLOCK];
+    let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
+    let mut hits: Vec<(usize, u32)> = Vec::with_capacity(terms.len() * BLOCK);
+
+    for chunk in points.chunks(BLOCK) {
+        check_process_stopped(is_stopped)?;
+        let mut count = 0;
+        hits.clear();
+        for &doc in chunk {
+            if !accept.check(doc)? {
+                continue;
+            }
+            let start = hits.len();
+            for term in 0..terms.len() {
+                if cursors.seek(term, doc) == Some(doc) {
+                    hits.push((term, cursors.tf(term, doc)));
+                }
+            }
+            if hits.len() > start {
+                docs[count] = doc;
+                hits_end[count] = hits.len();
+                count += 1;
+            }
+        }
+        if query.normalizes_length() {
+            doc_lens(&docs[..count], &mut lengths[..count])?;
+        }
+
+        let mut start = 0;
+        for ((&doc, &len), &end) in docs[..count]
+            .iter()
+            .zip(&lengths[..count])
+            .zip(&hits_end[..count])
+        {
+            let norm = query.doc_norm(len);
+            let score: ScoreType = hits[start..end]
+                .iter()
+                .map(|&(term, tf)| query.term_score_with_norm(terms[term].idf, tf, norm))
+                .sum();
+            start = end;
+            if score > threshold {
+                heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
+                if heap.len() > limit {
+                    heap.pop();
+                }
+                if heap.len() == limit {
+                    threshold = heap.peek().map_or(threshold, |Reverse(min)| min.score);
+                }
+            }
+        }
+    }
+
+    Ok(into_ranking(heap))
+}
+
 /// Score every document term at a time into a dense array, one `window` of
 /// point offsets at a time, then keep the `limit` best.
 ///
