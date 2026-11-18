@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::ambient;
+use common::ambient::AmbientFutureExt;
 use common::ambient::hw;
 use common::ambient::profile::ShardScope;
 use common::types::DeferredBehavior;
@@ -32,7 +33,9 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
+use crate::operations::loggable::Loggable;
 use crate::profiling::interface::log_request_to_collector;
+use crate::profiling::workload::{self, Fingerprint, WorkloadSample};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -64,6 +67,46 @@ impl LocalShard {
             Some(scope) => scope.run(operation).await,
             None => operation.await,
         }
+    }
+
+    /// [`Self::profiled`], also counted in the workload statistics under the fingerprint
+    /// of `request`, when enabled (`query_profiling` beta flag).
+    async fn profiled_with_workload<T, L, F>(
+        &self,
+        operation_name: &'static str,
+        request: impl FnOnce() -> L,
+        operation: F,
+    ) -> CollectionResult<T>
+    where
+        L: Loggable,
+        F: std::future::Future<Output = CollectionResult<T>>,
+    {
+        if !workload::enabled() {
+            return self.profiled(operation_name, operation).await;
+        }
+        let Some(ctx) = ambient::current().measured().cloned() else {
+            return self.profiled(operation_name, operation).await;
+        };
+        let fingerprint = Fingerprint::of(&self.collection_name, &request());
+        let fork = ctx.measure_fork();
+        let start = Instant::now();
+        let result = self
+            .profiled(operation_name, operation)
+            .measured(fork.clone())
+            .await;
+        let duration = start.elapsed();
+        let hw = fork.hw_data();
+        workload::record(
+            &self.collection_name,
+            fingerprint,
+            WorkloadSample {
+                duration,
+                ok: result.is_ok(),
+                vector_scores: hw[hw::HwMetric::VectorScores] as u64,
+                quantized_vector_scores: hw[hw::HwMetric::QuantizedVectorScores] as u64,
+            },
+        );
+        result
     }
 
     /// Shard id for query profiles: shard directories are named after their id.
@@ -273,6 +316,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        let workload_request = request.clone();
         let operation = async move {
             let ScrollRequestInternal {
                 offset,
@@ -343,7 +387,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result
         };
-        self.profiled("scroll", operation).await
+        self.profiled_with_workload("scroll", move || workload_request.as_ref().clone(), operation)
+            .await
     }
 
     async fn local_scroll_by_id(
@@ -403,6 +448,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
+        let workload_request = request.clone();
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("count", || {
@@ -446,7 +492,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|total_count| CountResult { count: total_count })
         };
-        self.profiled("count", operation).await
+        self.profiled_with_workload("count", move || workload_request.as_ref().clone(), operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -459,6 +506,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        let workload_request = request.clone();
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("retrieve", || request.ids.len())?;
@@ -504,7 +552,8 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled("retrieve", operation).await
+        self.profiled_with_workload("retrieve", move || workload_request.as_ref().clone(), operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -514,6 +563,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let workload_request = requests.clone();
         let operation = async move {
             let start_time = Instant::now();
             let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
@@ -547,7 +597,8 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled("query_batch", operation).await
+        self.profiled_with_workload("query_batch", move || workload_request.remove_details(), operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -557,6 +608,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
+        let workload_request = request.clone();
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("facet", || {
@@ -587,7 +639,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|hits| FacetResponse { hits })
         };
-        self.profiled("facet", operation).await
+        self.profiled_with_workload("facet", move || workload_request.as_ref().clone(), operation)
+            .await
     }
 
     /// Finishes ongoing update tasks

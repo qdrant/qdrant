@@ -64,12 +64,16 @@ impl AmbientContext {
     /// A profile fork of this context: its own counters and profile frame, forwarding all
     /// measurements to `self`. Only created for profiled requests.
     pub(super) fn fork(&self, profile: ProfileHandle) -> Self {
+        self.fork_with(Some(profile))
+    }
+
+    fn fork_with(&self, profile: Option<ProfileHandle>) -> Self {
         let root = Arc::new(Root {
             hw: HwSharedDrain::default(),
             collection: None,
             cpu_utilization: self.0.root.cpu_utilization.clone(),
             sink: self.0.root.sink.clone(),
-            profile: Some(profile),
+            profile,
             forward: Some(self.clone()),
         });
         // Keeps tracing into the span of `self`, if any; the fork owns no span.
@@ -78,6 +82,12 @@ impl AmbientContext {
             span: None,
             _parent: Some(self.clone()),
         }))
+    }
+
+    /// A measuring fork of this context, for per-operation statistics: its own counters,
+    /// forwarding all measurements to `self`, and the same profile as `self`, if any.
+    pub fn measure_fork(&self) -> Self {
+        self.fork_with(self.0.root.profile.clone())
     }
 
     /// The profile of this request, if profiled.
