@@ -84,6 +84,8 @@ pub struct FeatureFlags {
     /// Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are
     /// open. Replays the persisted changes on startup to guarantee data consistency. Required for
     /// serverless deployments where storage and compute is separated.
+    ///
+    /// Enabled by default in Qdrant 1.20.3.
     pub persist_proxy_segments: bool,
 
     /// When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage
@@ -135,7 +137,7 @@ impl Default for FeatureFlags {
             compact_logstore_tracker: false,
             transfer_raw_points: true,
             transfer_raw_payloads: true,
-            persist_proxy_segments: false,
+            persist_proxy_segments: true,
             combined_vector_storage: true,
             versioned_deletes: false,
             pipnn_graph_building: false,

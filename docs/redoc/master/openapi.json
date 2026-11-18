@@ -12058,8 +12058,8 @@
             "type": "boolean"
           },
           "persist_proxy_segments": {
-            "description": "Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are open. Replays the persisted changes on startup to guarantee data consistency. Required for serverless deployments where storage and compute is separated.",
-            "default": false,
+            "description": "Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are open. Replays the persisted changes on startup to guarantee data consistency. Required for serverless deployments where storage and compute is separated.\n\nEnabled by default in Qdrant 1.20.3.",
+            "default": true,
             "type": "boolean"
           },
           "combined_vector_storage": {
