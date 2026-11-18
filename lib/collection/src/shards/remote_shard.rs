@@ -1538,7 +1538,8 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        if self.profile_finish("count", profile_started, profile) == profile::RemoteResults::Discard {
+        if self.profile_finish("count", profile_started, profile) == profile::RemoteResults::Discard
+        {
             return Ok(CountResult { count: 0 });
         }
 

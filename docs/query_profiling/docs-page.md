@@ -45,14 +45,18 @@ The `profile` parameter is supported by:
 | Count (`/points/count`) | ✓ | ✓ |
 | Facet (`/facet`) | ✓ | — (a facet always reads one payload index; there is no plan to show) |
 
-In gRPC, set `profile: ProfileAnalyze` or `profile: ProfileExplain` on the request; the response carries the same
-`QueryProfile` message.
+In gRPC, set `profile: ProfileAnalyze` or `profile: ProfileExplain` on the request (on the batch request for batches;
+it is rejected on batch items); the response carries the same `QueryProfile` message.
 
 - **`analyze`** runs the request as usual and adds `profile` to the response. The overhead is small but not zero
   (see [Overhead](#overhead)); don't enable it for every request in production.
 - **`explain`** runs the planning steps (cardinality estimation and, where needed, sampling, which are real), but
-  scores no vectors and returns an empty result. Stages that work on prefetch results (rescoring, fusion,
-  grouping) have nothing to plan in explain mode.
+  scores no vectors, reads no points and returns an empty result. Stages that work on prefetch results (rescoring,
+  fusion, grouping) and BM25 text searches have nothing to plan in explain mode. An approximate count
+  (`exact: false`) returns its estimate, which is its plan. Explain requests count against the read rate limit at
+  the minimal cost.
+- In a cluster running mixed versions, peers that don't support profiling return no profile. In `explain` mode, their
+  results are discarded and `notes` names them.
 
 Profiles need the same access as the request itself. A profile only describes the collection you queried.
 
@@ -72,14 +76,14 @@ Start with **`notes`**, which summarize the findings. Then look at the **segment
 | Field | Meaning |
 |---|---|
 | `indexed` | The segment has an HNSW index for this vector. `false` means brute force, e.g. while the optimizer is indexing. |
-| `strategy` | `hnsw`, `hnsw_filtered`, `acorn`: graph search. `payload_index_first`: points matching the filter are taken from payload indexes and scored directly. `full_scan`: every point is checked. `exact`: brute force because `exact: true` was set. `sparse_index`. For scroll/count/facet: `indexed_read` or `full_scan_read`. |
+| `strategy` | `hnsw`, `hnsw_filtered`, `acorn`: graph search. `payload_index_first`: points matching the filter are taken from payload indexes and scored directly. `full_scan`: every point is checked. `exact`: brute force because `exact: true` was set. `sparse_index`. For scroll/count/facet: `indexed_read`, `full_scan_read`, or `unfiltered_read` (no filter: reads up to the limit). |
 | `strategy_reason` | Why: `not_indexed`, `small_segment`, `cardinality_below_threshold`, `cardinality_above_threshold`, `sampled_cardinality`, `exact_requested`, `unfiltered`, … |
 | `full_scan_threshold` | The threshold, in points, that the filter cardinality was compared with. |
 | `filter.estimated_cardinality` | `min` / `exp` / `max` points expected to match the filter in this segment. |
 | `filter.actual_cardinality` | The exact number of matches, when the request computed it anyway (exact count, full scan). |
 | `filter.indexed_keys` / `unindexed_keys` | Payload keys that used a payload index / that are checked by reading each candidate's payload. |
 | `filter.full_payload_scan` | No payload index narrowed the candidates down: every point of the segment was a candidate. |
-| `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". |
+| `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". For the sparse inverted index, posting-list entries traversed. |
 | `counters.*_io_read_bytes` | Bytes read from disk (vectors, payload, payload indexes, object storage). Reads from RAM storage are not counted. |
 
 In a distributed cluster, a remote shard's `time_ms` is measured on the peer that holds it, and `network_time_ms` is
@@ -266,7 +270,8 @@ Requests of the same shape share a fingerprint: vectors, filter values, ids, lim
 together. Payload keys, vector names and options like `exact` or `fusion` are kept.
 
 - Statistics are per node and kept in memory, for up to 1024 fingerprints. They are counted per shard operation, so a
-  request that touches 3 shards on a node counts 3 calls on that node.
+  request that touches 3 shards on a node counts 3 calls on that node. Explain-mode and rate-limited requests are
+  not counted. Very long request shapes are stored cut to 4 KiB.
 - `p50_time_ms` and `p95_time_ms` are accurate to ±12.5%.
 - `sort`: `total_time` (default), `mean_time`, `p95_time`, `calls`, `vector_scores`. Filter with `collection=<name>`.
 - `DELETE /profiler/workload` resets the statistics.

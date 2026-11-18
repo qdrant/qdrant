@@ -256,3 +256,68 @@ def test_distributed_profile(tmp_path: pathlib.Path):
     for url in peer_urls[1:]:
         workload = requests.get(f"{url}/profiler/workload", params={"collection": COLLECTION}).json()["result"]
         assert workload["fingerprints"], url
+
+
+def test_explain_executes_nothing_and_scores_are_counted(tmp_path: pathlib.Path):
+    url = start_single_node(tmp_path, PROFILING_ENV)
+    setup_collection(url, points=300)
+
+    # Unfiltered reads: planned, not read
+    result, profile = profiled(url, f"/collections/{COLLECTION}/points/scroll",
+                               {"limit": 5, "with_payload": True, "with_vector": True}, mode="explain")
+    assert result["points"] == []
+    strategies = {s["strategy"] for s in all_segments(profile) if s["points"] > 0}
+    assert strategies == {"unfiltered_read"}
+    for body in [{"limit": 5, "order_by": "city"}]:
+        response = post(url, f"/collections/{COLLECTION}/points/scroll", body, params={"profile": "explain"})
+        # order_by needs a range index on `city`; either rejected for that, or empty
+        assert not response.ok or response.json()["result"]["points"] == []
+    result, profile = profiled(url, f"/collections/{COLLECTION}/points/count", {"exact": True}, mode="explain")
+    assert result["count"] == 0
+    for segment in all_segments(profile):
+        # Explain does not read, so no exact count is claimed
+        assert segment["filter"] is None or segment["filter"]["actual_cardinality"] is None
+    result, _ = profiled(url, f"/collections/{COLLECTION}/points/query", {"query": {"sample": "random"}, "limit": 5},
+                         mode="explain")
+    assert result["points"] == []
+
+    # BM25: not run in explain mode, and says so
+    requests.put(f"{url}/collections/{COLLECTION}/index?wait=true", json={
+        "field_name": "text", "field_schema": {"type": "text", "tokenizer": "whitespace", "scoring": True},
+    }).raise_for_status()
+    requests.put(f"{url}/collections/{COLLECTION}/points?wait=true", json={"points": [
+        {"id": 10_000 + i, "vector": query_vector(), "payload": {"text": "alpha gamma" if i % 2 else "alpha"}}
+        for i in range(20)
+    ]}).raise_for_status()
+    bm25 = {"query": {"text": "alpha gamma"}, "using": "text", "limit": 5}
+    response = post(url, f"/collections/{COLLECTION}/points/query", bm25)
+    assert response.ok, response.text
+    assert len(response.json()["result"]["points"]) > 0
+    result, profile = profiled(url, f"/collections/{COLLECTION}/points/query", bm25, mode="explain")
+    assert result["points"] == []
+    assert any("BM25" in note for note in profile["notes"])
+
+    # Scalar quantization: quantized scores are counted
+    quantized = "test_profiling_quantized"
+    requests.put(f"{url}/collections/{quantized}", json={
+        "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
+        "quantization_config": {"scalar": {"type": "int8", "always_ram": True}},
+        # Quantized data is built when the optimizer indexes a segment
+        "optimizers_config": {"indexing_threshold": 1, "default_segment_number": 1},
+    }).raise_for_status()
+    upsert_random_points(url, 300, collection_name=quantized, with_sparse_vector=False)
+    wait_for(lambda: requests.get(f"{url}/collections/{quantized}").json()["result"]["status"] == "green")
+    _, profile = profiled(url, f"/collections/{quantized}/points/query",
+                          {"query": query_vector(), "limit": 5, "params": {"quantization": {"rescore": False}}})
+    assert sum(s["counters"]["quantized_vector_scores"] for s in all_segments(profile)) > 0
+
+    # gRPC: `profile` on a batch item is rejected, not silently ignored
+    client = Client.get_by_endpoint(f"localhost:{grpc_port(url)}")
+    with pytest.raises(Exception) as error:
+        client.request("qdrant.Points", "QueryBatch", {
+            "collection_name": COLLECTION,
+            "query_points": [{"collection_name": COLLECTION,
+                              "query": {"nearest": {"dense": {"data": query_vector()}}},
+                              "profile": "ProfileExplain"}],
+        })
+    assert "set it on the batch request" in str(error.value)

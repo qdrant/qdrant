@@ -23,7 +23,6 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
-use crate::operations::loggable::Loggable;
 use crate::operations::point_ops::PointStructRawPersisted;
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
@@ -62,6 +61,9 @@ impl LocalShard {
         operation_name: &'static str,
         operation: F,
     ) -> F::Output {
+        if common::ambient::profile::mode().is_none() {
+            return operation.await;
+        }
         match ShardScope::start(self.profile_shard_id(), operation_name) {
             Some(scope) => scope.run(operation).await,
             None => operation.await,
@@ -69,25 +71,27 @@ impl LocalShard {
     }
 
     /// [`Self::profiled`], also counted in the workload statistics under the fingerprint
-    /// of `request`, when enabled (`query_profiling` beta flag).
-    async fn profiled_with_workload<T, L, F>(
+    /// computed by `fingerprint`. `fingerprint` is `Some` only when workload statistics are
+    /// enabled (`query_profiling` beta flag), see [`workload::enabled`].
+    async fn profiled_with_workload<T, F>(
         &self,
         operation_name: &'static str,
-        request: impl FnOnce() -> L,
+        fingerprint: Option<impl FnOnce(&str) -> Fingerprint>,
         operation: F,
     ) -> CollectionResult<T>
     where
-        L: Loggable,
         F: std::future::Future<Output = CollectionResult<T>>,
     {
+        let Some(fingerprint) = fingerprint else {
+            return self.profiled(operation_name, operation).await;
+        };
         // Explain mode does not execute the request: it is not part of the workload.
-        if !workload::enabled() || common::ambient::profile::is_explain() {
+        if common::ambient::profile::is_explain() {
             return self.profiled(operation_name, operation).await;
         }
         let Some(ctx) = ambient::current().measured().cloned() else {
             return self.profiled(operation_name, operation).await;
         };
-        let fingerprint = Fingerprint::of(&self.collection_name, &request());
         let fork = ctx.measure_fork();
         let start = Instant::now();
         let result = self
@@ -95,10 +99,18 @@ impl LocalShard {
             .measured(fork.clone())
             .await;
         let duration = start.elapsed();
+        // Rejected before doing any work: not part of the workload, and not worth fingerprinting
+        if let Err(CollectionError::RateLimitExceeded {
+            description: _,
+            retry_after: _,
+        }) = &result
+        {
+            return result;
+        }
         let hw = fork.hw_data();
         workload::record(
             &self.collection_name,
-            fingerprint,
+            fingerprint(&self.collection_name),
             WorkloadSample {
                 duration,
                 ok: result.is_ok(),
@@ -316,7 +328,10 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        let workload_request = request.clone();
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
         let operation = async move {
             let ScrollRequestInternal {
                 offset,
@@ -387,12 +402,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result
         };
-        self.profiled_with_workload(
-            "scroll",
-            move || workload_request.as_ref().clone(),
-            operation,
-        )
-        .await
+        self.profiled_with_workload("scroll", fingerprint, operation)
+            .await
     }
 
     async fn local_scroll_by_id(
@@ -452,7 +463,10 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
-        let workload_request = request.clone();
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("count", || {
@@ -496,12 +510,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|total_count| CountResult { count: total_count })
         };
-        self.profiled_with_workload(
-            "count",
-            move || workload_request.as_ref().clone(),
-            operation,
-        )
-        .await
+        self.profiled_with_workload("count", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -514,7 +524,10 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        let workload_request = request.clone();
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("retrieve", || request.ids.len())?;
@@ -560,12 +573,8 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled_with_workload(
-            "retrieve",
-            move || workload_request.as_ref().clone(),
-            operation,
-        )
-        .await
+        self.profiled_with_workload("retrieve", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -575,7 +584,10 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        let workload_request = requests.clone();
+        let fingerprint = workload::enabled().then(|| {
+            let request = requests.clone();
+            move |collection: &str| Fingerprint::of(collection, &request.remove_details())
+        });
         let operation = async move {
             let start_time = Instant::now();
             let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
@@ -609,12 +621,8 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled_with_workload(
-            "query_batch",
-            move || workload_request.remove_details(),
-            operation,
-        )
-        .await
+        self.profiled_with_workload("query_batch", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -624,7 +632,10 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
-        let workload_request = request.clone();
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter("facet", || {
@@ -655,12 +666,8 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|hits| FacetResponse { hits })
         };
-        self.profiled_with_workload(
-            "facet",
-            move || workload_request.as_ref().clone(),
-            operation,
-        )
-        .await
+        self.profiled_with_workload("facet", fingerprint, operation)
+            .await
     }
 
     /// Finishes ongoing update tasks

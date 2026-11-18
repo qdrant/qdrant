@@ -63,8 +63,17 @@ message QueryResponse { ... optional QueryProfile profile = 4; }
 - Without the flag enabled, `profile=...` is rejected with 400 and an explanation; requests without it are unaffected.
 - The profile is also returned on errors (e.g. timeout), to show how far the request got.
 - **Explain** runs everything up to the per-segment strategy choice (including cardinality estimation and sampling,
-  which are real), then returns before scoring vectors. It is forwarded to remote shards. Stages that consume prefetch
-  results (rescoring, fusion, grouping, order_by) have no candidates in explain mode; the profile says so in `notes`.
+  which are real), then returns before scoring vectors or reading points. It is forwarded to remote shards. Stages
+  that consume prefetch results (rescoring, fusion, grouping, order_by) have no candidates in explain mode; the
+  profile says so in `notes`. Explain never returns points, whatever the request:
+  - unfiltered scroll, order_by, random sampling and exact count return before reading (`strategy: unfiltered_read`);
+  - BM25 text leaves are not run (they have no strategy to choose) and add a note saying so;
+  - an older peer that ignores the mode (mixed-version cluster) returns no profile: its results are **discarded**
+    and a note names the peer;
+  - approximate count (`exact: false`) still returns its estimate: estimating *is* its plan, nothing is read.
+- Explain is rate limited like any read, at the minimal cost (1): it does real planning work, so it must not bypass
+  the limit, but it scores nothing.
+- gRPC batches take `profile` on the batch request; `profile` on a batch item is rejected rather than ignored.
 - **Explain on facet is rejected** with a 400 that says why: a facet has no strategy to choose — it always reads one
   payload index and counts. Explain on count/scroll is supported (it shows indexed vs. full-scan reads).
 
@@ -170,9 +179,15 @@ forwarded to the request's totals.
 
 **Zero cost when off.** Every profiler entry point is `slot::with_context_unchecked(...)` → `None` → return: one
 thread-local read and a branch, at segment/shard/request granularity, never per point. Strings (segment ids, payload
-keys) are built in closures only when profiled. The one per-score change is that `HwScale::cpu` bumps two counters
-in the thread-local slot instead of one (the distance counts); that is the same cache line and is measured below.
-Workload stats are guarded by a `OnceLock<bool>` read of the flag.
+keys) are built in closures only when profiled, and the shard id is parsed only when profiled. Distance counts are
+bumped only when the flag is on (a process-wide `AtomicBool` set at startup): with the flag off, scorers bump exactly
+the metrics they did before. Flushing hardware counters skips zero metrics, so the two new metrics add no atomic
+operations when unused. Workload stats are guarded by a `OnceLock<bool>` read of the flag; the request is cloned
+and fingerprinted only when it is set, after the operation, and not for rate-limited calls.
+
+Distance counts per scorer: dense, multi-vector and sparse plain scorers count one per scored point (`HwScale`);
+quantized scorers count explicitly because their CPU is bumped inside the `quantization` crate; the sparse inverted
+index counts posting-list entries traversed (each is one partial dot product).
 
 ## Overhead measurements
 
@@ -206,6 +221,18 @@ Conclusions:
   and segment. It is opt-in per request, so it never affects requests that don't ask for it. If needed, the cheapest
   wins are skipping empty segments in the output and not cloning segment ids.
 
+Note: these measurements were taken before the review fixes below. The fixes make the flag-off path do strictly
+less work (score counting gated, zero metrics skipped on flush, no eager clone/parse), so the "off" column is an
+upper bound; `analyze` was not re-measured.
+
+## Review
+
+A Codex review of the branch found 10 issues, all confirmed and fixed with tests: explain returning or computing
+results (older peers, unfiltered reads, BM25), quantized and sparse-index scores not counted, per-item `profile` in
+gRPC batches silently ignored, unbounded size of stored fingerprints, flag-off overhead in scorers and shard ops,
+fingerprinting before the rate limiter, explain consuming the full read budget, and forks detaching trace events
+from the request span.
+
 ## Access control
 
 - **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only
@@ -230,7 +257,9 @@ Conclusions:
 - Per fingerprint: calls, errors, total/mean/min/max time, p50/p95 from a fixed log-scale histogram (128 buckets,
   ×1.25, 0.05 ms … minutes, ±12.5%), distance computations (original and quantized), first/last seen.
 - Up to 1024 fingerprints per node; when full, the one with the least total time is evicted (`evicted` is reported).
-- Every request is counted, not only those over 50 ms. Explain-mode requests are not counted.
+  The stored normalized request is cut to 4 KiB of JSON (the hash covers all of it), so the table stays under ~4 MiB
+  whatever the requests contain. Reading the endpoint selects the top entries before cloning them.
+- Every request is counted, not only those over 50 ms. Explain-mode and rate-limited requests are not counted.
 - Counted at the **shard operation** level, like the slow log: a request touching 3 local shards counts 3 calls.
 
 ### Cluster-wide view (proposal, not implemented)

@@ -145,6 +145,28 @@ fn unmeasured_future_stays_in_the_span() {
 }
 
 #[test]
+fn measure_fork_traces_into_the_span_and_forwards_measurements() {
+    let (events, hw) = run(|| {
+        let fork = current().measured().unwrap().measure_fork();
+        fork.measure(|| {
+            HwMetric::Cpu.bump(3);
+            mark!("in fork");
+        });
+        assert_eq!(fork.hw_data()[HwMetric::Cpu], 3);
+    });
+    // Counted in the fork and in the request it was forked from
+    assert_eq!(hw[HwMetric::Cpu], 3);
+    assert_eq!(
+        json!(events),
+        json!([
+            {"kind": "span_start", "id": 1, "parent": 0, "timestamp": "*", "name": "root"},
+            {"kind": "mark",                "parent": 1, "timestamp": "*", "text": "in fork"},
+            {"kind": "span_end",   "id": 1,              "timestamp": "*"},
+        ])
+    );
+}
+
+#[test]
 fn root_without_started_sink_is_untraced() {
     let file = tempfile::NamedTempFile::new().unwrap();
     let sink = Sink::file(file.path().to_owned()).unwrap();

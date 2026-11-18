@@ -447,6 +447,7 @@ impl Points for PointsService {
             timeout,
             profile,
         } = request.into_inner();
+        reject_item_profiles(search_points.iter().map(|item| item.profile))?;
 
         let timeout = timeout.map(Duration::from_secs);
 
@@ -730,6 +731,7 @@ impl Points for PointsService {
             timeout,
             profile,
         } = request;
+        reject_item_profiles(query_points.iter().map(|item| item.profile))?;
         let timeout = timeout.map(Duration::from_secs);
         let hw_metrics = self
             .get_request_collection_hw_usage_counter_profiled(collection_name.clone(), profile)?;
@@ -852,4 +854,16 @@ impl Points for PointsService {
 
         Ok(Response::new(offsets_response))
     }
+}
+
+/// Batch items share one profile: reject `profile` on an item, instead of silently ignoring it.
+fn reject_item_profiles(
+    mut item_profiles: impl Iterator<Item = Option<i32>>,
+) -> Result<(), Status> {
+    if item_profiles.any(|profile| profile.is_some()) {
+        return Err(Status::invalid_argument(
+            "`profile` is not supported on the items of a batch: set it on the batch request",
+        ));
+    }
+    Ok(())
 }

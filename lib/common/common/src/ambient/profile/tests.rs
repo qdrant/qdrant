@@ -172,12 +172,23 @@ fn remote_without_profile_is_discarded_in_explain_only() {
     assert_eq!(action, RemoteResults::Discard);
     let profile = profiler.finish();
     assert_eq!(profile.shards.len(), 1);
-    assert!(profile.notes.iter().any(|note| note.contains("does not support explain")));
+    assert!(
+        profile
+            .notes
+            .iter()
+            .any(|note| note.contains("does not support explain"))
+    );
 
     let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
     let action = ctx.measure(|| record_remote_without_profile(1, 9, "query_batch", duration));
     assert_eq!(action, RemoteResults::Keep);
-    assert!(profiler.finish().notes.iter().any(|note| note.contains("no profile")));
+    assert!(
+        profiler
+            .finish()
+            .notes
+            .iter()
+            .any(|note| note.contains("no profile"))
+    );
 
     // Not profiled: always keep
     assert_eq!(

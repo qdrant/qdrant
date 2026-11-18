@@ -19,7 +19,7 @@ pub(super) struct Node {
     root: Arc<Root>,
     span: Option<SpanId>,
     /// Kept alive, so it ends after its children.
-    _parent: Option<AmbientContext>,
+    parent: Option<AmbientContext>,
 }
 
 /// One per request.
@@ -80,7 +80,7 @@ impl AmbientContext {
         Self(Arc::new(Node {
             root,
             span: None,
-            _parent: Some(self.clone()),
+            parent: Some(self.clone()),
         }))
     }
 
@@ -146,9 +146,15 @@ impl AmbientContext {
         self.traced().is_some()
     }
 
-    /// The sink and the id of this node's span.
+    /// The sink and the id of this node's span. A fork owns no span: it traces into the
+    /// span of the context it was forked from.
     pub(super) fn traced(&self) -> Option<(&Sink, SpanId)> {
-        Some((self.0.root.sink.as_ref()?, self.0.span?))
+        let sink = self.0.root.sink.as_ref()?;
+        let span = match self.0.span {
+            Some(span) => span,
+            None => self.0.parent.as_ref()?.traced()?.1,
+        };
+        Some((sink, span))
     }
 
     fn node(root: Arc<Root>, parent: Option<&Self>, name: impl FnOnce() -> EcoString) -> Self {
@@ -156,7 +162,9 @@ impl AmbientContext {
             let id = trace::next_id();
             sink.send(Event::SpanStart {
                 id,
-                parent: parent.and_then(|parent| parent.0.span).unwrap_or(0),
+                parent: parent
+                    .and_then(|parent| parent.traced())
+                    .map_or(0, |(_, span)| span),
                 timestamp: trace::now(),
                 name: name(),
             });
@@ -165,7 +173,7 @@ impl AmbientContext {
         Self(Arc::new(Node {
             root,
             span,
-            _parent: parent.cloned(),
+            parent: parent.cloned(),
         }))
     }
 

@@ -1497,7 +1497,13 @@ impl LocalShard {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.read_rate_limiter {
-            let cost = cost_fn();
+            // Explain only plans (cardinality estimation, sampling) and scores nothing:
+            // it is still rate limited, at the minimal cost, so it can't bypass the limit.
+            let cost = if common::ambient::profile::is_explain() {
+                1
+            } else {
+                cost_fn()
+            };
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)

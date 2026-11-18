@@ -28,6 +28,11 @@ pub const WORKLOAD_SCHEMA_VERSION: u32 = 1;
 /// like `pg_stat_statements.max`.
 const MAX_FINGERPRINTS: usize = 1024;
 
+/// Normalized requests kept per fingerprint are cut to this many bytes of JSON, so the table
+/// stays within `MAX_FINGERPRINTS * MAX_NORMALIZED_BYTES` (4 MiB) whatever the requests hold,
+/// e.g. long payload paths in `with_payload`. The fingerprint hash covers the whole request.
+const MAX_NORMALIZED_BYTES: usize = 4096;
+
 /// Placeholder for a stripped literal.
 const LITERAL: &str = "?";
 
@@ -114,7 +119,16 @@ impl Fingerprint {
         collection_name.hash(&mut hasher);
         request.request_name().hash(&mut hasher);
         // `Value` is not `Hash`; its canonical string is (object keys are sorted).
-        normalized.to_string().hash(&mut hasher);
+        let canonical = normalized.to_string();
+        canonical.hash(&mut hasher);
+        if canonical.len() > MAX_NORMALIZED_BYTES {
+            let cut = canonical.floor_char_boundary(MAX_NORMALIZED_BYTES);
+            normalized = Value::String(format!(
+                "{}... ({} more bytes)",
+                &canonical[..cut],
+                canonical.len() - cut
+            ));
+        }
         Self {
             hash: hasher.finish(),
             request_name: request.request_name(),
@@ -307,11 +321,25 @@ impl WorkloadStats {
         collection_name: Option<&str>,
         sort: WorkloadSort,
     ) -> Vec<WorkloadEntry> {
-        let mut entries: Vec<WorkloadEntry> = self
+        let key = |e: &Entry| match sort {
+            WorkloadSort::TotalTime => e.total_ms,
+            WorkloadSort::MeanTime => e.total_ms / e.calls.max(1) as f64,
+            WorkloadSort::P95Time => e.histogram.quantile_ms(0.95, e.max_ms),
+            WorkloadSort::Calls => e.calls as f64,
+            WorkloadSort::VectorScores => (e.vector_scores + e.quantized_vector_scores) as f64,
+        };
+        // Select first, then clone only the selected entries
+        let mut selected: Vec<(f64, u64, &Entry)> = self
             .entries
             .iter()
             .filter(|(_, e)| collection_name.is_none_or(|name| e.collection_name == name))
-            .map(|(hash, e)| WorkloadEntry {
+            .map(|(hash, e)| (key(e), *hash, e))
+            .collect();
+        selected.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        selected.truncate(limit);
+        selected
+            .into_iter()
+            .map(|(_, hash, e)| WorkloadEntry {
                 fingerprint: format!("{hash:016x}"),
                 collection_name: e.collection_name.clone(),
                 request_name: e.request_name,
@@ -329,17 +357,7 @@ impl WorkloadStats {
                 first_seen: e.first_seen,
                 last_seen: e.last_seen,
             })
-            .collect();
-        let key = |e: &WorkloadEntry| match sort {
-            WorkloadSort::TotalTime => e.total_time_ms,
-            WorkloadSort::MeanTime => e.mean_time_ms,
-            WorkloadSort::P95Time => e.p95_time_ms,
-            WorkloadSort::Calls => e.calls as f64,
-            WorkloadSort::VectorScores => (e.vector_scores + e.quantized_vector_scores) as f64,
-        };
-        entries.sort_by(|a, b| key(b).total_cmp(&key(a)));
-        entries.truncate(limit);
-        entries
+            .collect()
     }
 
     pub fn since(&self) -> Option<DateTime<Utc>> {
@@ -493,6 +511,21 @@ mod tests {
         let only_c2 = stats.entries(10, Some("c2"), WorkloadSort::Calls);
         assert_eq!(only_c2.len(), 1);
         assert_eq!(only_c2[0].calls, 1);
+    }
+
+    #[test]
+    fn test_normalized_request_is_capped() {
+        let long_path = "x".repeat(10 * MAX_NORMALIZED_BYTES);
+        let a = Fingerprint::of(
+            "c",
+            &Req(json!({"with_payload": [long_path.clone() + "a"]})),
+        );
+        let b = Fingerprint::of("c", &Req(json!({"with_payload": [long_path + "b"]})));
+        // Distinct requests keep distinct fingerprints, but store a bounded shape
+        assert_ne!(a.hash, b.hash);
+        let stored = a.normalized.as_str().unwrap();
+        assert!(stored.len() < MAX_NORMALIZED_BYTES + 64);
+        assert!(stored.ends_with("more bytes)"));
     }
 
     #[test]
