@@ -359,3 +359,16 @@ pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
 
 #[cfg(test)]
 mod snapshot_preparation_tests;
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(ShardHolder {
+    shards,
+    shard_transfers,
+    shard_transfer_changes,
+    resharding_state,
+    rings,
+    key_mapping,
+    shard_id_to_key_mapping,
+    sharding_method,
+    active_recoveries,
+});

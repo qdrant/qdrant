@@ -1754,3 +1754,29 @@ fn collect_segment_memory_metadata(
         }
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(LocalShard {
+    collection_name,
+    segments,
+    collection_config,
+    shared_storage_config,
+    payload_index_schema,
+    wal,
+    update_handler,
+    update_sender,
+    update_tracker,
+    update_lock,
+    path,
+    optimizers,
+    optimizers_log,
+    total_optimized_points,
+    search_runtime,
+    disk_usage_watcher,
+    read_rate_limiter,
+    write_rate_limiter,
+    is_gracefully_stopped,
+    update_operation_lock,
+    applied_seq_handler,
+    effective_optimizers_config,
+});

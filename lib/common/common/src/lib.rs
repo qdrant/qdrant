@@ -44,6 +44,7 @@ pub mod raw_bytes_serde;
 pub mod reason;
 pub mod save_on_disk;
 pub mod scope_tracker;
+pub mod send_sync;
 pub mod small_uint;
 pub mod sort_utils;
 pub mod sorted_slice;
