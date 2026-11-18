@@ -675,6 +675,23 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         (offset, code)
     }
 
+    /// Length of [`Self::symmetric_vector`]: the dimensions a vector stores, padding included.
+    pub fn symmetric_dim(&self) -> usize {
+        self.metadata.actual_dim()
+    }
+
+    /// `data`, a stored vector, as the vector [`EncodedVectors::score_internal`] scores: each
+    /// code `c` as `alpha · c + offset`. Dot and Cosine score the dot product of two such
+    /// vectors, L2 their squared distance, and L1 their distance.
+    pub fn symmetric_vector<'a>(&self, data: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        let Metadata::Int8(metadata) = &self.metadata;
+        let (alpha, offset) = (metadata.alpha, metadata.offset);
+        let (_, code) = Self::parse_vec_data(data);
+        code[..metadata.actual_dim]
+            .iter()
+            .map(move |&c| alpha * f32::from(c) + offset)
+    }
+
     pub fn get_multiplier(&self) -> f32 {
         match &self.metadata {
             Metadata::Int8(meta) => meta.multiplier,

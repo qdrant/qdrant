@@ -386,6 +386,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         self.encoded_vectors.get_vector_data(i)
     }
 
+    pub fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
+    }
+
     /// The vectors as matrix operands, scoring as [`EncodedVectors::score_internal`]. `None`
     /// for L1, which has no matrix form.
     pub fn matrix_operands(&self) -> Option<TurboMatrixOperands<'_, StorageSource<'_, TStorage>>>

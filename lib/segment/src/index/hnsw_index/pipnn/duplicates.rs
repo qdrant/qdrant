@@ -1,4 +1,4 @@
-//! Identical vectors: built once, then linked as a chain.
+//! Identical vectors (codes, in a quantized build): built once, then linked as a chain.
 //!
 //! Identical vectors share one HashPrune bucket in every reservoir, which keeps the lowest id, and
 //! the final prune keeps one of them per list (`is_redundant`). So without this, all but one or
@@ -31,7 +31,7 @@ pub(super) fn find(
         points.is_sorted_by(|a, b| a < b),
         "points must be sorted and distinct",
     );
-    // Vectors with a NaN have no fingerprint, and are left to the fallback links
+    // Vectors that score NaN have no fingerprint, and are left to the fallback links
     let mut keyed: Vec<(NonZeroU64, PointOffsetType)> = points
         .par_iter()
         .filter_map(|&point| Some((fingerprints.get(point)?, point)))

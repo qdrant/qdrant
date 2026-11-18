@@ -185,7 +185,7 @@ impl PipnnParams {
 ///   builds check them here, once for all parts.
 /// - `scorer` scores the vectors HNSW would, the quantized ones where configured, and so does
 ///   the final prune through `vector_storage` and `quantized_vectors`. The sketches project the
-///   original vectors of `vector_storage`.
+///   codes of `quantized_vectors` if given, otherwise the vectors of `vector_storage`.
 /// - `None` if those vectors can't be sketched, because they aren't dense, so the caller builds
 ///   with HNSW.
 /// - Runs on the current rayon pool. The links only depend on the input and `params`, not on the
@@ -236,8 +236,13 @@ pub(super) fn build_links(
     // sketches and every level draw from different seeds, and a level's seed doesn't depend on
     // how many levels there are
     let mut seeds = StdRng::seed_from_u64(params.seed);
-    let Some((sketches, fingerprints)) =
-        Sketches::new(vector_storage, points, seeds.random(), stopped)?
+    let Some((sketches, fingerprints)) = Sketches::new(
+        vector_storage,
+        quantized_vectors,
+        points,
+        seeds.random(),
+        stopped,
+    )?
     else {
         return Ok(None);
     };
@@ -813,9 +818,10 @@ mod orchestration_tests {
         /// The groups of identical vectors among `points`, which aren't built but chained.
         fn groups(&self, points: &[PointOffsetType]) -> Vec<Vec<PointOffsetType>> {
             let stopped = AtomicBool::new(false);
-            let (sketches, fingerprints) = Sketches::new(&self.storage, points, 0, &stopped)
-                .unwrap()
-                .unwrap();
+            let (sketches, fingerprints) =
+                Sketches::new(&self.storage, self.quantized.as_ref(), points, 0, &stopped)
+                    .unwrap()
+                    .unwrap();
             duplicates::find(points, &sketches, &fingerprints)
         }
 
@@ -827,9 +833,11 @@ mod orchestration_tests {
 
         /// The sketches of `points`, as [`build_links`] projects them.
         fn sketches(&self, points: &[PointOffsetType]) -> Sketches {
-            let (sketches, _) = Sketches::new(&self.storage, points, 3, &AtomicBool::new(false))
-                .unwrap()
-                .unwrap();
+            let stopped = AtomicBool::new(false);
+            let (sketches, _) =
+                Sketches::new(&self.storage, self.quantized.as_ref(), points, 3, &stopped)
+                    .unwrap()
+                    .unwrap();
             sketches
         }
 
@@ -971,7 +979,7 @@ mod orchestration_tests {
     }
 
     #[expect(deprecated, reason = "always_ram")]
-    fn scalar() -> QuantizationConfig {
+    pub(super) fn scalar() -> QuantizationConfig {
         ScalarQuantizationConfig {
             r#type: Default::default(),
             quantile: None,
@@ -982,12 +990,12 @@ mod orchestration_tests {
     }
 
     #[expect(deprecated, reason = "always_ram")]
-    fn binary() -> QuantizationConfig {
+    pub(super) fn binary(encoding: BinaryQuantizationEncoding) -> QuantizationConfig {
         QuantizationConfig::Binary(BinaryQuantization {
             binary: BinaryQuantizationConfig {
                 always_ram: None,
                 memory: None,
-                encoding: Some(BinaryQuantizationEncoding::OneBit),
+                encoding: Some(encoding),
                 query_encoding: None,
             },
         })
@@ -1300,7 +1308,8 @@ mod orchestration_tests {
     /// Scalar quantization, and binary quantization at a low dimension, whose scores tie a lot.
     #[rstest]
     fn quantized(
-        #[values(scalar(), binary())] quantization: QuantizationConfig,
+        #[values(scalar(), binary(BinaryQuantizationEncoding::OneBit))]
+        quantization: QuantizationConfig,
         #[values(Distance::Dot, Distance::Euclid)] distance: Distance,
     ) {
         let _scope = ambient::test_guard();
