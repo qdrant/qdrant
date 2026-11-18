@@ -1,11 +1,9 @@
-use crate::collection_manager::segments_searcher::read_segment_info;
-use common::ambient::profile;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use common::ambient;
-use common::ambient::hw;
+use common::ambient::{hw, profile};
 use common::types::DeferredBehavior;
 use futures::future;
 use futures::future::try_join_all;
@@ -18,6 +16,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::collection_manager::segments_searcher::read_segment_info;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 

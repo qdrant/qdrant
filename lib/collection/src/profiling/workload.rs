@@ -249,7 +249,12 @@ pub enum WorkloadSort {
 }
 
 impl WorkloadStats {
-    pub fn record(&mut self, collection_name: &str, fingerprint: Fingerprint, sample: WorkloadSample) {
+    pub fn record(
+        &mut self,
+        collection_name: &str,
+        fingerprint: Fingerprint,
+        sample: WorkloadSample,
+    ) {
         let now = Utc::now();
         self.since.get_or_insert(now);
         let ms = sample.duration.as_secs_f64() * 1000.0;
@@ -267,21 +272,24 @@ impl WorkloadStats {
             }
         }
 
-        let entry = self.entries.entry(fingerprint.hash).or_insert_with(|| Entry {
-            collection_name: collection_name.to_string(),
-            request_name: fingerprint.request_name,
-            normalized: fingerprint.normalized,
-            calls: 0,
-            errors: 0,
-            total_ms: 0.0,
-            min_ms: f64::INFINITY,
-            max_ms: 0.0,
-            histogram: Histogram::new(),
-            vector_scores: 0,
-            quantized_vector_scores: 0,
-            first_seen: now,
-            last_seen: now,
-        });
+        let entry = self
+            .entries
+            .entry(fingerprint.hash)
+            .or_insert_with(|| Entry {
+                collection_name: collection_name.to_string(),
+                request_name: fingerprint.request_name,
+                normalized: fingerprint.normalized,
+                calls: 0,
+                errors: 0,
+                total_ms: 0.0,
+                min_ms: f64::INFINITY,
+                max_ms: 0.0,
+                histogram: Histogram::new(),
+                vector_scores: 0,
+                quantized_vector_scores: 0,
+                first_seen: now,
+                last_seen: now,
+            });
         entry.calls += 1;
         entry.errors += u64::from(!sample.ok);
         entry.total_ms += ms;
@@ -462,7 +470,11 @@ mod tests {
         };
         let q = |v: &str| Req(json!({"filter": {"key": "city", "match": {"value": v}}}));
         for (i, city) in ["a", "b", "c", "d"].iter().enumerate() {
-            stats.record("c1", Fingerprint::of("c1", &q(city)), sample(10 * (i as u64 + 1), 100));
+            stats.record(
+                "c1",
+                Fingerprint::of("c1", &q(city)),
+                sample(10 * (i as u64 + 1), 100),
+            );
         }
         stats.record("c2", Fingerprint::of("c2", &q("a")), sample(5, 1));
 

@@ -1,8 +1,8 @@
-use common::ambient::profile;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::profile;
 use futures::future;
 use itertools::{Either, Itertools};
 use rand::RngExt;

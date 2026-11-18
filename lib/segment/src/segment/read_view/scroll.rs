@@ -1,7 +1,7 @@
-use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use common::condition_checker::ConditionChecker;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::iterator_ext::IteratorExt;

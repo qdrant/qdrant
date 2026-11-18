@@ -3,9 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::ambient;
-use common::ambient::AmbientFutureExt;
-use common::ambient::hw;
 use common::ambient::profile::ShardScope;
+use common::ambient::{AmbientFutureExt, hw};
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -24,6 +23,7 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
+use crate::operations::loggable::Loggable;
 use crate::operations::point_ops::PointStructRawPersisted;
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
@@ -33,7 +33,6 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
-use crate::operations::loggable::Loggable;
 use crate::profiling::interface::log_request_to_collector;
 use crate::profiling::workload::{self, Fingerprint, WorkloadSample};
 use crate::shards::local_shard::LocalShard;
@@ -388,8 +387,12 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result
         };
-        self.profiled_with_workload("scroll", move || workload_request.as_ref().clone(), operation)
-            .await
+        self.profiled_with_workload(
+            "scroll",
+            move || workload_request.as_ref().clone(),
+            operation,
+        )
+        .await
     }
 
     async fn local_scroll_by_id(
@@ -493,8 +496,12 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|total_count| CountResult { count: total_count })
         };
-        self.profiled_with_workload("count", move || workload_request.as_ref().clone(), operation)
-            .await
+        self.profiled_with_workload(
+            "count",
+            move || workload_request.as_ref().clone(),
+            operation,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -553,8 +560,12 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled_with_workload("retrieve", move || workload_request.as_ref().clone(), operation)
-            .await
+        self.profiled_with_workload(
+            "retrieve",
+            move || workload_request.as_ref().clone(),
+            operation,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -598,8 +609,12 @@ impl ShardOperation for LocalShard {
 
             result
         };
-        self.profiled_with_workload("query_batch", move || workload_request.remove_details(), operation)
-            .await
+        self.profiled_with_workload(
+            "query_batch",
+            move || workload_request.remove_details(),
+            operation,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -640,8 +655,12 @@ impl ShardOperation for LocalShard {
             log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
             result.map(|hits| FacetResponse { hits })
         };
-        self.profiled_with_workload("facet", move || workload_request.as_ref().clone(), operation)
-            .await
+        self.profiled_with_workload(
+            "facet",
+            move || workload_request.as_ref().clone(),
+            operation,
+        )
+        .await
     }
 
     /// Finishes ongoing update tasks

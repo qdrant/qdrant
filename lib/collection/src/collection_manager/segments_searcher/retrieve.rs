@@ -1,11 +1,9 @@
-use super::read_segment_info;
-use common::ambient::profile;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
 use ahash::AHashMap;
 use common::ambient;
-use common::ambient::hw;
+use common::ambient::{hw, profile};
 use common::types::DeferredBehavior;
 use itertools::Itertools;
 use segment::data_types::segment_record::SegmentRecordRaw;
@@ -16,7 +14,7 @@ use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blockin
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::SegmentsSearcher;
+use super::{SegmentsSearcher, read_segment_info};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 

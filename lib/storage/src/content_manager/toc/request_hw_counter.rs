@@ -5,9 +5,8 @@ use common::ambient::hw::{HwMetric, HwSharedDrain};
 use common::ambient::profile::{ProfileMode, Profiler, QueryProfile};
 use common::flags::feature_flags;
 
-use crate::content_manager::errors::StorageError;
-
 use super::TableOfContent;
+use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
     pub fn get_collection_hw_metrics(&self, collection_id: String) -> Arc<HwSharedDrain> {

@@ -1,0 +1,242 @@
+# Query profiling (`EXPLAIN` / `EXPLAIN ANALYZE`) — design
+
+Status: beta, behind the `query_profiling` feature flag. Branch `query-profiling`.
+
+## Goal
+
+Someone asking "why is this query slow?" should get the answer from Qdrant itself, at three levels:
+
+| Level | Postgres / MySQL / ArangoDB | Qdrant (this design) |
+|---|---|---|
+| Plan | `EXPLAIN`, `db._explain` | `?profile=explain`: the strategy each segment *would* use, real cardinality estimates, no vector scored |
+| Execution profile | `EXPLAIN (ANALYZE, BUFFERS)`, `EXPLAIN ANALYZE`, `db._profileQuery` | `?profile=analyze`: the response carries a `profile` with phase, shard and segment timings, strategies, counters and notes |
+| Workload | `pg_stat_statements`, Performance Schema digests | `GET /profiler/workload`: per-fingerprint calls / total / mean / p50 / p95 / points visited, next to `GET /profiler/slow_requests` |
+
+## What we borrowed, and where Qdrant needs a different shape
+
+- **Postgres EXPLAIN ANALYZE** prints a tree of plan nodes with `actual time=first..total rows=N loops=L`, and with `BUFFERS` it adds
+  `shared hit/read`. Borrowed: *estimate next to actual* (`estimated_cardinality` next to `actual_cardinality`), the
+  number of *calls* on every phase (Postgres `loops`), and I/O split by where the data came from (`*_io_read_bytes`,
+  `remote_io_cached_read_bytes` vs `remote_io_non_cached_read_bytes`, like `hit` vs `read`).
+- **MySQL EXPLAIN ANALYZE** (`FORMAT=TREE`) puts the *access method* first on every line ("Index lookup on t using idx",
+  "Table scan on t"). Borrowed: every segment states its `strategy` (`hnsw`, `hnsw_filtered`, `acorn`,
+  `payload_index_first`, `full_scan`, `exact`, `sparse_index`, `indexed_read`, `full_scan_read`), **and why it was chosen**
+  (`strategy_reason`, e.g. `cardinality_below_threshold` with the `full_scan_threshold` used). Qdrant's planner is
+  adaptive per segment, so the reason matters more than in MySQL.
+- **ArangoDB `db._profileQuery`** prints a fixed "Query Profile" table of phases (parsing, optimizing, executing,
+  finalizing), a per-node table with `Calls / Items / Runtime`, and a list of applied optimizer rules. Borrowed: the
+  flat list of named *phases* with `time_ms` and `calls`, and human-readable `notes` at the end (Arango's optimizer rules,
+  our derived findings: "`color` has no payload index", "2 segments are not indexed yet").
+
+**Why Qdrant can't use a plan tree.** A Postgres plan is one tree executed once. A Qdrant query is the
+*same* small plan (prefetch → search → fusion/rescore → merge) run independently in every **segment** of every
+**shard**, and each segment picks its own strategy from its own size, index state and cardinality estimate. A
+200-segment collection with one plan tree per segment would be unreadable, and the interesting fact is almost always
+"*these* segments chose differently". So the shape is:
+
+```
+QueryProfile                       request on the receiving node
+├── phases[]                       coordinator: shards, merge, collection_rescore, payload_retrieval
+├── shards[]                       one per shard operation, local or remote (with peer_id, network_time_ms)
+│   ├── phases[]                   shard: prefetch, segment_search, merge, rescore, fusion, payload_retrieval
+│   └── segments[]                 one per segment × search group: strategy, reason, filter, counters
+└── notes[]                        findings derived from all of the above
+```
+
+Phases are aggregated by name with `calls`, not nested: prefetch trees are recursive in Qdrant and the per-node
+breakdown Postgres gives is less useful than "how much time went into segment search vs. rescoring".
+
+## API
+
+Opt-in URL parameter (REST) / field (gRPC), on search, search batch, query, query batch, scroll, count, facet:
+
+```
+POST /collections/{name}/points/query?profile=analyze     # run it and report
+POST /collections/{name}/points/query?profile=explain     # plan only, empty result
+```
+
+```protobuf
+message QueryPoints { ... optional ProfileMode profile = 16; }
+message QueryResponse { ... optional QueryProfile profile = 4; }
+```
+
+- Without the flag enabled, `profile=...` is rejected with 400 and an explanation; requests without it are unaffected.
+- The profile is also returned on errors (e.g. timeout), to show how far the request got.
+- **Explain** runs everything up to the per-segment strategy choice (including cardinality estimation and sampling,
+  which are real), then returns before scoring vectors. It is forwarded to remote shards. Stages that consume prefetch
+  results (rescoring, fusion, grouping, order_by) have no candidates in explain mode; the profile says so in `notes`.
+- **Explain on facet is rejected** with a 400 that says why: a facet has no strategy to choose — it always reads one
+  payload index and counts. Explain on count/scroll is supported (it shows indexed vs. full-scan reads).
+
+Workload:
+
+```
+GET    /profiler/workload?limit=20&collection=<name>&sort=total_time|mean_time|p95_time|calls|vector_scores
+DELETE /profiler/workload          # reset, like pg_stat_statements_reset()
+```
+
+## Output schema (version 1) — annotated example
+
+Real output (debug build, 20k points, collection still indexing), trimmed to one segment:
+
+```jsonc
+{
+  "result": { "points": [ ... ] },
+  "status": "ok", "time": 0.020,
+  "profile": {
+    "version": 1,                         // bumped on any non-additive change
+    "mode": "analyze",
+    "total_time_ms": 20.01,               // wall time on the receiving node
+    "phases": [                           // coordinator phases, summed over calls
+      { "name": "shards", "time_ms": 19.48, "calls": 1 },
+      { "name": "merge", "time_ms": 0.09, "calls": 1 },
+      { "name": "collection_rescore", "time_ms": 0.01, "calls": 1 }
+    ],
+    "shards": [{
+      "shard_id": 0,
+      "peer_id": null,                    // set in distributed mode
+      "location": "local",                // or "remote"
+      "operation": "query_batch",
+      "time_ms": 18.60,                   // on the peer that executed it
+      "network_time_ms": null,            // remote: round trip minus time_ms
+      "phases": [
+        { "name": "prefetch", "time_ms": 18.47, "calls": 1 },
+        { "name": "segment_search", "time_ms": 16.82, "calls": 1 },
+        { "name": "merge", "time_ms": 0.14, "calls": 1 }
+      ],
+      "segments": [{
+        "segment_id": "e7bba57a-…",
+        "appendable": false,
+        "indexed": true,                  // false = brute force during indexing
+        "points": 15000,
+        "operation": "search",            // or "read" (scroll/count/facet)
+        "vector_name": "",
+        "batch_size": 1,
+        "limit": 5,
+        "strategy": "payload_index_first",
+        "strategy_reason": "cardinality_below_threshold",
+        "full_scan_threshold": 400,       // in points, as used for the decision
+        "filter": {
+          "estimated_cardinality": { "min": 0, "exp": 248, "max": 331 },
+          "actual_cardinality": null,     // filled when known for free (exact count, full scan)
+          "indexed_keys": ["city"],       // primary clauses served by a payload index
+          "unindexed_keys": ["color", "price"],   // checked by reading payload
+          "full_payload_scan": false      // true = no index narrowed candidates at all
+        },
+        "time_ms": 15.72,
+        "counters": {
+          "vector_scores": 224,           // distance computations, original vectors
+          "quantized_vector_scores": 0,   // distance computations, quantized vectors
+          "vector_io_read_bytes": 0,      // on-disk vector reads (RAM storage reads are not I/O)
+          "payload_io_read_bytes": 26994,
+          "payload_index_io_read_bytes": 0,
+          "remote_io_cached_read_bytes": 0,
+          "remote_io_non_cached_read_bytes": 0
+        }
+      }]
+    }],
+    "notes": [
+      "Filter conditions on `color`, `price` have no payload index: they are checked by reading the payload of each candidate point. Consider creating a payload index."
+    ]
+  }
+}
+```
+
+Stability: the Rust model (`lib/common/common/src/ambient/profile/model.rs`) is the single source; REST serializes it,
+gRPC (`QueryProfile` in `points.proto`) mirrors it field by field via `lib/api/src/grpc/profile_conversions.rs`, and the
+tests compare the two. Changes within a version are additive only (new optional fields, new enum values clients must
+tolerate). `WORKLOAD_SCHEMA_VERSION` versions the workload endpoint separately.
+
+## Instrumentation points
+
+The profiler lives in the existing per-request **ambient context** (`lib/common/common/src/ambient/`), which already
+carries hardware counters across tokio tasks and rayon/search-runtime threads. A profiled request gets a
+`ProfileHandle` in its root; nested *frames* collect phases (request), shard profiles (request) and segment profiles
+(shard). Shard and segment scopes **fork** the context so their counters are read in isolation while still being
+forwarded to the request's totals.
+
+| Layer | Where | What |
+|---|---|---|
+| API | `src/actix/api/{query,search,count,facet,…}_api.rs`, `src/tonic/api/points_api.rs`, `query_common.rs` | `profile` param, flag check, `RequestHwCounter::new_profiled`, attach `profile` to response |
+| Coordinator | `lib/collection/src/collection/query.rs` | phases `shards`, `merge`, `collection_rescore`, `payload_retrieval` |
+| Remote shards | `lib/collection/src/shards/remote_shard.rs`, `points_internal_service.proto`, `points_internal_api.rs` | forward mode, time the round trip, graft the remote profile, `network_time_ms` |
+| Local shard | `lib/collection/src/shards/local_shard/shard_ops.rs` (`profiled`) | `ShardScope` for query_batch, core_search, scroll, count, facet, retrieve |
+| Shard query | `lib/collection/src/shards/local_shard/query.rs` | phases `prefetch`, `rescore`, `payload_retrieval` |
+| Segment search | `lib/collection/src/collection_manager/segments_searcher/{search,segment_search}.rs` | `SegmentScope` per segment × search group; phases `segment_search`, `merge` |
+| Strategy choice | `lib/segment/src/index/hnsw_index/hnsw/read_view/dispatch.rs`, `plain_vector_index/read_view/search.rs`, `sparse_vector_index/read_view/search.rs` | `note_strategy`, `note_cardinality`, `note_full_scan_threshold`, explain short-circuit |
+| Filtered reads | `lib/segment/src/segment/read_view/scroll.rs`, `lib/collection/src/shards/local_shard/{scroll,facet}.rs`, `segments_searcher/retrieve.rs` | segment `read` profiles, indexed vs. full-scan reads, exact counts |
+| Distance counts | `lib/segment/src/vector_storage/{query_scorer,quantized}/*` → `HwScale` | `ScoreKind::{Original,Quantized}` → new `HwMetric::{VectorScores,QuantizedVectorScores}` |
+| Workload | `lib/collection/src/profiling/workload.rs`, `shard_ops.rs` (`profiled_with_workload`), `src/actix/api/profiler_api.rs` | fingerprint, histogram, endpoints |
+
+**Zero cost when off.** Every profiler entry point is `slot::with_context_unchecked(...)` → `None` → return: one
+thread-local read and a branch, at segment/shard/request granularity, never per point. Strings (segment ids, payload
+keys) are built in closures only when profiled. The one per-score change is that `HwScale::cpu` bumps two counters
+in the thread-local slot instead of one (the distance counts); that is the same cache line and is measured below.
+Workload stats are guarded by a `OnceLock<bool>` read of the flag.
+
+## Overhead
+
+See [Overhead measurements](#overhead-measurements) below (filled from `docs/query_profiling/bench.py`).
+
+## Access control
+
+- **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only
+  describes the collection the caller can already read: segment ids, point counts per segment (already visible via
+  collection info), the payload keys *of the caller's own filter*, and timings. Qdrant JWTs scope access to whole
+  collections (the payload-scoped claim was removed), so there is no finer tenant boundary that a profile could
+  cross. Requiring `manage` would make the feature useless to the application developers who write the queries.
+- **Remote shards** only see the mode, and return the profile of their own shard operation for the same collection.
+- **`/profiler/workload` needs global `manage`**, like `/profiler/slow_requests`: it aggregates requests of *all*
+  collections and tenants on the node. Normalized fingerprints contain no literal values (filter values, ids, shard
+  keys, vectors, documents are replaced by `"?"`), but payload key names and collection names are visible.
+- Profiles never contain point data, payload values, other collections, or other requests.
+
+## Workload: fingerprints and counters
+
+- Fingerprint = hash(collection, request type, normalized request). Normalization serializes the shard-level request
+  (the same `Loggable` the slow log uses; for queries after `remove_details()` strips vectors), replaces every number
+  and every string under a literal key (`value`, `any`, `except`, `text`, `phrase`, `gt/gte/lt/lte`, `id(s)`,
+  `has_id`, `offset`, `nearest`, `positive/negative`, `shard_key`, …) with `"?"`, and squashes arrays to their distinct
+  elements, so `should` over 3 cities and a batch of 10 same-shaped queries fingerprint like one (as Postgres 18 squashes
+  `IN` lists). Booleans and other strings (payload keys, vector names, `fusion: rrf`) are kept because they change the plan.
+- Per fingerprint: calls, errors, total/mean/min/max time, p50/p95 from a fixed log-scale histogram (128 buckets,
+  ×1.25, 0.05 ms … minutes, ±12.5%), distance computations (original and quantized), first/last seen.
+- Up to 1024 fingerprints per node; when full, the one with the least total time is evicted (`evicted` is reported).
+- Every request is counted, not only those over 50 ms. Explain-mode requests are not counted.
+- Counted at the **shard operation** level, like the slow log: a request touching 3 local shards counts 3 calls.
+
+### Cluster-wide view (proposal, not implemented)
+
+The fixed-bucket histogram makes per-node stats **mergeable exactly**: summing bucket counts across peers gives the
+cluster histogram, hence exact cluster p95 (up to the bucket width). Proposal: `GET /profiler/workload?cluster=true`
+on any peer fans out an internal gRPC `GetWorkload` to all peers (same channel pool and timeout as
+`/profiler/consensus_lag`), merges entries by fingerprint (fingerprints are deterministic across peers built from the
+same version) and reports `peers_responded / peers_total`. The slow request log can use the same fan-out. Remote shard
+calls are counted on the peer that executed them, so there is no double counting; the coordinator side is visible
+as network time in per-request profiles.
+
+## Open questions
+
+1. **Request parsing** (JSON/protobuf decoding, inference) happens before the handler and is not in `phases`;
+   `total_time_ms` starts at the handler. Middleware timing could add it.
+2. **Filter planning time** is not a separate phase: cardinality estimation runs inside the segment search and is
+   included in its `time_ms`. Splitting it needs a timer in `dispatch.rs`, cheap but noisy for tiny segments.
+3. `actual_cardinality` for HNSW-filtered searches would need a counter of filter checks in the graph traversal
+   (per point); we left it out to keep the hot loop untouched. `payload_io_read_bytes` is the proxy.
+4. **RAM vs. mmap page cache**: we report on-disk bytes read via the existing hw counters; distinguishing page-cache
+   hits from real disk reads needs `mincore`/`io_uring` stats; out of scope.
+5. OpenAPI: like `/profiler/slow_requests`, the beta endpoints and the `profile` parameter are not in the published
+   spec yet. Before GA: add them to `openapi/*.ytt.yaml`, `EXPECTED_NUMBER_OF_APIS`, the JWT `ACTION_ACCESS` table and the
+   metrics whitelists.
+6. Should `profile` also be allowed on recommend/discover/groups/matrix? They go through the same query path, so it is
+   mostly plumbing.
+7. Fingerprint cost: one serialization per shard operation while the flag is on. If that shows up, sample (e.g. 1/N)
+   and scale counters, like MySQL digests do with `performance_schema_max_digest_sample_age`.
+
+## Follow-ups enabled by this design
+
+- **Web UI**: render `segments[]` as a heat table (strategy × time) and `notes` as callouts.
+- **Persisting profiles**: the slow log could store the `QueryProfile` of the slowest call per fingerprint
+  (auto-explain, like `auto_explain.log_min_duration`).
+- **Index recommendations**: `unindexed_keys` aggregated over the workload is exactly "keys that would benefit
+  from a payload index, weighted by time".
