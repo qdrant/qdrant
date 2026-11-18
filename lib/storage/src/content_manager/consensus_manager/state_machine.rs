@@ -41,7 +41,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         if let Err(error) = self.execute_actions(plan.actions.iter()) {
             // An action may have persisted only part of its work. Retry from applied state.
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::EntryFailed);
             return Err(error);
         }
 
@@ -111,8 +111,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut cached = self.state_machine.lock();
         let dirty = self.toc.take_dirty_collections();
 
-        if cached.needs_reload {
+        if let Some(reason) = cached.invalidated {
             *cached = CachedStateMachine::new(self.toc.as_ref(), &persistent);
+            log::debug!(
+                "Consensus state machine reloaded from applied state after {reason}: {}",
+                cached.summary(),
+            );
         } else {
             resync_collections(&mut cached.machine, self.toc.as_ref(), dirty);
         }
@@ -130,7 +134,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let report = {
             let persistent = self.persistent.read();
             let mut cached = self.state_machine.lock();
-            if cached.needs_reload {
+            if cached.invalidated.is_some() {
                 return StateCheck::Invalidated;
             }
 
@@ -156,7 +160,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 operations,
             );
             if report.is_some() {
-                cached.needs_reload = true;
+                cached.invalidated = Some(Invalidation::Diverged);
             }
             report
         };
@@ -180,17 +184,19 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         StateCheck::Diverged
     }
 
-    pub(super) fn invalidate_state_machine(&self) {
+    pub(super) fn invalidate_state_machine(&self, reason: Invalidation) {
         let mut cached = self.state_machine.lock();
-        if !cached.needs_reload {
-            log::debug!("Consensus state machine invalidated");
+
+        // Keep the first reason: it explains the state the reload will read
+        if cached.invalidated.is_none() {
+            log::debug!("Consensus state machine invalidated after {reason}");
+            cached.invalidated = Some(reason);
         }
-        cached.needs_reload = true;
     }
 
     #[cfg(test)]
     pub(super) fn state_machine_needs_reload(&self) -> bool {
-        self.state_machine.lock().needs_reload
+        self.state_machine.lock().invalidated.is_some()
     }
 
     fn should_check_state_machine() -> bool {
@@ -220,7 +226,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> StorageResult<bool> {
         let result = self.apply_conf_change_actions(entry, change, raw_node);
         if result.is_err() {
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::EntryFailed);
         }
 
         result
@@ -304,7 +310,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             matches!(operation, ConsensusOperations::RemovePeer(peer_id) if *peer_id == self.this_peer_id())
         });
         if stop_consensus {
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::PeerRemoved);
         } else {
             let check = self.finish_state_machine(entry.index, &operations, &batch);
             log::debug!(
@@ -325,26 +331,64 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 /// Cached applied state. Reload only when the next operation can safely read collections.
 pub(super) struct CachedStateMachine {
     machine: ConsensusStateMachine,
-    // Discovery runs in async code and cannot synchronously read collections through ToC.
-    needs_reload: bool,
+    /// Why the cache must reload before the next operation.
+    ///
+    /// Discovery runs in async code and cannot synchronously read collections through ToC.
+    invalidated: Option<Invalidation>,
 }
 
 impl CachedStateMachine {
     pub(super) fn new(toc: &impl CollectionContainer, persistent: &Persistent) -> Self {
         let state = read_cluster_state(toc, persistent);
-        let context = toc.node_context();
-        log::info!(
-            "Consensus state machine initialized: peer_id={}, collections={}, peers={}",
-            context.peer_id,
-            state.collections.len(),
-            state.peer_address_by_id.len(),
-        );
-        let machine = ConsensusStateMachine::new(state, context);
+        let machine = ConsensusStateMachine::new(state, toc.node_context());
 
         Self {
             machine,
-            needs_reload: false,
+            invalidated: None,
         }
+    }
+
+    /// Peer ID and state sizes, for logs
+    pub(super) fn summary(&self) -> String {
+        let state = self.machine.state();
+        format!(
+            "peer_id={}, collections={}, peers={}",
+            self.machine.context().peer_id,
+            state.collections.len(),
+            state.peer_address_by_id.len(),
+        )
+    }
+}
+
+/// Why the cached state machine must reload from applied state
+#[derive(Copy, Clone, Debug)]
+pub(super) enum Invalidation {
+    /// An entry failed, possibly after persisting part of its writes
+    EntryFailed,
+    /// Comparison found the cache different from applied state
+    Diverged,
+    /// Raft snapshot replaced applied state
+    RaftSnapshot,
+    /// A local consensus state patch replaced applied state
+    LocalPatch,
+    /// A peer address changed outside of entry application, during bootstrap or discovery
+    PeerAddress,
+    /// This peer was removed from consensus and stops applying entries
+    PeerRemoved,
+}
+
+impl fmt::Display for Invalidation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = match self {
+            Invalidation::EntryFailed => "failed entry",
+            Invalidation::Diverged => "divergence from applied state",
+            Invalidation::RaftSnapshot => "Raft snapshot",
+            Invalidation::LocalPatch => "local state patch",
+            Invalidation::PeerAddress => "peer address change",
+            Invalidation::PeerRemoved => "removal of this peer",
+        };
+
+        f.write_str(reason)
     }
 }
 

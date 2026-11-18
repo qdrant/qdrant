@@ -27,7 +27,7 @@ use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::transport::Uri;
 
-use self::state_machine::CachedStateMachine;
+use self::state_machine::{CachedStateMachine, Invalidation};
 use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
@@ -155,6 +155,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
 
         let state_machine = CachedStateMachine::new(toc.as_ref(), &persistent_state);
+        log::info!(
+            "Consensus state machine initialized: {}",
+            state_machine.summary(),
+        );
 
         Ok(Self {
             persistent: RwLock::new(persistent_state),
@@ -395,7 +399,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // while the in-memory state machine has applied it completely.
         // Reload the state those writes left behind before planning the retry.
         if result.is_err() {
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::EntryFailed);
         }
 
         result
@@ -681,7 +685,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // Snapshot recovery replaces applied state without updating consensus state machine.
         // Invalidate it so it rebuilds from recovered state on next entry.
-        self.invalidate_state_machine();
+        self.invalidate_state_machine(Invalidation::RaftSnapshot);
 
         let SnapshotData {
             collections_data,
@@ -811,7 +815,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // Invalidate the CSM cache so the next operation reloads the new address.
         // Keep the persistent lock until invalidation finishes, so planning cannot start
         // between the address update and cache invalidation.
-        self.invalidate_state_machine();
+        self.invalidate_state_machine(Invalidation::PeerAddress);
         result
     }
 
