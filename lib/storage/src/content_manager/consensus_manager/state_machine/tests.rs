@@ -309,7 +309,7 @@ fn comparison_observes_collection_without_invalidating_cache() {
         &[drop_payload_index(COLLECTION)],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
+    assert_reports_shards(report.as_deref());
     assert!(!cached.needs_reload);
 }
 
@@ -329,7 +329,7 @@ fn comparison_resolves_aliases() {
         &[drop_payload_index(ALIAS)],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
+    assert_reports_shards(report.as_deref());
 }
 
 #[test]
@@ -351,7 +351,19 @@ fn peer_removal_compares_all_collections() {
         &[operation],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
+    assert_reports_shards(report.as_deref());
+}
+
+/// The comparison reports one difference, in the shards of the collection
+fn assert_reports_shards(report: Option<&str>) {
+    let Some(report) = report else {
+        panic!("comparison should report a difference");
+    };
+
+    assert!(
+        report.starts_with("collections[books].shards: state machine ") && !report.contains("; "),
+        "comparison should report only shards, got {report}",
+    );
 }
 
 fn indexed_container() -> Container {
