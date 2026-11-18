@@ -832,3 +832,65 @@ fn test_code_tokenizer_phrases() {
         }
     }
 }
+
+/// A text or phrase condition with a token the index has never seen matches nothing. Its
+/// estimation must still carry the condition as a primary clause, so the planner reads the
+/// (empty) index result instead of scanning every point.
+#[test]
+fn test_unseen_token_estimation_is_primary() {
+    use crate::index::field_index::PrimaryCondition;
+    use crate::types::{FieldCondition, Match, MatchPhrase};
+
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config = TextIndexParams {
+        memory: None,
+        r#type: TextIndexType::Text,
+        tokenizer: TokenizerType::Word,
+        min_token_len: None,
+        max_token_len: None,
+        lowercase: Some(true),
+        phrase_matching: Some(true),
+        stopwords: None,
+        on_disk: None,
+        stemmer: None,
+        ascii_folding: None,
+        enable_hnsw: None,
+        scoring: None,
+        nested: None,
+    };
+
+    let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
+        .unwrap()
+        .unwrap();
+
+    let _scope = ambient::test_guard();
+
+    for (i, text) in movie_titles().iter().enumerate() {
+        index
+            .add_many(i as PointOffsetType, vec![text.clone()])
+            .unwrap();
+    }
+
+    let conditions = [
+        Match::new_text("qzxvbnm"),
+        Match::new_text("man qzxvbnm"),
+        Match::Phrase(MatchPhrase {
+            phrase: "qzxvbnm man".into(),
+        }),
+    ];
+
+    for r#match in conditions {
+        let condition = FieldCondition::new_match("title".try_into().unwrap(), r#match);
+
+        let estimation = index.estimate_cardinality(&condition).unwrap().unwrap();
+        assert_eq!(estimation.max, 0, "{condition:?}");
+        assert_eq!(
+            estimation.primary_clauses,
+            vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
+            "{condition:?}",
+        );
+
+        let matched = index.filter(&condition).unwrap().unwrap().count();
+        assert_eq!(matched, 0, "{condition:?}");
+    }
+}
