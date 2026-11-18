@@ -168,6 +168,35 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn test_safe_delete_preserves_error_before_retry() -> io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use super::super::retry::test_hooks::with_rename_retry_hook;
+
+        let base = tempfile::tempdir()?;
+        let segment = base.path().join("segment");
+        fs::create_dir(&segment)?;
+        fs::write(segment.join("file"), b"test")?;
+        let tmp = base.path().join("tmp");
+        fs::write(&tmp, b"not a directory")?;
+        #[expect(clippy::disallowed_types, reason = "std::fs is needed for share_mode")]
+        let handle = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(segment.join("file"))?;
+
+        let result =
+            with_rename_retry_hook(move || drop(handle), || safe_delete_in_tmp(&segment, &tmp));
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(segment.join("file"))?, b"test");
+        assert_eq!(fs::read(&tmp)?, b"not a directory");
+        safe_delete_with_suffix(&segment)?;
+        Ok(())
+    }
+
     /// Simulates an AV/EDR scanner briefly holding a file inside the segment
     /// directory, which makes the directory rename fail with access denied.
     #[cfg(windows)]

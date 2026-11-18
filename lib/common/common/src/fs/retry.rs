@@ -29,6 +29,14 @@ pub fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
             reason = "fs_err hides the raw OS error code needed to detect transient errors"
         )]
         let result = std::fs::rename(from, to);
+        #[cfg(test)]
+        if result.is_err() {
+            test_hooks::ON_RENAME_ERROR.with(|hook| {
+                if let Some(hook) = hook.take() {
+                    hook();
+                }
+            });
+        }
         match result {
             Ok(()) => return Ok(()),
             Err(err) if is_transient_windows_error(&err) => {
@@ -40,7 +48,16 @@ pub fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
                 });
                 backoff(from, to, delay_ms, &err);
             }
-            Err(_) => break,
+            Err(err) => {
+                return Err(io::Error::new(
+                    err.kind(),
+                    format!(
+                        "failed to rename file from `{}` to `{}`: {err}",
+                        from.display(),
+                        to.display(),
+                    ),
+                ));
+            }
         }
     }
     // Last attempt with `fs_err` for a descriptive error
@@ -112,15 +129,17 @@ pub(super) fn is_transient_windows_error(err: &io::Error) -> bool {
 #[cfg(all(test, windows))]
 pub(super) mod test_hooks {
     use std::cell::Cell;
+    use std::io;
 
     thread_local! {
         pub(super) static ON_RENAME_RETRY: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
+        pub(super) static ON_RENAME_ERROR: Cell<Option<Box<dyn FnOnce()>>> = const { Cell::new(None) };
     }
 
     pub(crate) fn with_rename_retry_hook<T>(
         hook: impl FnOnce() + 'static,
-        operation: impl FnOnce() -> T,
-    ) -> T {
+        operation: impl FnOnce() -> io::Result<T>,
+    ) -> io::Result<T> {
         struct ResetHook;
 
         impl Drop for ResetHook {
@@ -133,9 +152,9 @@ pub(super) mod test_hooks {
         ON_RENAME_RETRY.with(|slot| {
             assert!(slot.replace(Some(Box::new(hook))).is_none());
         });
-        let result = operation();
+        let result = operation()?;
         ON_RENAME_RETRY.with(|hook| assert!(hook.take().is_none(), "rename did not retry"));
-        result
+        Ok(result)
     }
 }
 
@@ -160,6 +179,30 @@ mod tests {
             std::thread::sleep(Duration::from_millis(150));
             drop(file);
         }))
+    }
+
+    #[test]
+    fn test_rename_with_retry_returns_first_terminal_error() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let from = dir.path().join("missing");
+        let to = dir.path().join("to");
+        let source = from.clone();
+        // A second rename would succeed instead of returning the original error.
+        test_hooks::ON_RENAME_ERROR.with(|hook| {
+            hook.set(Some(Box::new(move || fs::write(source, b"test").unwrap())));
+        });
+
+        let result = rename_with_retry(&from, &to);
+
+        test_hooks::ON_RENAME_ERROR.with(|hook| assert!(hook.take().is_none()));
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        let message = err.to_string();
+        assert!(message.contains(&from.display().to_string()));
+        assert!(message.contains(&to.display().to_string()));
+        assert_eq!(fs::read(&from)?, b"test");
+        assert!(!to.exists());
+        Ok(())
     }
 
     #[test]
