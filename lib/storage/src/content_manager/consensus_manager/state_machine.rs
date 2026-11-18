@@ -39,12 +39,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             ActionList(&plan.actions),
         );
 
-        for action in &plan.actions {
-            if let Err(error) = self.apply_action(action.clone()) {
-                // An action may have persisted only part of its work. Retry from applied state.
-                self.invalidate_state_machine();
-                return Err(error);
-            }
+        if let Err(error) = self.execute_actions(&plan.actions) {
+            // An action may have persisted only part of its work. Retry from applied state.
+            self.invalidate_state_machine();
+            return Err(error);
         }
 
         let check =
@@ -59,6 +57,32 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     fn plan_operation(&self, operation: &ConsensusOperations) -> StorageResult<Plan> {
         self.prepare_state_machine().machine.plan(operation)
+    }
+
+    /// Execute planned actions in order, naming the failed action and its position in the error
+    fn execute_actions(&self, actions: &[Action]) -> StorageResult<()> {
+        let count = actions.len();
+
+        for (position, action) in actions.iter().enumerate() {
+            self.apply_action(action.clone()).map_err(|error| {
+                let context = format!("Failed to apply action {}/{count} {action}", position + 1);
+
+                #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
+                match error {
+                    StorageError::ServiceError {
+                        description,
+                        backtrace,
+                    } => StorageError::ServiceError {
+                        description: format!("{context}: {description}"),
+                        backtrace,
+                    },
+
+                    _ => StorageError::service_error(format!("{context}: {error}")),
+                }
+            })?;
+        }
+
+        Ok(())
     }
 
     /// Validate the entire batch against temporary state before any membership or storage writes
@@ -256,11 +280,17 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         };
 
+        // Execute the batch as one list, so action positions in errors match the logged list
+        let actions: Vec<_> = batch
+            .iter()
+            .flat_map(|plan| plan.actions.iter().cloned())
+            .collect();
+
         log::debug!(
             "Applying consensus configuration entry index={} changes={} actions={}",
             entry.index,
             ConfChanges(change),
-            ActionList(batch.iter().flat_map(|plan| &plan.actions)),
+            ActionList(&actions),
         );
 
         let conf_state = apply_raft_conf_change(raw_node, change)?;
@@ -268,11 +298,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
 
-        for plan in &batch {
-            for action in &plan.actions {
-                self.apply_action(action.clone())?;
-            }
-        }
+        self.execute_actions(&actions)?;
 
         let stop_consensus = operations.iter().any(|operation| {
             matches!(operation, ConsensusOperations::RemovePeer(peer_id) if *peer_id == self.this_peer_id())
@@ -422,15 +448,12 @@ impl fmt::Display for StateCheck {
 }
 
 /// Actions in their one-line summaries, as `[first, second]`
-struct ActionList<I>(I);
+struct ActionList<'a>(&'a [Action]);
 
-impl<'a, I> fmt::Display for ActionList<I>
-where
-    I: IntoIterator<Item = &'a Action> + Clone,
-{
+impl fmt::Display for ActionList<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
-        for (index, action) in self.0.clone().into_iter().enumerate() {
+        for (index, action) in self.0.iter().enumerate() {
             if index > 0 {
                 f.write_str(", ")?;
             }

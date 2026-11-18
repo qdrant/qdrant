@@ -10,7 +10,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             if let StorageError::ServiceError { .. } = error {
                 error
             } else {
-                StorageError::service_error(format!("Failed to apply consensus action: {error}"))
+                StorageError::service_error(error.to_string())
             }
         })
     }
