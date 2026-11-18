@@ -959,8 +959,15 @@ impl LocalShard {
                 }
                 // Replay may start before the persisted state of some segments, so an update
                 // to a point that a later operation deleted is expected to miss. Count these
-                // and report once below instead of logging every one.
-                Err(err) if err.is_missing_point() => skipped_missing_point_ops += 1,
+                // and report once below, keeping the per-operation detail (incl. the point ID)
+                // at debug level.
+                Err(err) if err.is_missing_point() => {
+                    log::debug!(
+                        "Recovering shard {}: skipped WAL operation {op_num}: {err}",
+                        self.path.display(),
+                    );
+                    skipped_missing_point_ops += 1;
+                }
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
                 Ok(_) => (),
