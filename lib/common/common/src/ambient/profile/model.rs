@@ -45,6 +45,11 @@ pub struct PhaseProfile {
     /// Summed over all calls; may exceed wall time when calls run in parallel.
     pub time_ms: f64,
     pub calls: u64,
+    /// Major page faults of the phase, for phases that run on one thread (e.g.
+    /// `retrieve_records`); absent for phases spanning async tasks or threads.
+    pub major_page_faults: Option<u64>,
+    /// Bytes read from the block device by the phase; absent like `major_page_faults`.
+    pub disk_read_bytes: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -166,6 +171,14 @@ pub struct SegmentCounters {
     pub remote_io_cached_read_bytes: u64,
     /// Bytes fetched from remote (object storage).
     pub remote_io_non_cached_read_bytes: u64,
+    /// Major page faults: accesses to mmap'ed storage that had to wait for a disk read,
+    /// because the page was not in the page cache. Measured by the OS for the thread that
+    /// ran the segment; absent when not available (non-Linux, or the work moved threads).
+    pub major_page_faults: Option<u64>,
+    /// Bytes actually read from the block device by that thread (page faults, readahead,
+    /// prefetching). Unlike the `*_io_read_bytes` counters above, which count bytes touched
+    /// in on-disk storage whether cached or not, this is zero when everything was cached.
+    pub disk_read_bytes: Option<u64>,
 }
 
 /// One search group (or filtered read) in one segment.

@@ -12,6 +12,7 @@
 
 mod collector;
 pub mod model;
+mod os_io;
 #[cfg(test)]
 mod tests;
 
@@ -159,6 +160,24 @@ impl Drop for PhaseTimer {
     fn drop(&mut self) {
         self.frame.record_phase(self.name, self.started.elapsed());
     }
+}
+
+/// Run `f`, blocking work on the current thread, as phase `name` with its OS I/O counters
+/// (page faults, disk reads). When not profiled, this is `f()` after one thread-local read.
+#[inline]
+pub fn blocking_phase<R>(name: &'static str, f: impl FnOnce() -> R) -> R {
+    let Some(frame) = with_handle(|handle| handle.frame.clone()) else {
+        return f();
+    };
+    let started = Instant::now();
+    let started_io = os_io::ThreadIo::now();
+    let output = f();
+    frame.record_phase_io(
+        name,
+        started.elapsed(),
+        os_io::ThreadIo::now().since(started_io),
+    );
+    output
 }
 
 /// Run `f`, a read of one segment (scroll, count, facet), as a profiled segment scope.

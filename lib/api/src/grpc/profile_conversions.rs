@@ -98,11 +98,15 @@ impl From<model::PhaseProfile> for grpc::PhaseProfile {
             name,
             time_ms,
             calls,
+            major_page_faults,
+            disk_read_bytes,
         } = value;
         Self {
             name,
             time_ms,
             calls,
+            major_page_faults,
+            disk_read_bytes,
         }
     }
 }
@@ -113,11 +117,15 @@ impl From<grpc::PhaseProfile> for model::PhaseProfile {
             name,
             time_ms,
             calls,
+            major_page_faults,
+            disk_read_bytes,
         } = value;
         Self {
             name,
             time_ms,
             calls,
+            major_page_faults,
+            disk_read_bytes,
         }
     }
 }
@@ -400,6 +408,8 @@ impl From<model::SegmentCounters> for grpc::SegmentCounters {
             payload_index_io_read_bytes,
             remote_io_cached_read_bytes,
             remote_io_non_cached_read_bytes,
+            major_page_faults,
+            disk_read_bytes,
         } = value;
         Self {
             vector_scores,
@@ -409,6 +419,8 @@ impl From<model::SegmentCounters> for grpc::SegmentCounters {
             payload_index_io_read_bytes,
             remote_io_cached_read_bytes,
             remote_io_non_cached_read_bytes,
+            major_page_faults,
+            disk_read_bytes,
         }
     }
 }
@@ -423,6 +435,8 @@ impl From<grpc::SegmentCounters> for model::SegmentCounters {
             payload_index_io_read_bytes,
             remote_io_cached_read_bytes,
             remote_io_non_cached_read_bytes,
+            major_page_faults,
+            disk_read_bytes,
         } = value;
         Self {
             vector_scores,
@@ -432,6 +446,8 @@ impl From<grpc::SegmentCounters> for model::SegmentCounters {
             payload_index_io_read_bytes,
             remote_io_cached_read_bytes,
             remote_io_non_cached_read_bytes,
+            major_page_faults,
+            disk_read_bytes,
         }
     }
 }
@@ -450,6 +466,8 @@ mod tests {
                 name: "merge".to_string(),
                 time_ms: 0.25,
                 calls: 2,
+                major_page_faults: None,
+                disk_read_bytes: Some(4096),
             }],
             shards: vec![model::ShardProfile {
                 shard_id: 3,
@@ -491,6 +509,9 @@ mod tests {
                         payload_index_io_read_bytes: 8,
                         remote_io_cached_read_bytes: 0,
                         remote_io_non_cached_read_bytes: 0,
+                        // One known, one unknown: both round-trip
+                        major_page_faults: Some(3),
+                        disk_read_bytes: None,
                     },
                 }],
             }],

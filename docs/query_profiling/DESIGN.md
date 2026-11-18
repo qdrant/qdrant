@@ -136,11 +136,13 @@ Real output (debug build, 20k points, collection still indexing), trimmed to one
         "counters": {
           "vector_scores": 224,           // distance computations, original vectors
           "quantized_vector_scores": 0,   // distance computations, quantized vectors
-          "vector_io_read_bytes": 0,      // on-disk vector reads (RAM storage reads are not I/O)
-          "payload_io_read_bytes": 26994,
+          "vector_io_read_bytes": 0,      // bytes touched in on-disk vector storage, cached or not
+          "payload_io_read_bytes": 26994, // bytes touched in on-disk payload storage, cached or not
           "payload_index_io_read_bytes": 0,
           "remote_io_cached_read_bytes": 0,
-          "remote_io_non_cached_read_bytes": 0
+          "remote_io_non_cached_read_bytes": 0,
+          "major_page_faults": 0,         // mmap accesses that waited for the disk (OS, this thread)
+          "disk_read_bytes": 0            // bytes actually read from the block device (OS, this thread)
         }
       }]
     }],
@@ -233,6 +235,37 @@ gRPC batches silently ignored, unbounded size of stored fingerprints, flag-off o
 fingerprinting before the rate limiter, explain consuming the full read budget, and forks detaching trace events
 from the request span.
 
+## Real disk I/O (page-cache misses)
+
+The `*_io_read_bytes` hardware counters count bytes *touched* in on-disk (mmap) storage, whether the pages were cached
+or not, so a cold request and a hot one report the same numbers. Measured on 200k × 256d on-disk vectors: the same
+HNSW query took 1295 ms with an evicted page cache and 2.7 ms hot, with identical `vector_io_read_bytes`.
+
+So each segment scope also samples the OS counters of the thread that runs it, at start and end, with one
+`getrusage(RUSAGE_THREAD)` each (~0.7 µs, only when profiled):
+
+- `major_page_faults` (`ru_majflt`): accesses that waited for a disk read.
+- `disk_read_bytes` (`ru_inblock` × 512): bytes the thread caused to be read from the block device, including
+  readahead and `MADV_WILLNEED` prefetching. Linux fills `ru_inblock` from task I/O accounting
+  (`/proc/thread-self/io` `read_bytes`); a unit test checks they agree.
+
+Both are `null` when unknown: non-Linux, or a scope that ended on another thread than it started on. Record retrieval
+after search (payload and vectors for the results, `SegmentsSearcher::retrieve`) runs in one blocking task outside
+segment scopes; it is reported as phase `retrieve_records`, the first phase with these counters.
+
+Validation against process-level `/proc/<pid>/stat` and `/proc/<pid>/io` deltas around single requests, cold
+(restart + evicted page cache) and hot:
+
+| Request | Cold time | Process: faults / disk | Profile: faults / disk | Hot time | Hot: faults / disk |
+|---|---|---|---|---|---|
+| HNSW, no filter | 1315 ms | 608 / 80.0 MiB | 608 / 80.0 MiB | 5.4 ms | 0 / 0 |
+| HNSW, indexed filter | 224 ms | 967 / 13.2 MiB | 967 / 13.2 MiB | 3.6 ms | 0 / 0 |
+| Un-indexed filter (full scan) | 3412 ms | 13141 / 95.8 MiB | 13141 / 95.8 MiB | 45.7 ms | 0 / 0 |
+| Scroll + payload | 97 ms | 141 / 0.6 MiB | 36 in segments + 105 in `retrieve_records` / 0.6 MiB | 5.0 ms | 0 / 0 |
+
+When any fault happened, a note says so ("Waited for the disk: 608 major page fault(s) read 80.0 MiB, in 11
+segment(s). ...").
+
 ## Access control
 
 - **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only
@@ -280,8 +313,9 @@ as network time in per-request profiles.
    included in its `time_ms`. Splitting it needs a timer in `dispatch.rs`, cheap but noisy for tiny segments.
 3. `actual_cardinality` for HNSW-filtered searches would need a counter of filter checks in the graph traversal
    (per point); we left it out to keep the hot loop untouched. `payload_io_read_bytes` is the proxy.
-4. **RAM vs. mmap page cache**: we report on-disk bytes read via the existing hw counters; distinguishing page-cache
-   hits from real disk reads needs `mincore`/`io_uring` stats; out of scope.
+4. **Page cache vs. disk — resolved.** See [Real disk I/O](#real-disk-io-page-cache-misses). Remaining gaps: reads
+   issued on another thread than the segment scope (rayon fan-out inside a segment, a future io_uring backend that
+   completes on its own threads) are not attributed; phases spanning async tasks report no OS counters.
 5. OpenAPI: like `/profiler/slow_requests`, the beta endpoints and the `profile` parameter are not in the published
    spec yet. Before GA: add them to `openapi/*.ytt.yaml`, `EXPECTED_NUMBER_OF_APIS`, the JWT `ACTION_ACCESS` table and the
    metrics whitelists.

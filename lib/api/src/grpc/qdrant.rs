@@ -8352,6 +8352,12 @@ pub struct PhaseProfile {
     pub time_ms: f64,
     #[prost(uint64, tag = "3")]
     pub calls: u64,
+    /// For phases on one thread, e.g. `retrieve_records`
+    #[prost(uint64, optional, tag = "4")]
+    pub major_page_faults: ::core::option::Option<u64>,
+    /// For phases on one thread, e.g. `retrieve_records`
+    #[prost(uint64, optional, tag = "5")]
+    pub disk_read_bytes: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8425,6 +8431,12 @@ pub struct SegmentCounters {
     pub remote_io_cached_read_bytes: u64,
     #[prost(uint64, tag = "7")]
     pub remote_io_non_cached_read_bytes: u64,
+    /// Page faults that waited for a disk read
+    #[prost(uint64, optional, tag = "8")]
+    pub major_page_faults: ::core::option::Option<u64>,
+    /// Bytes actually read from the block device
+    #[prost(uint64, optional, tag = "9")]
+    pub disk_read_bytes: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

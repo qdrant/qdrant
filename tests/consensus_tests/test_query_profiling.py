@@ -2,7 +2,9 @@
 
 Single node (cluster disabled) and distributed (3 peers, remote shards) setups.
 """
+import os
 import pathlib
+import sys
 import random
 
 import pytest
@@ -39,7 +41,9 @@ def all_segments(profile):
 
 
 def start_single_node(tmp_path: pathlib.Path, extra_env):
-    peer_dir = make_peer_folder(tmp_path, 0)
+    peer_dir = tmp_path / "peer0"
+    if not peer_dir.exists():  # else a restart on the same storage
+        peer_dir = make_peer_folder(tmp_path, 0)
     env = {**extra_env, "QDRANT__CLUSTER__ENABLED": "false"}
     url, _ = start_first_peer(peer_dir, "peer_0_0.log", extra_env=env)
     def ready():
@@ -321,3 +325,80 @@ def test_explain_executes_nothing_and_scores_are_counted(tmp_path: pathlib.Path)
                               "profile": "ProfileExplain"}],
         })
     assert "set it on the batch request" in str(error.value)
+
+
+def _evict_page_cache(path: pathlib.Path) -> None:
+    """Drop the clean, unmapped page-cache pages of all files under `path`."""
+    for file in path.rglob("*"):
+        if file.is_file():
+            try:
+                fd = os.open(file, os.O_RDONLY)
+                try:
+                    os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                finally:
+                    os.close(fd)
+            except OSError:
+                pass
+
+
+def _fs_type(path: pathlib.Path) -> str:
+    best = ("", "")
+    for line in open("/proc/mounts"):
+        _, mount_point, fs_type, *_ = line.split()
+        if str(path).startswith(mount_point) and len(mount_point) > len(best[0]):
+            best = (mount_point, fs_type)
+    return best[1]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="per-thread OS counters are Linux only")
+def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
+    url = start_single_node(tmp_path, PROFILING_ENV)
+    collection = "test_profiling_on_disk"
+    requests.put(f"{url}/collections/{collection}", json={
+        "vectors": {"size": 256, "distance": "Dot", "on_disk": True},
+        "on_disk_payload": True,
+        # Optimized into immutable segments, which are only mapped (not read) on startup
+        "optimizers_config": {"indexing_threshold": 1, "default_segment_number": 1},
+    }).raise_for_status()
+    rnd = random.Random(7)
+    for start in range(0, 20_000, 2_000):
+        requests.put(f"{url}/collections/{collection}/points?wait=true", json={"points": [
+            {"id": i, "vector": [rnd.random() for _ in range(256)], "payload": {"text": "x" * 100}}
+            for i in range(start, start + 2_000)
+        ]}).raise_for_status()
+    wait_for(lambda: requests.get(f"{url}/collections/{collection}").json()["result"]["status"] == "green")
+    body = {"query": [rnd.random() for _ in range(256)], "limit": 5, "with_payload": True}
+    path = f"/collections/{collection}/points/query"
+
+    # Restart: pages mapped by a running process can't be evicted
+    peer = processes.pop()
+    peer.proc.terminate()
+    peer.proc.wait()
+    peer.kill()  # releases the ports
+    url = start_single_node(tmp_path, PROFILING_ENV)
+    # Loaded; the status may be `grey` after a restart (optimizations not triggered yet)
+    wait_for(lambda: requests.get(f"{url}/collections/{collection}").ok)
+
+    # Search over on-disk vectors, with the page cache evicted: reads from disk
+    _evict_page_cache(tmp_path)
+    _, cold = profiled(url, path, body)
+    segments = [s for s in all_segments(cold) if s["points"] > 0]
+    assert segments
+    for segment in segments:
+        assert segment["counters"]["major_page_faults"] is not None
+        assert segment["counters"]["disk_read_bytes"] is not None
+    cold_faults = sum(s["counters"]["major_page_faults"] for s in segments)
+    if _fs_type(tmp_path) not in ("tmpfs", "ramfs"):
+        assert cold_faults > 0, cold
+        assert sum(s["counters"]["disk_read_bytes"] for s in segments) > 0
+        assert any("Waited for the disk" in note for note in cold["notes"])
+
+    # The same request again: everything is cached now
+    _, hot = profiled(url, path, body)
+    hot_segments = [s for s in all_segments(hot) if s["points"] > 0]
+    assert sum(s["counters"]["major_page_faults"] for s in hot_segments) == 0
+    assert sum(s["counters"]["disk_read_bytes"] for s in hot_segments) == 0
+    assert not any("Waited for the disk" in note for note in hot["notes"])
+    # The logical counters can't tell the difference
+    assert (sum(s["counters"]["vector_io_read_bytes"] for s in hot_segments)
+            == sum(s["counters"]["vector_io_read_bytes"] for s in segments))

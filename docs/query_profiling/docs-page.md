@@ -84,7 +84,9 @@ Start with **`notes`**, which summarize the findings. Then look at the **segment
 | `filter.indexed_keys` / `unindexed_keys` | Payload keys that used a payload index / that are checked by reading each candidate's payload. |
 | `filter.full_payload_scan` | No payload index narrowed the candidates down: every point of the segment was a candidate. |
 | `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". For the sparse inverted index, posting-list entries traversed. |
-| `counters.*_io_read_bytes` | Bytes read from disk (vectors, payload, payload indexes, object storage). Reads from RAM storage are not counted. |
+| `counters.*_io_read_bytes` | Bytes touched in on-disk storage (vectors, payload, payload indexes, object storage), **whether or not they were in the page cache**. RAM storage is not counted. |
+| `counters.major_page_faults` | Accesses to on-disk (mmap) data that had to wait for the disk because the page was not in the page cache. `null` where the OS doesn't report it. |
+| `counters.disk_read_bytes` | Bytes actually read from the disk for this segment, including readahead. `0` when everything was cached. |
 
 In a distributed cluster, a remote shard's `time_ms` is measured on the peer that holds it, and `network_time_ms` is
 the rest of the round trip (network, serialization, queueing).
@@ -216,6 +218,44 @@ What it says:
 Even on a `green` collection you may see one small appendable segment with `indexed: false`: segments smaller than
 `indexing_threshold` are not indexed, because brute force is fast enough for them.
 
+## Example: on-disk data that is not in the page cache
+
+With `on_disk: true`, vectors and payload are memory-mapped files: reading them is as fast as RAM when the pages are in
+the OS page cache, and waits for the disk when they are not, e.g. right after a restart, or when the data is larger
+than the memory available for the cache. The same query on a collection with 200 000 on-disk vectors, right after a
+restart and then again:
+
+```json
+"segments": [{
+  "points": 66000, "indexed": true, "strategy": "hnsw", "time_ms": 1308.8,
+  "counters": { "vector_scores": 1910, "vector_io_read_bytes": 1955840,
+                "major_page_faults": 143, "disk_read_bytes": 9768960, ... }
+}, ...],
+"notes": [
+  "Waited for the disk: 608 major page fault(s) read 80.0 MiB, in 11 segment(s). The data was not in the page cache, e.g. after a restart or under memory pressure; repeated requests are faster. Consider more RAM, or keeping the hot data in memory (`on_disk: false`, quantization with `always_ram: true`)."
+]
+```
+
+and the second time, 3.6 ms in total:
+
+```json
+"counters": { "vector_scores": 2352, "vector_io_read_bytes": 2408448, "major_page_faults": 0, "disk_read_bytes": 0, ... }
+```
+
+What it says:
+
+1. `vector_io_read_bytes` is the same in both runs: it counts the vectors the search touched, cached or not.
+2. `major_page_faults` and `disk_read_bytes` show the difference: the first run waited for 143 reads in this
+   segment and read 9.3 MiB from disk — five times what it used, because the OS reads ahead around each miss.
+3. On a disk with ~2 ms per read, 608 waits explain the 1.3 seconds.
+
+If this happens often, not only after restarts, the working set does not fit in the page cache: add memory, or keep
+the data that every search touches in RAM (for example quantized vectors with `always_ram: true`, with the original
+vectors on disk for rescoring).
+
+Payload and vectors fetched for the results after the search are reported in the phase `retrieve_records`, with the
+same two counters.
+
 ## Workload statistics
 
 A single profile explains one request. To find *which* requests to profile, use the workload statistics, similar to
@@ -291,5 +331,6 @@ Statistics are collected only when the `query_profiling` feature flag is enabled
 - Request parsing and inference time are not part of `phases`; `total_time_ms` starts when the request is handled.
 - Filter planning time is included in each segment's `time_ms`, not reported separately.
 - `actual_cardinality` is only reported when the request computes it anyway (exact count, full scan).
-- Reads from the OS page cache and from disk are not distinguished.
+- `major_page_faults` and `disk_read_bytes` are Linux-only, and count reads on the thread that ran each segment; reads
+  done on other threads are not attributed.
 - Profiles are not stored: each one is returned with its response only.

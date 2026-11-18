@@ -47,15 +47,17 @@ impl SegmentsSearcher {
             // TODO create one Task per segment level retrieve
             move || {
                 let _scope = handoff.enter_guard();
-                retrieve_blocking(
-                    segments,
-                    &points,
-                    &with_payload,
-                    &with_vector,
-                    timeout,
-                    &is_stopped,
-                    deferred_behavior,
-                )
+                profile::blocking_phase("retrieve_records", || {
+                    retrieve_blocking(
+                        segments,
+                        &points,
+                        &with_payload,
+                        &with_vector,
+                        timeout,
+                        &is_stopped,
+                        deferred_behavior,
+                    )
+                })
             }
         });
         Ok(AbortOnDropHandle::new(points).await??)

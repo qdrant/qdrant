@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 use super::model::*;
+use super::os_io::ThreadIo;
 use crate::ambient::hw::{HardwareData, HwMetric};
 use crate::ambient::{AmbientContext, AmbientFutureExt, Handoff};
 
@@ -59,19 +60,28 @@ struct FrameData {
 
 impl Frame {
     pub(crate) fn record_phase(&self, name: &'static str, elapsed: Duration) {
-        let mut data = self.0.lock();
-        let time_ms = millis(elapsed);
-        match data.phases.iter_mut().find(|phase| phase.name == name) {
-            Some(phase) => {
-                phase.time_ms += time_ms;
-                phase.calls += 1;
-            }
-            None => data.phases.push(PhaseProfile {
-                name: name.to_string(),
-                time_ms,
-                calls: 1,
-            }),
-        }
+        self.record_phase_profile(PhaseProfile {
+            name: name.to_string(),
+            time_ms: millis(elapsed),
+            calls: 1,
+            major_page_faults: None,
+            disk_read_bytes: None,
+        });
+    }
+
+    /// [`Self::record_phase`] of a phase that ran on one thread, with its OS I/O counters.
+    pub(crate) fn record_phase_io(&self, name: &'static str, elapsed: Duration, io: ThreadIo) {
+        let ThreadIo {
+            major_page_faults,
+            disk_read_bytes,
+        } = io;
+        self.record_phase_profile(PhaseProfile {
+            name: name.to_string(),
+            time_ms: millis(elapsed),
+            calls: 1,
+            major_page_faults,
+            disk_read_bytes,
+        });
     }
 
     pub(crate) fn note_strategy(&self, strategy: SearchStrategy, reason: StrategyReason) {
@@ -295,6 +305,9 @@ pub struct SegmentScope {
     handle: ProfileHandle,
     info: SegmentInfo,
     started: Instant,
+    /// OS I/O counters at the start, valid only on `thread`.
+    started_io: ThreadIo,
+    thread: std::thread::ThreadId,
 }
 
 impl SegmentScope {
@@ -315,6 +328,8 @@ impl SegmentScope {
             handle,
             info: info(),
             started: Instant::now(),
+            started_io: ThreadIo::now(),
+            thread: std::thread::current().id(),
         })
     }
 
@@ -331,8 +346,12 @@ impl SegmentScope {
             handle,
             info,
             started,
+            started_io,
+            thread,
         } = self;
         let time_ms = millis(started.elapsed());
+        // Per-thread counters: only meaningful if the scope ended where it started
+        let io = (std::thread::current().id() == thread).then(|| ThreadIo::now().since(started_io));
         let hw = handoff
             .context()
             .map(AmbientContext::hw_data)
@@ -391,7 +410,7 @@ impl SegmentScope {
             full_scan_threshold,
             filter,
             time_ms,
-            counters: counters_from_hw(hw),
+            counters: counters_from_hw(hw, io),
         });
     }
 }
@@ -401,16 +420,30 @@ impl Frame {
         let mut data = self.0.lock();
         match data.phases.iter_mut().find(|p| p.name == phase.name) {
             Some(existing) => {
+                let add = |a: Option<u64>, b: Option<u64>| match (a, b) {
+                    (Some(a), Some(b)) => Some(a + b),
+                    (a, b) => a.or(b),
+                };
                 existing.time_ms += phase.time_ms;
                 existing.calls += phase.calls;
+                existing.major_page_faults =
+                    add(existing.major_page_faults, phase.major_page_faults);
+                existing.disk_read_bytes = add(existing.disk_read_bytes, phase.disk_read_bytes);
             }
             None => data.phases.push(phase),
         }
     }
 }
 
-fn counters_from_hw(hw: HardwareData) -> SegmentCounters {
+fn counters_from_hw(hw: HardwareData, io: Option<ThreadIo>) -> SegmentCounters {
     let m = |metric: HwMetric| hw[metric] as u64;
+    let ThreadIo {
+        major_page_faults,
+        disk_read_bytes,
+    } = io.unwrap_or(ThreadIo {
+        major_page_faults: None,
+        disk_read_bytes: None,
+    });
     SegmentCounters {
         vector_scores: m(HwMetric::VectorScores),
         quantized_vector_scores: m(HwMetric::QuantizedVectorScores),
@@ -419,6 +452,8 @@ fn counters_from_hw(hw: HardwareData) -> SegmentCounters {
         payload_index_io_read_bytes: m(HwMetric::PayloadIndexIoRead),
         remote_io_cached_read_bytes: m(HwMetric::RemoteIoCachedRead),
         remote_io_non_cached_read_bytes: m(HwMetric::RemoteIoNonCachedRead),
+        major_page_faults,
+        disk_read_bytes,
     }
 }
 
@@ -502,6 +537,45 @@ pub(crate) fn derive_notes(profile: &QueryProfile) -> Vec<String> {
              force{share}. This is expected for segments smaller than `indexing_threshold` and \
              while the optimizer is indexing; check `optimizer_status` and `indexing_threshold`.",
             unindexed_segments.len()
+        ));
+    }
+
+    // Cold page cache: reads that waited for the disk
+    let cold: Vec<&SegmentProfile> = segments()
+        .filter(|segment| segment.counters.major_page_faults.unwrap_or(0) > 0)
+        .collect();
+    let phases = || {
+        profile
+            .phases
+            .iter()
+            .chain(profile.shards.iter().flat_map(|shard| &shard.phases))
+    };
+    let segment_faults: u64 = cold
+        .iter()
+        .filter_map(|s| s.counters.major_page_faults)
+        .sum();
+    let phase_faults: u64 = phases().filter_map(|p| p.major_page_faults).sum();
+    if segment_faults + phase_faults > 0 {
+        let bytes: u64 = cold
+            .iter()
+            .filter_map(|s| s.counters.disk_read_bytes)
+            .chain(phases().filter_map(|p| p.disk_read_bytes))
+            .sum();
+        let mut places = Vec::new();
+        if !cold.is_empty() {
+            places.push(format!("{} segment(s)", cold.len()));
+        }
+        for phase in phases().filter(|p| p.major_page_faults.unwrap_or(0) > 0) {
+            places.push(format!("`{}`", phase.name));
+        }
+        notes.push(format!(
+            "Waited for the disk: {} major page fault(s) read {:.1} MiB, in {}. The data was not \
+             in the page cache, e.g. after a restart or under memory pressure; repeated requests \
+             are faster. Consider more RAM, or keeping the hot data in memory (`on_disk: false`, \
+             quantization with `always_ram: true`).",
+            segment_faults + phase_faults,
+            bytes as f64 / (1024.0 * 1024.0),
+            places.join(", "),
         ));
     }
 

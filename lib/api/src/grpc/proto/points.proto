@@ -1740,6 +1740,8 @@ message PhaseProfile {
   string name = 1; // e.g. `plan`, `merge`, `rescore`, `payload_retrieval`
   double time_ms = 2; // Summed over all calls
   uint64 calls = 3;
+  optional uint64 major_page_faults = 4; // For phases on one thread, e.g. `retrieve_records`
+  optional uint64 disk_read_bytes = 5; // For phases on one thread, e.g. `retrieve_records`
 }
 
 enum ShardLocation {
@@ -1805,6 +1807,8 @@ message SegmentCounters {
   uint64 payload_index_io_read_bytes = 5;
   uint64 remote_io_cached_read_bytes = 6;
   uint64 remote_io_non_cached_read_bytes = 7;
+  optional uint64 major_page_faults = 8; // Page faults that waited for a disk read
+  optional uint64 disk_read_bytes = 9; // Bytes actually read from the block device
 }
 
 message SegmentProfile {
