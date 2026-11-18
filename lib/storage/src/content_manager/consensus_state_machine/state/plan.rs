@@ -445,11 +445,15 @@ impl ClusterState {
             )));
         }
 
-        // TODO: Check that nested *replica* placement lists are not empty (e.g., `[[], [], []]`)
-
         if placement.is_empty() {
             return Err(StorageError::bad_request(format!(
                 "Shard key {shard_key} placement cannot be empty"
+            )));
+        }
+
+        if placement.iter().any(|replicas| replicas.is_empty()) {
+            return Err(StorageError::bad_request(format!(
+                "Shard key {shard_key} placement cannot contain empty replica lists"
             )));
         }
 
