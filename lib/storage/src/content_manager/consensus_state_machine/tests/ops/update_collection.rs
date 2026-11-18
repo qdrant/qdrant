@@ -405,6 +405,47 @@ fn update_collection_replica_change_replay_rejects_complete() {
     assert_eq!(machine.state(), &goal);
 }
 
+#[test]
+fn update_collection_replica_changes_reject_removing_all_replicas() {
+    update_collection_replica_changes_reject_batch(vec![
+        replica_set::Change::Remove(0, OTHER_PEER_ID),
+        replica_set::Change::Remove(0, PEER_ID),
+    ]);
+}
+
+#[test]
+fn update_collection_replica_changes_reject_duplicate_removal() {
+    update_collection_replica_changes_reject_batch(vec![
+        replica_set::Change::Remove(0, OTHER_PEER_ID),
+        replica_set::Change::Remove(0, OTHER_PEER_ID),
+    ]);
+}
+
+/// Each removal is valid on its own, but not after the earlier removals in the batch
+fn update_collection_replica_changes_reject_batch(changes: Vec<replica_set::Change>) {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(changes);
+
+    let mut state = auto_resharding_state(1);
+    state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
+    assert_eq!(machine.state(), &state);
+}
+
 fn update_collection_op(update: UpdateCollection) -> ConsensusOperations {
     let operation =
         UpdateCollectionOperation::new(COLLECTION.into(), update).expect("valid operation");
