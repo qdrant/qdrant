@@ -37,7 +37,6 @@ pub(super) fn compare(
     }
 
     if report.is_empty() {
-        log::debug!("Consensus state machine matches applied state");
         None
     } else {
         Some(report.join(", "))
