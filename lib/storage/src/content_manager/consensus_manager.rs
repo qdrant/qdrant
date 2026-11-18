@@ -1322,7 +1322,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
 
-        log::debug!("Requesting entries from {low} to {high}");
+        log::trace!("Requesting entries from {low} to {high}");
 
         if high > self.last_index()? + 1 {
             panic!(

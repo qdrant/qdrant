@@ -1111,7 +1111,7 @@ impl Consensus {
 
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
-            log::debug!("Appending {} entries to raft log", ready.entries().len());
+            log::trace!("Appending {} entries to raft log", ready.entries().len());
             is_idle = false;
 
             store
@@ -1121,7 +1121,7 @@ impl Consensus {
 
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
-            log::debug!("Changing hard state. New hard state: {hs:?}");
+            log::trace!("Changing hard state. New hard state: {hs:?}");
             is_idle = false;
 
             store
@@ -1184,7 +1184,7 @@ impl Consensus {
 
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
-            log::debug!("Updating commit index to {commit}");
+            log::trace!("Updating commit index to {commit}");
             is_idle = false;
 
             store
@@ -1315,18 +1315,12 @@ impl RaftMessageBroker {
             };
 
             let failed_to_forward = |message: &RaftMessage, description: &str| {
-                let peer_id = message.to;
-
-                if log::max_level() >= log::Level::Debug {
-                    log::error!(
-                        "Failed to forward message {message:?} to message sender task {peer_id}: \
-                         {description}"
-                    );
-                } else {
-                    log::error!(
-                        "Failed to forward message to message sender task {peer_id}: {description}"
-                    );
-                }
+                log::error!(
+                    "Failed to forward {:?} message to message sender task {}: {description}",
+                    message.get_msg_type(),
+                    message.to,
+                );
+                log::trace!("Message not forwarded: {message:?}");
             };
 
             // Resolve the peer address *now*, on the consensus thread, rather than later in the
@@ -1536,11 +1530,11 @@ impl RaftMessageSender {
         if let Err(err) = self.try_send(message, queued_uri).await {
             let peer_id = message.to;
 
-            if log::max_level() >= log::Level::Debug {
-                log::error!("Failed to send Raft message {message:?} to peer {peer_id}: {err}");
-            } else {
-                log::error!("Failed to send Raft message to peer {peer_id}: {err}");
-            }
+            log::error!(
+                "Failed to send {:?} Raft message to peer {peer_id}: {err}",
+                message.get_msg_type(),
+            );
+            log::trace!("Raft message not sent: {message:?}");
         }
     }
 
