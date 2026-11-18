@@ -310,6 +310,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             matches!(operation, ConsensusOperations::RemovePeer(peer_id) if *peer_id == self.this_peer_id())
         });
         if stop_consensus {
+            log::info!(
+                "Consensus configuration entry index={} removed this peer, stopping consensus",
+                entry.index,
+            );
             self.invalidate_state_machine(Invalidation::PeerRemoved);
         } else {
             let check = self.finish_state_machine(entry.index, &operations, &batch);
