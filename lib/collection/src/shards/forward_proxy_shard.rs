@@ -29,6 +29,7 @@ use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::hash_ring::HashRingRouter;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointStructRawPersisted,
     PointSyncOperation, PointSyncRawOperation,
@@ -585,8 +586,13 @@ impl ForwardProxyShard {
         self.wrapped_shard.snapshot_manifest().await
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        self.wrapped_shard.on_optimizer_config_update().await
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
+        self.wrapped_shard
+            .on_optimizer_config_update(optimizers_overwrite)
+            .await
     }
 
     pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {

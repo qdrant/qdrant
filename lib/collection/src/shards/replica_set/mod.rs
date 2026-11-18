@@ -42,6 +42,7 @@ use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
@@ -1081,10 +1082,16 @@ impl ShardReplicaSet {
     /// ## Cancel safety
     ///
     /// This function is **not** cancel safe.
-    pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    ///
+    /// `optimizers_overwrite` is the node-local `optimizers_overwrite`, applied on top of the
+    /// collection's saved optimizer config.
+    pub(crate) async fn on_optimizer_config_update(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
-            shard.on_optimizer_config_update().await
+            shard.on_optimizer_config_update(optimizers_overwrite).await
         } else {
             Ok(())
         }

@@ -17,6 +17,7 @@ use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
 use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
@@ -180,12 +181,29 @@ impl Shard {
     /// ## Cancel safety
     ///
     /// This function is **not** cancel safe.
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         match self {
-            Shard::Local(local_shard) => local_shard.on_optimizer_config_update().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
-            Shard::QueueProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update(),
+            Shard::Local(local_shard) => {
+                local_shard
+                    .on_optimizer_config_update(optimizers_overwrite)
+                    .await
+            }
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard
+                    .on_optimizer_config_update(optimizers_overwrite)
+                    .await
+            }
+            Shard::QueueProxy(proxy_shard) => {
+                proxy_shard
+                    .on_optimizer_config_update(optimizers_overwrite)
+                    .await
+            }
+            Shard::Dummy(dummy_shard) => {
+                dummy_shard.on_optimizer_config_update(optimizers_overwrite)
+            }
         }
     }
 

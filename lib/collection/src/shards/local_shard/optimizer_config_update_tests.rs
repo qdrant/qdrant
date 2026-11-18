@@ -93,6 +93,7 @@ mod tests {
         clear_worker_restart_hook, install_worker_restart_hook, update_handler_is_stopped,
     };
     use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
     use crate::shards::local_shard::LocalShard;
     use crate::shards::shard_trait::ShardOperation;
     use crate::tests::fixtures::create_collection_config;
@@ -132,7 +133,7 @@ mod tests {
             shard_config.optimizer_config.prevent_unoptimized = Some(true);
         }
 
-        shard.on_optimizer_config_update().await.unwrap();
+        shard.on_optimizer_config_update(None).await.unwrap();
 
         assert!(shard.update_handler.lock().await.prevent_unoptimized);
 
@@ -141,9 +142,70 @@ mod tests {
             shard_config.optimizer_config.prevent_unoptimized = Some(false);
         }
 
-        shard.on_optimizer_config_update().await.unwrap();
+        shard.on_optimizer_config_update(None).await.unwrap();
 
         assert!(!shard.update_handler.lock().await.prevent_unoptimized);
+
+        shard.stop_gracefully().await;
+    }
+
+    /// Regression test for <https://github.com/qdrant/qdrant/issues/11600>: the node-local
+    /// `optimizers_overwrite` must survive an optimizer config refresh at runtime.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn optimizer_config_update_keeps_optimizers_overwrite() {
+        let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+        let mut config = create_collection_config();
+        config.optimizer_config.max_optimization_threads = Some(0);
+
+        let optimizers_overwrite: OptimizersConfigDiff =
+            serde_json::from_str(r#"{"max_optimization_threads": 1}"#).unwrap();
+        let effective_optimizers_config = config.optimizer_config.update(&optimizers_overwrite);
+
+        let update_runtime = Handle::current();
+        let search_runtime = AdaptiveSearchHandle::current_for_tests();
+        let shard = LocalShard::build(
+            0,
+            "test".to_string(),
+            collection_dir.path(),
+            Arc::new(RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            payload_index_schema,
+            update_runtime.clone(),
+            search_runtime.clone(),
+            ResourceBudget::default(),
+            effective_optimizers_config,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            shard.update_handler.lock().await.max_optimization_threads,
+            Some(1),
+        );
+
+        // Refresh with the overwrite, as `Collection` does: it must still be applied
+        shard
+            .on_optimizer_config_update(Some(&optimizers_overwrite))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            shard.update_handler.lock().await.max_optimization_threads,
+            Some(1),
+        );
+
+        // Without an overwrite, the saved config is used
+        shard.on_optimizer_config_update(None).await.unwrap();
+
+        assert_eq!(
+            shard.update_handler.lock().await.max_optimization_threads,
+            Some(0),
+        );
 
         shard.stop_gracefully().await;
     }
@@ -183,7 +245,7 @@ mod tests {
             .report_optimizer_error("test optimizer error");
         assert!(shard.segments.read().optimizer_errors.is_some());
 
-        shard.on_optimizer_config_update().await.unwrap();
+        shard.on_optimizer_config_update(None).await.unwrap();
 
         assert!(
             shard.segments.read().optimizer_errors.is_none(),
@@ -262,8 +324,8 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(30),
             future::join_all(vec![
-                paused_shard.on_optimizer_config_update(),
-                failing_shard.on_optimizer_config_update(),
+                paused_shard.on_optimizer_config_update(None),
+                failing_shard.on_optimizer_config_update(None),
             ]),
         )
         .await
