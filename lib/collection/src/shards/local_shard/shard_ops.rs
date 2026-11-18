@@ -81,7 +81,8 @@ impl LocalShard {
         L: Loggable,
         F: std::future::Future<Output = CollectionResult<T>>,
     {
-        if !workload::enabled() {
+        // Explain mode does not execute the request: it is not part of the workload.
+        if !workload::enabled() || common::ambient::profile::is_explain() {
             return self.profiled(operation_name, operation).await;
         }
         let Some(ctx) = ambient::current().measured().cloned() else {

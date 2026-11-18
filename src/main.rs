@@ -501,6 +501,10 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let is_distributed_deployment = settings.cluster.enabled;
+    if is_distributed_deployment {
+        // Shard profiles name the peer that executed them
+        ::common::ambient::profile::set_this_peer_id(persistent_consensus_state.this_peer_id());
+    }
 
     let restored_collections = recover_collections_from_snapshot_args(
         args.storage_snapshot,

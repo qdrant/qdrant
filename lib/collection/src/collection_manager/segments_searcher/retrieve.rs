@@ -133,13 +133,16 @@ impl SegmentsSearcher {
                         profile::segment_read(
                             || read_segment_info(&*segment, filter.as_ref(), None),
                             || {
-                                segment.read_filtered(
+                                let points = segment.read_filtered(
                                     None,
                                     None,
                                     filter.as_ref(),
                                     &is_stopped,
                                     deferred_behavior,
-                                )
+                                )?;
+                                // No limit: this is the exact number of matching points
+                                profile::note_actual_cardinality(points.len());
+                                segment::common::operation_error::OperationResult::Ok(points)
                             },
                         )
                     })
