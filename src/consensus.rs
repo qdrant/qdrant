@@ -763,7 +763,7 @@ impl Consensus {
             let is_raft_message = matches!(message, Message::FromPeer(_));
 
             if let Err(err) = self.advance_node_impl(message) {
-                log::warn!("{err}");
+                log::warn!("{err:#}");
                 continue;
             }
 
@@ -816,11 +816,8 @@ impl Consensus {
                     existing_uris.get(&uri.parse::<Uri>().context("peer URI is not a valid URI")?)
                     && registered_peer_id != &peer_id
                 {
-                    log::warn!(
-                        "Rejected peer {peer_id} to join consensus, URI is already registered by peer {registered_peer_id} ({uri})",
-                    );
                     return Err(anyhow!(
-                        "peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
+                        "Rejected peer {peer_id} to join consensus: peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
                     ));
                 }
 
@@ -833,8 +830,8 @@ impl Consensus {
 
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
-                    .propose_conf_change(uri.into_bytes(), change)
-                    .context("failed to propose conf change")?;
+                    .propose_conf_change(uri.clone().into_bytes(), change)
+                    .with_context(|| format!("Failed to propose adding peer {peer_id} ({uri})"))?;
             }
 
             Message::FromClient(ConsensusOperations::RemovePeer(peer_id)) => {
@@ -848,7 +845,7 @@ impl Consensus {
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
                     .propose_conf_change(vec![], change)
-                    .context("failed to propose conf change")?;
+                    .with_context(|| format!("Failed to propose removing peer {peer_id}"))?;
             }
 
             Message::FromClient(ConsensusOperations::RequestSnapshot) => {
@@ -868,7 +865,7 @@ impl Consensus {
                 log::trace!("Proposing entry from client with length: {}", data.len());
                 self.node
                     .propose(vec![], data)
-                    .context("failed to propose entry")?;
+                    .with_context(|| format!("Failed to propose {operation:?}"))?;
             }
 
             Message::FromPeer(message) => {

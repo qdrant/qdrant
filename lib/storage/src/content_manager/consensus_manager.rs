@@ -840,6 +840,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let Ok(receiver_res) = tokio::time::timeout(wait_timeout, receiver.recv()).await else {
             forget_operation_awaiter(&mut self.on_consensus_op_apply.lock(), operation, receiver);
 
+            // An applied index behind the commit index means application is slow or stuck.
+            // Otherwise, the proposal was likely dropped, e.g. by a leader change.
+            let (commit, last_applied) = {
+                let persistent = self.persistent.read();
+                (
+                    persistent.state.hard_state.commit,
+                    persistent.last_applied_entry(),
+                )
+            };
+            log::warn!(
+                "Timed out after {wait_timeout:?} waiting for consensus to apply {operation:?}: \
+                 commit={commit}, last_applied={}, leader_established={}",
+                last_applied.map_or_else(|| "none".to_string(), |index| index.to_string()),
+                self.is_leader_established.check_ready(),
+            );
+
             return Err(StorageError::service_error(format!(
                 "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                 wait_timeout.as_secs_f64(),
