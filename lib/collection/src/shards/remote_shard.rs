@@ -138,28 +138,25 @@ impl RemoteShard {
     }
 
     /// Graft the profile returned by the remote peer into the query profile of the request.
+    /// Returns [`profile::RemoteResults::Discard`] when the results of the peer must be dropped.
     fn profile_finish(
         &self,
         operation: &'static str,
         started: Option<std::time::Instant>,
         remote: Option<api::grpc::qdrant::QueryProfile>,
-    ) {
+    ) -> profile::RemoteResults {
         let Some(started) = started else {
-            return;
+            return profile::RemoteResults::Keep;
         };
         let round_trip = started.elapsed();
         match remote.map(profile::QueryProfile::try_from) {
             Some(Ok(remote)) => {
                 profile::record_remote(self.id, self.peer_id, operation, round_trip, remote);
+                profile::RemoteResults::Keep
             }
             Some(Err(err)) => {
                 log::debug!("Invalid query profile from peer {}: {err}", self.peer_id);
-                profile::record_remote_without_profile(
-                    self.id,
-                    self.peer_id,
-                    operation,
-                    round_trip,
-                );
+                profile::record_remote_without_profile(self.id, self.peer_id, operation, round_trip)
             }
             None => {
                 profile::record_remote_without_profile(self.id, self.peer_id, operation, round_trip)
@@ -1367,7 +1364,11 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = scroll_response.usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        self.profile_finish("scroll", profile_started, scroll_response.profile.clone());
+        let remote_results =
+            self.profile_finish("scroll", profile_started, scroll_response.profile.clone());
+        if remote_results == profile::RemoteResults::Discard {
+            return Ok(Vec::new());
+        }
 
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
             .result
@@ -1461,7 +1462,7 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        self.profile_finish("core_search", profile_started, profile);
+        let remote_results = self.profile_finish("core_search", profile_started, profile);
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
             .into_iter()
@@ -1479,6 +1480,12 @@ impl ShardOperation for RemoteShard {
                     .collect()
             })
             .collect();
+        let result = result.map(|mut batches| {
+            if remote_results == profile::RemoteResults::Discard {
+                batches.iter_mut().for_each(Vec::clear);
+            }
+            batches
+        });
         let result = result.map_err(|e| e.into());
         if result.is_ok() {
             timer.set_success(true);
@@ -1531,7 +1538,9 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        self.profile_finish("count", profile_started, profile);
+        if self.profile_finish("count", profile_started, profile) == profile::RemoteResults::Discard {
+            return Ok(CountResult { count: 0 });
+        }
 
         result.map_or_else(
             || {
@@ -1647,9 +1656,9 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = hardware_usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        self.profile_finish("query_batch", profile_started, profile);
+        let remote_results = self.profile_finish("query_batch", profile_started, profile);
 
-        let result = results
+        let mut result: Vec<ShardQueryResponse> = results
             .into_iter()
             .zip(requests.iter())
             .map(|(query_result, request)| {
@@ -1668,6 +1677,11 @@ impl ShardOperation for RemoteShard {
                     .collect()
             })
             .try_collect()?;
+
+        if remote_results == profile::RemoteResults::Discard {
+            // Keep the shape: one (empty) list per intermediate result
+            result.iter_mut().flatten().for_each(Vec::clear);
+        }
 
         timer.set_success(true);
 
@@ -1719,7 +1733,12 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = response.usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        self.profile_finish("facet", profile_started, response.profile.clone());
+        if self.profile_finish("facet", profile_started, response.profile.clone())
+            == profile::RemoteResults::Discard
+        {
+            timer.set_success(true);
+            return Ok(FacetResponse { hits: Vec::new() });
+        }
 
         let hits = response
             .hits

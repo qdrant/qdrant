@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::ambient::AmbientContext;
 use common::ambient::hw::{HwMetric, HwSharedDrain};
-use common::ambient::profile::{ProfileMode, Profiler, QueryProfile};
+use common::ambient::profile::{ProfileAudience, ProfileMode, Profiler, QueryProfile};
 use common::flags::feature_flags;
 
 use super::TableOfContent;
@@ -65,8 +65,9 @@ impl RequestHwCounter {
         collection: Arc<HwSharedDrain>,
         report_to_api: bool,
         profile: Option<ProfileMode>,
+        audience: ProfileAudience,
     ) -> Self {
-        let profiler = profile.map(Profiler::new);
+        let profiler = profile.map(|mode| Profiler::new(mode, audience));
         Self {
             counter: AmbientContext::request_profiled(name, collection, profiler.as_ref()),
             report_to_api,

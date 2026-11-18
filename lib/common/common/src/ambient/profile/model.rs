@@ -96,6 +96,8 @@ pub enum SearchStrategy {
     IndexedRead,
     /// Filtered read (scroll, count, facet) that checks every point of the segment.
     FullScanRead,
+    /// Read without a filter (scroll, count), in id, value or random order up to the limit.
+    UnfilteredRead,
 }
 
 /// Why the strategy was chosen.

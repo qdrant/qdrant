@@ -47,6 +47,7 @@ pub fn get_request_hardware_counter_profiled(
         dispatcher.get_collection_hw_metrics(collection_name.clone()),
         report_to_api,
         profile,
+        common::ambient::profile::ProfileAudience::Client,
     ))
 }
 

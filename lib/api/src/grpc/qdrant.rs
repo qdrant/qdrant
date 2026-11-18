@@ -8852,6 +8852,8 @@ pub enum SearchStrategy {
     StrategySparseIndex = 6,
     StrategyIndexedRead = 7,
     StrategyFullScanRead = 8,
+    /// Read without a filter (scroll, count), up to the limit
+    StrategyUnfilteredRead = 9,
 }
 impl SearchStrategy {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -8869,6 +8871,7 @@ impl SearchStrategy {
             Self::StrategySparseIndex => "StrategySparseIndex",
             Self::StrategyIndexedRead => "StrategyIndexedRead",
             Self::StrategyFullScanRead => "StrategyFullScanRead",
+            Self::StrategyUnfilteredRead => "StrategyUnfilteredRead",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -8883,6 +8886,7 @@ impl SearchStrategy {
             "StrategySparseIndex" => Some(Self::StrategySparseIndex),
             "StrategyIndexedRead" => Some(Self::StrategyIndexedRead),
             "StrategyFullScanRead" => Some(Self::StrategyFullScanRead),
+            "StrategyUnfilteredRead" => Some(Self::StrategyUnfilteredRead),
             _ => None,
         }
     }

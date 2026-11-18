@@ -138,8 +138,11 @@ impl SegmentsSearcher {
                                     &is_stopped,
                                     deferred_behavior,
                                 )?;
-                                // No limit: this is the exact number of matching points
-                                profile::note_actual_cardinality(points.len());
+                                // No limit: this is the exact number of matching points,
+                                // unless explain mode skipped the read
+                                if !profile::is_explain() {
+                                    profile::note_actual_cardinality(points.len());
+                                }
                                 segment::common::operation_error::OperationResult::Ok(points)
                             },
                         )

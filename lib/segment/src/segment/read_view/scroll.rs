@@ -148,7 +148,12 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
+            None => {
+                if note_unfiltered_read() {
+                    return Ok(Vec::new());
+                }
+                Ok(self.read_by_id_stream(offset, limit, deferred_behavior))
+            }
             Some(condition) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
                 let pre_filter = self.should_pre_filter(&cardinality_estimation, limit);
@@ -176,6 +181,16 @@ where
             }
         }
     }
+}
+
+/// Record the plan of an unfiltered read in the query profile, if profiled.
+/// Returns true in explain mode: the caller must return without reading.
+pub(super) fn note_unfiltered_read() -> bool {
+    if profile::mode().is_none() {
+        return false;
+    }
+    profile::note_strategy(SearchStrategy::UnfilteredRead, StrategyReason::Unfiltered);
+    profile::is_explain()
 }
 
 /// Record the plan of a filtered read in the query profile, if profiled.

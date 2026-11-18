@@ -36,18 +36,30 @@ pub(crate) fn this_peer_id() -> Option<u64> {
     THIS_PEER_ID.get().copied()
 }
 
+/// Who receives the profile of a request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileAudience {
+    /// The client: notes derived from the whole profile are added.
+    Client,
+    /// The coordinating peer (internal API): only recorded notes, since the coordinator
+    /// derives notes once over the profile of all shards.
+    Coordinator,
+}
+
 /// Profiling state of a whole request, owned by the API handler that created it.
 #[derive(Clone)]
 pub struct Profiler {
     handle: ProfileHandle,
     started: Instant,
+    audience: ProfileAudience,
 }
 
 impl Profiler {
-    pub fn new(mode: ProfileMode) -> Self {
+    pub fn new(mode: ProfileMode, audience: ProfileAudience) -> Self {
         Self {
             handle: ProfileHandle::new(mode),
             started: Instant::now(),
+            audience,
         }
     }
 
@@ -65,7 +77,10 @@ impl Profiler {
             .handle
             .frame
             .snapshot_request(self.handle.mode, self.started.elapsed());
-        profile.notes = collector::derive_notes(&profile);
+        match self.audience {
+            ProfileAudience::Client => profile.notes = collector::derive_notes(&profile),
+            ProfileAudience::Coordinator => {}
+        }
         profile
     }
 }
@@ -164,6 +179,11 @@ pub fn segment_read<R>(info: impl FnOnce() -> SegmentInfo, f: impl FnOnce() -> R
     output
 }
 
+/// Record a finding for the request, shown in its `notes`.
+pub fn note(text: impl FnOnce() -> String) {
+    with_handle(|handle| handle.frame.push_note(text()));
+}
+
 /// Record the strategy of the segment search in progress.
 #[inline]
 pub fn note_strategy(strategy: SearchStrategy, reason: StrategyReason) {
@@ -219,18 +239,46 @@ pub fn record_remote(
     });
 }
 
+/// What to do with the results of a remote shard call in a profiled request.
+#[must_use]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteResults {
+    Keep,
+    /// Explain mode, but the peer did not return a profile: it is an older version that
+    /// ignored the mode and executed the request. Its results must not be returned.
+    Discard,
+}
+
 /// Record a remote shard call that returned no profile (e.g. an older peer).
 pub fn record_remote_without_profile(
     shard_id: u32,
     peer_id: u64,
     operation: &'static str,
     round_trip: Duration,
-) {
+) -> RemoteResults {
     with_handle(|handle| {
         handle
             .frame
             .push_shard(collector::remote_shard_without_profile(
                 shard_id, peer_id, operation, round_trip,
-            ))
-    });
+            ));
+        match handle.mode {
+            ProfileMode::Analyze => {
+                handle.frame.push_note(format!(
+                    "Peer {peer_id} returned no profile for its shards (it may run an older \
+                     version): only their round-trip time is shown."
+                ));
+                RemoteResults::Keep
+            }
+            ProfileMode::Explain => {
+                handle.frame.push_note(format!(
+                    "Peer {peer_id} does not support explain (it may run an older version) and \
+                     executed the request: its results were discarded and its shards are not \
+                     planned in this profile."
+                ));
+                RemoteResults::Discard
+            }
+        }
+    })
+    .unwrap_or(RemoteResults::Keep)
 }

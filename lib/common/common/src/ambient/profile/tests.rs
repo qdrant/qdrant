@@ -5,7 +5,7 @@ use crate::ambient::hw::{HwMetric, HwScale, HwSharedDrain, ScoreKind};
 use crate::ambient::{AmbientFutureExt, current};
 
 fn profiled(mode: ProfileMode) -> (Profiler, AmbientContext, Arc<HwSharedDrain>) {
-    let profiler = Profiler::new(mode);
+    let profiler = Profiler::new(mode, ProfileAudience::Client);
     let drain = Arc::new(HwSharedDrain::default());
     let ctx = AmbientContext::request_profiled("test", drain.clone(), Some(&profiler));
     (profiler, ctx, drain)

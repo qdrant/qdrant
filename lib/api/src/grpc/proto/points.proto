@@ -1768,6 +1768,7 @@ enum SearchStrategy {
   StrategySparseIndex = 6;
   StrategyIndexedRead = 7;
   StrategyFullScanRead = 8;
+  StrategyUnfilteredRead = 9; // Read without a filter (scroll, count), up to the limit
 }
 
 enum StrategyReason {

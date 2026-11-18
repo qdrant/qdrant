@@ -149,13 +149,18 @@ where
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
-            None => self.filtered_read_by_value_stream(
-                order_by,
-                limit,
-                None,
-                is_stopped,
-                deferred_behavior,
-            ),
+            None => {
+                if super::scroll::note_unfiltered_read() {
+                    return Ok(Vec::new());
+                }
+                self.filtered_read_by_value_stream(
+                    order_by,
+                    limit,
+                    None,
+                    is_stopped,
+                    deferred_behavior,
+                )
+            }
             Some(filter) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(filter)?;
                 let pre_filter = self.should_pre_filter(&cardinality_estimation, limit);

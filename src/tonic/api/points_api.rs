@@ -78,6 +78,7 @@ impl PointsService {
                 .get_collection_hw_metrics(collection_name.clone()),
             self.service_config.hardware_reporting(),
             profile,
+            common::ambient::profile::ProfileAudience::Client,
         ))
     }
 }

@@ -78,7 +78,12 @@ where
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => Ok(self.read_by_random_id(limit)),
+            None => {
+                if super::scroll::note_unfiltered_read() {
+                    return Ok(Vec::new());
+                }
+                Ok(self.read_by_random_id(limit))
+            }
             Some(condition) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
                 let pre_filter = self.should_pre_filter(&cardinality_estimation, Some(limit));

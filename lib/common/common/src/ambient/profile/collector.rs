@@ -46,6 +46,8 @@ struct FrameData {
     shards: Vec<ShardProfile>,
     segments: Vec<SegmentProfile>,
     dropped_segments: u64,
+    /// Request-level findings recorded while running, e.g. a peer that cannot profile.
+    notes: Vec<String>,
     // Notes of a segment frame
     strategy: Option<(SearchStrategy, StrategyReason)>,
     cardinality: Option<CardinalityProfile>,
@@ -95,6 +97,13 @@ impl Frame {
         self.0.lock().full_scan_threshold = Some(threshold);
     }
 
+    pub(crate) fn push_note(&self, note: String) {
+        let mut data = self.0.lock();
+        if !data.notes.contains(&note) {
+            data.notes.push(note);
+        }
+    }
+
     pub(crate) fn push_shard(&self, shard: ShardProfile) {
         self.0.lock().shards.push(shard);
     }
@@ -122,9 +131,12 @@ impl Frame {
             total_time_ms,
             phases,
             shards,
-            notes: _, // derived again on this node
+            notes, // recorded notes only: derived notes are derived again on this node
         } = remote;
         let network_time_ms = (millis(round_trip) - total_time_ms).max(0.0);
+        for note in notes {
+            self.push_note(note);
+        }
         let mut data = self.0.lock();
         if shards.is_empty() {
             data.shards.push(ShardProfile {
@@ -147,12 +159,13 @@ impl Frame {
         }
     }
 
-    fn take_shard_parts(&self) -> (Vec<PhaseProfile>, Vec<SegmentProfile>, u64) {
+    fn take_shard_parts(&self) -> (Vec<PhaseProfile>, Vec<SegmentProfile>, u64, Vec<String>) {
         let mut data = self.0.lock();
         (
             std::mem::take(&mut data.phases),
             std::mem::take(&mut data.segments),
             std::mem::take(&mut data.dropped_segments),
+            std::mem::take(&mut data.notes),
         )
     }
 
@@ -169,7 +182,7 @@ impl Frame {
 
     pub(crate) fn snapshot_request(&self, mode: ProfileMode, elapsed: Duration) -> QueryProfile {
         let data = self.0.lock();
-        let mut notes = Vec::new();
+        let mut notes = data.notes.clone();
         if data.dropped_segments > 0 {
             notes.push(format!(
                 "{} segment entries were omitted from the profile",
@@ -230,7 +243,15 @@ impl ShardScope {
             operation,
             started,
         } = self;
-        let (phases, segments, _dropped) = handle.frame.take_shard_parts();
+        let (phases, segments, dropped, notes) = handle.frame.take_shard_parts();
+        for note in notes {
+            parent.push_note(note);
+        }
+        if dropped > 0 {
+            parent.push_note(format!(
+                "{dropped} segment entries of shard {shard_id} were omitted from the profile"
+            ));
+        }
         parent.push_shard(ShardProfile {
             shard_id,
             peer_id: super::this_peer_id(),
@@ -324,9 +345,12 @@ impl SegmentScope {
             full_scan_threshold,
         } = handle.frame.take_segment_notes();
         // Nested shard data cannot happen; nested phases are folded into the shard
-        let (phases, _, _) = handle.frame.take_shard_parts();
+        let (phases, _, _, notes) = handle.frame.take_shard_parts();
         for phase in phases {
             parent.record_phase_profile(phase);
+        }
+        for note in notes {
+            parent.push_note(note);
         }
 
         let SegmentInfo {

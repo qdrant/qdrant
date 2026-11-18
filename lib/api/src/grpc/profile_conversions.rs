@@ -199,6 +199,7 @@ fn strategy_to_grpc(value: model::SearchStrategy) -> grpc::SearchStrategy {
         model::SearchStrategy::SparseIndex => grpc::SearchStrategy::StrategySparseIndex,
         model::SearchStrategy::IndexedRead => grpc::SearchStrategy::StrategyIndexedRead,
         model::SearchStrategy::FullScanRead => grpc::SearchStrategy::StrategyFullScanRead,
+        model::SearchStrategy::UnfilteredRead => grpc::SearchStrategy::StrategyUnfilteredRead,
     }
 }
 
@@ -213,6 +214,7 @@ fn strategy_from_grpc(value: grpc::SearchStrategy) -> model::SearchStrategy {
         grpc::SearchStrategy::StrategySparseIndex => model::SearchStrategy::SparseIndex,
         grpc::SearchStrategy::StrategyIndexedRead => model::SearchStrategy::IndexedRead,
         grpc::SearchStrategy::StrategyFullScanRead => model::SearchStrategy::FullScanRead,
+        grpc::SearchStrategy::StrategyUnfilteredRead => model::SearchStrategy::UnfilteredRead,
     }
 }
 
