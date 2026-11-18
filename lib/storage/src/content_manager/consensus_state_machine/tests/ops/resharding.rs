@@ -67,6 +67,74 @@ fn resharding_start_up_replay() {
 }
 
 #[test]
+fn resharding_start_up_partial_replay() {
+    let state = auto_resharding_state(2);
+    let operation = resharding_op(ReshardingOperation::Start(resharding_key(
+        ReshardingDirection::Up,
+        2,
+    )));
+
+    let mut machine = state_machine(state.clone());
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("starting scale-up resharding should be accepted");
+    };
+    let goal = machine.state().clone();
+
+    // Replay after creating the target shard must not count it as the last shard
+    for cut in 0..=actions.len() {
+        let mut partial = state.clone();
+        for action in &actions[..cut] {
+            partial.apply_action(action);
+        }
+
+        let mut replay = state_machine(partial);
+        let outcome = replay.apply(&operation);
+
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(replay.state(), &goal);
+    }
+}
+
+#[test]
+fn resharding_start_up_reject_target() {
+    // Existing shards, including the last one, and a gap after the last shard
+    for shard_id in [0, 1, 3] {
+        resharding_start_rejects_without_change(
+            auto_resharding_state(2),
+            resharding_key(ReshardingDirection::Up, shard_id),
+        );
+    }
+
+    // Shard 0 of a single-shard collection would derive zero shards on abort
+    resharding_start_rejects_without_change(
+        auto_resharding_state(1),
+        resharding_key(ReshardingDirection::Up, 0),
+    );
+}
+
+#[test]
+fn resharding_start_down_reject_target() {
+    // Shards other than the last one
+    for shard_id in [0, 1] {
+        resharding_start_rejects_without_change(
+            auto_resharding_state(3),
+            resharding_key(ReshardingDirection::Down, shard_id),
+        );
+    }
+}
+
+fn resharding_start_rejects_without_change(state: ClusterState, key: ReshardKey) {
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+
+    assert!(
+        matches!(outcome, Err(StorageError::BadRequest { .. })),
+        "starting resharding with {key:?} should be rejected, got {outcome:?}",
+    );
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
 fn resharding_start_up_reject_missing_shard_key() {
     let shard_key = ShardKey::from("north");
     let mut state = custom_sharding_state();

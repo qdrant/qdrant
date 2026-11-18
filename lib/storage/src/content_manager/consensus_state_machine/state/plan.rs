@@ -680,6 +680,12 @@ impl ClusterState {
             }
         }
 
+        // Finish and abort derive the shard count from the target shard ID,
+        // so with auto sharding it must be the last shard, or the one after it
+        if is_new_resharding && sharding_method == ShardingMethod::Auto {
+            validate_auto_resharding_target(state, key)?;
+        }
+
         let mut actions = Actions::new();
 
         if key.direction == ReshardingDirection::Up && !state.shards.contains_key(&key.shard_id) {
@@ -815,8 +821,8 @@ impl ClusterState {
                 state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
             if is_auto_sharding {
-                // TODO: When starting resharding, validate that auto-sharding scale-down targets
-                // the last nonzero shard, so a malformed entry cannot panic here
+                // Start validates that auto-sharding scale-down targets the last shard,
+                // which is nonzero because the collection has another shard
                 let shard_number = NonZeroU32::new(key.shard_id)
                     .expect("cannot have zero shards after finishing resharding down");
 
@@ -1000,8 +1006,8 @@ impl ClusterState {
             state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
         if is_auto_sharding {
-            // TODO: When starting resharding, validate that auto-sharding scale-up targets
-            //       the next shard ID, so a malformed entry targeting shard 0 cannot panic here
+            // Start validates that auto-sharding scale-up targets the shard after the last one,
+            // so the target is nonzero
             let shard_number = NonZeroU32::new(key.shard_id)
                 .expect("cannot have zero shards after aborting resharding up");
 
@@ -1994,6 +2000,56 @@ fn initial_replica_state_for_transfer(
             }
         }
     }
+}
+
+/// Check that auto-sharding resharding targets the shard the API selects:
+/// the last shard when scaling down, and the one after it when scaling up.
+///
+/// Scaling up creates the target shard before saving the resharding state.
+/// When Start is replayed after that, the target shard holds only the new resharding replica,
+/// and it is not counted as the last shard.
+fn validate_auto_resharding_target(
+    state: &collection::collection_state::State,
+    key: &ReshardKey,
+) -> StorageResult<()> {
+    let is_created_target = key.direction == ReshardingDirection::Up
+        && state.shards.get(&key.shard_id).is_some_and(|shard| {
+            shard.replicas.len() == 1
+                && shard.replicas.get(&key.peer_id) == Some(&ReplicaState::Resharding)
+        });
+
+    let last_shard_id = state
+        .shards
+        .keys()
+        .copied()
+        .filter(|&shard_id| !(is_created_target && shard_id == key.shard_id))
+        .max();
+
+    let Some(last_shard_id) = last_shard_id else {
+        return Err(StorageError::bad_request(
+            "cannot reshard collection without shards",
+        ));
+    };
+
+    let expected_shard_id = match key.direction {
+        ReshardingDirection::Up => last_shard_id.checked_add(1).ok_or_else(|| {
+            StorageError::bad_request(format!(
+                "cannot add shard after shard {last_shard_id} by resharding up",
+            ))
+        })?,
+
+        ReshardingDirection::Down => last_shard_id,
+    };
+
+    if key.shard_id != expected_shard_id {
+        return Err(StorageError::bad_request(format!(
+            "resharding {:?} must target shard {expected_shard_id} \
+             on collection with auto sharding, but targets shard {}",
+            key.direction, key.shard_id,
+        )));
+    }
+
+    Ok(())
 }
 
 fn validate_transfer(
