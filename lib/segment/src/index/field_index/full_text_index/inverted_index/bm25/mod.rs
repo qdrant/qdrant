@@ -102,15 +102,19 @@ impl<'a> Bm25Accept<'a> {
         &'b self,
         visible: &'b dyn Fn(ElementOffsetType) -> bool,
         element_point: &'b dyn Fn(ElementOffsetType) -> Option<PointOffsetType>,
+        filtered_elements: Option<ListFilteredPoints<'b>>,
     ) -> Bm25Accept<'b> {
         debug_assert!(self.element_point.is_none());
         Bm25Accept {
             visible,
             filter: self.filter,
             element_point: Some(element_point),
-            // Listed points are not element ids
-            filtered_points: None,
+            filtered_points: filtered_elements,
         }
+    }
+
+    pub fn filtered_points(&self) -> Option<ListFilteredPoints<'a>> {
+        self.filtered_points
     }
 
     /// Whether a query sees `point_id`.

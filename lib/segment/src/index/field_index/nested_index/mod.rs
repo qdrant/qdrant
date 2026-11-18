@@ -51,7 +51,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params, ListFilteredPoints};
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -634,7 +634,25 @@ impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex
             map.element_point(element)
                 .is_some_and(|point| accept.is_visible(point))
         };
-        let element_accept = accept.for_elements(&visible, &element_point);
+        let list_elements;
+        let filtered_elements = match accept.filtered_points() {
+            Some(list_points) => {
+                list_elements =
+                    move |budget: usize| -> OperationResult<Option<Vec<ElementOffsetType>>> {
+                        let Some(points) = list_points(budget)? else {
+                            return Ok(None);
+                        };
+                        let elements: Vec<ElementOffsetType> = points
+                            .iter()
+                            .flat_map(|&point| map.point_elements(point))
+                            .collect();
+                        Ok((elements.len() <= budget).then_some(elements))
+                    };
+                Some(&list_elements as ListFilteredPoints)
+            }
+            None => None,
+        };
+        let element_accept = accept.for_elements(&visible, &element_point, filtered_elements);
 
         // Every point above the `limit`-th best point has at most
         // `max_elements_per_point` elements, so the best element of each of the

@@ -1350,6 +1350,13 @@ fn check_text_against_reference(
             .collect(),
     );
 
+    let few = ids_filter(points.keys().copied().filter(|id| id % 13 == 0).collect());
+    let reference_few = ids_filter(
+        (0..owners.len() as u64)
+            .filter(|&element| owners[element as usize] % 13 == 0)
+            .collect(),
+    );
+
     let mut matched_any = false;
     let mut scored_any = false;
     for _ in 0..20 {
@@ -1396,6 +1403,7 @@ fn check_text_against_reference(
                 Some(&even),
                 Some(&reference_even),
             ),
+            (None, None, Some(&few), Some(&reference_few)),
         ] {
             let score = |segment: &Segment, corpus: Option<&Filter>, filter, limit| {
                 let mut query_context = QueryContext::default();
