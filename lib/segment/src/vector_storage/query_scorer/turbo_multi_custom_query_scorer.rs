@@ -1,4 +1,4 @@
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -43,6 +43,7 @@ where
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Original,
                 cpu: 1,
                 vector_io_read: usize::from(storage.is_cold()),
             },

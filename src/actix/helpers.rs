@@ -7,11 +7,12 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, Usage};
 use collection::operations::types::CollectionError;
+use common::ambient::profile::{ProfileMode, QueryProfile};
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::reason::{Reason, reason};
 use serde::Serialize;
 use storage::content_manager::errors::{StorageError, StorageResult};
-use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
+use storage::content_manager::toc::request_hw_counter::{RequestHwCounter, check_profile_allowed};
 use storage::dispatcher::Dispatcher;
 
 pub fn get_request_hardware_counter(
@@ -28,6 +29,25 @@ pub fn get_request_hardware_counter(
         ),
         report_to_api,
     )
+}
+
+/// [`get_request_hardware_counter`] for requests that accept the `profile` parameter.
+/// Fails if a profile is requested while query profiling (beta) is disabled.
+pub fn get_request_hardware_counter_profiled(
+    dispatcher: &Dispatcher,
+    collection_name: String,
+    report_to_api: bool,
+    wait: Option<bool>,
+    profile: Option<ProfileMode>,
+) -> Result<RequestHwCounter, StorageError> {
+    check_profile_allowed(profile)?;
+    let report_to_api = report_to_api && wait != Some(false);
+    Ok(RequestHwCounter::new_profiled(
+        &collection_name,
+        dispatcher.get_collection_hw_metrics(collection_name.clone()),
+        report_to_api,
+        profile,
+    ))
 }
 
 pub fn accepted_response(
@@ -48,6 +68,7 @@ pub fn accepted_response(
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
         usage,
+        profile: None,
     })
 }
 
@@ -56,6 +77,21 @@ pub fn process_response_with_inference_usage<T>(
     timing: Instant,
     hardware_usage: Option<HardwareUsage>,
     inference_usage: Option<InferenceUsage>,
+) -> HttpResponse
+where
+    T: Serialize,
+{
+    process_response_with_profile(response, timing, hardware_usage, inference_usage, None)
+}
+
+/// Like [`process_response_with_inference_usage`], with the query profile, if requested.
+/// The profile is returned on errors too: it shows how far a timed out request got.
+pub fn process_response_with_profile<T>(
+    response: Result<T, StorageError>,
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
+    profile: Option<QueryProfile>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -69,12 +105,14 @@ where
                 hardware: hardware_usage,
                 inference: inference_usage,
             }),
+            profile,
         }),
-        Err(err) => process_response_error_with_inference_usage(
+        Err(err) => process_response_error_with_profile(
             err,
             timing,
             hardware_usage,
             inference_usage,
+            profile,
         ),
     }
 }
@@ -96,6 +134,16 @@ pub fn process_response_error_with_inference_usage(
     hardware_usage: Option<HardwareUsage>,
     inference_usage: Option<InferenceUsage>,
 ) -> HttpResponse {
+    process_response_error_with_profile(err, timing, hardware_usage, inference_usage, None)
+}
+
+fn process_response_error_with_profile(
+    err: StorageError,
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
+    profile: Option<QueryProfile>,
+) -> HttpResponse {
     log_service_error(&err);
 
     let error = HttpError::from(err);
@@ -109,6 +157,7 @@ pub fn process_response_error_with_inference_usage(
             hardware: hardware_usage,
             inference: inference_usage,
         }),
+        profile,
     };
 
     let mut response_builder = HttpResponse::build(http_code);
@@ -132,6 +181,7 @@ pub fn already_in_progress_response() -> HttpResponse {
         status: ApiStatus::AlreadyInProgress,
         time: 0.0,
         usage: None,
+        profile: None,
     })
 }
 

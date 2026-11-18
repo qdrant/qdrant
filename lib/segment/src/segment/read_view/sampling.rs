@@ -81,7 +81,11 @@ where
             None => Ok(self.read_by_random_id(limit)),
             Some(condition) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
-                if self.should_pre_filter(&cardinality_estimation, Some(limit)) {
+                let pre_filter = self.should_pre_filter(&cardinality_estimation, Some(limit));
+                if super::scroll::note_read_plan(&cardinality_estimation, pre_filter) {
+                    return Ok(Vec::new());
+                }
+                if pre_filter {
                     self.filtered_read_by_index_shuffled(
                         limit,
                         condition,

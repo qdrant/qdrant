@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::ambient::hw::{self, HwScale};
+use common::ambient::hw::{self, HwScale, ScoreKind};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
@@ -82,6 +82,7 @@ where
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Quantized,
                 cpu: size_of::<TElement>(),
                 vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },

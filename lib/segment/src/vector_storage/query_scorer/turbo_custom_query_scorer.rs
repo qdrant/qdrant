@@ -1,4 +1,4 @@
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
@@ -42,6 +42,7 @@ where
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Original,
                 cpu: storage.quantized_vector_size(),
                 vector_io_read: if storage.is_cold() {
                     storage.quantized_vector_size()

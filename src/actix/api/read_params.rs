@@ -2,6 +2,7 @@ use std::num::NonZeroU64;
 use std::time::Duration;
 
 use collection::operations::consistency_params::ReadConsistency;
+use common::ambient::profile::ProfileMode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use validator::Validate;
@@ -13,6 +14,14 @@ pub struct ReadParams {
     pub consistency: Option<ReadConsistency>,
     /// If set, overrides global timeout for this request. Unit is seconds.
     pub timeout: Option<NonZeroU64>,
+}
+
+/// `profile` URL parameter of requests that support query profiling (beta).
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema, Validate)]
+pub struct ProfileParams {
+    /// Return a query profile with the response: `analyze` runs the request and reports where
+    /// the time went, `explain` only plans it. Needs the `query_profiling` feature flag.
+    pub profile: Option<ProfileMode>,
 }
 
 impl ReadParams {

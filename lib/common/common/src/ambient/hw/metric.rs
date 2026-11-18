@@ -16,6 +16,10 @@ pub enum HwMetric {
     VectorIoWrite = 6,
     RemoteIoCachedRead = 7,
     RemoteIoNonCachedRead = 8,
+    /// Distance computations against original vectors. Read by query profiles only.
+    VectorScores = 9,
+    /// Distance computations against quantized vectors. Read by query profiles only.
+    QuantizedVectorScores = 10,
 }
 
 impl HwMetric {
@@ -26,17 +30,35 @@ impl HwMetric {
     }
 }
 
+/// Which vectors a scorer-like object reads, for query profiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScoreKind {
+    Original,
+    Quantized,
+}
+
+impl ScoreKind {
+    fn metric(self) -> HwMetric {
+        match self {
+            ScoreKind::Original => HwMetric::VectorScores,
+            ScoreKind::Quantized => HwMetric::QuantizedVectorScores,
+        }
+    }
+}
+
 /// Multipliers for `cpu` and `vector_io_read` bumps of a scorer-like object.
 #[derive(Clone, Copy, Debug)]
 pub struct HwScale {
     pub cpu: usize,
     pub vector_io_read: usize,
+    pub kind: ScoreKind,
 }
 
 impl HwScale {
+    /// Count `delta` scores: `cpu` cost, and the number of scores for query profiles.
     #[inline]
     pub fn cpu(self, delta: usize) {
-        HwMetric::Cpu.bump(delta * self.cpu);
+        slot::bump2(HwMetric::Cpu, delta * self.cpu, self.kind.metric(), delta);
     }
 
     #[inline]

@@ -1,3 +1,4 @@
+use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
@@ -150,7 +151,11 @@ where
             None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
             Some(condition) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
-                if self.should_pre_filter(&cardinality_estimation, limit) {
+                let pre_filter = self.should_pre_filter(&cardinality_estimation, limit);
+                if note_read_plan(&cardinality_estimation, pre_filter) {
+                    return Ok(Vec::new());
+                }
+                if pre_filter {
                     self.filtered_read_by_index(
                         offset,
                         limit,
@@ -171,4 +176,30 @@ where
             }
         }
     }
+}
+
+/// Record the plan of a filtered read in the query profile, if profiled.
+/// Returns true in explain mode: the caller must return without reading.
+pub(super) fn note_read_plan(cardinality: &CardinalityEstimation, pre_filter: bool) -> bool {
+    if profile::mode().is_none() {
+        return false;
+    }
+    cardinality.note_to_profile();
+    // Without primary clauses, reading "by index" iterates all points too
+    let (strategy, reason) = match pre_filter {
+        true if !cardinality.primary_clauses.is_empty() => (
+            SearchStrategy::IndexedRead,
+            StrategyReason::CardinalityBelowThreshold,
+        ),
+        true => (
+            SearchStrategy::FullScanRead,
+            StrategyReason::CardinalityBelowThreshold,
+        ),
+        false => (
+            SearchStrategy::FullScanRead,
+            StrategyReason::CardinalityAboveThreshold,
+        ),
+    };
+    profile::note_strategy(strategy, reason);
+    profile::is_explain()
 }

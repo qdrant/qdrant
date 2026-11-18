@@ -210,6 +210,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             timeout: _,
             shard_key_selector: _,
             sparse_indices,
+            profile: _,
         } = value;
 
         if let Some(sparse_indices) = &sparse_indices {

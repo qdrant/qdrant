@@ -9,6 +9,7 @@ pub mod dynamic_pool;
 pub mod grpc_health_v1;
 pub mod ops;
 pub mod pre_encoded;
+pub mod profile_conversions;
 pub mod transport_channel_pool;
 pub mod validate;
 

@@ -110,6 +110,12 @@ pub struct FeatureFlags {
     /// segments can only be tuned through `m`.
     pub pipnn_graph_building: bool,
 
+    /// Beta: allow the `profile` parameter on search, query, scroll, count and facet requests,
+    /// which returns a query profile (`EXPLAIN` / `EXPLAIN ANALYZE`) with the response.
+    /// When disabled, requests asking for a profile are rejected. Requests without the
+    /// parameter are not affected either way.
+    pub query_profiling: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
@@ -139,6 +145,7 @@ impl Default for FeatureFlags {
             combined_vector_storage: true,
             versioned_deletes: false,
             pipnn_graph_building: false,
+            query_profiling: false,
             serverless_compatible: false,
         }
     }
@@ -184,6 +191,7 @@ impl FeatureFlags {
             // Deliberately not enabled by `all`: it changes the persisted storage format.
             versioned_deletes: false,
             pipnn_graph_building: true,
+            query_profiling: true,
             serverless_compatible: false,
         }
     }

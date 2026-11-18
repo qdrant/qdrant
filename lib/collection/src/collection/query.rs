@@ -1,3 +1,4 @@
+use common::ambient::profile;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -264,6 +265,7 @@ impl Collection {
                 .await?;
             // update timeout
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
+            let _payload_timer = profile::phase("payload_retrieval");
             let filled_results = without_payload_results.into_iter().zip(requests_batch).map(
                 |(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
@@ -303,6 +305,7 @@ impl Collection {
 
         let requests_batch = Arc::new(requests_batch);
 
+        let shards_timer = profile::phase("shards");
         let all_shards_results = self
             .batch_query_shards_concurrently(
                 requests_batch.clone(),
@@ -312,16 +315,20 @@ impl Collection {
                 timeout,
             )
             .await?;
+        drop(shards_timer);
 
         let results_f = transposed_iter(all_shards_results)
             .zip(requests_batch.iter())
             .map(|(shards_results, request)| async {
                 // shards_results shape: [num_shards, num_intermediate_results, num_points]
                 // merged_intermediates shape: [num_intermediate_results, num_points]
+                let merge_timer = profile::phase("merge");
                 let merged_intermediates = self
                     .merge_intermediate_results_from_shards(request, shards_results)
                     .await?;
+                drop(merge_timer);
 
+                let rescore_timer = profile::phase("collection_rescore");
                 let result = self
                     .intermediates_to_final_list(
                         merged_intermediates,
@@ -329,6 +336,7 @@ impl Collection {
                         timeout.map(|timeout| timeout.saturating_sub(instant.elapsed())),
                     )
                     .await?;
+                drop(rescore_timer);
 
                 let filter_refs = request.filter_refs();
                 self.post_process_if_slow_request(instant.elapsed(), filter_refs);

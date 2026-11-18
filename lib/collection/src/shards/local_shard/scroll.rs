@@ -1,3 +1,5 @@
+use crate::collection_manager::segments_searcher::read_segment_info;
+use common::ambient::profile;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -161,12 +163,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        filter.as_ref(),
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_filtered(
+                                offset,
+                                Some(limit),
+                                filter.as_ref(),
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -251,12 +260,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        filter.as_ref(),
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_filtered(
+                                offset,
+                                Some(limit),
+                                filter.as_ref(),
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -345,12 +361,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_ordered_filtered(
-                        Some(limit),
-                        filter.as_ref(),
-                        &order_by,
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_ordered_filtered(
+                                Some(limit),
+                                filter.as_ref(),
+                                &order_by,
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -446,10 +469,19 @@ impl LocalShard {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    Ok((
-                        read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped)?,
-                    ))
+                    profile::segment_read(
+                        || read_segment_info(&*read_segment, filter.as_ref(), Some(limit)),
+                        || {
+                            Ok((
+                                read_segment.available_point_count_without_deferred(),
+                                read_segment.read_random_filtered(
+                                    limit,
+                                    filter.as_ref(),
+                                    &is_stopped,
+                                )?,
+                            ))
+                        },
+                    )
                 };
                 cpu_utilization.measure(work)
             });

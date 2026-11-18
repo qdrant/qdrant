@@ -1,3 +1,5 @@
+use crate::collection_manager::segments_searcher::read_segment_info;
+use common::ambient::profile;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,7 +43,10 @@ impl LocalShard {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    read_segment.facet(&request, &is_stopped)
+                    profile::segment_read(
+                        || read_segment_info(&*read_segment, request.filter.as_ref(), None),
+                        || read_segment.facet(&request, &is_stopped),
+                    )
                 };
                 cpu_utilization.measure(work)
             });

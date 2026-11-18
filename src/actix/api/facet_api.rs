@@ -4,16 +4,15 @@ use api::rest::{FacetRequest, FacetResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::ambient::AmbientFutureExt;
 use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::toc::request_hw_counter::check_facet_profile;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use super::routing_token::ActixRoutingToken;
 use crate::actix::api::CollectionPath;
-use crate::actix::api::read_params::ReadParams;
+use crate::actix::api::read_params::{ProfileParams, ReadParams};
 use crate::actix::auth::ActixAuth;
-use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
-};
+use crate::actix::helpers::{self, get_request_hardware_counter_profiled, process_response_error};
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{collection_name}/facet")]
@@ -22,6 +21,7 @@ async fn facet(
     collection: Path<CollectionPath>,
     request: Json<FacetRequest>,
     params: Query<ReadParams>,
+    profile_params: Query<ProfileParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
     ActixRoutingToken(routing_token): ActixRoutingToken,
@@ -53,12 +53,20 @@ async fn facet(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let request_hw_counter = get_request_hardware_counter(
+    if let Err(err) = check_facet_profile(profile_params.profile) {
+        return process_response_error(err, timing, None);
+    }
+
+    let request_hw_counter = match get_request_hardware_counter_profiled(
         &dispatcher,
         collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
-    );
+        profile_params.profile,
+    ) {
+        Ok(counter) => counter,
+        Err(err) => return process_response_error(err, Instant::now(), None),
+    };
 
     let response = dispatcher
         .toc(&auth, &pass)
@@ -75,7 +83,14 @@ async fn facet(
         .await
         .map(FacetResponse::from);
 
-    process_response(response, timing, request_hw_counter.to_rest_api())
+    let profile = request_hw_counter.profile();
+    helpers::process_response_with_profile(
+        response,
+        timing,
+        request_hw_counter.to_rest_api(),
+        None,
+        profile,
+    )
 }
 
 pub fn config_facet_api(cfg: &mut web::ServiceConfig) {

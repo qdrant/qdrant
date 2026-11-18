@@ -1,4 +1,4 @@
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -34,6 +34,7 @@ impl<
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Original,
                 cpu: size_of::<DimWeight>(),
                 vector_io_read: if vector_storage.is_cold() {
                     size_of::<DimId>()

@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use common::ambient::AmbientContext;
 use common::ambient::hw::{HwMetric, HwSharedDrain};
+use common::ambient::profile::{ProfileMode, Profiler, QueryProfile};
+use common::flags::feature_flags;
+
+use crate::content_manager::errors::StorageError;
 
 use super::TableOfContent;
 
@@ -20,6 +24,31 @@ pub struct RequestHwCounter {
     /// If this flag is set, RequestHwCounter will be converted into non-None API representation.
     /// Otherwise, it will be ignored.
     report_to_api: bool,
+    /// Present when the request asked for a query profile.
+    profiler: Option<Profiler>,
+}
+
+/// Check that a requested query profile is allowed: the feature is in beta.
+pub fn check_profile_allowed(profile: Option<ProfileMode>) -> Result<(), StorageError> {
+    if profile.is_some() && !feature_flags().query_profiling {
+        return Err(StorageError::bad_request(
+            "Query profiling is in beta: enable it with the `feature_flags.query_profiling` \
+             config option (`QDRANT__FEATURE_FLAGS__QUERY_PROFILING=true`)",
+        ));
+    }
+    Ok(())
+}
+
+/// Explain mode is not meaningful for facet requests, see the "Query profiling" docs.
+pub fn check_facet_profile(profile: Option<ProfileMode>) -> Result<(), StorageError> {
+    if profile == Some(ProfileMode::Explain) {
+        return Err(StorageError::bad_request(
+            "`profile=explain` is not supported for facet: a facet has no strategy to choose. \
+             It reads the values of one payload index (required for faceting) and counts \
+             the matching points per value. Use `profile=analyze` to see where time goes.",
+        ));
+    }
+    Ok(())
 }
 
 impl RequestHwCounter {
@@ -27,7 +56,33 @@ impl RequestHwCounter {
         Self {
             counter,
             report_to_api,
+            profiler: None,
         }
+    }
+
+    /// A request counter whose context is also profiled, see [`common::ambient::profile`].
+    pub fn new_profiled(
+        name: &str,
+        collection: Arc<HwSharedDrain>,
+        report_to_api: bool,
+        profile: Option<ProfileMode>,
+    ) -> Self {
+        let profiler = profile.map(Profiler::new);
+        Self {
+            counter: AmbientContext::request_profiled(name, collection, profiler.as_ref()),
+            report_to_api,
+            profiler,
+        }
+    }
+
+    /// The profile collected so far, if the request is profiled.
+    pub fn profile(&self) -> Option<QueryProfile> {
+        self.profiler.as_ref().map(Profiler::finish)
+    }
+
+    /// The profile in its gRPC representation.
+    pub fn profile_grpc(&self) -> Option<api::grpc::qdrant::QueryProfile> {
+        self.profile().map(api::grpc::qdrant::QueryProfile::from)
     }
 
     pub fn get_counter(&self) -> AmbientContext {

@@ -158,7 +158,11 @@ where
             ),
             Some(filter) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(filter)?;
-                if self.should_pre_filter(&cardinality_estimation, limit) {
+                let pre_filter = self.should_pre_filter(&cardinality_estimation, limit);
+                if super::scroll::note_read_plan(&cardinality_estimation, pre_filter) {
+                    return Ok(Vec::new());
+                }
+                if pre_filter {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,

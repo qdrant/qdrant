@@ -6295,6 +6295,9 @@ pub struct SearchPoints {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     #[prost(message, optional, tag = "15")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "16")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -6318,6 +6321,9 @@ pub struct SearchBatchPoints {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "5")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -6475,6 +6481,9 @@ pub struct ScrollPoints {
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "11")]
     pub timeout: ::core::option::Option<u64>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "12")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -6813,6 +6822,9 @@ pub struct CountPoints {
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "7")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -7385,6 +7397,9 @@ pub struct QueryPoints {
     #[prost(uint64, optional, tag = "15")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "16")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -7407,6 +7422,9 @@ pub struct QueryBatchPoints {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "5")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -7519,6 +7537,9 @@ pub struct FacetCounts {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "8")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Return a query profile with the response (beta, needs the `query_profiling` feature flag)
+    #[prost(enumeration = "ProfileMode", optional, tag = "9")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -7941,6 +7962,9 @@ pub struct SearchResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -7953,6 +7977,9 @@ pub struct QueryResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -7965,6 +7992,9 @@ pub struct QueryBatchResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -7996,6 +8026,9 @@ pub struct SearchBatchResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8020,6 +8053,9 @@ pub struct CountResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8035,6 +8071,9 @@ pub struct ScrollResponse {
     pub time: f64,
     #[prost(message, optional, tag = "4")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "5")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8155,6 +8194,9 @@ pub struct FacetResponse {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<Usage>,
+    /// Query profile, if requested
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8275,6 +8317,149 @@ pub struct HardwareUsage {
     pub updated_bytes: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "11")]
     pub updated_indexed_bytes: ::core::option::Option<u64>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryProfile {
+    /// Schema version
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    #[prost(enumeration = "ProfileMode", tag = "2")]
+    pub mode: i32,
+    /// Wall time on the node that received the request
+    #[prost(double, tag = "3")]
+    pub total_time_ms: f64,
+    /// Request-level phases on the receiving node
+    #[prost(message, repeated, tag = "4")]
+    pub phases: ::prost::alloc::vec::Vec<PhaseProfile>,
+    /// One entry per shard operation, local or remote
+    #[prost(message, repeated, tag = "5")]
+    pub shards: ::prost::alloc::vec::Vec<ShardProfile>,
+    /// Human-readable findings, e.g. a missing payload index
+    #[prost(string, repeated, tag = "6")]
+    pub notes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PhaseProfile {
+    /// e.g. `plan`, `merge`, `rescore`, `payload_retrieval`
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Summed over all calls
+    #[prost(double, tag = "2")]
+    pub time_ms: f64,
+    #[prost(uint64, tag = "3")]
+    pub calls: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardProfile {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    /// Peer that executed the operation, absent in single-node deployments
+    #[prost(uint64, optional, tag = "2")]
+    pub peer_id: ::core::option::Option<u64>,
+    #[prost(enumeration = "ShardLocation", tag = "3")]
+    pub location: i32,
+    /// `query_batch`, `core_search`, `scroll`, `count`, `facet`, `retrieve`
+    #[prost(string, tag = "4")]
+    pub operation: ::prost::alloc::string::String,
+    /// Time of the operation on the peer that executed it
+    #[prost(double, tag = "5")]
+    pub time_ms: f64,
+    /// Remote only: round trip minus `time_ms`
+    #[prost(double, optional, tag = "6")]
+    pub network_time_ms: ::core::option::Option<f64>,
+    #[prost(message, repeated, tag = "7")]
+    pub phases: ::prost::alloc::vec::Vec<PhaseProfile>,
+    #[prost(message, repeated, tag = "8")]
+    pub segments: ::prost::alloc::vec::Vec<SegmentProfile>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CardinalityProfile {
+    #[prost(uint64, tag = "1")]
+    pub min: u64,
+    #[prost(uint64, tag = "2")]
+    pub exp: u64,
+    #[prost(uint64, tag = "3")]
+    pub max: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FilterProfile {
+    #[prost(message, optional, tag = "1")]
+    pub estimated_cardinality: ::core::option::Option<CardinalityProfile>,
+    #[prost(uint64, optional, tag = "2")]
+    pub actual_cardinality: ::core::option::Option<u64>,
+    /// Payload keys whose index selected the candidates
+    #[prost(string, repeated, tag = "3")]
+    pub indexed_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Payload keys of the filter without a payload index
+    #[prost(string, repeated, tag = "4")]
+    pub unindexed_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// No payload index narrowed the candidates down
+    #[prost(bool, tag = "5")]
+    pub full_payload_scan: bool,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SegmentCounters {
+    #[prost(uint64, tag = "1")]
+    pub vector_scores: u64,
+    #[prost(uint64, tag = "2")]
+    pub quantized_vector_scores: u64,
+    #[prost(uint64, tag = "3")]
+    pub vector_io_read_bytes: u64,
+    #[prost(uint64, tag = "4")]
+    pub payload_io_read_bytes: u64,
+    #[prost(uint64, tag = "5")]
+    pub payload_index_io_read_bytes: u64,
+    #[prost(uint64, tag = "6")]
+    pub remote_io_cached_read_bytes: u64,
+    #[prost(uint64, tag = "7")]
+    pub remote_io_non_cached_read_bytes: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SegmentProfile {
+    #[prost(string, tag = "1")]
+    pub segment_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub appendable: bool,
+    /// The searched vector has an index in this segment
+    #[prost(bool, tag = "3")]
+    pub indexed: bool,
+    #[prost(uint64, tag = "4")]
+    pub points: u64,
+    /// `search` or `read`
+    #[prost(string, tag = "5")]
+    pub operation: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "6")]
+    pub vector_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "7")]
+    pub batch_size: u64,
+    #[prost(uint64, optional, tag = "8")]
+    pub limit: ::core::option::Option<u64>,
+    #[prost(enumeration = "SearchStrategy", optional, tag = "9")]
+    pub strategy: ::core::option::Option<i32>,
+    #[prost(enumeration = "StrategyReason", optional, tag = "10")]
+    pub strategy_reason: ::core::option::Option<i32>,
+    #[prost(uint64, optional, tag = "11")]
+    pub full_scan_threshold: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "12")]
+    pub filter: ::core::option::Option<FilterProfile>,
+    #[prost(double, tag = "13")]
+    pub time_ms: f64,
+    #[prost(message, optional, tag = "14")]
+    pub counters: ::core::option::Option<SegmentCounters>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8591,6 +8776,166 @@ impl UpdateStatus {
             "Completed" => Some(Self::Completed),
             "ClockRejected" => Some(Self::ClockRejected),
             "WaitTimeout" => Some(Self::WaitTimeout),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ProfileMode {
+    /// Run the request and report where the time went, like `EXPLAIN ANALYZE`
+    ProfileAnalyze = 0,
+    /// Plan the request without scoring any vector, like `EXPLAIN`
+    ProfileExplain = 1,
+}
+impl ProfileMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::ProfileAnalyze => "ProfileAnalyze",
+            Self::ProfileExplain => "ProfileExplain",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ProfileAnalyze" => Some(Self::ProfileAnalyze),
+            "ProfileExplain" => Some(Self::ProfileExplain),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardLocation {
+    ShardLocal = 0,
+    ShardRemote = 1,
+}
+impl ShardLocation {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::ShardLocal => "ShardLocal",
+            Self::ShardRemote => "ShardRemote",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ShardLocal" => Some(Self::ShardLocal),
+            "ShardRemote" => Some(Self::ShardRemote),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SearchStrategy {
+    StrategyHnsw = 0,
+    StrategyHnswFiltered = 1,
+    StrategyAcorn = 2,
+    StrategyPayloadIndexFirst = 3,
+    StrategyFullScan = 4,
+    StrategyExact = 5,
+    StrategySparseIndex = 6,
+    StrategyIndexedRead = 7,
+    StrategyFullScanRead = 8,
+}
+impl SearchStrategy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::StrategyHnsw => "StrategyHnsw",
+            Self::StrategyHnswFiltered => "StrategyHnswFiltered",
+            Self::StrategyAcorn => "StrategyAcorn",
+            Self::StrategyPayloadIndexFirst => "StrategyPayloadIndexFirst",
+            Self::StrategyFullScan => "StrategyFullScan",
+            Self::StrategyExact => "StrategyExact",
+            Self::StrategySparseIndex => "StrategySparseIndex",
+            Self::StrategyIndexedRead => "StrategyIndexedRead",
+            Self::StrategyFullScanRead => "StrategyFullScanRead",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "StrategyHnsw" => Some(Self::StrategyHnsw),
+            "StrategyHnswFiltered" => Some(Self::StrategyHnswFiltered),
+            "StrategyAcorn" => Some(Self::StrategyAcorn),
+            "StrategyPayloadIndexFirst" => Some(Self::StrategyPayloadIndexFirst),
+            "StrategyFullScan" => Some(Self::StrategyFullScan),
+            "StrategyExact" => Some(Self::StrategyExact),
+            "StrategySparseIndex" => Some(Self::StrategySparseIndex),
+            "StrategyIndexedRead" => Some(Self::StrategyIndexedRead),
+            "StrategyFullScanRead" => Some(Self::StrategyFullScanRead),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum StrategyReason {
+    ReasonNotIndexed = 0,
+    ReasonHnswDisabled = 1,
+    ReasonExactRequested = 2,
+    ReasonSmallSegment = 3,
+    ReasonCardinalityBelowThreshold = 4,
+    ReasonCardinalityAboveThreshold = 5,
+    ReasonSampledCardinality = 6,
+    ReasonAcornSelectivity = 7,
+    ReasonUnfiltered = 8,
+}
+impl StrategyReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::ReasonNotIndexed => "ReasonNotIndexed",
+            Self::ReasonHnswDisabled => "ReasonHnswDisabled",
+            Self::ReasonExactRequested => "ReasonExactRequested",
+            Self::ReasonSmallSegment => "ReasonSmallSegment",
+            Self::ReasonCardinalityBelowThreshold => "ReasonCardinalityBelowThreshold",
+            Self::ReasonCardinalityAboveThreshold => "ReasonCardinalityAboveThreshold",
+            Self::ReasonSampledCardinality => "ReasonSampledCardinality",
+            Self::ReasonAcornSelectivity => "ReasonAcornSelectivity",
+            Self::ReasonUnfiltered => "ReasonUnfiltered",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ReasonNotIndexed" => Some(Self::ReasonNotIndexed),
+            "ReasonHnswDisabled" => Some(Self::ReasonHnswDisabled),
+            "ReasonExactRequested" => Some(Self::ReasonExactRequested),
+            "ReasonSmallSegment" => Some(Self::ReasonSmallSegment),
+            "ReasonCardinalityBelowThreshold" => {
+                Some(Self::ReasonCardinalityBelowThreshold)
+            }
+            "ReasonCardinalityAboveThreshold" => {
+                Some(Self::ReasonCardinalityAboveThreshold)
+            }
+            "ReasonSampledCardinality" => Some(Self::ReasonSampledCardinality),
+            "ReasonAcornSelectivity" => Some(Self::ReasonAcornSelectivity),
+            "ReasonUnfiltered" => Some(Self::ReasonUnfiltered),
             _ => None,
         }
     }
@@ -11686,6 +12031,8 @@ pub struct CoreSearchBatchPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
+    #[prost(enumeration = "ProfileMode", optional, tag = "5")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -11978,6 +12325,8 @@ pub struct QueryBatchPointsInternal {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    #[prost(enumeration = "ProfileMode", optional, tag = "5")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -12006,6 +12355,8 @@ pub struct QueryBatchResponseInternal {
     pub hardware_usage: ::core::option::Option<HardwareUsage>,
     #[prost(message, optional, tag = "6")]
     pub inference_usage: ::core::option::Option<InferenceUsage>,
+    #[prost(message, optional, tag = "7")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -12031,6 +12382,8 @@ pub struct FacetCountsInternal {
     #[prost(uint64, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    #[prost(enumeration = "ProfileMode", optional, tag = "8")]
+    pub profile: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -12075,6 +12428,8 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+    #[prost(message, optional, tag = "4")]
+    pub profile: ::core::option::Option<QueryProfile>,
 }
 /// Encoding of `RawPayload.payload_bytes`.
 #[allow(clippy::all)]

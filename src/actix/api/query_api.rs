@@ -13,10 +13,12 @@ use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use super::CollectionPath;
-use super::read_params::ReadParams;
+use super::read_params::{ProfileParams, ReadParams};
 use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
-use crate::actix::helpers::{self, get_request_hardware_counter};
+use crate::actix::helpers::{
+    self, get_request_hardware_counter, get_request_hardware_counter_profiled,
+};
 use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_rest::{
@@ -36,6 +38,7 @@ async fn query_points(
     collection: Path<CollectionPath>,
     request: Json<QueryRequest>,
     params: Query<ReadParams>,
+    profile_params: Query<ProfileParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
     ActixRoutingToken(routing_token): ActixRoutingToken,
@@ -46,12 +49,16 @@ async fn query_points(
         shard_key,
     } = request.into_inner();
 
-    let request_hw_counter = get_request_hardware_counter(
+    let request_hw_counter = match get_request_hardware_counter_profiled(
         &dispatcher,
         collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
-    );
+        profile_params.profile,
+    ) {
+        Ok(counter) => counter,
+        Err(err) => return helpers::process_response_error(err, Instant::now(), None),
+    };
     let timing = Instant::now();
 
     let shard_selection = match shard_key {
@@ -101,11 +108,13 @@ async fn query_points(
     .measured(request_hw_counter.get_counter())
     .await;
 
-    helpers::process_response_with_inference_usage(
+    let profile = request_hw_counter.profile();
+    helpers::process_response_with_profile(
         result,
         timing,
         request_hw_counter.to_rest_api(),
         inference_usage.into_non_empty(),
+        profile,
     )
 }
 
@@ -116,6 +125,7 @@ async fn query_points_batch(
     collection: Path<CollectionPath>,
     request: Json<QueryRequestBatch>,
     params: Query<ReadParams>,
+    profile_params: Query<ProfileParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
     ActixRoutingToken(routing_token): ActixRoutingToken,
@@ -123,12 +133,16 @@ async fn query_points_batch(
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
 
-    let request_hw_counter = get_request_hardware_counter(
+    let request_hw_counter = match get_request_hardware_counter_profiled(
         &dispatcher,
         collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
-    );
+        profile_params.profile,
+    ) {
+        Ok(counter) => counter,
+        Err(err) => return helpers::process_response_error(err, Instant::now(), None),
+    };
     let timing = Instant::now();
 
     let mut all_usages: InferenceUsage = InferenceUsage::default();
@@ -191,11 +205,13 @@ async fn query_points_batch(
     .measured(request_hw_counter.get_counter())
     .await;
 
-    helpers::process_response_with_inference_usage(
+    let profile = request_hw_counter.profile();
+    helpers::process_response_with_profile(
         result,
         timing,
         request_hw_counter.to_rest_api(),
         all_usages.into_non_empty(),
+        profile,
     )
 }
 

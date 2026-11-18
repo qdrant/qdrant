@@ -23,11 +23,12 @@ use tokio::time::Instant;
 use validator::Validate;
 
 use super::CollectionPath;
-use super::read_params::ReadParams;
+use super::read_params::{ProfileParams, ReadParams};
 use super::routing_token::ActixRoutingToken;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    self, get_request_hardware_counter, get_request_hardware_counter_profiled, process_response,
+    process_response_error,
 };
 use crate::common::query::do_get_points;
 use crate::settings::ServiceConfig;
@@ -195,6 +196,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
+    profile_params: Query<ProfileParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
     ActixRoutingToken(routing_token): ActixRoutingToken,
@@ -222,12 +224,16 @@ async fn scroll_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let request_hw_counter = get_request_hardware_counter(
+    let request_hw_counter = match get_request_hardware_counter_profiled(
         &dispatcher,
         collection.collection_name.clone(),
         service_config.hardware_reporting(),
         None,
-    );
+        profile_params.profile,
+    ) {
+        Ok(counter) => counter,
+        Err(err) => return process_response_error(err, Instant::now(), None),
+    };
     let timing = Instant::now();
 
     let res = dispatcher
@@ -244,5 +250,12 @@ async fn scroll_points(
         .measured(request_hw_counter.get_counter())
         .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    let profile = request_hw_counter.profile();
+    helpers::process_response_with_profile(
+        res,
+        timing,
+        request_hw_counter.to_rest_api(),
+        None,
+        profile,
+    )
 }

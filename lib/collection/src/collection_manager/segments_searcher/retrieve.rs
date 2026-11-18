@@ -1,3 +1,5 @@
+use super::read_segment_info;
+use common::ambient::profile;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -126,12 +128,19 @@ impl SegmentsSearcher {
                 let all_points: BTreeSet<_> = segments
                     .into_iter()
                     .map(|segment| {
-                        segment.get().read().read_filtered(
-                            None,
-                            None,
-                            filter.as_ref(),
-                            &is_stopped,
-                            deferred_behavior,
+                        let segment = segment.get();
+                        let segment = segment.read();
+                        profile::segment_read(
+                            || read_segment_info(&*segment, filter.as_ref(), None),
+                            || {
+                                segment.read_filtered(
+                                    None,
+                                    None,
+                                    filter.as_ref(),
+                                    &is_stopped,
+                                    deferred_behavior,
+                                )
+                            },
                         )
                     })
                     .process_results(|iter| iter.flatten().collect())?;

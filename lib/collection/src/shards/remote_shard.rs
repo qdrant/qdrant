@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use api::grpc::pre_encoded::{PreEncodedMessage, update_batch_pre_encoded};
+use api::grpc::profile_conversions::profile_mode_to_grpc;
 use api::grpc::qdrant::collections_internal_client::CollectionsInternalClient;
 use api::grpc::qdrant::points_internal_client::PointsInternalClient;
 use api::grpc::qdrant::qdrant_client::QdrantClient;
@@ -23,6 +24,7 @@ use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
 use common::ambient::hw::{self, HardwareData};
+use common::ambient::profile;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -126,6 +128,42 @@ impl RemoteShard {
                 self.peer_id
             ))),
             Some(peer_address) => Ok(peer_address),
+        }
+    }
+
+    /// Start timing a read for the query profile, if the request is profiled.
+    fn profile_start() -> (Option<profile::ProfileMode>, Option<std::time::Instant>) {
+        let mode = profile::mode();
+        (mode, mode.map(|_| std::time::Instant::now()))
+    }
+
+    /// Graft the profile returned by the remote peer into the query profile of the request.
+    fn profile_finish(
+        &self,
+        operation: &'static str,
+        started: Option<std::time::Instant>,
+        remote: Option<api::grpc::qdrant::QueryProfile>,
+    ) {
+        let Some(started) = started else {
+            return;
+        };
+        let round_trip = started.elapsed();
+        match remote.map(profile::QueryProfile::try_from) {
+            Some(Ok(remote)) => {
+                profile::record_remote(self.id, self.peer_id, operation, round_trip, remote);
+            }
+            Some(Err(err)) => {
+                log::debug!("Invalid query profile from peer {}: {err}", self.peer_id);
+                profile::record_remote_without_profile(
+                    self.id,
+                    self.peer_id,
+                    operation,
+                    round_trip,
+                );
+            }
+            None => {
+                profile::record_remote_without_profile(self.id, self.peer_id, operation, round_trip)
+            }
         }
     }
 
@@ -1295,6 +1333,7 @@ impl ShardOperation for RemoteShard {
         let is_payload_required = with_payload.is_required();
         let order_by = order_by.clone().map(OrderBy::from);
         let filter = filter.clone();
+        let (profile_mode, profile_started) = Self::profile_start();
 
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
@@ -1307,6 +1346,7 @@ impl ShardOperation for RemoteShard {
             shard_key_selector: None,
             order_by: order_by.map(api::grpc::qdrant::OrderBy::from),
             timeout: processed_timeout.map(|t| t.as_secs()),
+            profile: profile_mode_to_grpc(profile_mode),
         };
         let scroll_request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -1327,6 +1367,7 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = scroll_response.usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        self.profile_finish("scroll", profile_started, scroll_response.profile.clone());
 
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
             .result
@@ -1389,11 +1430,13 @@ impl ShardOperation for RemoteShard {
             .map(|s| CollectionCoreSearchRequest((self.collection_id.clone(), s)).into())
             .collect();
 
+        let (profile_mode, profile_started) = Self::profile_start();
         let request = &CoreSearchBatchPointsInternal {
             collection_name: self.collection_id.clone(),
             search_points,
             shard_id: Some(self.id),
             timeout: processed_timeout.map(|t| t.as_secs()),
+            profile: profile_mode_to_grpc(profile_mode),
         };
         let search_batch_response = self
             .with_points_client(|mut client| async move {
@@ -1412,11 +1455,13 @@ impl ShardOperation for RemoteShard {
             result,
             time: _,
             usage,
+            profile,
         } = search_batch_response;
 
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        self.profile_finish("core_search", profile_started, profile);
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
             .into_iter()
@@ -1450,6 +1495,7 @@ impl ShardOperation for RemoteShard {
         _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let processed_timeout = Self::process_read_timeout(timeout, "count")?;
+        let (profile_mode, profile_started) = Self::profile_start();
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(Filter::into),
@@ -1457,6 +1503,7 @@ impl ShardOperation for RemoteShard {
             read_consistency: None,
             shard_key_selector: None,
             timeout: processed_timeout.map(|t| t.as_secs()),
+            profile: profile_mode_to_grpc(profile_mode),
         };
 
         let count_request = &CountPointsInternal {
@@ -1478,11 +1525,13 @@ impl ShardOperation for RemoteShard {
             result,
             time: _,
             usage,
+            profile,
         } = count_response;
 
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        self.profile_finish("count", profile_started, profile);
 
         result.map_or_else(
             || {
@@ -1559,6 +1608,7 @@ impl ShardOperation for RemoteShard {
         timer.set_success(false);
 
         let requests = requests.as_ref();
+        let (profile_mode, profile_started) = Self::profile_start();
 
         let batch_response = self
             .with_points_client(|mut client| async move {
@@ -1572,6 +1622,7 @@ impl ShardOperation for RemoteShard {
                     query_points,
                     shard_id: Some(self.id),
                     timeout: processed_timeout.map(|t| t.as_secs()),
+                    profile: profile_mode_to_grpc(profile_mode),
                 };
 
                 let mut request = tonic::Request::new(request);
@@ -1590,11 +1641,13 @@ impl ShardOperation for RemoteShard {
             time: _,
             hardware_usage,
             inference_usage: _, // Remote shards don't have inference usage, so we can ignore it
+            profile,
         } = batch_response;
 
         if let Some(hw_usage) = hardware_usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        self.profile_finish("query_batch", profile_started, profile);
 
         let result = results
             .into_iter()
@@ -1637,6 +1690,7 @@ impl ShardOperation for RemoteShard {
             filter,
             exact,
         } = request.as_ref();
+        let (profile_mode, profile_started) = Self::profile_start();
 
         let response = self
             .with_points_client(|mut client| async move {
@@ -1648,6 +1702,7 @@ impl ShardOperation for RemoteShard {
                     exact: *exact,
                     shard_id: self.id,
                     timeout: processed_timeout.map(|t| t.as_secs()),
+                    profile: profile_mode_to_grpc(profile_mode),
                 };
 
                 let mut request = tonic::Request::new(request.clone());
@@ -1664,6 +1719,7 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = response.usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        self.profile_finish("facet", profile_started, response.profile.clone());
 
         let hits = response
             .hits

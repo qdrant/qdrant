@@ -21,6 +21,20 @@ pub(super) fn bump(metric: HwMetric, delta: usize) {
     });
 }
 
+/// Two [`bump`]s with one thread-local access, for hot paths.
+#[inline]
+#[cfg_attr(debug_assertions, track_caller)]
+pub(super) fn bump2(metric1: HwMetric, delta1: usize, metric2: HwMetric, delta2: usize) {
+    let caller = Location::caller();
+    SLOT.with(|slot| {
+        _ = slot.target("HwMetric::bump()", caller); // trigger `debug_assertions`
+        let counter = &slot.counters[metric1 as usize];
+        counter.set(counter.get().wrapping_add(delta1));
+        let counter = &slot.counters[metric2 as usize];
+        counter.set(counter.get().wrapping_add(delta2));
+    });
+}
+
 /// The not-yet-flushed value of one counter of the current scope.
 pub(super) fn pending_metric(metric: HwMetric) -> usize {
     SLOT.with(|slot| slot.counters[metric as usize].get())
@@ -50,6 +64,12 @@ pub(super) fn measure<R>(ctx: &AmbientContext, f: impl FnOnce() -> R) -> R {
 #[cfg_attr(debug_assertions, track_caller)]
 pub(super) fn with_context<R>(what: &str, f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
     borrow(Target::current(what).node(), f)
+}
+
+/// [`with_context`] without the misuse check: outside of any scope there is no context.
+#[inline]
+pub(super) fn with_context_unchecked<R>(f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    borrow(Target::current_unchecked().node(), f)
 }
 
 /// Run `f` on the context of the current scope, if measured.

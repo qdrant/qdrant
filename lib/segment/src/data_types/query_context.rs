@@ -305,6 +305,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
+            handoff: None,
         }
     }
 
@@ -325,6 +326,8 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
+    /// Overrides the scope of the query for this segment, e.g. a query profile fork.
+    handoff: Option<&'a Handoff>,
 }
 
 impl<'a> SegmentQueryContext<'a> {
@@ -333,7 +336,16 @@ impl<'a> SegmentQueryContext<'a> {
     }
 
     pub fn handoff(&self) -> &Handoff {
-        self.query_context.handoff()
+        self.handoff.unwrap_or_else(|| self.query_context.handoff())
+    }
+
+    /// This context, running in `handoff` instead of the scope of the query.
+    pub fn with_handoff<'b>(&'b self, handoff: &'b Handoff) -> SegmentQueryContext<'b> {
+        SegmentQueryContext {
+            query_context: self.query_context,
+            deleted_points: self.deleted_points,
+            handoff: Some(handoff),
+        }
     }
 
     /// Vector-level context for the given vector name and IDF corpus
@@ -385,6 +397,7 @@ impl<'a> SegmentQueryContext<'a> {
         Self {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
+            handoff: self.handoff,
         }
     }
 }

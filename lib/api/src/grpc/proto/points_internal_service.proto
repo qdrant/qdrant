@@ -323,6 +323,7 @@ message CoreSearchBatchPointsInternal {
   repeated CoreSearchPoints search_points = 2;
   optional uint32 shard_id = 3;
   optional uint64 timeout = 4;
+  optional ProfileMode profile = 5;
 }
 
 message ScrollPointsInternal {
@@ -472,6 +473,7 @@ message QueryBatchPointsInternal {
   repeated QueryShardPoints query_points = 2;
   optional uint32 shard_id = 3;
   optional uint64 timeout = 4;
+  optional ProfileMode profile = 5;
 }
 
 message IntermediateResult {
@@ -488,6 +490,7 @@ message QueryBatchResponseInternal {
   double time = 2;
   optional HardwareUsage hardware_usage = 5;
   optional InferenceUsage inference_usage = 6;
+  optional QueryProfile profile = 7;
 }
 
 message FacetCountsInternal {
@@ -498,6 +501,7 @@ message FacetCountsInternal {
   bool exact = 5;
   uint32 shard_id = 6;
   optional uint64 timeout = 7;
+  optional ProfileMode profile = 8;
 }
 
 message FacetValueInternal {
@@ -519,4 +523,5 @@ message FacetResponseInternal {
   // Time spent to process
   double time = 2;
   optional HardwareUsage usage = 3;
+  optional QueryProfile profile = 4;
 }

@@ -14,6 +14,7 @@ mod sampling;
 mod search;
 /// Batch search within one segment
 mod segment_search;
+pub(crate) use segment_search::read_segment_info;
 #[cfg(test)]
 mod shared_filter_tests;
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::common::operation_error::OperationResult;
@@ -46,6 +46,7 @@ where
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Quantized,
                 cpu: 1,
                 vector_io_read: usize::from(quantized_data.is_cold()),
             },
@@ -66,6 +67,7 @@ where
 
         Ok(Self {
             hw: HwScale {
+                kind: ScoreKind::Quantized,
                 cpu: 1,
                 vector_io_read: usize::from(quantized_data.is_cold()),
             },
