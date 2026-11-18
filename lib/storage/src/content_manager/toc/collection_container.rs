@@ -11,6 +11,7 @@ use collection::shards::shard::PeerId;
 use common::fs::safe_delete_in_tmp;
 
 use super::TableOfContent;
+use super::temp_directories::DELETED_SUBDIR_NAME;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
@@ -311,7 +312,7 @@ impl TableOfContent {
                         drop(existing_collection);
 
                         let path = self.get_collection_path(id);
-                        let deleted_dir = self.storage_config.storage_path.join(".deleted");
+                        let deleted_dir = self.storage_config.storage_path.join(DELETED_SUBDIR_NAME);
 
                         let to_delete =
                             safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
