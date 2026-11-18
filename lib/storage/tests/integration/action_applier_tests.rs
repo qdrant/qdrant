@@ -695,6 +695,23 @@ fn drop_collection_action_delete_failure_retry() {
     }
 }
 
+#[test]
+fn drop_collection_leftovers_removed_on_restart() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    stop_collections(&handle, &dispatcher);
+    drop(dispatcher);
+    drop(handle);
+
+    // A crash can interrupt background removal of a collection moved into `.deleted`
+    let leftover = storage_dir.path().join(".deleted/collection/x");
+    fs_err::create_dir_all(&leftover).unwrap();
+    fs_err::write(leftover.join("segment"), "partially removed collection").unwrap();
+
+    let (storage_dir, _handle, _dispatcher, _proposals) = open_dispatcher(storage_dir);
+
+    assert!(!storage_dir.path().join(".deleted").exists());
+}
+
 #[cfg(feature = "staging")]
 #[test]
 fn test_slow_down_action_other_peer() {
