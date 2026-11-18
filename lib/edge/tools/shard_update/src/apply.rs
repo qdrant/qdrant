@@ -67,6 +67,7 @@ fn log_apply_record(record: &PointApplyRecord) {
     let PointApplyRecord {
         id,
         kind,
+        deferred: _,
         tombstoned,
         superseded,
         shadowed,

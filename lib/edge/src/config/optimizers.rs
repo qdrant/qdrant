@@ -1,8 +1,11 @@
 //! Optimizer-related parameters for the edge shard.
 
+use std::num::NonZeroUsize;
+
 use serde::{Deserialize, Serialize};
 use shard::optimizers::config::{
-    get_indexing_threshold_kb, get_max_segment_size_kb, get_number_segments,
+    get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
+    get_number_segments,
 };
 
 /// Optimizer-related parameters for the edge shard.
@@ -46,5 +49,13 @@ impl EdgeOptimizersConfig {
 
     pub fn get_max_segment_size_kb(&self, num_indexing_threads: usize) -> usize {
         get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
+    }
+
+    pub fn get_deferred_threshold_bytes(&self) -> Option<NonZeroUsize> {
+        get_deferred_points_threshold_bytes(
+            self.prevent_unoptimized,
+            self.get_indexing_threshold_kb(),
+            self.max_segment_size,
+        )
     }
 }
