@@ -224,7 +224,7 @@ where
     // `check_is_empty` over all resolved values. The generic fallback below
     // would match as soon as a single value at a multi-valued key is empty, so
     // handle it explicitly here.
-    if field_condition.is_empty == Some(true) {
+    if field_condition.is_empty == Some(true) && field_condition.values_count.is_none() {
         return Ok(check_is_empty(field_values.iter().copied()));
     }
 
@@ -722,6 +722,59 @@ mod tests {
         assert!(payload_checker.check(0, &field_is_empty(false)));
         assert!(!payload_checker.check(1, &field_is_empty(false)));
         assert!(payload_checker.check(2, &field_is_empty(false)));
+    }
+
+    #[test]
+    fn test_combined_is_empty_values_count_preserves_values_count_precedence() {
+        // A legal FieldCondition may carry both `is_empty` and `values_count`.
+        // `FieldCondition::check` gives `values_count` precedence, so the new
+        // `is_empty: true` early return must not fire in that case.
+        let key = JsonPath::new("a[].b");
+
+        // Values at key a[].b: [1, []]  (one scalar, one empty array).
+        let mixed = payload_json! { "a": [{ "b": 1 }, { "b": [] }] };
+
+        let mut payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        payload_storage.overwrite(0, &mixed).unwrap();
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                InMemoryIdTracker::new(),
+            ))),
+            HashMap::new(),
+        );
+
+        let make = |values_count: Option<ValuesCount>, is_empty: Option<bool>| FieldCondition {
+            key: key.clone(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count,
+            is_empty,
+            is_null: None,
+        };
+        let vc = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(1),
+            lte: None,
+        };
+
+        let values_count_only = Filter::new_must(Condition::Field(make(Some(vc.clone()), None)));
+        let combined = Filter::new_must(Condition::Field(make(Some(vc), Some(true))));
+        let is_empty_only = Filter::new_must(Condition::Field(make(None, Some(true))));
+
+        // On unindexed [1, []] the values_count filter matches (count >= 1).
+        assert!(payload_checker.check(0, &values_count_only));
+        // Combined must follow values_count precedence, not is_empty alone:
+        // this would be false with the buggy early return.
+        assert!(payload_checker.check(0, &combined));
+        // is_empty alone still uses all-values semantics (one value is non-empty).
+        assert!(!payload_checker.check(0, &is_empty_only));
     }
 
     #[test]
