@@ -552,7 +552,18 @@ impl TurboQuantizer {
     /// For 2 and 4 bits, whose score TQ+ weights, the centroids with the correction reverted.
     /// The score adds the stored `⟨X, M⟩` of each vector where these have their centroids' own,
     /// so for them the dot product is only close.
-    pub fn symmetric_vector<'a>(&'a self, quantized: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+    ///
+    /// Their squared distance is L2's score only where a vector's stored length is its own. At 1
+    /// and 1.5 bits with TQ+, the score ignores the correction but the scaling factor comes from
+    /// the norm of the corrected centroids, so a vector is longer or shorter than the stored
+    /// length the score uses: there the cross term stays exact, the distance is only a proxy.
+    ///
+    /// L1 isn't represented at any width: its score is taken after the inverse rotation, which
+    /// doesn't preserve L1 distances.
+    pub(crate) fn symmetric_vector<'a>(
+        &'a self,
+        quantized: &'a [u8],
+    ) -> impl Iterator<Item = f32> + 'a {
         let (centroids, extras) = self.unpack_vector(quantized);
         let scale = f64::from(extras.scaling_factor());
         let correction = self
@@ -665,7 +676,7 @@ impl TurboQuantizer {
 
     /// Whether each vector stores a TQ+ correction that [`Self::score_symmetric`] ignores, as at 1
     /// and 1.5 bits: vectors then score alike against every other with different bytes.
-    pub fn stores_ignored_correction(&self) -> bool {
+    pub(crate) fn stores_ignored_correction(&self) -> bool {
         self.error_correction.is_some() && !self.scores_correction()
     }
 

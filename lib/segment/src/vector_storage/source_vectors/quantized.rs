@@ -1,16 +1,9 @@
-//! Quantized codes as [`F32Rows`]: each decoded by `symmetric_vector`, the vector whose geometry
-//! the symmetric score scores.
-//!
-//! A row is identified by its stored code, or by its decoded values where the code also stores a
-//! correction the score ignores (`stores_ignored_correction`). So codes that score alike against
-//! every point, up to rounding, have equal identities. A code that scores NaN against itself has
-//! none.
+//! Quantized codes as [`F32Rows`]: each as its [`SymmetricVectors::symmetric_vector`], the vector
+//! whose geometry the symmetric score scores, identified as [`SymmetricVectors::code_identity`]
+//! tells.
 
 use common::types::PointOffsetType;
-use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
-use quantization::encoded_vectors_tq::EncodedVectorsTQ;
-use quantization::encoded_vectors_u8::EncodedVectorsU8;
-use quantization::{EncodedStorage, EncodedVectors};
+use quantization::{CodeIdentity, EncodedVectors, SymmetricVectors};
 
 use super::{F32Rows, RowIdentity};
 use crate::common::operation_error::OperationResult;
@@ -50,25 +43,22 @@ pub(super) fn f32_rows(quantized: &QuantizedVectors) -> Option<Box<dyn F32Rows +
     Some(rows)
 }
 
-/// A quantization whose codes decode to rows.
-trait Decode: EncodedVectors + Sync {
-    /// Length of the decoded rows.
-    fn decoded_dim(&self) -> usize;
-
-    /// Appends `code` decoded to `row`, and tells what identifies it.
-    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c>;
-}
-
 /// The codes of one quantization.
 struct Codes<'a, E>(&'a E);
 
-fn codes<E: Decode>(encoded: &E) -> Box<dyn F32Rows + '_> {
+fn codes<E>(encoded: &E) -> Box<dyn F32Rows + '_>
+where
+    E: EncodedVectors + SymmetricVectors + Sync,
+{
     Box::new(Codes(encoded))
 }
 
-impl<E: Decode> F32Rows for Codes<'_, E> {
+impl<E> F32Rows for Codes<'_, E>
+where
+    E: EncodedVectors + SymmetricVectors + Sync,
+{
     fn dim(&self) -> usize {
-        self.0.decoded_dim()
+        self.0.symmetric_dim()
     }
 
     fn count(&self) -> usize {
@@ -83,49 +73,19 @@ impl<E: Decode> F32Rows for Codes<'_, E> {
         let mut row = Vec::with_capacity(self.dim());
         self.0.for_each_batch(ids, |i, code| {
             row.clear();
-            let identity = self.0.decode(&code, &mut row);
-            f(i, &row, identity);
+            row.extend(self.0.symmetric_vector(&code));
+            f(i, &row, RowIdentity::from(self.0.code_identity(&code)));
         })?;
         Ok(())
     }
 }
 
-impl<S: EncodedStorage + Sync> Decode for EncodedVectorsU8<S> {
-    fn decoded_dim(&self) -> usize {
-        self.symmetric_dim()
-    }
-
-    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
-        row.extend(self.symmetric_vector(code));
-        RowIdentity::Code(code)
-    }
-}
-
-impl<T: BitsStoreType + Sync, S: EncodedStorage + Sync> Decode for EncodedVectorsBin<T, S> {
-    fn decoded_dim(&self) -> usize {
-        self.symmetric_dim()
-    }
-
-    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
-        row.extend(self.symmetric_vector(code));
-        RowIdentity::Code(code)
-    }
-}
-
-impl<S: EncodedStorage + Sync> Decode for EncodedVectorsTQ<S> {
-    fn decoded_dim(&self) -> usize {
-        self.quantizer().get_padded_dim()
-    }
-
-    fn decode<'c>(&self, code: &'c [u8], row: &mut Vec<f32>) -> RowIdentity<'c> {
-        let quantizer = self.quantizer();
-        row.extend(quantizer.symmetric_vector(code));
-        if quantizer.score_symmetric(code, code).is_nan() {
-            RowIdentity::ScoresNan
-        } else if quantizer.stores_ignored_correction() {
-            RowIdentity::Values
-        } else {
-            RowIdentity::Code(code)
+impl<'a> From<CodeIdentity<'a>> for RowIdentity<'a> {
+    fn from(identity: CodeIdentity<'a>) -> Self {
+        match identity {
+            CodeIdentity::Bytes(code) => RowIdentity::Code(code),
+            CodeIdentity::Values => RowIdentity::Values,
+            CodeIdentity::ScoresNan => RowIdentity::ScoresNan,
         }
     }
 }
@@ -142,10 +102,13 @@ mod tests {
         TurboQuantBitSize as Bits, TurboQuantization,
     };
 
-    /// Pair scores are an affine map of the dot product of the decoded codes, or of their negative
-    /// squared distance for Euclid. Only approximately at 2 and 4 bits of TurboQuant, whose score
-    /// adds a stored TQ+ correction: there the decoded codes still explain the scores ten times
-    /// better than the original vectors do.
+    /// Pair scores are an affine map of the dot product of the decoded codes, or for Euclid of
+    /// their negative squared distance once each vector's self-score is taken out. That removes
+    /// any offset per vector, so for Euclid this checks the cross term, not the stored lengths:
+    /// at TQ+ 1 and 1.5 bits the decoded distance itself is only a proxy for the score. Only
+    /// approximately at 2 and 4 bits of TurboQuant, whose score adds a stored TQ+ correction:
+    /// there the decoded codes still explain the scores ten times better than the original
+    /// vectors do.
     #[rstest]
     fn decoded_codes_score_as_the_scorer(
         #[values(

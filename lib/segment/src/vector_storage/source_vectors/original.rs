@@ -141,6 +141,12 @@ where
 /// Vectors of a TurboQuant datatype storage, decoded but still rotated: the rotation is orthogonal
 /// and the same for every vector, so the rotated vectors keep their geometry, and skipping the
 /// inverse rotation saves its cost, in f64, per vector.
+///
+/// Decoded as for requantization, which only approximates the geometry their score sees: at 4 bits
+/// it scales each vector by the RMS of its centroids rather than by its stored scale, and drops
+/// the padding coordinate of an odd dimension. Sketching the scored vectors instead made no
+/// measurable difference to recall. A row is identified by its values, so vectors whose
+/// self-score is NaN only through overflow still count as copies.
 struct TurboRows<'a, S>(&'a S);
 
 /// The [`TurboRows`] of `storage`.

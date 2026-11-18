@@ -7,6 +7,7 @@ pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod p_square;
 pub mod quantile;
+pub mod symmetric_vectors;
 pub mod turboquant;
 pub mod vector_stats;
 
@@ -17,6 +18,7 @@ pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder, EncodedStorageW
 pub use encoded_vectors::{DistanceType, EncodedVectors, EncodedVectorsWrite, VectorParameters};
 pub use encoded_vectors_pq::{EncodedQueryPQ, EncodedVectorsPQ};
 pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};
+pub use symmetric_vectors::{CodeIdentity, SymmetricVectors};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EncodingError {

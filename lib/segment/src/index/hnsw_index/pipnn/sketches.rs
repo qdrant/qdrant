@@ -11,12 +11,17 @@
 //!
 //! Which vectors are projected: the rows of [`SourceVectors::f32_rows`], read once, in batches in
 //! id order.
-//! - A build with quantized vectors projects their decoded codes, as the vectors their scorer
-//!   scores, and reads no original vector.
-//! - Otherwise the original vectors as `score_internal` scores them. For Cosine, the projections
-//!   of the unit vector, since only the direction counts there: float vectors are stored
-//!   normalized, byte vectors aren't, and the Turbo storages only approximately. Codes aren't
-//!   normalized: their scorer scores them as they are.
+//! - A build with quantized vectors projects their decoded codes, and reads no original vector.
+//!   The decoded codes have the geometry their scorer scores, except for TurboQuant with TQ+:
+//!   at 2 and 4 bits the score also adds a correction stored with each vector, and with Euclid at
+//!   1 and 1.5 bits it uses a stored length that differs from the decoded vector's. There they
+//!   only approximate it.
+//! - Otherwise the original vectors as `score_internal` scores them, except the Turbo datatype
+//!   storages, which are decoded as for requantization: that only approximates the geometry their
+//!   score sees, see `TurboRows` in `source_vectors`. For Cosine, the projections of the unit
+//!   vector, since only the direction counts there: float vectors are stored normalized, byte
+//!   vectors aren't, and the Turbo storages only approximately. Codes aren't normalized: their
+//!   scorer scores them as they are.
 //! - TurboQuant, as a datatype or a quantization, is projected in its rotated space. The rotation
 //!   is orthogonal and the same for every vector, and Gaussian hyperplanes look the same from any
 //!   rotation, so hashing rotated vectors gives the hashes of the originals against other random

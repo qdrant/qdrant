@@ -69,8 +69,10 @@ pub fn with_pipnn_min_points<R>(min_points: usize, f: impl FnOnce() -> R) -> R {
 /// products, without searching the graph. Payload blocks are built with HNSW.
 pub(super) struct PipnnBuilder<'a> {
     pub local: LocalBuilder<'a>,
-    /// The vectors HNSW scores: the quantized ones where configured. Every part of the build
-    /// reads these and no others.
+    /// The vectors HNSW scores: the quantized ones where configured. Every phase of the PiPNN
+    /// main graph reads these and no others. Payload blocks are built with HNSW insertion, which
+    /// reads the original vector of each point to make its query where the quantization can't
+    /// encode a stored point as one (TurboQuant).
     source: SourceVectors<'a>,
     /// Scores `source`.
     scorer: MatrixScorer<'a>,

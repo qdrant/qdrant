@@ -59,8 +59,8 @@ impl<'a> MatrixScorer<'a> {
 }
 
 /// Pairwise scoring of the `source` vectors for index building. `None` if they have no matrix
-/// operands (Manhattan, sparse, multivectors, and quantizations without them yet), so the caller
-/// builds with HNSW.
+/// operands, so the caller builds with HNSW: sparse vectors, multivectors, quantizations without
+/// them yet, and Manhattan, except with binary quantization, whose XOR count scores L1 too.
 pub fn new_matrix_scorer(source: SourceVectors<'_>) -> Option<MatrixScorer<'_>> {
     match source {
         SourceVectors::Quantized(quantized) => quantized_matrix_scorer(quantized.get_storage()),

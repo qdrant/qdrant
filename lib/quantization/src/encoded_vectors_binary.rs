@@ -19,6 +19,7 @@ use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
+use crate::symmetric_vectors::{CodeIdentity, SymmetricVectors};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -844,16 +845,19 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     pub fn get_vector_parameters(&self) -> &VectorParameters {
         &self.metadata.vector_parameters
     }
+}
 
-    /// Length of [`Self::symmetric_vector`]: the bits a vector stores.
-    pub fn symmetric_dim(&self) -> usize {
+/// Each stored bit as 1 if set and -1 if not, over the bits a vector stores. Two such vectors of
+/// `n` bits have the dot product `n - 2 · differing bits` and the squared distance
+/// `4 · differing bits`.
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> SymmetricVectors
+    for EncodedVectorsBin<TBitsStoreType, TStorage>
+{
+    fn symmetric_dim(&self) -> usize {
         stored_bits(self.metadata.vector_parameters.dim, self.metadata.encoding)
     }
 
-    /// `code`, a stored vector, as a vector whose geometry [`EncodedVectors::score_internal`]
-    /// scores: each stored bit as 1 if set and -1 if not. Two such vectors of `n` bits have the
-    /// dot product `n - 2 · differing bits` and the squared distance `4 · differing bits`.
-    pub fn symmetric_vector<'a>(&self, code: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+    fn symmetric_vector<'a>(&'a self, code: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
         let word_bits = u8::BITS as usize * size_of::<TBitsStoreType>();
         let one = TBitsStoreType::one();
         // Bit `i` is bit `i % word_bits` of word `i / word_bits`, as the encoders set it
@@ -864,6 +868,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             })
             .take(self.symmetric_dim())
             .map(|bit| if bit.to_u8() == Some(1) { 1.0 } else { -1.0 })
+    }
+
+    fn code_identity<'c>(&self, code: &'c [u8]) -> CodeIdentity<'c> {
+        CodeIdentity::Bytes(code)
     }
 }
 

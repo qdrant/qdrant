@@ -51,7 +51,7 @@ impl<'a> SourceVectors<'a> {
 ///
 /// Original vectors come as `score_internal` scores them: as they are stored, converted to f32,
 /// and TurboQuant datatype vectors decoded but still rotated. Quantized codes come as the vectors
-/// whose geometry their symmetric score scores, see `symmetric_vector` of each quantization.
+/// whose geometry their symmetric score scores, see [`quantization::SymmetricVectors`].
 pub trait F32Rows: Sync {
     /// Length of a row.
     fn dim(&self) -> usize;

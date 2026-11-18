@@ -21,6 +21,7 @@ use crate::encoded_vectors::{
     validate_vector_parameters,
 };
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use crate::symmetric_vectors::{CodeIdentity, SymmetricVectors};
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::matrix::{CODES_IN_F32, StorageSource, TurboMatrixOperands};
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -386,10 +387,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         self.encoded_vectors.get_vector_data(i)
     }
 
-    pub fn quantizer(&self) -> &TurboQuantizer {
-        &self.quantizer
-    }
-
     /// The vectors as matrix operands, scoring as [`EncodedVectors::score_internal`]. `None`
     /// for L1, which has no matrix form.
     pub fn matrix_operands(&self) -> Option<TurboMatrixOperands<'_, StorageSource<'_, TStorage>>>
@@ -434,6 +431,32 @@ pub fn get_quantized_vector_size(
         vector_parameters.distance_type,
         mode,
     )
+}
+
+/// The vectors of the rotated, padded space, see [`TurboQuantizer::symmetric_vector`]. Exact for
+/// Dot and Cosine except at 2 and 4 bits with TQ+, whose score adds a correction stored with each
+/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ only the cross term is exact, the
+/// distance a proxy. Not score-equivalent for L1 at any width.
+impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
+    fn symmetric_dim(&self) -> usize {
+        self.quantizer.get_padded_dim()
+    }
+
+    fn symmetric_vector<'a>(&'a self, code: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        self.quantizer.symmetric_vector(code)
+    }
+
+    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits), and
+    /// none where a NaN in the vector it encodes left its scale or correction NaN.
+    fn code_identity<'c>(&self, code: &'c [u8]) -> CodeIdentity<'c> {
+        if self.quantizer.score_symmetric(code, code).is_nan() {
+            CodeIdentity::ScoresNan
+        } else if self.quantizer.stores_ignored_correction() {
+            CodeIdentity::Values
+        } else {
+            CodeIdentity::Bytes(code)
+        }
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
