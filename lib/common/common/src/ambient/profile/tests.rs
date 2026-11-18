@@ -42,6 +42,7 @@ fn unprofiled_scope_is_a_noop() {
 
 #[tokio::test]
 async fn shard_and_segment_are_collected() {
+    crate::ambient::hw::enable_score_counting();
     let (profiler, ctx, drain) = profiled(ProfileMode::Analyze);
 
     async {
@@ -159,8 +160,70 @@ fn remote_profile_is_grafted_with_network_time() {
     assert_eq!(shard.location, ShardLocation::Remote);
     assert_eq!(shard.peer_id, Some(42));
     assert_eq!(shard.network_time_ms, Some(12.0));
-    // Notes are derived on the receiving node only
-    assert!(!profile.notes.iter().any(|note| note == "remote note"));
+    // Remote peers send recorded notes only (see `ProfileAudience::Coordinator`): kept
+    assert!(profile.notes.iter().any(|note| note == "remote note"));
+}
+
+#[test]
+fn remote_without_profile_is_discarded_in_explain_only() {
+    let duration = std::time::Duration::from_millis(5);
+    let (profiler, ctx, _) = profiled(ProfileMode::Explain);
+    let action = ctx.measure(|| record_remote_without_profile(1, 9, "query_batch", duration));
+    assert_eq!(action, RemoteResults::Discard);
+    let profile = profiler.finish();
+    assert_eq!(profile.shards.len(), 1);
+    assert!(profile.notes.iter().any(|note| note.contains("does not support explain")));
+
+    let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
+    let action = ctx.measure(|| record_remote_without_profile(1, 9, "query_batch", duration));
+    assert_eq!(action, RemoteResults::Keep);
+    assert!(profiler.finish().notes.iter().any(|note| note.contains("no profile")));
+
+    // Not profiled: always keep
+    assert_eq!(
+        record_remote_without_profile(1, 9, "query_batch", duration),
+        RemoteResults::Keep
+    );
+}
+
+#[test]
+fn coordinator_audience_gets_recorded_notes_only() {
+    let profiler = Profiler::new(ProfileMode::Explain, ProfileAudience::Coordinator);
+    let drain = Arc::new(HwSharedDrain::default());
+    let ctx = AmbientContext::request_profiled("test", drain, Some(&profiler));
+    ctx.measure(|| note(|| "recorded".to_string()));
+    // No derived "Explain mode: ..." note: the coordinator derives notes once
+    assert_eq!(profiler.finish().notes, vec!["recorded".to_string()]);
+}
+
+#[test]
+fn notes_of_a_shard_reach_the_request() {
+    let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
+    ctx.measure(|| {
+        let scope = ShardScope::start(3, "query_batch").unwrap();
+        futures::executor::block_on(scope.run(async { note(|| "from shard".to_string()) }));
+    });
+    assert!(profiler.finish().notes.iter().any(|n| n == "from shard"));
+}
+
+#[test]
+fn quantized_scores_are_counted_when_enabled() {
+    crate::ambient::hw::enable_score_counting();
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
+        let hw = HwScale {
+            cpu: 1,
+            vector_io_read: 0,
+            kind: ScoreKind::Quantized,
+        };
+        hw.count_scores(10);
+        crate::ambient::hw::count_scores(ScoreKind::Original, 3);
+    });
+    let data = ctx.hw_data();
+    assert_eq!(data[HwMetric::QuantizedVectorScores], 10);
+    assert_eq!(data[HwMetric::VectorScores], 3);
+    // Counting scores costs no CPU on its own
+    assert_eq!(data[HwMetric::Cpu], 0);
 }
 
 #[test]

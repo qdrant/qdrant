@@ -2,7 +2,7 @@ use std::cmp::{Ordering, max, min};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use common::ambient::hw::HwMetric;
+use common::ambient::hw::{self, HwMetric};
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::UioResult;
@@ -269,12 +269,16 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             // Assume the complexity of the search as total volume of the posting lists
             // that are traversed in the batched search.
             let mut cpu_cost = 0;
+            let mut entries = 0;
 
             for posting in self.postings_iterators.iter() {
-                cpu_cost += posting.posting_list_iterator.len_to_end()
-                    * posting.posting_list_iterator.element_size();
+                let len = posting.posting_list_iterator.len_to_end();
+                entries += len;
+                cpu_cost += len * posting.posting_list_iterator.element_size();
             }
             HwMetric::Cpu.bump(cpu_cost);
+            // For query profiles: each posting entry is one partial dot product
+            hw::count_scores(hw::ScoreKind::Original, entries);
         }
 
         let mut best_min_score = f32::MIN;

@@ -97,6 +97,8 @@ where
                 });
             })
         })?;
+        // CPU is bumped by the quantization crate
+        self.hw.count_scores(ids.len());
         Ok(())
     }
 
@@ -106,6 +108,7 @@ where
 
     type SupportsBytes = TEncodedVectors::SupportsBytes;
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.hw.count_scores(1);
         hw::scale_cpu(self.hw.cpu, || {
             self.query
                 .score_by(|this| self.quantized_storage.score_bytes(enabled, this, bytes))

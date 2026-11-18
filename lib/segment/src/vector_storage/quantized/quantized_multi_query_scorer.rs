@@ -113,10 +113,13 @@ where
             |score_fn| score_fn(&self.query),
             scores,
         )?;
+        // CPU is bumped by the quantization crate
+        self.hw.count_scores(ids.len());
         Ok(())
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.hw.count_scores(1);
         self.quantized_multivector_storage
             .score_internal(point_a, point_b)
     }

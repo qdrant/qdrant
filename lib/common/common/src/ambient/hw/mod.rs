@@ -6,4 +6,6 @@ pub use iter::HwMeasurementIteratorExt;
 #[cfg(any(test, feature = "testing"))]
 pub use measure::pending;
 pub use measure::{accumulate_request, cpu_utilization, is_measured, scale_cpu};
-pub use metric::{HardwareData, HwMetric, HwScale, HwSharedDrain, ScoreKind};
+pub use metric::{
+    HardwareData, HwMetric, HwScale, HwSharedDrain, ScoreKind, count_scores, enable_score_counting,
+};

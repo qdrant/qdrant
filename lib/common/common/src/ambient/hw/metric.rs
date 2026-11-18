@@ -1,5 +1,5 @@
 use std::ops::{Add, Index, IndexMut};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use strum::{EnumCount, EnumIter, IntoEnumIterator};
 
@@ -46,6 +46,30 @@ impl ScoreKind {
     }
 }
 
+/// Whether scores are counted ([`HwMetric::VectorScores`], [`HwMetric::QuantizedVectorScores`]).
+/// Set once at startup when query profiling is enabled; when unset, scorers bump exactly the
+/// metrics they did before query profiling existed.
+static SCORE_COUNTING: AtomicBool = AtomicBool::new(false);
+
+/// Count scores from now on, see [`SCORE_COUNTING`].
+pub fn enable_score_counting() {
+    SCORE_COUNTING.store(true, Ordering::Relaxed);
+}
+
+#[inline]
+fn score_counting() -> bool {
+    SCORE_COUNTING.load(Ordering::Relaxed)
+}
+
+/// Count `delta` scores of `kind`, for query profiles and workload statistics.
+/// For scorers whose CPU is bumped elsewhere (e.g. inside the `quantization` crate).
+#[inline]
+pub fn count_scores(kind: ScoreKind, delta: usize) {
+    if score_counting() {
+        slot::bump(kind.metric(), delta);
+    }
+}
+
 /// Multipliers for `cpu` and `vector_io_read` bumps of a scorer-like object.
 #[derive(Clone, Copy, Debug)]
 pub struct HwScale {
@@ -58,7 +82,17 @@ impl HwScale {
     /// Count `delta` scores: `cpu` cost, and the number of scores for query profiles.
     #[inline]
     pub fn cpu(self, delta: usize) {
-        slot::bump2(HwMetric::Cpu, delta * self.cpu, self.kind.metric(), delta);
+        if score_counting() {
+            slot::bump2(HwMetric::Cpu, delta * self.cpu, self.kind.metric(), delta);
+        } else {
+            slot::bump(HwMetric::Cpu, delta * self.cpu);
+        }
+    }
+
+    /// Count `delta` scores without CPU, for scorers whose CPU is bumped elsewhere.
+    #[inline]
+    pub fn count_scores(self, delta: usize) {
+        count_scores(self.kind, delta);
     }
 
     #[inline]
@@ -115,7 +149,10 @@ impl HwSharedDrain {
 
     pub(crate) fn add(&self, src: HardwareData) {
         for (counter, value) in self.0.iter().zip(src.0) {
-            counter.fetch_add(value, Ordering::Relaxed);
+            // Most metrics are zero for a given flush, e.g. scores when not profiling
+            if value != 0 {
+                counter.fetch_add(value, Ordering::Relaxed);
+            }
         }
     }
 }

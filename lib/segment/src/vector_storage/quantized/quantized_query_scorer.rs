@@ -92,15 +92,19 @@ where
             .vector_io_read(ids.len() * self.quantized_data.quantized_vector_size());
 
         self.quantized_data.score_points(&self.query, ids, scores)?;
+        // CPU is bumped by the quantization crate
+        self.hw.count_scores(ids.len());
         Ok(())
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.hw.count_scores(1);
         self.quantized_data.score_internal(point_a, point_b)
     }
 
     type SupportsBytes = TEncodedVectors::SupportsBytes;
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
+        self.hw.count_scores(1);
         self.quantized_data.score_bytes(enabled, &self.query, bytes)
     }
 }

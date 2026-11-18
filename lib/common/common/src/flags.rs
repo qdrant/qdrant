@@ -227,6 +227,9 @@ impl FeatureFlags {
 /// startup or otherwise throws a warning and discards the values.
 pub fn init_feature_flags(flags: FeatureFlags) {
     let flags = flags.normalize();
+    if flags.query_profiling {
+        crate::ambient::hw::enable_score_counting();
+    }
 
     let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {
