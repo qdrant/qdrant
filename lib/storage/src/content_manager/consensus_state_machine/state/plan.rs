@@ -484,6 +484,9 @@ impl ClusterState {
 
         let base_id = max_id + 1;
 
+        // The dispatcher always sets the initial state when proposing `CreateShardKey`.
+        // Operations proposed by older peers, or by cluster migration, can still omit it,
+        // and then each peer resolves it here, as older versions do.
         let init_state = initial_state.unwrap_or_else(|| {
             let use_initializing = context.is_distributed
                 && self.all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
