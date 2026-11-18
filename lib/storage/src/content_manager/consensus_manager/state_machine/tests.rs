@@ -129,7 +129,7 @@ fn failed_action_preserves_cache_and_reloads_partial_writes() {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(manager.state_machine.lock().machine.state(), &before);
-    assert!(manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_some());
     assert!(
         container.collections.lock()[COLLECTION]
             .payload_index_schema
@@ -141,7 +141,7 @@ fn failed_action_preserves_cache_and_reloads_partial_writes() {
     manager.apply_normal_entry(&entry).unwrap();
 
     assert_eq!(container.snapshots(), 2);
-    assert!(!manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_none());
     assert_eq!(
         manager.state_machine.lock().machine.state().collections,
         *container.collections.lock()
@@ -246,7 +246,7 @@ fn discovery_invalidation_survives_execution_completion() {
 
     manager.finish_state_machine(1, &[operation], &[plan]);
 
-    assert!(manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_some());
     manager.plan_operation(&nop()).unwrap();
     assert!(
         manager
@@ -314,7 +314,7 @@ fn comparison_observes_collection_without_invalidating_cache() {
         report.starts_with("collections[books].shards ("),
         "{report}"
     );
-    assert!(!cached.needs_reload);
+    assert!(cached.invalidated.is_none());
 }
 
 #[test]
