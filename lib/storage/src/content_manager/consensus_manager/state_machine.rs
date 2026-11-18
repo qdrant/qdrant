@@ -45,8 +45,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             return Err(error);
         }
 
-        let check =
-            self.finish_state_machine(std::slice::from_ref(operation), std::slice::from_ref(&plan));
+        let check = self.finish_state_machine(
+            index,
+            std::slice::from_ref(operation),
+            std::slice::from_ref(&plan),
+        );
         log::debug!(
             "Applied consensus entry index={index} in {:?}, state check: {check}",
             started.elapsed(),
@@ -118,6 +121,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// Advance after successful execution and refresh external changes independently of validation
     fn finish_state_machine(
         &self,
+        index: u64,
         operations: &[ConsensusOperations],
         plans: &[Plan],
     ) -> StateCheck {
@@ -161,14 +165,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         if cfg!(any(test, debug_assertions)) {
             panic!(
-                "Consensus state machine diverged from applied state: {report}; \
-                 operations={operations:?}",
+                "Consensus state machine diverged from applied state after entry index={index}: \
+                 {report}; operations={operations:?}",
             );
         }
 
         log::error!(
-            "Consensus state machine diverged from applied state: {report}; \
-             operations={operations:?}",
+            "Consensus state machine diverged from applied state after entry index={index}, \
+             reloading it from applied state: {report}; operations={operations:?}",
         );
 
         StateCheck::Diverged
@@ -306,7 +310,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if stop_consensus {
             self.invalidate_state_machine();
         } else {
-            let check = self.finish_state_machine(&operations, &batch);
+            let check = self.finish_state_machine(entry.index, &operations, &batch);
             log::debug!(
                 "Applied consensus configuration entry index={} in {:?}, state check: {check}",
                 entry.index,
