@@ -26,8 +26,11 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
             break
 
 
-def run_update_points_in_background(peer_url, collection_name, num_points=None, num_cities=None, shard_key=None, init_offset=0, throttle=False, duration=None):
-    p = multiprocessing.Process(target=update_points_in_loop, args=(peer_url, collection_name, num_points, num_cities, shard_key, init_offset, throttle, duration))
+def run_update_points_in_background(peer_url, collection_name, init_offset=0, throttle=False, duration=None):
+    p = multiprocessing.Process(
+        target=update_points_in_loop,
+        args=(peer_url, collection_name, init_offset, throttle, duration),
+    )
     p.start()
     return p
 
@@ -158,8 +161,9 @@ def test_shard_stream_transfer_throttled_updates(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000)
+    # Batch the insert: a single 10k-point request can starve consensus under CI
+    # load and blow past the 2000ms per-shard update healthcheck deadline (#9261).
+    upsert_random_points(peer_api_uris[0], 10000, batch_size=1000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
@@ -232,8 +236,9 @@ def test_shard_stream_transfer_fast_burst(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000)
+    # Batch the insert: a single 10k-point request can starve consensus under CI
+    # load and blow past the 2000ms per-shard update healthcheck deadline (#9261).
+    upsert_random_points(peer_api_uris[0], 10000, batch_size=1000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, duration=5)
@@ -335,8 +340,8 @@ def test_transfer_change_pending_point(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], N_POINTS)
+    # Batch the insert to avoid flaky healthcheck timeouts under CI load (#9261).
+    upsert_random_points(peer_api_uris[0], N_POINTS, batch_size=1000)
 
     # Start pushing points to the cluster
     update_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
