@@ -28,7 +28,9 @@ use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
-use segment::types::{Distance, ExtendedPointId, PayloadFieldSchema, PayloadSchemaType, ShardKey};
+use segment::types::{
+    Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, ShardKey,
+};
 use shard::count::CountRequestInternal;
 use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
@@ -228,6 +230,33 @@ fn create_collection_action_different_uuid() {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn update_metadata_action_null_without_metadata_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    assert_eq!(toc.collection_state("test").unwrap().config.metadata, None);
+
+    let metadata: Payload =
+        serde_json::from_value(serde_json::json!({"region": "eu", "tier": null})).unwrap();
+    let action = Action::UpdateCollectionConfig {
+        collection: "test".into(),
+        diff: Box::new(CollectionConfigDiff::Metadata(metadata)),
+    };
+
+    // The first run must not store the null, which a replay would remove
+    let expected: Payload = serde_json::from_value(serde_json::json!({"region": "eu"})).unwrap();
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.config.metadata, Some(expected.clone()));
+    }
 }
 
 fn create_collection_action_state(template: &collection_state::State) -> collection_state::State {

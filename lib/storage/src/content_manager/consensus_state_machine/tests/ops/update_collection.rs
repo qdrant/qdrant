@@ -171,11 +171,11 @@ fn update_collection_metadata_null_without_metadata() {
     let mut machine = state_machine(cluster_state(Vec::new()));
     machine.apply(&update_collection_op(update)).unwrap();
 
-    // A collection with no metadata takes the payload as it is, so the null is stored.
-    // A replay merges the payload into itself and drops the key.
+    // A collection with no metadata merges the payload into empty metadata,
+    // so the null is not stored and a replay reaches the same state
     assert_eq!(
         collection_config(&machine).metadata,
-        Some(metadata(json!({ "region": null }))),
+        Some(metadata(json!({}))),
     );
 }
 

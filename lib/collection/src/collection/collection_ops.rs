@@ -199,11 +199,15 @@ impl Collection {
             crate::config::CollectionConfigInternal,
         > = self.collection_config.write().await;
 
-        if let Some(current_metadata) = collection_config_guard.metadata.as_mut() {
-            current_metadata.merge(&metadata);
-        } else {
-            collection_config_guard.metadata = Some(metadata);
-        }
+        // Metadata update is merged into existing metadata, and a `null` value removes its key.
+        //
+        // If collection has no metadata yet, saving the update as is would store `null` values:
+        // `{"a": 1, "b": null}` would be saved with `"b": null`.
+        // Merging into empty metadata removes `null` values on the first update too.
+        collection_config_guard
+            .metadata
+            .get_or_insert_default()
+            .merge(&metadata);
         drop(collection_config_guard);
         self.collection_config.read().await.save(&self.path)?;
         Ok(())
