@@ -15,7 +15,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
+    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead, PrimaryCondition,
 };
 use crate::index::payload_config::StorageType;
 use crate::index::query_optimization::point_sink::PointSink;
@@ -378,7 +378,11 @@ pub fn estimate_cardinality<T: FullTextIndexRead>(
     }?;
 
     let Some(parsed_query) = parsed_query_opt else {
-        return Ok(Some(CardinalityEstimation::exact(0)));
+        // Matches nothing, e.g. an unseen token. Keep the condition primary, so it is
+        // read from the index (as empty) rather than checked against every point.
+        return Ok(Some(CardinalityEstimation::exact(0).with_primary_clause(
+            PrimaryCondition::Condition(Box::new(condition.clone())),
+        )));
     };
 
     Ok(Some(
