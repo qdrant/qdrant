@@ -243,10 +243,28 @@ where
                 // With `min_count > 1`, the primary clauses of `min_should` are the smallest
                 // condition of each combination: candidates, not the matching points. E.g.
                 // `min_should: [A, B, A], min_count: 2` makes both A and B primary, but means A.
-                let primary_clauses_match_filter = filter
-                    .must_not
-                    .as_ref()
-                    .is_none_or(|conditions| conditions.is_empty())
+                //
+                // The primary clauses come from one group only (`must`, `should` or
+                // `min_should`), but a condition of another group is still primary if it equals
+                // one of them. E.g. `should: [A, B], min_should: [A]` can take `[A, B]` from
+                // `should`, which also makes the `min_should` condition primary, but means A.
+                let positive_groups = [
+                    filter.must.as_deref(),
+                    filter.should.as_deref(),
+                    filter
+                        .min_should
+                        .as_ref()
+                        .map(|min_should| min_should.conditions.as_slice()),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|conditions| !conditions.is_empty())
+                .count();
+                let primary_clauses_match_filter = positive_groups <= 1
+                    && filter
+                        .must_not
+                        .as_ref()
+                        .is_none_or(|conditions| conditions.is_empty())
                     && filter
                         .min_should
                         .as_ref()
