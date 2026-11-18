@@ -51,24 +51,35 @@ impl RecoverableWal {
         &self,
         operation: &mut OperationWithClockTag,
     ) -> shard::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
-        // Update last seen clock map and correct clock tag if necessary
-        if let Some(clock_tag) = &mut operation.clock_tag {
-            let operation_accepted = self
-                .newest_clocks
-                .lock()
-                .await
-                .advance_clock_and_correct_tag(clock_tag);
-
-            if !operation_accepted {
-                return Err(shard::wal::WalError::ClockRejected);
-            }
-        }
-
+        // Serialize operation before taking the locks. The clock check below can change
+        // `operation.clock_tag`, but only when it rejects the operation, and then nothing is
+        // written. So we never write a record with an outdated clock tag.
         let record = WalRawRecord::new(operation)?;
 
-        // Write operation to WAL
+        // Take both locks before advancing the clock, in the order `load_from_wal` uses. If the
+        // caller is cancelled while waiting for a lock, the clock is not advanced yet. After that
+        // nothing awaits, so the clock advance and the WAL write can't be separated by a cancel.
+        let mut newest_clocks = self.newest_clocks.lock().await;
         let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;
-        wal_lock.write(&record).map(|op_num| (op_num, wal_lock))
+
+        let Some(clock_tag) = &mut operation.clock_tag else {
+            return wal_lock.write(&record).map(|op_num| (op_num, wal_lock));
+        };
+
+        let previous_clock = newest_clocks.clock_state(*clock_tag);
+        if !newest_clocks.advance_clock_and_correct_tag(clock_tag) {
+            return Err(shard::wal::WalError::ClockRejected);
+        }
+
+        match wal_lock.write(&record) {
+            Ok(op_num) => Ok((op_num, wal_lock)),
+            Err(err) => {
+                // The operation is not in the WAL, so undo the clock advance. Otherwise WAL delta
+                // recovery would treat the operation as received and never send it again.
+                newest_clocks.restore_clock(*clock_tag, previous_clock);
+                Err(err)
+            }
+        }
     }
 
     /// Take clocks snapshot because we deactivated our replica
@@ -453,6 +464,55 @@ mod tests {
         assert_wal_ordering_property(&a_wal, false).await;
         assert_wal_ordering_property(&b_wal, false).await;
         assert_wal_ordering_property(&c_wal, false).await;
+    }
+
+    /// A write cancelled while waiting for the WAL lock never reaches the WAL, so the recovery
+    /// point must not include it: a peer that has the operation must still send it in WAL delta.
+    #[tokio::test]
+    async fn test_resolve_wal_delta_after_cancelled_write() {
+        let (a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        let mut a_clock_set = ClockSet::new();
+        a_clock_set.get_clock().unwrap().advance_to(0);
+
+        // Write operation 1 to peer A and C
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_0.tick_once());
+        let operation = OperationWithClockTag::new(mock_operation(1), Some(clock_tag));
+        let (_, _) = a_wal.lock_and_write(&mut operation.clone()).await.unwrap();
+        let (_, _) = c_wal.lock_and_write(&mut operation.clone()).await.unwrap();
+        a_clock_0.advance_to(clock_tag.clock_tick);
+        drop(a_clock_0);
+
+        // Write operation 2 to peer A; on peer C the write is cancelled while the WAL is locked
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_0.tick_once());
+        let operation = OperationWithClockTag::new(mock_operation(2), Some(clock_tag));
+        let (_, _) = a_wal.lock_and_write(&mut operation.clone()).await.unwrap();
+        {
+            let _held_wal_lock = c_wal.wal.lock().await;
+            let mut c_operation = operation.clone();
+            let cancelled = tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                c_wal.lock_and_write(&mut c_operation),
+            )
+            .await;
+            assert!(cancelled.is_err(), "write must block on the held WAL lock");
+        }
+        a_clock_0.advance_to(clock_tag.clock_tick);
+        drop(a_clock_0);
+
+        assert_eq!(
+            c_wal.wal.lock().await.read(0).count(),
+            1,
+            "C wrote only operation 1"
+        );
+
+        // A must send operation 2 to C
+        let c_recovery_point = c_wal.recovery_point().await;
+        let delta_from = a_wal.resolve_wal_delta(c_recovery_point).await.unwrap();
+        assert_eq!(delta_from, Some(1));
     }
 
     /// Test WAL delta resolution when there is gaps in the WAL on all machines.
