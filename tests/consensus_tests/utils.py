@@ -826,8 +826,12 @@ def check_replica_state(
         info = get_collection_cluster_info(peer_api_uri, collection_name)
     except requests.exceptions.ConnectionError:
         return False
-    for shard in info.get("local_shards", []) + info.get("remote_shards", []):
-        if shard["shard_id"] == shard_id and shard["peer_id"] == peer_id:
+    # local_shards omit peer_id; it lives on the cluster info root.
+    for shard in info.get("local_shards", []):
+        if shard["shard_id"] == shard_id and info.get("peer_id") == peer_id:
+            return shard["state"] == expected_state
+    for shard in info.get("remote_shards", []):
+        if shard["shard_id"] == shard_id and shard.get("peer_id") == peer_id:
             return shard["state"] == expected_state
     return False
 
