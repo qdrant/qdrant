@@ -215,10 +215,11 @@ impl ClusterState {
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
         let mut validated = Vec::with_capacity(changes.len());
 
-        // TODO: Validate each removal against earlier removals in the same batch.
-        //
-        // Checking each removal against the initial replica set lets a batch remove
-        // the last source of truth even though every removal passes validation.
+        // Replicas left after earlier removals in the same batch.
+        // Validating each removal against the initial replica set would let a batch remove
+        // the same replica twice, or remove the last source of truth.
+        let mut remaining_replicas = BTreeMap::new();
+
         for change in changes {
             let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
             let Some(shard) = state.shards.get(&shard_id) else {
@@ -227,18 +228,24 @@ impl ClusterState {
                 )));
             };
 
-            if !shard.replicas.contains_key(&peer_id) {
+            let replicas = remaining_replicas
+                .entry(shard_id)
+                .or_insert_with(|| shard.replicas.clone());
+
+            if !replicas.contains_key(&peer_id) {
                 return Err(StorageError::bad_request(format!(
                     "Peer {peer_id} has no replica of shard {shard_id}"
                 )));
             }
 
-            if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
+            if replicas.len() == 1 || is_last_source_of_truth(replicas, peer_id) {
                 return Err(StorageError::bad_request(format!(
                     "Shard {shard_id} must have at least one active replica after removing \
                      {peer_id}",
                 )));
             }
+
+            replicas.remove(&peer_id);
 
             let mut transfers: Vec<_> = state
                 .transfers
