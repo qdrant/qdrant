@@ -6182,7 +6182,6 @@ dependencies = [
  "fs-err",
  "futures",
  "futures-util",
- "gpu",
  "http 1.5.0",
  "inference",
  "issues",

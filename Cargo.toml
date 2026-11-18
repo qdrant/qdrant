@@ -35,7 +35,7 @@ dial9 = ["storage/dial9"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
-gpu = ["gpu/gpu", "segment/gpu"]
+gpu = ["segment/gpu"]
 deb = []
 staging = ["collection/staging", "storage/staging", "shard/staging"]
 # Edge-follower verification in the model_testing binary (see lib/collection model_testing).
@@ -129,7 +129,6 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 inference = { path = "lib/inference" }
-gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }
 
 actix-multipart = "0.8.0"
