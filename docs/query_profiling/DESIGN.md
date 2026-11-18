@@ -174,9 +174,37 @@ keys) are built in closures only when profiled. The one per-score change is that
 in the thread-local slot instead of one (the distance counts); that is the same cache line and is measured below.
 Workload stats are guarded by a `OnceLock<bool>` read of the flag.
 
-## Overhead
+## Overhead measurements
 
-See [Overhead measurements](#overhead-measurements) below (filled from `docs/query_profiling/bench.py`).
+Setup: `--profile perf` builds of this branch and of its base commit (`085f92188`), 12-vCPU shared VM, one
+collection with 100k × 128d cosine vectors in 4 indexed segments, a keyword index on `city` (100 values), no index on
+`color` (3 values). A single client sends requests sequentially over keep-alive HTTP.
+
+Method: sequential runs with server restarts proved useless here. Two identical `base` runs differed by up to 37%.
+So each comparison runs **two servers on identical copies of the storage at once**, sends the same request to both,
+alternates which goes first, and reports the **median of per-request latency ratios** (1000 pairs; 300 for the slow
+workloads, after 50 warm-up pairs). An A/A run (base vs. base) gives the noise floor. Latency is end-to-end client
+time, including parsing the (bigger) response in Python. Scripts: `docs/query_profiling/bench.py` (load + sequential runs), `docs/query_profiling/paired.py` (paired A/B).
+
+| Workload (base median) | A/A noise floor | flag off vs. base | flag on, no `profile` (workload stats) vs. base | `profile=analyze` vs. none, same server |
+|---|---|---|---|---|
+| query, unfiltered (1.5 ms) | +5.1% | −0.7% | +1.4% | **+5.1%** (+69 µs) |
+| query, indexed filter (0.6–1.0 ms) | +1.8% | +1.6% | −0.6% | **+8.2%** (+51 µs) |
+| query, un-indexed filter (27 ms) | −7.0% | −1.8% | −0.8% | +2.1% |
+| scroll, indexed filter (0.5 ms) | −0.6% | −2.0% | −0.7% | **+7.4%** (+42 µs) |
+| count, exact, un-indexed filter (60 ms) | +0.9% | −1.4% | +0.1% | +0.5% |
+
+Conclusions:
+
+- **Off: no measurable cost.** All differences are inside the A/A noise floor, in both directions.
+- **Workload statistics (flag on): no measurable cost** at these latencies. The fingerprint costs one serialization of
+  the shard request plus a mutex-protected map update. Under very high QPS with tiny requests, the global mutex is the first
+  thing to shard (see open questions).
+- **`profile=analyze`: a fixed 40–70 µs per request.** That meets the 5% target for requests from ~1.5 ms up
+  (+0.5% to +5%), but not for sub-millisecond requests (+7–8%). The cost does not scale with the work done: it is
+  building, serializing and parsing the profile (about 3 KB of JSON for 4 segments), plus one context fork per shard
+  and segment. It is opt-in per request, so it never affects requests that don't ask for it. If needed, the cheapest
+  wins are skipping empty segments in the output and not cloning segment ids.
 
 ## Access control
 
@@ -230,8 +258,13 @@ as network time in per-request profiles.
    metrics whitelists.
 6. Should `profile` also be allowed on recommend/discover/groups/matrix? They go through the same query path, so it is
    mostly plumbing.
-7. Fingerprint cost: one serialization per shard operation while the flag is on. If that shows up, sample (e.g. 1/N)
-   and scale counters, like MySQL digests do with `performance_schema_max_digest_sample_age`.
+7. Fingerprint cost: one serialization per shard operation, plus a global mutex, while the flag is on. Not measurable
+   in our benchmark. If it shows up at high QPS, shard the map by fingerprint hash and/or sample 1/N requests, scaling
+   the counters.
+8. `profile=analyze` costs a fixed 40–70 µs, more than 5% for sub-millisecond requests. Should empty segments
+   (0 points) be omitted from `segments[]` to shrink it? They are noise in the output too.
+9. Should the workload stats get their own feature flag, so they can be enabled without per-request profiles
+   (or the other way round)?
 
 ## Follow-ups enabled by this design
 

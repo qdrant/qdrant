@@ -16,6 +16,7 @@ use crate::actix::helpers::{self, get_request_hardware_counter_profiled, process
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{collection_name}/facet")]
+#[allow(clippy::too_many_arguments)]
 async fn facet(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

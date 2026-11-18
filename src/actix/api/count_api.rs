@@ -16,6 +16,7 @@ use crate::common::query::do_count_points;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{collection_name}/points/count")]
+#[allow(clippy::too_many_arguments)]
 async fn count_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

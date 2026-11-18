@@ -134,7 +134,6 @@ fn execute_batch_search(
         search_params.params,
         profiled_context.as_ref().unwrap_or(segment_query_context),
     );
-    drop(profiled_context);
     if let Some(profile) = profile {
         profile.finish();
     }

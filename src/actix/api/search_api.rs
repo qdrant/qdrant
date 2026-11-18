@@ -26,6 +26,7 @@ use crate::common::query::{
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{collection_name}/points/search")]
+#[allow(clippy::too_many_arguments)]
 async fn search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -102,6 +103,7 @@ async fn search_points(
 }
 
 #[post("/collections/{collection_name}/points/search/batch")]
+#[allow(clippy::too_many_arguments)]
 async fn batch_search_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

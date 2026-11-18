@@ -191,6 +191,7 @@ async fn get_points(
 }
 
 #[post("/collections/{collection_name}/points/scroll")]
+#[allow(clippy::too_many_arguments)]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,

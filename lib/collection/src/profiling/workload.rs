@@ -437,7 +437,7 @@ mod tests {
     fn test_histogram_quantiles() {
         let mut h = Histogram::new();
         for ms in 1..=100 {
-            h.record(ms as f64);
+            h.record(f64::from(ms));
         }
         let p95 = h.quantile_ms(0.95, 100.0);
         assert!((95.0..=95.0 * GROWTH).contains(&p95), "p95 = {p95}");

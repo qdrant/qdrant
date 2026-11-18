@@ -468,10 +468,15 @@ pub(crate) fn derive_notes(profile: &QueryProfile) -> Vec<String> {
         } else {
             0.0
         };
+        let share = match profile.mode {
+            // Nothing was scored: the time share says nothing about the real request
+            ProfileMode::Explain => String::new(),
+            ProfileMode::Analyze => format!(" ({share:.0}% of segment search time)"),
+        };
         notes.push(format!(
-            "{} segment(s) with {points} points have no vector index yet and are searched by \
-             brute force ({share:.0}% of segment search time). This is expected while the \
-             optimizer is indexing; check `optimizer_status` and `indexing_threshold`.",
+            "{} segment(s) with {points} points have no vector index and are searched by brute \
+             force{share}. This is expected for segments smaller than `indexing_threshold` and \
+             while the optimizer is indexing; check `optimizer_status` and `indexing_threshold`.",
             unindexed_segments.len()
         ));
     }
