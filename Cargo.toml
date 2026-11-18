@@ -128,7 +128,6 @@ shard = { path = "lib/shard", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
-bm25 = { path = "lib/bm25" }
 inference = { path = "lib/inference" }
 gpu = { path = "lib/gpu" }
 wal = { path = "lib/wal" }

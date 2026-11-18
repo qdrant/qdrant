@@ -6168,7 +6168,6 @@ dependencies = [
  "ahash",
  "anyhow",
  "api",
- "bm25",
  "cancel",
  "chrono",
  "clap",
