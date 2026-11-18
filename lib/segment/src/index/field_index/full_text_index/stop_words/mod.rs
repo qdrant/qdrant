@@ -132,6 +132,10 @@ impl StopwordsFilter {
     }
 
     /// Check if a token is a stopword
+    pub fn is_empty(&self) -> bool {
+        self.stopwords.is_empty()
+    }
+
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords.contains(token)
     }

@@ -5,7 +5,7 @@ use std::time::Duration;
 use common::ambient::AmbientFutureExt as _;
 use common::types::DeferredBehavior;
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};
+use futures::{StreamExt as _, TryStreamExt as _, future};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
@@ -25,7 +25,7 @@ use crate::shards::shard_trait::WaitUntil;
 
 impl Collection {
     /// Apply collection update operation to all local shards.
-    /// Return None if there are no local shards
+    /// Return None if no shard returns an update result
     ///
     /// # Cancel safety
     ///
@@ -44,6 +44,11 @@ impl Collection {
             .all_shards()
             .map(Arc::clone)
             .collect();
+
+        let is_index_operation = matches!(
+            operation,
+            CollectionUpdateOperations::FieldIndexOperation(_)
+        );
 
         let results = self
             .update_runtime
@@ -80,9 +85,25 @@ impl Collection {
 
         let mut result = None;
 
-        for collection_result in results {
-            let update_result = collection_result?;
+        for update_result in results {
+            if let Err(CollectionError::ForwardProxyError { peer_id, error }) = &update_result
+                && is_index_operation
+            {
+                // If the local shard is a `ForwardProxy`, it applies the payload index operation
+                // locally, then forwards it to a remote replica.
+                //
+                // All peers receive and apply the same payload index operation through consensus,
+                // so the remote replica does not need the forwarded update to apply it.
+                //
+                // `ForwardProxyError` means the local update succeeded and forwarding failed,
+                // so we can ignore that error.
+                log::debug!("Failed to forward payload index update to peer {peer_id}: {error}");
+                continue;
+            }
 
+            let update_result = update_result?;
+
+            // Propagate first non-None result
             if result.is_none() && update_result.is_some() {
                 result = update_result;
             }
@@ -332,32 +353,33 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        let retrieved_points: Vec<_> = {
-            let shards_holder = self.shards_holder.read().await;
-            let target_shards = shards_holder.select_shards(shard_selection)?;
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
-            let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                let shard_key = shard_key.cloned();
-                shard
+        let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+            let request = request.clone();
+            async move {
+                let mut records = shard
                     .scroll_by(
-                        request.clone(),
+                        request,
                         read_consistency,
                         routing_token,
                         local_only,
                         timeout,
                     )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
-                        }
-                        for point in &mut records {
-                            point.shard_key.clone_from(&shard_key);
-                        }
-                        Ok(records)
-                    })
-            });
-            future::try_join_all(scroll_futures).await?
-        };
+                    .await?;
+                if shard_key.is_some() {
+                    for point in &mut records {
+                        point.shard_key.clone_from(&shard_key);
+                    }
+                }
+                CollectionResult::Ok(records)
+            }
+        });
+        let retrieved_points = future::try_join_all(scroll_futures).await?;
 
         let retrieved_iter = retrieved_points.into_iter();
 
@@ -407,15 +429,16 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(shard_selection)?;
+        let shards = self
+            .select_shards(shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
 
         let request = Arc::new(request);
 
         let mut requests: FuturesUnordered<_> = shards
-            .into_iter()
+            .iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| {
+            .map(|shard| {
                 shard.count(
                     Arc::clone(&request),
                     read_consistency,
@@ -454,8 +477,11 @@ impl Collection {
         let ids_len = request.ids.len();
         let request = Arc::new(request);
 
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(shard_selection)?;
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
         let mut all_shard_collection_requests = target_shards
             .into_iter()
             .map(|(shard, shard_key)| {
@@ -482,7 +508,7 @@ impl Collection {
                     }
 
                     for point in &mut records {
-                        point.shard_key.clone_from(&shard_key.cloned());
+                        point.shard_key.clone_from(&shard_key);
                     }
 
                     CollectionResult::Ok(records)

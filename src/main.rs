@@ -17,6 +17,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ::common::ambient;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
@@ -25,6 +26,7 @@ use ::common::low_memory::init_low_memory_mode;
 use ::common::memory_usage::set_resident_bytes_reader;
 use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use ::common::mmap::advice::set_global;
+use ::common::reason::reason;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -42,10 +44,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::load_tls_client_config;
@@ -58,10 +57,7 @@ use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
 
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -325,6 +321,8 @@ fn init_channel_service(
             settings.cluster.p2p.connection_pool_size,
             tls_config,
             api_key,
+            Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms),
+            Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms),
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
@@ -551,13 +549,15 @@ fn main() -> anyhow::Result<()> {
     // Table of content (main entry point for storage)
     //
 
-    let toc = TableOfContent::new(
-        &settings.storage,
-        optimizer_resource_budget,
-        channel_service.clone(),
-        persistent_consensus_state.this_peer_id(),
-        propose_operation_sender.clone(),
-    )?;
+    let toc = ambient::unmeasured(reason("Loading collections on startup"), || {
+        TableOfContent::new(
+            &settings.storage,
+            optimizer_resource_budget,
+            channel_service.clone(),
+            persistent_consensus_state.this_peer_id(),
+            propose_operation_sender.clone(),
+        )
+    })?;
     let runtime_handle = toc.general_runtime_handle().clone();
 
     // Here we load all stored collections.
@@ -590,7 +590,6 @@ fn main() -> anyhow::Result<()> {
             storage_path,
         )
         .expect("initialize consensus manager")
-        .with_shadow(settings.cluster.consensus.shadow_state_machine)
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 

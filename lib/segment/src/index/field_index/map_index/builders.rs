@@ -39,7 +39,7 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<bool> {
         self.0.add_point(id, values)
     }
 
@@ -69,7 +69,7 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
@@ -84,6 +84,7 @@ where
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
 
+        let has_values = !flatten_values.is_empty();
         for value in flatten_values {
             let entry = self.values_to_points.entry(value);
 
@@ -96,7 +97,7 @@ where
             entry.or_default().push(id);
         }
 
-        Ok(())
+        Ok(has_values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -174,7 +175,7 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "MapIndexGridstoreBuilder: index must be initialized before adding points",

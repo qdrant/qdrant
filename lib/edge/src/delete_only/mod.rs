@@ -13,12 +13,14 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::{TrackerLookup, UpdateOnlySegmentEnum};
 use segment::types::{PointIdType, SeqNumberType};
 use uuid::Uuid;
@@ -33,6 +35,9 @@ pub struct DeleteOnlyEdgeShard<Fs: UniversalAppendFs> {
     fs: Fs,
     segments: HashMap<Uuid, TrackerLookup<Fs>>,
     pool: Arc<ThreadPool>,
+    /// Whether deletes are recorded with their version in the formats older
+    /// readers cannot parse. From the `versioned_deletes` feature flag.
+    delete_versioning: DeleteVersioning,
 }
 
 impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
@@ -47,30 +52,38 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
             None,
         )?;
         let listed: Vec<(Uuid, ListedSegment)> = enumerator.list_segments()?.into_iter().collect();
-        let segments = ambient::parallel(|handoff| {
-            pool.install(|| {
-                listed
-                    .into_par_iter()
-                    .map(|(uuid, ListedSegment { path, writable: _ })| {
-                        let _scope = handoff.enter_guard();
-                        Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
-                    })
-                    .collect::<OperationResult<HashMap<_, _>>>()
-            })
+        let segments = pool.ambient_install(|handoff| {
+            listed
+                .into_par_iter()
+                .map(|(uuid, ListedSegment { path, writable: _ })| {
+                    let _scope = handoff.enter_guard();
+                    Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
+                })
+                .collect::<OperationResult<HashMap<_, _>>>()
         })?;
-        Ok(Self { fs, segments, pool })
+        Ok(Self {
+            fs,
+            segments,
+            pool,
+            delete_versioning: DeleteVersioning::from_feature_flags(),
+        })
+    }
+
+    /// Record delete versions as `versioning` says, rather than as the feature flags do.
+    #[cfg(test)]
+    pub(crate) fn with_delete_versioning(mut self, versioning: DeleteVersioning) -> Self {
+        self.delete_versioning = versioning;
+        self
     }
 
     /// Reload the id trackers to pick up changes written since the last open
     /// or reload.
     pub fn live_reload(&mut self) -> OperationResult<()> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        ambient::parallel(|handoff| {
-            self.pool.install(|| {
-                self.segments.par_iter_mut().try_for_each(|(_, segment)| {
-                    let _scope = handoff.enter_guard();
-                    segment.live_reload()
-                })
+        self.pool.ambient_install(|handoff| {
+            self.segments.par_iter_mut().try_for_each(|(_, segment)| {
+                let _scope = handoff.enter_guard();
+                segment.live_reload()
             })
         })
     }
@@ -102,12 +115,23 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// Delete every copy of `ids` in this shard. Ids the shard does not hold
     /// are ignored. Returns how many copies were deleted.
     ///
+    /// Every delete records `version`, which decides when a follower applies
+    /// it: once every write up to that version is in view. For outdated copies
+    /// a rebuild replaced, pass a version above the cursor as it was when the
+    /// rebuilt segment got listed, so no follower deletes a copy before it holds
+    /// the rebuilt segment. Deletes the rebuild carries into its own segment can
+    /// pass 0: a follower only sees that segment once those writes are durable.
+    ///
     /// The writers resume from the trackers' last read, so call
     /// [`live_reload`](Self::live_reload) first, under the shard's write lock,
     /// and again before any later call. Decide on `ids` after that reload: a
     /// copy written since the last read would be deleted too. On error, some
     /// segments may already be written.
-    pub fn delete_points(&mut self, ids: &[PointIdType]) -> OperationResult<usize> {
+    pub fn delete_points(
+        &mut self,
+        ids: &[PointIdType],
+        version: SeqNumberType,
+    ) -> OperationResult<usize> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let mut by_segment: HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = HashMap::new();
         for (id, located) in self.locate(ids)? {
@@ -128,7 +152,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 &segment.segment_config,
                 segment.writer_state(),
             )?
-            .tombstone_points(&points)?;
+            .tombstone_points(&points, version, self.delete_versioning)?;
             deleted += points.len();
         }
         Ok(deleted)
@@ -139,16 +163,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         &self,
         ids: &[PointIdType],
     ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
-        let per_segment = ambient::parallel(|handoff| {
-            self.pool.install(|| {
-                self.segments
-                    .par_iter()
-                    .map(|(uuid, segment)| {
-                        let _scope = handoff.enter_guard();
-                        locate_in(*uuid, segment, ids)
-                    })
-                    .collect::<OperationResult<Vec<_>>>()
-            })
+        let per_segment = self.pool.ambient_install(|handoff| {
+            self.segments
+                .par_iter()
+                .map(|(uuid, segment)| {
+                    let _scope = handoff.enter_guard();
+                    locate_in(*uuid, segment, ids)
+                })
+                .collect::<OperationResult<Vec<_>>>()
         })?;
         Ok(merge_locations(per_segment))
     }

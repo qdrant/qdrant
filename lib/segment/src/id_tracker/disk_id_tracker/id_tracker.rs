@@ -12,6 +12,7 @@ use super::DiskIdTracker;
 use super::mappings::DiskMappingsSource as _;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::delete_versions::existing_delete_log;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
@@ -40,26 +41,35 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
         panic!("Trying to call a mutating function (`set_link`) of a disk id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Mutating path: propagate lookup/deletion-check errors instead of swallowing.
         if let Some(internal_id) = self.reader.lookup(external_id)?
             && !self.point_deleted(internal_id)?
         {
             self.deleted.set(internal_id as usize, true);
-            self.deleted_wrapper.set(internal_id as usize, true);
+            self.deleted_wrapper.delete(internal_id, version);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         self.deleted.set(internal_id as usize, true);
-        self.deleted_wrapper.set(internal_id as usize, true);
+        self.deleted_wrapper.delete(internal_id, version);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         Ok(())
     }
 
-    /// Only deletions are flushed; the mapping is immutable.
+    /// Only deletions are flushed, the mapping is immutable: to the delete log, with the version
+    /// each was deleted at, or to the mask.
     fn mapping_flusher(&self) -> Flusher {
         self.deleted_wrapper.flusher()
     }
@@ -75,6 +85,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
             self.versions_file.path(&self.path),
         ];
         files.extend(self.mapping_files());
+        files.extend(existing_delete_log(&self.path));
         files
     }
 

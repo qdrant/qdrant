@@ -4,10 +4,9 @@ use std::cmp::max;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient::{self, trace};
+use common::ambient::trace;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
@@ -46,7 +45,6 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         dir: &Path,
         residency: GraphLinksResidency,
     ) -> OperationResult<Self> {
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
         let format = GraphLayers::probe_links_format(fs, dir)?
             .ok_or_else(|| OperationError::service_error("No links file found"))?;
@@ -57,10 +55,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             Default::default(),
         )?;
         let links = GraphLinksFile::open(file, format)?;
-        trace::file_sections(
-            &links_path.to_string_lossy(),
-            links.uio_trace_sections(format),
-        );
+        trace::file_sections(&links_path.to_string_lossy(), links.uio_trace_sections());
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
             links,
@@ -437,9 +432,18 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             SearchContext::with_entries(ef, level_entries, &mut hop1_visited_list);
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
-        let hop1_limit = self.hnsw_m.level_m(level);
-        let hop2_limit = self.hnsw_m.level_m(level);
-        debug_assert_ne!(hop1_limit, 0); // See `FilteredBytesScorer::score_points`
+        let m = self.hnsw_m.level_m(level);
+        let (hop1_limit, hop2_limit, capacity);
+        if m != 0 {
+            hop1_limit = m;
+            hop2_limit = m;
+            capacity = hop1_limit * links_batch_size;
+        } else {
+            // `m = 0` graphs only have payload links: take all, as `search_on_level` does.
+            hop1_limit = usize::MAX;
+            hop2_limit = usize::MAX;
+            capacity = 16 * links_batch_size; // Guess: payload_m = 16
+        }
 
         let mut batch = Vec::with_capacity(links_batch_size);
         // See `GraphLayers::search_on_level_acorn`.
@@ -453,10 +457,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             is_match: bool,
         }
 
-        let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
-        let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
-        let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
-        let mut to_explore = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut hop1_links = Vec::with_capacity(2 * capacity);
+        let mut unchecked_links = Vec::with_capacity(2 * capacity);
+        let mut to_score = Vec::with_capacity(capacity);
+        let mut to_explore = Vec::with_capacity(capacity);
         let mut tail_bridges = Vec::new();
 
         let mut round = 0;
@@ -655,6 +659,7 @@ mod tests {
 
     #[test]
     fn test_batched_search_matches_in_ram() {
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
 
@@ -754,6 +759,7 @@ mod tests {
 
     #[test]
     fn test_batched_with_vectors() {
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
 

@@ -8,16 +8,17 @@ pub(super) mod on_disk_inverted_index;
 mod positions;
 mod posting_list;
 mod postings_iterator;
+pub(super) mod term_frequencies;
 
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use bm25::{Bm25Accept, Bm25Query};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
+use self::bm25::{Bm25Accept, Bm25Query};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::query_estimator::expected_should_estimation;
@@ -208,8 +209,6 @@ pub trait InvertedIndex {
         }
     }
 
-    fn index_tokens(&mut self, idx: PointOffsetType, tokens: TokenSet) -> OperationResult<()>;
-
     fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
 
     fn remove(&mut self, idx: PointOffsetType) -> bool;
@@ -359,6 +358,16 @@ pub trait InvertedIndex {
         f: impl FnMut(&str, usize) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
+    /// Each vocabulary token's length times its posting length, summed.
+    fn token_bytes(&self) -> OperationResult<u64> {
+        let mut total = 0u64;
+        self.for_each_vocab_with_postings_len(|token, postings_len| {
+            total += token.len() as u64 * postings_len as u64;
+            Ok(())
+        })?;
+        Ok(total)
+    }
+
     fn for_each_payload_block(
         &self,
         threshold: usize,
@@ -390,6 +399,15 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
+    /// Documents the BM25 statistics count, `N`: those holding a token, as
+    /// `posting_len` and [`Self::total_tokens`] count them. An immutable index
+    /// counts its build, deleted documents included, so a deletion never
+    /// changes its statistics, unlike [`Self::points_count`]. A mutable index
+    /// counts the documents it holds.
+    fn document_count(&self) -> usize {
+        self.points_count()
+    }
+
     /// Number of tokens indexed for each of `point_ids`, repetitions included:
     /// `f(index, doc_len)` once per entry, with `index` into `point_ids`, in no
     /// particular order. This is `|d|` in BM25, and it is stored, never
@@ -414,16 +432,11 @@ pub trait InvertedIndex {
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()>;
 
-    /// Total tokens over the points this index still holds, the numerator of
-    /// `avgdl`. `None` when this index does not record lengths.
+    /// Total tokens over the documents [`Self::document_count`] counts, the
+    /// numerator of `avgdl`. `None` when this index does not record lengths.
     ///
     /// This is the capability probe, not [`Self::doc_len_batch`], which also
     /// answers `None` for a point id outside the index.
-    ///
-    /// "Still holds" is not "live" under append-only deletion, where a dropped
-    /// point never reaches `remove` and the in-RAM backends keep counting it.
-    /// The on-disk backend re-reads the id tracker's mask at `open` and does
-    /// not.
     ///
     /// Deliberately not divided by [`Self::points_count`] here. The average
     /// is a corpus statistic, and a per-segment average would drift from the
@@ -785,20 +798,20 @@ mod tests {
             "a runtime deletion must be masked out on load",
         );
 
-        // The on-disk total is the build-time one, like `posting_len`. The
-        // loaded copy sums the masked lengths.
+        // Both totals are the build-time one, like `posting_len`: the
+        // statistics count a deleted document until the next build.
         let build_total: u64 = lens_at_build
             .iter()
             .map(|&code| u64::from(decode_doc_len(code)))
             .sum();
-        let live_total = build_total - u64::from(decode_doc_len(lens_at_build[victim]));
         let _scope = ambient::test_guard();
         assert_eq!(
             mmap.total_tokens(),
             Some(build_total),
             "the on-disk total does not subtract runtime deletions",
         );
-        assert_eq!(imm_mmap.total_tokens(), Some(live_total));
+        assert_eq!(imm_mmap.total_tokens(), Some(build_total));
+        assert_eq!(imm_mmap.document_count(), mmap.document_count());
         assert_eq!(
             doc_lens(&mmap, &[victim as PointOffsetType]),
             [Some(0)],
@@ -991,7 +1004,7 @@ mod tests {
             .sum();
 
         // The on-disk backend holds its lengths in RAM too, so answering
-        // reads nothing and bills nothing.
+        // reads nothing from disk.
         let mmap_acc = AmbientContext::new();
         mmap_acc.measure(|| doc_lens(&mmap, &shuffled));
         assert_eq!(mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead], 0);
@@ -1219,7 +1232,16 @@ mod tests {
                 continue;
             };
             let mut_filtered = mut_index.filter(mut_query).unwrap().collect::<Vec<_>>();
+            // Pushed into a sink, the on-disk index reads postings chunk by chunk, one
+            // after another: same points, in any order and possibly repeated.
+            let mut pushed = Vec::new();
+            mmap_index
+                .filter_into(imm_query.clone(), &mut pushed)
+                .unwrap();
+            pushed.sort_unstable();
+            pushed.dedup();
             let imm_filtered = mmap_index.filter(imm_query).unwrap().collect::<Vec<_>>();
+            assert_eq!(pushed, imm_filtered);
             let imm_mmap_filtered = imm_mmap_index
                 .filter(imm_mmap_query)
                 .unwrap()

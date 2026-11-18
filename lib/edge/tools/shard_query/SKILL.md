@@ -1,6 +1,6 @@
 ---
 name: edge-shard-query
-description: Use the `edge-shard-query` CLI to run scroll / dense search / sparse search / count / facet against a read-only Qdrant edge shard, reading segments directly from S3, GCS, or a live Qdrant peer over gRPC — no Qdrant server required. Also covers the live-reload mode for watching a leader's writes propagate. Use when asked to query, inspect, debug, or live-watch an edge shard on object storage.
+description: Use the `edge-shard-query` CLI to run scroll / dense search / sparse search / BM25 text search / count / facet against a read-only Qdrant edge shard, reading segments directly from S3, GCS, or a live Qdrant peer over gRPC — no Qdrant server required. Also covers the live-reload mode for watching a leader's writes propagate. Use when asked to query, inspect, debug, or live-watch an edge shard on object storage.
 ---
 
 # edge-shard-query
@@ -93,6 +93,18 @@ Prints the records plus a `next_page_offset` line to feed back into `--offset`.
 - `--using <NAME>` — sparse vectors are named, so this is **usually required**. Omit only if the shard stores its sparse vector under the default (empty) name.
 - `--offset`, `--score-threshold`, `--exact` — as for `search` (`--exact` bypasses the sparse index).
 
+### `text`: BM25 search over a text index
+
+- `--field <FIELD>`: **required**. Payload field to score. Its text index must have `scoring` set (`edge-tool create --payload-index body:bm25` builds one, `edge-tool load-beir` fills it with a BEIR corpus).
+- `--query <TEXT>`: **required**, non-empty. Tokenized as the field's index tokenizes a query. Taken literally, so it may start with `@`.
+- `--k1 <F>` / `--b <F>`: BM25 parameters. Defaults `1.2` / `0.75`.
+- `--idf-corpus <JSON>`: gather the BM25 statistics over the points matching this filter only, independent of `--filter`. Same forms as `--filter`. Omit to gather them over every point.
+- `--offset`: as for `search`.
+- `--score-threshold <F>`: only return results scoring strictly above this.
+- `--no-payload`: leave payloads out of the results. The load profile then keeps the payload storage cold, so the IO stats show the BM25 query alone.
+
+Runs through the universal query path (`EdgeShardRead::query`), so its load profile warms the field's text index plus the filter and corpus fields.
+
 ### `count` — count matching points
 
 - `--approx` — return a fast approximate count instead of visiting every matching point. Exact is the default.
@@ -113,8 +125,8 @@ Prints one JSON line per hit: `{"value": ..., "count": N}`.
 
 - `--filter <JSON>` — an arbitrary payload filter in Qdrant's filter DSL (the `filter` field of a REST request). Curl `--data` style: a literal JSON string, `@path` to read from a file, or `@-` to read from stdin. Any condition the DSL can express works here, so there are no per-condition flags.
 - `--filter-key` / `--filter-value` — shortcut for the common "field equals value" case. Must be given together, and are mutually exclusive with `--filter`. The value is parsed as an integer or boolean when it looks like one, otherwise as a string.
-- `--limit <N>` — max points (or facet hits) to return. Default `10`. Scroll / search / facet only.
-- `--with-vectors` — include vectors in the output. Scroll / search only.
+- `--limit <N>` — max points (or facet hits) to return. Default `10`. Scroll / search / text / facet only.
+- `--with-vectors` — include vectors in the output. Scroll / search / text only.
 
 Scroll and search results print as one JSON object per line (`id`, `payload`, `vector`, plus `score` and `version` for searches).
 
@@ -179,6 +191,21 @@ cargo run -p edge-shard-query -- \
     --using  text \
     --vector '{"indices": [12, 700, 5301], "values": [0.4, 0.9, 0.2]}' \
     --limit  5
+```
+
+BM25 text search, statistics gathered over one city only:
+
+```sh
+cargo run -p edge-shard-query -- \
+    --backend  aws \
+    --endpoint http://localhost:9000 \
+    --bucket   test-bucket \
+    --prefix   collection/0 \
+    text \
+    --field body \
+    --query "amber harbor" \
+    --idf-corpus '{"must":[{"key":"city","match":{"value":"harbor"}}]}' \
+    --limit 5
 ```
 
 Count points matching a filter:

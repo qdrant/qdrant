@@ -9,6 +9,7 @@ mod read_only;
 mod read_view;
 mod reexports;
 mod requests;
+mod scope;
 mod types;
 #[cfg(feature = "serverless")]
 mod update_only;
@@ -18,10 +19,12 @@ pub use types::*;
 mod test_helpers;
 
 pub use builders::{
-    Bm25ParamsBuilder, CountRequestBuilder, EdgeConfigBuilder, EdgeSparseVectorParamsBuilder,
-    EdgeVectorParamsBuilder, FacetRequestBuilder, GroupRequestBuilder, PrefetchBuilder,
-    QueryRequestBuilder, RetrieveRequestBuilder, ScrollRequestBuilder, SearchMatrixRequestBuilder,
-    SearchRequestBuilder, TextIndexParamsBuilder, TextQueryBuilder,
+    Bm25ParamsBuilder, BoolIndexParamsBuilder, CountRequestBuilder, DatetimeIndexParamsBuilder,
+    EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder, FacetRequestBuilder,
+    FloatIndexParamsBuilder, GeoIndexParamsBuilder, GroupRequestBuilder, IntegerIndexParamsBuilder,
+    KeywordIndexParamsBuilder, PrefetchBuilder, QueryRequestBuilder, RetrieveRequestBuilder,
+    ScrollRequestBuilder, SearchMatrixRequestBuilder, SearchRequestBuilder, TextIndexParamsBuilder,
+    TextQueryBuilder, UuidIndexParamsBuilder,
 };
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;
@@ -32,21 +35,20 @@ pub use edge_shard::EdgeShard;
 #[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
-    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, SegmentEnumerator,
+    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, ReadOnlyOpenOptions, SegmentEnumerator,
 };
-#[cfg(feature = "serverless")]
-pub use read_view::EdgeShardReadWithCancellation;
 pub use read_view::{EdgeShardRead, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
 pub use reexports::*;
 pub use requests::{
     CountRequest, FacetRequest, GroupRequest, Prefetch, QueryBatchRequest, QueryRequest,
     RetrieveRequest, ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
+pub use scope::{EdgeScope, Scoped};
 pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 #[cfg(feature = "serverless")]
 pub use update_only::{
     PointAction, PointApplyKind, PointApplyRecord, PointCopy, PointPreview, PointUpdates,
-    SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview,
-    UpdateOnlyEdgeShard,
+    PointUsage, SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview,
+    UpdateBytes, UpdateMetering, UpdateOnlyEdgeShard,
 };

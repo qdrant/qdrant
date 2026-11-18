@@ -12,10 +12,25 @@ pub fn current() -> Handoff {
 
 /// Run rayon (or any other work-stealing) calls.
 /// Closures passed to rayon must enter the provided scope, see [`Handoff::enter`].
+///
+/// Look at [`super::tests::masked_context_prevents_misattributing`] for an
+/// example of an issue that this function prevents.
 pub fn parallel<R>(f: impl FnOnce(&Handoff) -> R) -> R {
     let handoff = current();
     let _scope = Scope::masked();
     f(&handoff)
+}
+
+/// Extension trait for [`rayon::ThreadPool`].
+pub trait ThreadPoolExt {
+    /// Shortcut for `thread_pool.install()` inside `ambient::parallel()`.
+    fn ambient_install<OP: FnOnce(&Handoff) -> R + Send, R: Send>(&self, op: OP) -> R;
+}
+
+impl ThreadPoolExt for rayon::ThreadPool {
+    fn ambient_install<OP: FnOnce(&Handoff) -> R + Send, R: Send>(&self, op: OP) -> R {
+        parallel(|handoff| self.install(|| op(handoff)))
+    }
 }
 
 /// Run `f` without measuring it.
@@ -24,19 +39,9 @@ pub fn unmeasured<R>(reason: Reason, f: impl FnOnce() -> R) -> R {
     f()
 }
 
-/// Guard version of [`unmeasured`]. Don't hold it across `.await`.
+/// Guard version of [`unmeasured`].
 pub fn unmeasured_guard(_: Reason) -> Scope {
     Scope::unmeasured()
-}
-
-#[cfg(any(test, feature = "testing"))]
-pub fn test<R>(f: impl FnOnce() -> R) -> R {
-    unmeasured(crate::reason::reason("Test code"), f)
-}
-
-#[cfg(any(test, feature = "testing"))]
-pub fn test_guard() -> Scope {
-    unmeasured_guard(crate::reason::reason("Test code"))
 }
 
 /// A scope that can be entered elsewhere.
@@ -59,7 +64,7 @@ impl Handoff {
         slot::enter(self, f)
     }
 
-    /// Guard version of [`Self::enter`]. Don't hold it across `.await`.
+    /// Guard version of [`Self::enter`].
     pub fn enter_guard(&self) -> Scope {
         self.clone().into_scope()
     }

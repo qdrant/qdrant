@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::mmap::Flusher;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UniversalRead;
+use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared;
 use crate::common::operation_error::OperationResult;
@@ -35,8 +34,6 @@ pub trait TurboVectorBlob {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn flusher(&self) -> Flusher;
-
     fn score_query_batch(
         &self,
         quantizer: &TurboQuantizer,
@@ -51,7 +48,7 @@ impl<S: UniversalRead> TurboVectorBlob for QuantizedStorage<S> {
     type File = S;
 
     fn vectors_count(&self) -> usize {
-        EncodedStorageWrite::vectors_count(self)
+        EncodedStorage::vectors_count(self)
     }
 
     fn get_vector_data(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
@@ -81,10 +78,6 @@ impl<S: UniversalRead> TurboVectorBlob for QuantizedStorage<S> {
 
     fn files(&self) -> Vec<PathBuf> {
         EncodedStorage::files(self)
-    }
-
-    fn flusher(&self) -> Flusher {
-        EncodedStorageWrite::flusher(self)
     }
 
     fn score_query_batch(

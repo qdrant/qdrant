@@ -13,7 +13,9 @@ use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::id_tracker::create_segment_id_tracker;
-use super::paths::{get_payload_index_path, get_vector_index_path, get_vector_storage_path};
+use super::paths::{
+    check_vector_name_path, get_payload_index_path, get_vector_index_path, get_vector_storage_path,
+};
 use super::payload_storage::create_payload_storage;
 use super::sp;
 use super::sparse_vector_index::open_or_create_sparse_vector_index;
@@ -48,6 +50,14 @@ pub(super) fn create_segment(
     stopped: &AtomicBool,
     load_mode: IndexLoadMode,
 ) -> OperationResult<Segment> {
+    for vector_name in config
+        .vector_data
+        .keys()
+        .chain(config.sparse_vector_data.keys())
+    {
+        check_vector_name_path(vector_name)?;
+    }
+
     let started = Instant::now();
     let payload_storage = sp(create_payload_storage(segment_path, config)?);
     log_load_timing(segment_path, "payload_storage", started);

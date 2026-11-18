@@ -6,12 +6,16 @@ use uuid::Uuid;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::FileEndianess;
-use crate::types::PointIdType;
+use crate::types::{PointIdType, SeqNumberType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum MappingChange {
     Insert(PointIdType, PointOffsetType),
     Delete(PointIdType),
+    /// A delete with the version of the batch that wrote it, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions). Means the same as a plain
+    /// [`Delete`](Self::Delete) to everyone but a follower that gates deletes.
+    DeleteVersioned(PointIdType, SeqNumberType),
 }
 
 impl MappingChange {
@@ -21,6 +25,12 @@ impl MappingChange {
             Self::Insert(PointIdType::Uuid(_), _) => MappingChangeType::InsertUuid,
             Self::Delete(PointIdType::NumId(_)) => MappingChangeType::DeleteNum,
             Self::Delete(PointIdType::Uuid(_)) => MappingChangeType::DeleteUuid,
+            Self::DeleteVersioned(PointIdType::NumId(_), _) => {
+                MappingChangeType::DeleteNumVersioned
+            }
+            Self::DeleteVersioned(PointIdType::Uuid(_), _) => {
+                MappingChangeType::DeleteUuidVersioned
+            }
         }
     }
 }
@@ -32,6 +42,8 @@ pub(super) enum MappingChangeType {
     InsertUuid = 2,
     DeleteNum = 3,
     DeleteUuid = 4,
+    DeleteNumVersioned = 5,
+    DeleteUuidVersioned = 6,
 }
 
 impl MappingChangeType {
@@ -41,6 +53,8 @@ impl MappingChangeType {
             x if x == Self::InsertUuid as u8 => Some(Self::InsertUuid),
             x if x == Self::DeleteNum as u8 => Some(Self::DeleteNum),
             x if x == Self::DeleteUuid as u8 => Some(Self::DeleteUuid),
+            x if x == Self::DeleteNumVersioned as u8 => Some(Self::DeleteNumVersioned),
+            x if x == Self::DeleteUuidVersioned as u8 => Some(Self::DeleteUuidVersioned),
             _ => None,
         }
     }
@@ -56,12 +70,20 @@ impl MappingChangeType {
     /// +-----------------------+-----------------------+
     /// | MappingChangeType: u8 | Number/UUID: u64/u128 |
     /// +-----------------------+-----------------------+
+    ///
+    /// Versioned deletion changes are serialized as follows:
+    ///
+    /// +-----------------------+-----------------------+--------------+
+    /// | MappingChangeType: u8 | Number/UUID: u64/u128 | Version: u64 |
+    /// +-----------------------+-----------------------+--------------+
     const fn operation_size(self) -> usize {
         match self {
             Self::InsertNum => size_of::<u8>() + size_of::<u64>() + size_of::<u32>(),
             Self::InsertUuid => size_of::<u8>() + size_of::<u128>() + size_of::<u32>(),
             Self::DeleteNum => size_of::<u8>() + size_of::<u64>(),
             Self::DeleteUuid => size_of::<u8>() + size_of::<u128>(),
+            Self::DeleteNumVersioned => size_of::<u8>() + size_of::<u64>() + size_of::<u64>(),
+            Self::DeleteUuidVersioned => size_of::<u8>() + size_of::<u128>() + size_of::<u64>(),
         }
     }
 }
@@ -111,6 +133,23 @@ pub(super) fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, 
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
             Ok((MappingChange::Delete(external_id), operation_size))
         }
+        MappingChangeType::DeleteNumVersioned => {
+            let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
+            let version = reader.read_u64::<FileEndianess>()?;
+            Ok((
+                MappingChange::DeleteVersioned(external_id, version),
+                operation_size,
+            ))
+        }
+        MappingChangeType::DeleteUuidVersioned => {
+            let external_id =
+                PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
+            let version = reader.read_u64::<FileEndianess>()?;
+            Ok((
+                MappingChange::DeleteVersioned(external_id, version),
+                operation_size,
+            ))
+        }
     }
 }
 
@@ -132,6 +171,12 @@ pub(super) fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, 
 /// +-----------------------+-----------------------+
 /// | MappingChangeType: u8 | Number/UUID: u64/u128 |
 /// +-----------------------+-----------------------+
+///
+/// Versioned deletion changes add the version of the delete:
+///
+/// +-----------------------+-----------------------+--------------+
+/// | MappingChangeType: u8 | Number/UUID: u64/u128 | Version: u64 |
+/// +-----------------------+-----------------------+--------------+
 pub(super) fn write_entry<W: Write>(mut writer: W, change: MappingChange) -> OperationResult<()> {
     // Byte to identity type of change
     writer.write_u8(change.change_type() as u8)?;
@@ -151,6 +196,14 @@ pub(super) fn write_entry<W: Write>(mut writer: W, change: MappingChange) -> Ope
         }
         MappingChange::Delete(PointIdType::Uuid(external_id)) => {
             writer.write_u128::<FileEndianess>(external_id.to_u128_le())?;
+        }
+        MappingChange::DeleteVersioned(PointIdType::NumId(external_id), version) => {
+            writer.write_u64::<FileEndianess>(external_id)?;
+            writer.write_u64::<FileEndianess>(version)?;
+        }
+        MappingChange::DeleteVersioned(PointIdType::Uuid(external_id), version) => {
+            writer.write_u128::<FileEndianess>(external_id.to_u128_le())?;
+            writer.write_u64::<FileEndianess>(version)?;
         }
     }
 

@@ -53,10 +53,14 @@ pub trait ValueIndexer {
         flatten_values
     }
 
-    /// Add point with payload to index
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    /// Add point with payload to index. Returns whether the payload holds a value of
+    /// this index's type.
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         self.remove_point(id)?;
-        self.add_many(id, Self::flatten_values(payload))
+        let values = Self::flatten_values(payload);
+        let has_values = !values.is_empty();
+        self.add_many(id, values)?;
+        Ok(has_values)
     }
 
     /// remove a point from the index

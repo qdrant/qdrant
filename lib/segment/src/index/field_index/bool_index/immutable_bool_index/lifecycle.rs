@@ -70,7 +70,7 @@ impl FieldIndexBuilderTrait for ImmutableBoolIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-    ) -> OperationResult<()> {
+    ) -> OperationResult<bool> {
         self.0.add_point(id, payload)
     }
 

@@ -902,6 +902,7 @@ fn read_sparse(
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -950,6 +951,7 @@ mod tests {
         #[values(VectorStorageType::InRamMmap, VectorStorageType::ChunkedMmap)]
         storage_type: VectorStorageType,
     ) {
+        let _scope = ambient::test_guard();
         const DIM: usize = 4;
         const POINTS: PointOffsetType = 5;
 

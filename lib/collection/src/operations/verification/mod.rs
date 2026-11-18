@@ -33,6 +33,15 @@ pub struct VerificationPass {
     _inner: (),
 }
 
+/// Points a request reads, for the `require_tenant_filter` check.
+pub enum ReadScope<'a> {
+    /// Reads the points matching this filter, or all points if `None`.
+    Filtered(Option<&'a Filter>),
+    /// Reads no points, reads points by explicit ids, or is scoped by an enclosing request
+    /// (e.g. a prefetch, which inherits the filter of its query).
+    NotApplicable,
+}
+
 /// Trait to verify strict mode for requests.
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
@@ -70,6 +79,10 @@ pub trait StrictModeVerification {
     /// if the filter is used for filtered-UPDATES like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
     fn indexed_filter_write(&self) -> Option<&Filter>;
+
+    /// Points this request reads. Filtered reads must be scoped to tenants if
+    /// `require_tenant_filter` is set.
+    fn read_scope(&self) -> ReadScope<'_>;
 
     fn request_exact(&self) -> Option<bool>;
 
@@ -163,6 +176,36 @@ pub trait StrictModeVerification {
         Ok(())
     }
 
+    /// Checks that a filtered read is restricted to tenants, if the collection has tenant indexes.
+    fn check_tenant_filter(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        if strict_mode_config.require_tenant_filter != Some(true) {
+            return Ok(());
+        }
+
+        let filter = match self.read_scope() {
+            ReadScope::Filtered(filter) => filter,
+            ReadScope::NotApplicable => return Ok(()),
+        };
+
+        let Some(tenant_keys) = collection.tenant_keys_if_unscoped(filter) else {
+            return Ok(());
+        };
+
+        let tenant_keys_str = tenant_keys
+            .iter()
+            .map(|key| format!("\"{key}\""))
+            .join(", ");
+
+        Err(CollectionError::strict_mode(
+            format!("Request is not restricted to tenants, tenant keys: [{tenant_keys_str}]"),
+            "Add a `match` condition on a tenant key to the top-level `must` of the filter.",
+        ))
+    }
+
     /// Does the verification of all configured parameters. Only implement this function if you know what
     /// you are doing. In most cases implementing `check_custom` is sufficient.
     #[allow(async_fn_in_trait)]
@@ -174,6 +217,7 @@ pub trait StrictModeVerification {
         self.check_custom(collection, strict_mode_config).await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
+        self.check_tenant_filter(collection, strict_mode_config)?;
         self.check_request_exact(strict_mode_config)?;
         self.check_search_params(collection, strict_mode_config)
             .await?;
@@ -369,6 +413,10 @@ impl StrictModeVerification for SearchParams {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {

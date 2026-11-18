@@ -46,9 +46,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     ///
     /// Taken from this segment's own reads rather than re-read by the writer:
     /// a second read costs another round-trip on a remote backend and may
-    /// land on a different state than the batch resolved against. The deleted
-    /// mask is handed over only when already in memory — the disk-resident
-    /// tracker deliberately avoids materializing it.
+    /// land on a different state than the batch resolved against.
     pub fn writer_state(&self) -> WriterIdTrackerState {
         WriterIdTrackerState::of(&self.id_tracker.borrow())
     }

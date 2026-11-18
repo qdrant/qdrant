@@ -377,6 +377,10 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.is_stopped()
     }
 
+    pub fn is_stopped_flag(&self) -> &AtomicBool {
+        &self.query_context.is_stopped
+    }
+
     pub fn fork(&self) -> Self {
         Self {
             query_context: self.query_context,

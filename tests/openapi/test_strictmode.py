@@ -2466,6 +2466,63 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # finally allowed
     filtered_query().raise_for_status()
 
+def test_strict_mode_require_tenant_filter(collection_name):
+    berlin = {"key": "city", "match": {"value": "Berlin"}}
+
+    def post(endpoint, body):
+        return request_with_validation(
+            api=f"/collections/{{collection_name}}/points{endpoint}",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body=body,
+        )
+
+    def assert_rejected(response):
+        assert response.status_code == 400, response.text
+        assert "not restricted to tenants" in response.json()["status"]["error"]
+
+    set_strict_mode(collection_name, {"enabled": True, "require_tenant_filter": True})
+    assert get_strict_mode(collection_name)["require_tenant_filter"]
+
+    # No tenant index yet: unfiltered reads are allowed
+    post("/scroll", {"limit": 3}).raise_for_status()
+
+    request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"field_name": "city", "field_schema": {"type": "keyword", "is_tenant": True}},
+    ).raise_for_status()
+
+    # Unscoped reads are rejected
+    assert_rejected(post("/scroll", {"limit": 3}))
+    assert_rejected(post("/count", {}))
+    assert_rejected(post("/query", {"query": 1, "limit": 3}))
+    assert_rejected(post("/query", {"query": {"sample": "random"}, "limit": 3}))
+    assert_rejected(request_with_validation(
+        api="/collections/{collection_name}/facet",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={"key": "city"},
+    ))
+    assert_rejected(post("/count", {"filter": {"should": [berlin]}}))
+    assert_rejected(post("/count", {"filter": {"must": [{"key": "city", "match": {"except": ["Berlin"]}}]}}))
+    assert_rejected(post("/query", {"prefetch": [{"query": 1, "filter": {"must": [berlin]}}], "query": 1}))
+
+    # Reads scoped by a top-level `must` match on the tenant key are allowed
+    post("/scroll", {"filter": {"must": [berlin]}, "limit": 3}).raise_for_status()
+    post("/count", {"filter": {"must": [{"key": "city", "match": {"any": ["Berlin", "London"]}}]}}).raise_for_status()
+    post("/query", {"prefetch": [{"query": 1}], "query": 1, "filter": {"must": [berlin]}}).raise_for_status()
+
+    # Reads by id are not affected
+    post("", {"ids": [1, 2]}).raise_for_status()
+
+    # Disabled by default
+    set_strict_mode(collection_name, {"require_tenant_filter": False})
+    post("/scroll", {"limit": 3}).raise_for_status()
+
+
 def test_strict_mode_payload_index_count(collection_name):
     # test blocking access to payload indexes
     set_strict_mode(collection_name, {

@@ -13,6 +13,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
 /// Dispatcher impl: forwards every [`GeoIndexRead`] method to the active
@@ -76,18 +77,12 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&GeoPoint) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
                 index.for_each_matching_value(items, check_fn, on_match)
@@ -220,6 +215,14 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
         condition: &FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(

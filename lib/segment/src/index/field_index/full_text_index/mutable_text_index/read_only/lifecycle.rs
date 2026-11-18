@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::ambient;
 use common::ambient::hw::HwMetric;
-use common::reason::reason;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
@@ -52,6 +51,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
         config: TextIndexParams,
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
@@ -65,7 +65,6 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
 
@@ -73,6 +72,9 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),
                 |idx, value: Vec<u8>| {
+                    if deleted.get(idx as usize).is_some_and(|deleted| *deleted) {
+                        return Ok(true);
+                    }
                     let doc = FullTextIndex::deserialize_document(&value)?;
                     if scoring && doc.doc_len.is_none() {
                         records_without_length += 1;

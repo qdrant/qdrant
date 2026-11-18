@@ -40,8 +40,12 @@ where
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableMapIndex::open(fs, dir, max_point_offset)?.map(Self::Appendable))
+        Ok(
+            ReadOnlyAppendableMapIndex::open(fs, dir, max_point_offset, deleted)?
+                .map(Self::Appendable),
+        )
     }
 
     pub fn preopen_immutable(

@@ -508,6 +508,10 @@ message StrictModeConfig {
   optional uint32 max_resident_memory_percent = 21 [deprecated = true];
   // 22 was `max_disk_usage_percent`, superseded by the global quota config
   reserved 22;
+  // Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants.
+  // Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must`
+  // of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys.
+  optional bool require_tenant_filter = 23;
 }
 
 message StrictModeSparseConfig {
@@ -556,8 +560,8 @@ message CreateCollection {
   optional WalConfigDiff wal_config = 5;
   // Configuration of the optimizers
   optional OptimizersConfigDiff optimizers_config = 6;
-  // Number of shards in the collection, default is 1 for standalone, otherwise
-  // equal to the number of nodes. Minimum is 1
+  // Number of shards in the collection. If not specified, selected
+  // automatically. Minimum is 1
   optional uint32 shard_number = 7;
   // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
@@ -702,6 +706,7 @@ enum TokenizerType {
   Whitespace = 2;
   Word = 3;
   Multilingual = 4;
+  Code = 5;
 }
 
 message KeywordIndexParams {
@@ -719,6 +724,10 @@ message KeywordIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 5;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 6;
 }
 
 // Prefix matching options for the keyword index. Has no options yet:
@@ -745,6 +754,10 @@ message IntegerIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 6;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 7;
 }
 
 message FloatIndexParams {
@@ -761,6 +774,10 @@ message FloatIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message GeoIndexParams {
@@ -774,6 +791,10 @@ message GeoIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message StopwordsSet {
@@ -812,9 +833,15 @@ message TextIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
   // Enable ranking points by BM25 over this field.
-  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Changing it rebuilds the index.
   // Default: disabled.
   optional TextScoringParams scoring = 12;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`.
+  // The field must be inside the array's elements. Every query on the field, not only nested filters,
+  // treats each element as its own document: a condition matches a point when a single element
+  // matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when
+  // one of its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 13;
 }
 
 enum TextScoringType {
@@ -854,6 +881,10 @@ message BoolIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message DatetimeIndexParams {
@@ -870,6 +901,10 @@ message DatetimeIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message UuidIndexParams {
@@ -885,6 +920,10 @@ message UuidIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message PayloadIndexParams {

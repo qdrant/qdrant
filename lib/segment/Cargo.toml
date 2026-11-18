@@ -35,7 +35,6 @@ rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
-bm25 = { path = "../bm25" }
 object_store = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
@@ -48,6 +47,7 @@ pprof = { workspace = true }
 io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
+bitpacking = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }
@@ -95,11 +95,12 @@ smallvec = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
 byteorder = { workspace = true }
+crc32c = "0.6.8"
 stumpalo = { workspace = true }
 zerocopy = { workspace = true }
 zstd = { workspace = true }
-vaporetto = { version = "0.6.5" }
-rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
+vaporetto = { version = "0.7.0" }
+rust-stemmers = { package = "qdrant-rust-stemmers", version = "~1.2.3" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
 # (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
 sysinfo = { workspace = true }
@@ -114,9 +115,11 @@ charabia = { version = "0.10.0", default-features = false, features = [
 blobstore = { path = "../blobstore" }
 
 common = { path = "../common/common" }
+pairwise = { path = "../common/pairwise" }
 macros = { path = "../macros" }
 posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
+bm25 = { path = "../bm25" }
 sparse = { path = "../sparse" }
 gpu = { path = "../gpu" }
 
@@ -216,6 +219,10 @@ name = "range_filtering"
 harness = false
 
 [[bench]]
+name = "nested_filtering"
+harness = false
+
+[[bench]]
 name = "in_memory_id_tracker"
 harness = false
 
@@ -233,4 +240,8 @@ harness = false
 
 [[bench]]
 name = "facets"
+harness = false
+
+[[bench]]
+name = "tokenizers"
 harness = false

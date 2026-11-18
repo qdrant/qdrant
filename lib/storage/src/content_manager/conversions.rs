@@ -167,6 +167,7 @@ pub fn strict_mode_from_api(value: grpc::StrictModeConfig) -> StrictModeConfig {
         sparse_config,
         max_payload_index_count,
         max_resident_memory_percent,
+        require_tenant_filter,
     } = value;
     StrictModeConfig {
         enabled,
@@ -190,6 +191,7 @@ pub fn strict_mode_from_api(value: grpc::StrictModeConfig) -> StrictModeConfig {
         sparse_config: sparse_config.map(StrictModeSparseConfig::from),
         max_payload_index_count: max_payload_index_count.map(|i| i as usize),
         max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
+        require_tenant_filter,
     }
 }
 

@@ -7,6 +7,7 @@ use segment::data_types::index::{
     StemmingAlgorithm, StopwordsInterface, TextIndexParams, TextIndexType, TextScoringParams,
     TokenizerType,
 };
+use segment::json_path::JsonPath;
 use segment::types::Memory;
 
 /// Fluent builder for [`TextIndexParams`].
@@ -26,6 +27,7 @@ pub struct TextIndexParamsBuilder {
     stemmer: Option<StemmingAlgorithm>,
     enable_hnsw: Option<bool>,
     scoring: Option<TextScoringParams>,
+    nested: Option<JsonPath>,
 }
 
 impl TextIndexParamsBuilder {
@@ -102,10 +104,20 @@ impl TextIndexParamsBuilder {
         self
     }
 
-    /// Enable ranking points by BM25 over this field. Implies phrase matching.
+    /// Enable ranking points by BM25 over this field.
     /// Default: disabled.
     pub fn scoring(mut self, scoring: TextScoringParams) -> Self {
         self.scoring = Some(scoring);
+        self
+    }
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].title`. The field must be inside the array's elements. Every
+    /// query on the field treats each element as its own document: a condition matches
+    /// a point when a single element matches it, and BM25 scores elements separately.
+    /// Default: disabled.
+    pub fn nested(mut self, array: JsonPath) -> Self {
+        self.nested = Some(array);
         self
     }
 
@@ -126,6 +138,7 @@ impl TextIndexParamsBuilder {
             stemmer,
             enable_hnsw,
             scoring,
+            nested,
         } = self;
         TextIndexParams {
             r#type: TextIndexType::Text,
@@ -141,6 +154,7 @@ impl TextIndexParamsBuilder {
             stemmer,
             enable_hnsw,
             scoring,
+            nested,
         }
     }
 }

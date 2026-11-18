@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use common::ambient;
+use common::ambient::{self, ThreadPoolExt};
 use common::reason::Reason;
 use common::universal_io::{MmapFs, UniversalAppendFs, UniversalWriteFsAsync};
 use futures::StreamExt as _;
@@ -9,6 +9,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::{NonAppendableSegmentEntry as _, StorageSegmentEntry as _};
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::json_path::JsonPath;
 use segment::segment::update_only::{LookupSegment, UpdateOnlySegmentEnum};
 use segment::segment_constructor::build_segment;
@@ -66,25 +67,22 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let segments: Vec<(Uuid, ListedSegment)> =
             enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<_> = ambient::parallel(|handoff| {
-            pool.install(|| {
-                segments
-                    .into_par_iter()
-                    .map(|(uuid, listing)| {
-                        let _scope = handoff.enter_guard();
-                        let ListedSegment { path, writable } = listing;
-                        let segment =
-                            LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
-                        let writer = UpdateOnlySegmentEnum::open(
-                            fs.clone(),
-                            &path,
-                            &segment.segment_config,
-                            segment.writer_state(),
-                        )?;
-                        Ok((uuid, segment, writer, writable))
-                    })
-                    .collect::<OperationResult<Vec<_>>>()
-            })
+        let opened: Vec<_> = pool.ambient_install(|handoff| {
+            segments
+                .into_par_iter()
+                .map(|(uuid, listing)| {
+                    let _scope = handoff.enter_guard();
+                    let ListedSegment { path, writable } = listing;
+                    let segment = LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
+                    let writer = UpdateOnlySegmentEnum::open(
+                        fs.clone(),
+                        &path,
+                        &segment.segment_config,
+                        segment.writer_state(),
+                    )?;
+                    Ok((uuid, segment, writer, writable))
+                })
+                .collect::<OperationResult<Vec<_>>>()
         })?;
 
         let mut holder = LookupSegmentHolder::default();
@@ -101,7 +99,15 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             writers,
             pool,
             deferred_threshold_kb,
+            delete_versioning: DeleteVersioning::from_feature_flags(),
         })
+    }
+
+    /// Record delete versions as `versioning` says, rather than as the feature flags do.
+    #[cfg(test)]
+    pub(crate) fn with_delete_versioning(mut self, versioning: DeleteVersioning) -> Self {
+        self.delete_versioning = versioning;
+        self
     }
 }
 
@@ -140,6 +146,7 @@ where
         indexed_fields: &HashMap<JsonPath, PayloadFieldSchema>,
         temp_path: &Path,
     ) -> OperationResult<(Self, Uuid)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Built locally: the append-only components have no create path over a backend.
         fs_err::create_dir_all(temp_path)?;
         let scratch = tempfile::Builder::new()
@@ -148,7 +155,6 @@ where
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
         let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
         let uuid = token.id();
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         for (key, schema) in indexed_fields {
             segment.create_field_index(0, key, Some(schema))?;
         }

@@ -13,16 +13,6 @@ pub enum OperationEffectArea<'a> {
     Filter(&'a Filter),
 }
 
-/// Estimate how many points will be affected by the operation
-pub enum PointsOperationEffect {
-    /// No points affected
-    Empty,
-    /// Some points are affected
-    Some(Vec<PointIdType>),
-    /// Too many to enumerate, so we just say that it is a lot
-    Many,
-}
-
 pub trait EstimateOperationEffectArea {
     fn estimate_effect_area(&self) -> OperationEffectArea<'_>;
 }

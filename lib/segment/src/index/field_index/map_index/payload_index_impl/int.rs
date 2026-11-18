@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::ambient;
-use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::super::MapIndex;
@@ -18,6 +16,7 @@ use crate::index::field_index::{
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
     PayloadKeyType, ValueVariants,
@@ -51,6 +50,14 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
@@ -90,6 +97,14 @@ where
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
@@ -207,11 +222,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = ambient::unmeasured(
-            reason("Only used in HNSW building so no measurement needed here."),
-            || index.get_count_for_value(value),
-        )
-        .unwrap_or(0);
+        let count = index.get_count_for_value(value).unwrap_or(0);
         if count >= threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(key.clone(), (*value).into()),

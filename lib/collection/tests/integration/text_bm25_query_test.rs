@@ -40,8 +40,8 @@ fn text_of(i: u64) -> String {
     ["alpha"; 5][..(i % 5 + 1) as usize].join(" ") + &" gamma".repeat((i / 5) as usize)
 }
 
-/// A text index that scores: BM25 needs the document lengths `scoring` records,
-/// and the positions term frequencies come from, which `scoring` implies.
+/// A text index that scores: BM25 needs the document lengths and term
+/// frequencies `scoring` records.
 async fn text_collection(path: &std::path::Path, shard_number: u32) -> Collection {
     let params = TextIndexParams {
         scoring: Some(TextScoringParams::default()),

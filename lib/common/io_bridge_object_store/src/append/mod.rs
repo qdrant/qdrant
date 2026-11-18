@@ -3,7 +3,9 @@
 //! the strategy object: a native single-request write-offset append
 //! ([`NativeAppend`]), a whole-object multipart rewrite with server-side
 //! prefix copies ([`PartCopyAppend`]) for S3 stores without native append,
-//! or a server-side `compose` concatenation ([`ComposeAppend`]) on GCS.
+//! or a server-side `compose` concatenation on GCS — over its JSON API
+//! ([`ComposeAppend`]) or, for the S3 backend pointed at GCS with HMAC keys,
+//! over its XML API ([`XmlComposeAppend`]).
 
 mod context;
 
@@ -13,6 +15,7 @@ use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
 pub use context::{
     AppendContext, ComposeAppend, NativeAppend, PartCopyAppend, SignedRequestContext,
+    XmlComposeAppend,
 };
 use io_bridge::{AppendSupport, AsyncAppend};
 use object_store::aws::AmazonS3;
@@ -24,7 +27,8 @@ use crate::source::ObjectStoreSource;
 impl AsyncAppend for ObjectStoreSource<AmazonS3> {
     fn append_support(&self) -> AppendSupport {
         match self.append_context() {
-            Some(AppendContext::Native(_)) => AppendSupport::Always,
+            // Compose appends at any size, like the JSON API compose.
+            Some(AppendContext::Native(_) | AppendContext::XmlCompose(_)) => AppendSupport::Always,
             // Part-copy appends carry the copied prefix as non-last
             // multipart parts, which S3 caps from below.
             Some(AppendContext::PartCopy(_)) => AppendSupport::AboveThreshold {
@@ -101,6 +105,9 @@ impl AsyncAppend for ObjectStoreSource<AmazonS3> {
                     part_copy
                         .append(&store, &key, offset, data, expected_etag.as_deref())
                         .await
+                }
+                AppendContext::XmlCompose(xml_compose) => {
+                    xml_compose.append(&store, &key, offset, data).await
                 }
                 AppendContext::Compose(_) => Err(UniversalIoError::S3Config {
                     description: "compose append context belongs to a GCS store, \
@@ -192,11 +199,11 @@ impl AsyncAppend for ObjectStoreSource<GoogleCloudStorage> {
 
             match context {
                 AppendContext::Compose(compose) => compose.append(&store, &key, offset, data).await,
-                AppendContext::Native(_) | AppendContext::PartCopy(_) => {
-                    Err(UniversalIoError::S3Config {
-                        description: "S3 append context on a GCS store".to_string(),
-                    })
-                }
+                AppendContext::Native(_)
+                | AppendContext::PartCopy(_)
+                | AppendContext::XmlCompose(_) => Err(UniversalIoError::S3Config {
+                    description: "S3 append context on a GCS store".to_string(),
+                }),
             }
         }
     }
@@ -223,8 +230,10 @@ mod tests {
                 "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
                  </InitiateMultipartUploadResult>",
             ),
-            StubResponse::new(200)
-                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).body(
+                "<CopyPartResult><ETag>\"etag-copy\"</ETag>\
+                 <ChecksumCRC64NVME>rosUhgp5mIg=</ChecksumCRC64NVME></CopyPartResult>",
+            ),
             StubResponse::new(200).header("etag", "\"etag-data\""),
             StubResponse::new(200).body("<CompleteMultipartUploadResult/>"),
         ]);
@@ -266,8 +275,10 @@ mod tests {
                 "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
                  </InitiateMultipartUploadResult>",
             ),
-            StubResponse::new(200)
-                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).body(
+                "<CopyPartResult><ETag>\"etag-copy\"</ETag>\
+                 <ChecksumCRC64NVME>rosUhgp5mIg=</ChecksumCRC64NVME></CopyPartResult>",
+            ),
             StubResponse::new(200).header("etag", "\"etag-data\""),
             StubResponse::new(400).body("<Error><Code>EntityTooSmall</Code></Error>"),
             StubResponse::new(204),

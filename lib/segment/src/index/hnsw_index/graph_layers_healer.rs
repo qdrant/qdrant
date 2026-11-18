@@ -1,9 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::RwLock;
 use rayon::ThreadPool;
@@ -236,14 +235,15 @@ impl<'a> GraphLayersHealer<'a> {
         stopped: &AtomicBool,
         counter: &AtomicU64,
     ) -> OperationResult<()> {
-        pool.install(|| {
-            std::mem::take(&mut self.to_heal)
+        let to_heal = std::mem::take(&mut self.to_heal);
+        pool.ambient_install(|handoff| {
+            to_heal
                 .into_par_iter()
                 .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                    let _scope = handoff.enter_guard();
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()

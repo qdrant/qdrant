@@ -39,5 +39,6 @@ uuid = { workspace = true }
 walkdir = { workspace = true }
 
 [dev-dependencies]
+common = { path = "../common/common", features = ["testing"] }
 fs-err = { workspace = true, features = ["debug"] }
 tempfile = { workspace = true }

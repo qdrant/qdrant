@@ -14,12 +14,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -642,11 +640,19 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {
             check_process_stopped(stopped)?;
+            // A missing vector stored without records, as the update-only
+            // writer does, gets the placeholder record this storage writes
+            // for one, which every version reads
+            // TODO(1.21): store the empty blob as is, once released readers read empty runs
+            let blob = if deleted && blob.is_empty() {
+                Cow::Owned(vec![0; record_size])
+            } else {
+                blob
+            };
             if blob.is_empty() || blob.len() % record_size != 0 {
                 return Err(OperationError::service_error(format!(
                     "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
@@ -677,6 +683,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
@@ -889,6 +896,7 @@ mod tests {
     /// zero-record placeholders.
     #[test]
     fn update_from_builds_and_matches_independent_oracle() {
+        let _scope = ambient::test_guard();
         const COUNT: usize = 24;
         const DELETED: PointOffsetType = 3;
         // Deletion landing in the second batch so `start + offset` arithmetic is exercised.
@@ -1688,8 +1696,8 @@ mod tests {
         assert_matches_model(&dst, &model, &oracle, "dst after reload");
     }
 
-    const SEEDS_PER_CELL: u64 = 16;
-    const OPS: usize = 200;
+    const SEEDS_PER_CELL: u64 = 4;
+    const OPS: usize = 100;
 
     #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]

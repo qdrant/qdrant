@@ -2,8 +2,10 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
+use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::HnswGlobalConfig;
 use shard::files::SEGMENTS_PATH;
@@ -41,6 +43,7 @@ impl EdgeShard {
     /// Blocks until `budget` has a permit available, so a clone of one budget shared between
     /// concurrent calls (e.g. across shards) caps their combined resource usage.
     pub fn optimize_with_budget(&self, budget: ResourceBudget) -> OperationResult<bool> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let optimizers = self.build_blocking_optimizers();
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
@@ -165,7 +168,8 @@ impl EdgeShard {
 // Tests in this module exercise platform-agnostic optimizer logic but run
 // 5-25x slower on Windows due to filesystem IO. They are marked
 // `#[ignore]` on Windows; Linux and macOS jobs provide full coverage.
-// To execute them locally on Windows, run with `cargo test -- --ignored`.
+// To execute them locally on Windows, run
+// `cargo nextest run -p edge --run-ignored all`.
 #[cfg(test)]
 mod tests {
     #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]

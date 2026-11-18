@@ -8,6 +8,8 @@ use common::reason::reason;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+#[cfg(feature = "testing")]
+use shard::locked_segment::LockedSegment;
 use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
@@ -130,7 +132,7 @@ impl ShardReplicaSet {
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
             }
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
                 shard
                     .get()
                     .update(operation, effective_wait, effective_timeout)
@@ -436,7 +438,6 @@ impl ShardReplicaSet {
                 }
                 None
                 | Some(Shard::Local(_))
-                | Some(Shard::Proxy(_))
                 | Some(Shard::ForwardProxy(_))
                 | Some(Shard::QueueProxy(_))
                 | Some(Shard::Dummy(_)) => {
@@ -661,6 +662,13 @@ impl ShardReplicaSet {
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
+        // Payload-index updates arrive after consensus commits them. Refusing one here
+        // can leave the schema saved without a local index and block consensus replay
+        // behind point writes that keep consuming the replenished tokens.
+        if let CollectionUpdateOperations::FieldIndexOperation(_) = &operation.operation {
+            return Ok(());
+        }
+
         let Some(local_shard) = local.local_shard() else {
             return Ok(());
         };
@@ -854,6 +862,55 @@ impl ShardReplicaSet {
         match self.local.read().await.deref() {
             Some(local) => local.plunge_async().await.map(Some),
             None => Ok(None),
+        }
+    }
+
+    /// Synchronously force-flush the local shard's segments (WAL-applied state → disk).
+    ///
+    /// Model-testing helper: an Edge read-only follower only sees flushed state, so the
+    /// soak flushes before comparing follower reads against its model. Panics on a
+    /// missing or proxied local shard: the soak never transfers shards, so anything but
+    /// a plain local shard is a harness bug.
+    #[cfg(feature = "testing")]
+    pub async fn full_flush_local(&self) {
+        let local = self.local.read().await;
+        match local.as_ref() {
+            Some(Shard::Local(shard)) => shard.full_flush(),
+            Some(shard @ (Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_))) => {
+                panic!(
+                    "full_flush_local: expected a plain local shard, got {}",
+                    shard.variant_name(),
+                )
+            }
+            None => panic!("full_flush_local: replica set has no local shard"),
+        }
+    }
+
+    /// Whether the local shard currently holds any proxy segments, i.e. an optimization is
+    /// in flight.
+    ///
+    /// Model-testing helper, like [`Self::full_flush_local`]: deletes against a proxied
+    /// segment are buffered in the proxy's in-memory `deleted_points` map and reach segment
+    /// files only when the optimization finishes, so no flush can make an Edge follower see
+    /// them; edge checkpoints wait for this to clear before comparing. Same local-shard
+    /// contract as `full_flush_local`: panics on a missing or proxied (shard-level) local
+    /// shard.
+    #[cfg(feature = "testing")]
+    pub async fn local_has_proxy_segments(&self) -> bool {
+        let local = self.local.read().await;
+        match local.as_ref() {
+            Some(Shard::Local(shard)) => shard
+                .segments
+                .read()
+                .iter()
+                .any(|(_id, segment)| matches!(segment, LockedSegment::Proxy(_))),
+            Some(shard @ (Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_))) => {
+                panic!(
+                    "local_has_proxy_segments: expected a plain local shard, got {}",
+                    shard.variant_name(),
+                )
+            }
+            None => panic!("local_has_proxy_segments: replica set has no local shard"),
         }
     }
 }

@@ -62,7 +62,7 @@ impl IndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload),
             IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
@@ -1107,6 +1107,7 @@ fn test_block_index_fallback_equivalence() {
 /// must not fail `preopen` and must open in fallback mode.
 #[test]
 fn test_block_index_preopen() {
+    let _scope = ambient::test_guard();
     use common::universal_io::{CachedFs, CachedReadFs as _, MmapFile, Populate, ReadOnly};
 
     use crate::index::field_index::numeric_index::on_disk_numeric_index::OnDiskNumericIndex;

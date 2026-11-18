@@ -35,6 +35,7 @@ where
 #[cfg(test)]
 mod tests {
     use common::ambient;
+    use common::bitvec::BitSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use serde_json::Value;
@@ -77,6 +78,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
             )
             .unwrap()
             .unwrap();
@@ -91,9 +93,14 @@ mod tests {
 
         // Values at or past `max_point_offset` are not loaded.
         let capped: ReadOnlyAppendableNumericIndex<FloatPayloadType, ReadOnly<MmapFile>> =
-            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf(), 2)
-                .unwrap()
-                .unwrap();
+            ReadOnlyAppendableNumericIndex::open(
+                &fs,
+                dir.path().to_path_buf(),
+                2,
+                BitSlice::empty(),
+            )
+            .unwrap()
+            .unwrap();
         assert_eq!(capped.get_points_count(), 2);
         assert_eq!(capped.values_count(1), Some(2));
         assert_eq!(capped.values_count(2), None);

@@ -465,8 +465,9 @@ impl UpdateWorkers {
 
     /// Ensure there is at least one appendable segment with enough capacity
     ///
-    /// If there is no appendable segment, or all are at or over capacity, a new empty one is
-    /// created.
+    /// If there is no appendable segment, or all are at or over capacity or have unflushed
+    /// copy-on-write moves out of them, a new empty one is created. See
+    /// [`shard::segment_holder::SegmentHolder::has_appendable_segment_with_capacity`].
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
     pub fn ensure_appendable_segment_with_capacity(
@@ -481,7 +482,10 @@ impl UpdateWorkers {
             .has_appendable_segment_with_capacity(thresholds_config.max_segment_size_bytes());
 
         if no_segment_with_capacity {
-            log::debug!("Creating new appendable segment, all existing segments are over capacity");
+            log::debug!(
+                "Creating new appendable segment, all existing ones are over capacity or have \
+                 unflushed copy-on-write moves out of them"
+            );
 
             let segments_guard = segments.upgradable_read();
             // Building the segment yields a `NewSegmentToken` obliging us to register it.

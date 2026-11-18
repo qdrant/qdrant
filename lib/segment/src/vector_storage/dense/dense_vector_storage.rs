@@ -547,7 +547,7 @@ mod tests {
 
         assert_eq!(points[1], vector);
 
-        id_tracker.drop(PointIdType::NumId(2)).unwrap();
+        id_tracker.drop(PointIdType::NumId(2), None).unwrap();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);

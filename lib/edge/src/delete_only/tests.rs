@@ -3,21 +3,21 @@
 
 use std::collections::HashMap;
 
+use common::ambient;
 use common::universal_io::MmapFs;
-use segment::common::operation_error::OperationResult;
 use segment::segment::update_only::TrackerLookup;
 use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::delete_only::DeleteOnlyEdgeShard;
+use crate::PointOperations::{DeletePoints, UpsertPoints};
 use crate::read_only::tests::{exact_count, open_follower, point, test_config, upsert};
-use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator};
-use crate::update_only::UpdateOnlyEdgeShard;
-use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
+use crate::{
+    DeleteOnlyEdgeShard, EdgeConfig, EdgeOptimizersConfig, EdgeShard, ListedSegment,
+    LocalSegmentEnumerator, OperationResult, SegmentEnumerator, UpdateOnlyEdgeShard,
+};
 
 /// Version of the newer copies of points 1-3.
 const NEWER: SeqNumberType = 100;
@@ -45,6 +45,7 @@ fn only(dir: &TempDir, keep: &[Uuid]) -> Only {
 
 /// `(immutable, appendable)` segment uuids of the shard at `dir`.
 fn segments(dir: &TempDir) -> (Uuid, Uuid) {
+    let _scope = ambient::test_guard();
     let (mut immutable, mut appendable) = (None, None);
     for (uuid, listed) in LocalSegmentEnumerator::new(dir.path())
         .list_segments()
@@ -120,7 +121,7 @@ fn deletes_the_copies_older_than_the_published_ones() {
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids(1..=3));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 3);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 3);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
@@ -158,10 +159,102 @@ fn a_reload_keeps_deletes_made_after_open() {
     shard.live_reload().unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids([1, 3]));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 2);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 2);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
     // Points 1 to 3 from the appendable, the rest but 5 from the immutable.
     assert_eq!(exact_count(&open_follower(dir.path())), 299);
+}
+
+/// The deletes record the version they are given.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \
+              memory-mapped, which Windows refuses"
+)]
+#[test]
+fn deletes_record_the_given_version() {
+    use common::universal_io::MmapFile;
+    use segment::id_tracker::delete_versions::{DeleteLogReader, DeleteVersioning};
+
+    let (dir, immutable) = shadowed_leader("edge-delete-only-version");
+
+    let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
+        .unwrap()
+        .with_delete_versioning(DeleteVersioning::Versioned);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(shard.delete_points(&stale, NEWER + 7).unwrap(), 3);
+
+    let segment_path = LocalSegmentEnumerator::new(dir.path())
+        .list_segments()
+        .unwrap()
+        .remove(&immutable)
+        .unwrap()
+        .path;
+    let mut log = DeleteLogReader::<MmapFile>::new(&segment_path);
+    let versions: Vec<SeqNumberType> = log
+        .read_new(&MmapFs)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.version)
+        .collect();
+    assert_eq!(versions, [NEWER + 7; 3]);
+}
+
+/// A follower whose waterline is below the dedup's version keeps serving the outdated copies next
+/// to the newer ones, and drops them once a waterline covers the dedup. The points stay served
+/// throughout.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \
+              memory-mapped, which Windows refuses"
+)]
+#[test]
+fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
+    use common::universal_io::MmapFile;
+    use segment::id_tracker::delete_versions::DeleteVersioning;
+
+    use crate::{
+        CountRequest, EdgeScope, EdgeShardRead as _, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
+    };
+
+    let approximate_count = |follower: &ReadOnlyEdgeShard<MmapFile>| {
+        follower
+            .count(CountRequest {
+                filter: None,
+                exact: false,
+            })
+            .unwrap()
+    };
+
+    let (dir, immutable) = shadowed_leader("edge-delete-only-gated");
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: None,
+            pools: Default::default(),
+            waterline: Some(NEWER),
+        },
+        &EdgeScope::new(),
+    )
+    .unwrap();
+    assert_eq!(approximate_count(&follower), 303, "both copies of 1-3");
+
+    let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
+        .unwrap()
+        .with_delete_versioning(DeleteVersioning::Versioned);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(shard.delete_points(&stale, NEWER + 1).unwrap(), 3);
+
+    follower.live_reload_up_to(NEWER).unwrap();
+    assert_eq!(exact_count(&follower), 300);
+    assert_eq!(approximate_count(&follower), 303, "held");
+
+    follower.live_reload_up_to(NEWER + 1).unwrap();
+    assert_eq!(exact_count(&follower), 300);
+    assert_eq!(approximate_count(&follower), 300);
 }

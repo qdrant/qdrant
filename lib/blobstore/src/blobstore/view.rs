@@ -71,14 +71,44 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
             ViewVariant::Logstore(view) => view.read_from_pages::<P>(pointer),
         }
     }
+
+    /// Decompressed length of each value, the length of its [`Blob`] encoding, without
+    /// reading the value: at most its compression's length prefix is read. `None` for
+    /// point offsets without a value. `hw_metric` is bumped by the prefix bytes read.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match &self.variant {
+            ViewVariant::Gridstore(view) => {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+            ViewVariant::Logstore(view) => {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            }
+        }
+    }
 }
 
 impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     /// Get the value for a given point offset.
-    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
         match &self.variant {
-            ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset),
-            ViewVariant::Logstore(view) => view.get_value::<P>(point_offset),
+            ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset, hw_metric),
+            ViewVariant::Logstore(view) => view.get_value::<P>(point_offset, hw_metric),
         }
     }
 

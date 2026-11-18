@@ -41,9 +41,9 @@ pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
     fn is_in_ram_or_mmap() -> bool;
-    /// Whether the encoded data was opened cold, see [`EncodedStorageWrite::is_cold`].
+    /// Whether the encoded data was opened cold, see [`EncodedStorage::is_cold`].
     ///
-    /// [`EncodedStorageWrite::is_cold`]: crate::encoded_storage::EncodedStorageWrite::is_cold
+    /// [`EncodedStorage::is_cold`]: crate::encoded_storage::EncodedStorage::is_cold
     fn is_cold(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
@@ -87,11 +87,7 @@ pub trait EncodedVectors: Sized {
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
-    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()>;
-
     fn vectors_count(&self) -> usize;
-
-    fn flusher(&self) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -112,6 +108,16 @@ pub trait EncodedVectors: Sized {
         query: &Self::EncodedQuery,
         bytes: &[u8],
     ) -> f32;
+}
+
+/// [`EncodedVectors`] that accept new vectors: quantizations that can encode a vector on its own,
+/// over an [`EncodedStorageWrite`].
+///
+/// [`EncodedStorageWrite`]: crate::encoded_storage::EncodedStorageWrite
+pub trait EncodedVectorsWrite: EncodedVectors {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()>;
+
+    fn flusher(&self) -> Flusher;
 }
 
 impl DistanceType {

@@ -81,9 +81,7 @@ where
                 vector.to_owned(),
                 self.vector_storage,
                 Some(quantized_vectors),
-                filter
-                    .map(|f| self.payload_index.filter_context(f))
-                    .transpose()?,
+                filter.map(|f| self.graph_filter_context(f)).transpose()?,
                 deleted_points,
             )?;
             let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
@@ -115,9 +113,7 @@ where
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
             trace::mark!("filter_context begin");
-            let filter_context = filter
-                .map(|f| self.payload_index.filter_context(f))
-                .transpose()?;
+            let filter_context = filter.map(|f| self.graph_filter_context(f)).transpose()?;
             trace::mark!("search_scorer begin");
             let points_scorer = construct_search_scorer(
                 vector,
@@ -313,6 +309,15 @@ where
         )
     }
 
+    /// Filter context for a graph search. The walk checks one point at a time and can't
+    /// go on until the check returns, so conditions on cold indexes are read up front.
+    fn graph_filter_context<'f>(
+        &'f self,
+        filter: &'f Filter,
+    ) -> OperationResult<OptimizedFilter<'f>> {
+        self.payload_index.filter_context_for_serial_checks(filter)
+    }
+
     /// The first `n` points matching `filter`, in payload index order.
     fn first_filtered_points(
         &self,
@@ -321,14 +326,15 @@ where
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>> {
         let cardinality = self.payload_index.estimate_cardinality(filter)?;
-        let points = self.payload_index.iter_filtered_points(
+        let points = self.payload_index.iter_filtered_points_first(
             filter,
             &cardinality,
             is_stopped,
             // HNSW is built on non-appendable segments, which have no deferred points.
             DeferredBehavior::WithDeferred,
+            Some(n),
         )?;
-        Ok(points.take(n).collect())
+        Ok(points.collect())
     }
 
     fn discover_search_with_graph(

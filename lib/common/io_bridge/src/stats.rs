@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+use common::ambient::hw::HwMetric;
 use common::ambient::trace::{IoRequest, Op, Outcome};
 use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
 use strum::{EnumCount as _, IntoEnumIterator as _};
@@ -36,6 +37,7 @@ impl RemoteIoStats {
             trace: IoRequest::new(op, path, range.clone()),
             stats: self.op(op).clone(),
             guard: None,
+            op,
             range,
         }
     }
@@ -96,6 +98,7 @@ pub(crate) struct RequestObserver {
     trace: IoRequest,
     stats: OpStats,
     guard: Option<OpGuard>,
+    op: Op,
     range: Range<u64>,
 }
 
@@ -119,7 +122,20 @@ impl RequestObserver {
             return;
         };
         match outcome {
-            Outcome::Ok => guard.complete(self.range.end.saturating_sub(self.range.start) as usize),
+            Outcome::Ok => {
+                let bytes = self.range.end.saturating_sub(self.range.start) as usize;
+                match self.op {
+                    Op::Read | Op::ReadFrom => HwMetric::RemoteIoNonCachedRead.bump(bytes),
+                    Op::List
+                    | Op::Exists
+                    | Op::Len
+                    | Op::Create
+                    | Op::Remove
+                    | Op::Save
+                    | Op::Append => (),
+                }
+                guard.complete(bytes);
+            }
             Outcome::NotFound => guard.not_found(),
             Outcome::Err => guard.failed(),
             Outcome::Cancelled => drop(guard),

@@ -1,9 +1,6 @@
 use std::cmp;
-use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::Reason;
-use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
@@ -12,6 +9,7 @@ use shard::query::query_context::init_query_context_with_stopping_flag;
 use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
 use shard::search_result_aggregator::BatchResultAggregator;
+use shard::search_shared_filter::share_group_filters;
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
@@ -46,7 +44,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if searches.is_empty() {
             return Ok(Vec::new());
         }
@@ -69,9 +66,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .map(|search| self.config.get_distance(search.query.get_vector_name()))
             .collect::<OperationResult<Vec<_>>>()?;
 
-        let Some(context) =
-            fill_query_context_over(query_context, &self.segments, &self.is_stopped)?
-        else {
+        let Some(context) = self.fill_query_context(query_context)? else {
             // No segments to search
             return Ok(vec![Vec::new(); searches.len()]);
         };
@@ -83,10 +78,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         // per-segment query context from the shared `context`.
         let points_by_segment = self.par_map_segments(|segment| {
             let segment_query_context = context.get_segment_query_context();
+            // Held for the whole batch: shared filters are resolved to this segment's points
             let segment = segment.read_segment();
+            let shared_filters = share_group_filters(&groups, &*segment, &segment_query_context)?;
 
             let mut points_by_request = Vec::with_capacity(searches.len());
-            for group in &groups {
+            for (group, shared_filter) in groups.iter().zip(&shared_filters) {
                 self.check_stopped()?;
                 let query_vectors: Vec<_> = group.query_vectors.iter().collect();
                 let batched_points = segment.search_batch(
@@ -94,7 +91,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     &query_vectors,
                     &group.params.with_payload,
                     &group.params.with_vector,
-                    group.params.filter,
+                    shared_filter.as_ref().or(group.params.filter),
                     group.params.top,
                     group.params.params,
                     &segment_query_context,
@@ -130,6 +127,45 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         Ok(points_by_request)
     }
+
+    /// Fill `query_context` from this view's segments, as
+    /// `SegmentsSearcher::fill_query_context` does over a segment holder.
+    /// Statistics beyond the point count are gathered from the segments in
+    /// parallel, each into a clone of the unfilled context, and summed.
+    /// Returns `None` when there are no segments to search.
+    pub(super) fn fill_query_context(
+        &self,
+        mut query_context: QueryContext,
+    ) -> OperationResult<Option<QueryContext>> {
+        if self.segments.is_empty() {
+            return Ok(None);
+        }
+
+        // Only the available point count is gathered, too little work per
+        // segment to pay for a task each.
+        if !query_context.has_statistics_to_collect() {
+            for segment in &self.segments {
+                self.check_stopped()?;
+                segment
+                    .read_segment()
+                    .fill_query_context(&mut query_context)?;
+            }
+            self.check_stopped()?;
+            return Ok(Some(query_context));
+        }
+
+        // Every count is still zero, so each clone carries only its own segment.
+        debug_assert_eq!(query_context.available_point_count(), 0);
+        let forks = self.par_map_segments(|segment| {
+            let mut fork = query_context.clone();
+            segment.read_segment().fill_query_context(&mut fork)?;
+            Ok(fork)
+        })?;
+        for fork in forks {
+            query_context.merge_statistics(fork);
+        }
+        Ok(Some(query_context))
+    }
 }
 
 /// Turn the raw segment scores of a single request into the scores the caller expects: apply the
@@ -155,13 +191,13 @@ fn postprocess_scores(
     }
 
     if let Some(score_threshold) = search.score_threshold {
-        debug_assert!(
-            points.is_sorted_by(|left, right| distance.is_ordered(left.score, right.score)),
-        );
+        let order = search.query.score_order(distance);
+
+        debug_assert!(points.is_sorted_by(|left, right| order.is_ordered(left.score, right.score)));
 
         let below_threshold = points
             .iter()
-            .position(|point| !distance.check_threshold(point.score, score_threshold));
+            .position(|point| !order.check_threshold(point.score, score_threshold));
 
         if let Some(below_threshold_idx) = below_threshold {
             points.truncate(below_threshold_idx);
@@ -169,28 +205,4 @@ fn postprocess_scores(
     }
 
     let _ = points.drain(..cmp::min(points.len(), search.offset));
-}
-
-/// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.
-///
-/// Sequential read-handle equivalent of `SegmentsSearcher::fill_query_context`, which
-/// fans out over a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
-pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
-    mut query_context: QueryContext,
-    segments: &[H],
-    is_stopped: &AtomicBool,
-) -> OperationResult<Option<QueryContext>> {
-    if segments.is_empty() {
-        return Ok(None);
-    }
-
-    for segment in segments {
-        check_process_stopped(is_stopped)?;
-        segment
-            .read_segment()
-            .fill_query_context(&mut query_context)?;
-    }
-
-    check_process_stopped(is_stopped)?;
-    Ok(Some(query_context))
 }

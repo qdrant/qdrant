@@ -34,7 +34,7 @@ use crate::types::{
 };
 
 const DIM: usize = 16;
-const POINTS: usize = 6_000;
+const POINTS: usize = 3_000;
 const VALUES: usize = 3;
 const HEALS: usize = 6;
 
@@ -43,11 +43,12 @@ const HEALS: usize = 6;
 /// the replacements must be linked back, as in a graph built by search, or each heal leaves
 /// more one-way links and filtered search gets a little worse every time.
 ///
-/// After six heals, the share of two-way links was 0.82 of the links healed this way, 0.77
-/// without the backlinks, 0.75 replacing each removed point with its closest link, and 0.88 in
-/// a fresh build.
+/// After six heals, the share of two-way links was 0.85 of the links healed this way, 0.79
+/// without the backlinks, and 0.92 in a fresh build. With 6,000 points it was 0.82, 0.77, 0.75
+/// replacing each removed point with its closest link, and 0.88.
 #[test]
 fn test_heal_payload_links_repeatedly() {
+    let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new()
         .prefix("heal_payload_links")
@@ -114,7 +115,9 @@ fn two_way_share(index: &HNSWIndex) -> f64 {
     two_way as f64 / total as f64
 }
 
-const OLD_INTEGER_VALUES: usize = 8;
+// With fewer, the segment is too small: the block of the new value exceeds the largest block
+// the healed graph builds, `BlockFilter::fits`.
+const OLD_INTEGER_VALUES: usize = 4;
 const POINTS_PER_INTEGER_VALUE: usize = 600;
 const NEW_INTEGER_VALUE_POINTS: usize = 350;
 
@@ -125,6 +128,7 @@ const NEW_INTEGER_VALUE_POINTS: usize = 350;
 /// from their old links.
 #[rstest]
 fn test_heal_new_integer_value(#[values(0, 16)] m: usize, #[values(false, true)] range: bool) {
+    let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new()
         .prefix("heal_new_integer_value")
@@ -187,6 +191,13 @@ fn test_heal_new_integer_value(#[values(0, 16)] m: usize, #[values(false, true)]
         "m={m} range={range}: links among new value points per point: healed \
          {healed_degree:.2}, fresh {fresh_degree:.2}; old links kept: healed {healed_kept:.3}, \
          fresh {fresh_kept:.3}"
+    );
+    // The main graph alone gives each new value point about one such link: without a block for
+    // the new value in the fresh build, the next check would pass without testing anything.
+    assert!(
+        fresh_degree > 4.0,
+        "fresh build made no block for the new value ({fresh_degree:.2}): the test no longer \
+         exercises healing it",
     );
     assert!(
         healed_degree >= fresh_degree / 2.0,

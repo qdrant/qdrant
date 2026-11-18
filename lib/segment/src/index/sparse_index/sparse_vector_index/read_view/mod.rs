@@ -1,3 +1,4 @@
+mod filter_checks;
 mod idf;
 mod search;
 

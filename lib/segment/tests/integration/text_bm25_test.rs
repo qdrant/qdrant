@@ -42,7 +42,8 @@ fn field() -> JsonPath {
     JsonPath::new("text")
 }
 
-/// Scoring needs positions, which `phrase_matching` turns on.
+/// Text params with phrase matching. The tests turn scoring on with
+/// `override_scoring`.
 fn text_params() -> TextIndexParams {
     TextIndexParams {
         phrase_matching: Some(true),

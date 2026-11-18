@@ -21,8 +21,8 @@ use parking_lot::RwLock;
 pub(super) use reader::LogstoreReader;
 pub(super) use view::LogstoreView;
 
-use super::Flusher;
 use super::reader::CONFIG_FILENAME;
+use super::{Flusher, ITER_BATCH_SIZE};
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{LogstoreConfig, StorageConfig};
@@ -361,8 +361,9 @@ where
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<P>(point_offset))
+        self.with_view(|view| view.get_value::<P>(point_offset, hw_metric))
     }
 
     /// Get the serialized value for a given point offset.
@@ -371,9 +372,10 @@ where
     pub(super) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         self.with_view(|view| {
-            let bytes = view.get_value_bytes::<P>(point_offset)?;
+            let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
             Ok(bytes.map(Cow::into_owned))
         })
     }
@@ -456,6 +458,7 @@ where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
+        let mut batch = Vec::new();
         let mut current_offset = 0;
         let mut max_offset = PointOffset::MAX;
 
@@ -467,8 +470,6 @@ where
             // See:
             // - https://github.com/qdrant/qdrant/pull/7983
             // - https://github.com/qdrant/qdrant/pull/8248
-            const BATCH_SIZE: PointOffset = 256;
-
             self.with_view(|view| -> Result<_, E> {
                 max_offset = view.max_point_offset()?;
 
@@ -476,10 +477,16 @@ where
                     return Ok(());
                 }
 
-                let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_offset);
+                let end_offset = current_offset
+                    .saturating_add(ITER_BATCH_SIZE)
+                    .min(max_offset);
 
-                should_continue =
-                    view.iter_range(current_offset..end_offset, &mut callback, hw_metric)?;
+                should_continue = view.iter_range(
+                    current_offset..end_offset,
+                    &mut batch,
+                    &mut callback,
+                    hw_metric,
+                )?;
 
                 if should_continue {
                     current_offset = end_offset;

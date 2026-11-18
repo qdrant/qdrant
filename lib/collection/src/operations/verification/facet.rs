@@ -2,7 +2,7 @@ use api::rest::FacetRequestInternal;
 use segment::data_types::facets::FacetParams;
 use segment::types::{Filter, SearchParams};
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 
 impl StrictModeVerification for FacetRequestInternal {
     fn query_limit(&self) -> Option<usize> {
@@ -15,6 +15,10 @@ impl StrictModeVerification for FacetRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -37,6 +41,10 @@ impl StrictModeVerification for FacetParams {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {

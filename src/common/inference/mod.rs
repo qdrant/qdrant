@@ -3,11 +3,9 @@
 pub mod api_keys;
 mod batch_processing;
 mod batch_processing_grpc;
-pub mod bm25_inference;
 pub(crate) mod config;
 mod infer_processing;
 pub mod inference_input;
-mod local_model;
 pub mod params;
 pub mod query_requests_grpc;
 pub mod query_requests_rest;

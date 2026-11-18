@@ -45,8 +45,6 @@ use zerocopy::little_endian::U64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::bitpacking::{BitWriter, make_bitmask, packed_bits};
-use crate::generic_consts::Random;
-use crate::universal_io::{ReadBytesItem, UioResult, UniversalIoError, UniversalRead};
 
 /// The size of the tail padding.
 /// These extra 7 bytes after the last chunk let the decompressor read a whole
@@ -249,46 +247,6 @@ impl Reader {
         self.params.compressed_size_bytes().unwrap() // Checked by `Parameters::validate`.
     }
 
-    /// For each `i` in `indices`, read a pair of values:
-    /// `value[i]` and `value[i + 1]`.
-    pub fn read_pairs_iter<'a, S: UniversalRead>(
-        self,
-        storage: &'a S,
-        file_offset: u64,
-        indices: &'a [usize],
-    ) -> UioResult<impl Iterator<Item = UioResult<(usize, (u64, u64))>> + 'a> {
-        // Each pair needs `index + 1`, so the last value is not a valid index.
-        let max_index = self.decompressed_len().saturating_sub(1);
-        if let Some(&index) = indices.iter().find(|&&index| index >= max_index) {
-            return Err(UniversalIoError::OutOfBounds {
-                start: index as u64,
-                end: index as u64 + 2,
-                elements: self.decompressed_len(),
-            });
-        }
-
-        // One read per pair, from `index`'s chunk through the end of what
-        // `index + 1` needs. Both values share a chunk unless `index` ends one.
-        let chunk_read_len = (self.chunk_size_bytes + TAIL_SIZE) as u64;
-        let items = indices.iter().enumerate().map(move |(position, &index)| {
-            let first = file_offset + self.chunk_offset(index) as u64;
-            let second = file_offset + self.chunk_offset(index + 1) as u64;
-            ReadBytesItem {
-                user_data: (position, index),
-                range: first..second + chunk_read_len,
-                align: 1,
-            }
-        });
-        Ok(storage.read_bytes_iter(items, Random)?.map(move |result| {
-            let ((position, index), chunk) = result?;
-            // `chunk` starts at `index`'s chunk, so locate `index + 1` in it.
-            let second = self.chunk_offset(index + 1) - self.chunk_offset(index);
-            let start = self.decode_chunk(index, &chunk);
-            let end = self.decode_chunk(index + 1, &chunk[second..]);
-            Ok((position, (start, end)))
-        }))
-    }
-
     /// Byte offset of the chunk containing the value at `index`.
     #[inline]
     fn chunk_offset(self, index: usize) -> usize {
@@ -337,13 +295,8 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::universal_io::{MmapFs, OpenOptions, UniversalReadFs as _};
-
     #[test]
     fn test_compress_decompress() {
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let file = file.path();
-
         for values in test_sequences() {
             for params in Parameters::try_all(&values) {
                 let reader = params.validate().unwrap();
@@ -360,20 +313,6 @@ mod tests {
                     assert_eq!(slice_reader.read_pair(index), Some(expected));
                 }
                 assert_eq!(slice_reader.read_pair(oob), None);
-
-                // Reader::read_pairs_iter
-                let unrelated_data = [0xAA; 3]; // for `file_offset` testing
-                fs_err::write(file, [&unrelated_data[..], &compressed].concat()).unwrap();
-                let storage = MmapFs.open(file, OpenOptions::new_for_test(), ()).unwrap();
-                let offset = unrelated_data.len() as u64;
-                let indices = (0..expected.len()).collect::<Vec<_>>();
-                let mut out = vec![(1234, 12345); expected.len()];
-                for result in reader.read_pairs_iter(&storage, offset, &indices).unwrap() {
-                    let (position, pair) = result.unwrap();
-                    out[position] = pair;
-                }
-                assert_eq!(out, expected);
-                assert!(reader.read_pairs_iter(&storage, offset, &[oob]).is_err());
             }
         }
     }

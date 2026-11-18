@@ -73,6 +73,7 @@ def test_peer_proxy_cluster_transfer_and_restart(tmp_path, uris_in_env):
     assert processes[-1].proxy is restarted_peer.proxy
     wait_for_peer_online(peer_uris[2])
     wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_uris)
+    wait_for_uniform_cluster_status(peer_uris)
 
     for uri in peer_uris:
         assert get_cluster_info(uri)["peers"][str(peer_ids[2])]["uri"].rstrip("/") == restarted_peer.proxy.uri

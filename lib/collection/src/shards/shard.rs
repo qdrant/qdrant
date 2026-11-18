@@ -22,7 +22,6 @@ use crate::operations::types::{CollectionError, CollectionResult, OptimizersStat
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::{LocalShard, LocalShardOptimizations};
-use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -49,7 +48,6 @@ pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
 /// Contains a part of the collection's points
 pub enum Shard {
     Local(LocalShard),
-    Proxy(ProxyShard),
     ForwardProxy(ForwardProxyShard),
     QueueProxy(QueueProxyShard),
     Dummy(DummyShard),
@@ -60,7 +58,6 @@ impl Shard {
         match self {
             // Note: we use these exact strings in cluster manager
             Shard::Local(_) => "local shard",
-            Shard::Proxy(_) => "proxy shard",
             Shard::ForwardProxy(_) => "forward proxy shard",
             Shard::QueueProxy(_) => "queue proxy shard",
             Shard::Dummy(_) => "dummy shard",
@@ -70,7 +67,6 @@ impl Shard {
     pub fn get(&self) -> &(dyn ShardOperation + Sync + Send + '_) {
         match self {
             Shard::Local(local_shard) => local_shard,
-            Shard::Proxy(proxy_shard) => proxy_shard,
             Shard::ForwardProxy(proxy_shard) => proxy_shard,
             Shard::QueueProxy(proxy_shard) => proxy_shard,
             Shard::Dummy(dummy_shard) => dummy_shard,
@@ -85,7 +81,6 @@ impl Shard {
     pub fn local_shard(&self) -> Option<&LocalShard> {
         match self {
             Shard::Local(local_shard) => Some(local_shard),
-            Shard::Proxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
             Shard::ForwardProxy(proxy_shard) => Some(&proxy_shard.wrapped_shard),
             Shard::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard(),
             Shard::Dummy(_) => None,
@@ -106,7 +101,6 @@ impl Shard {
                 shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail, timeout).await?,
             Shard::ForwardProxy(proxy_shard) => {
                 proxy_shard.get_telemetry_data(detail, timeout).await?
             }
@@ -125,7 +119,6 @@ impl Shard {
     ) -> CollectionResult<OptimizersStatus> {
         match self {
             Shard::Local(local_shard) => local_shard.get_optimization_status(timeout).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status(timeout).await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status(timeout).await,
             Shard::QueueProxy(queue_proxy_shard) => {
                 queue_proxy_shard.get_optimization_status(timeout).await
@@ -137,7 +130,6 @@ impl Shard {
     pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
         match self {
             Shard::Local(local_shard) => local_shard.get_size_stats(timeout).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
             Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(timeout).await,
             Shard::Dummy(dummy_shard) => Ok(dummy_shard.get_size_stats()),
@@ -153,16 +145,11 @@ impl Shard {
         save_wal: bool,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let future = match self {
-            Shard::Local(local_shard) => Either::Left(Either::Left(
+            Shard::Local(local_shard) => Either::Left(
                 local_shard
                     .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
                     .await?,
-            )),
-            Shard::Proxy(proxy_shard) => Either::Left(Either::Right(
-                proxy_shard
-                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
-                    .await?,
-            )),
+            ),
             Shard::ForwardProxy(proxy_shard) => Either::Right(Either::Left(
                 proxy_shard
                     .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
@@ -184,7 +171,6 @@ impl Shard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         match self {
             Shard::Local(local_shard) => local_shard.snapshot_manifest().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
             Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
             Shard::Dummy(dummy_shard) => dummy_shard.snapshot_manifest(),
@@ -197,7 +183,6 @@ impl Shard {
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => local_shard.on_optimizer_config_update().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::QueueProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update(),
@@ -207,7 +192,6 @@ impl Shard {
     pub fn on_strict_mode_config_update(&mut self, new_strict_mode: &StrictModeConfig) {
         match self {
             Shard::Local(local_shard) => local_shard.on_strict_mode_config_update(new_strict_mode),
-            Shard::Proxy(proxy_shard) => proxy_shard.on_strict_mode_config_update(new_strict_mode),
             Shard::ForwardProxy(proxy_shard) => {
                 proxy_shard.on_strict_mode_config_update(new_strict_mode)
             }
@@ -221,7 +205,6 @@ impl Shard {
     pub fn trigger_optimizers(&self) {
         match self {
             Shard::Local(local_shard) => local_shard.trigger_optimizers(),
-            Shard::Proxy(proxy_shard) => proxy_shard.trigger_optimizers(),
             Shard::ForwardProxy(forward_proxy_shard) => {
                 forward_proxy_shard.trigger_optimizers();
             }
@@ -249,7 +232,6 @@ impl Shard {
     fn update_tracker(&self) -> Option<&UpdateTracker> {
         let update_tracker = match self {
             Self::Local(local_shard) => local_shard.update_tracker(),
-            Self::Proxy(proxy_shard) => proxy_shard.update_tracker(),
             Self::ForwardProxy(proxy_shard) => proxy_shard.update_tracker(),
             Self::QueueProxy(proxy_shard) => proxy_shard.update_tracker(),
             Self::Dummy(_) => return None,
@@ -261,7 +243,6 @@ impl Shard {
     pub fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
         let optimizers_log = match self {
             Self::Local(local_shard) => local_shard.optimizers_log(),
-            Self::Proxy(proxy_shard) => proxy_shard.optimizers_log(),
             Self::ForwardProxy(proxy_shard) => proxy_shard.optimizers_log(),
             Self::QueueProxy(proxy_shard) => proxy_shard.optimizers_log(),
             Self::Dummy(_) => return None,
@@ -273,7 +254,6 @@ impl Shard {
     pub fn optimizations(&self) -> Option<LocalShardOptimizations> {
         Some(match self {
             Self::Local(local_shard) => local_shard.optimizations(),
-            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
             Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
             Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.optimizations(),
             Self::Dummy(_) => return None,
@@ -283,7 +263,6 @@ impl Shard {
     pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
         match self {
             Self::Local(local_shard) => local_shard.truncate_unapplied_wal().await,
-            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.truncate_unapplied_wal().await,
             Self::ForwardProxy(proxy_shard) => {
                 proxy_shard.wrapped_shard.truncate_unapplied_wal().await
             }
@@ -303,20 +282,17 @@ impl Shard {
             Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
             Self::ForwardProxy(proxy_shard) => Ok(proxy_shard.wrapped_shard.recovery_point().await),
 
-            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
-                Err(CollectionError::service_error(format!(
-                    "Recovery point not supported on {}",
-                    self.variant_name(),
-                )))
-            }
+            Self::QueueProxy(_) | Self::Dummy(_) => Err(CollectionError::service_error(format!(
+                "Recovery point not supported on {}",
+                self.variant_name(),
+            ))),
         }
     }
 
     pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
         match self {
             Self::Local(local_shard) => local_shard.take_newest_clocks_snapshot().await,
-            Self::Proxy(ProxyShard { wrapped_shard, .. })
-            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+            Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
                 wrapped_shard.take_newest_clocks_snapshot().await
             }
             Self::QueueProxy(proxy) => {
@@ -334,8 +310,7 @@ impl Shard {
     pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
         match self {
             Self::Local(local_shard) => local_shard.clear_newest_clocks_snapshot().await,
-            Self::Proxy(ProxyShard { wrapped_shard, .. })
-            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+            Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
                 wrapped_shard.clear_newest_clocks_snapshot().await
             }
             Self::QueueProxy(proxy) => {
@@ -354,7 +329,7 @@ impl Shard {
         match self {
             Self::Local(local_shard) => local_shard.update_cutoff(cutoff).await,
 
-            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+            Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Setting cutoff point not supported on {}",
                     self.variant_name(),
@@ -371,7 +346,7 @@ impl Shard {
         let wal = match self {
             Self::Local(local_shard) => &local_shard.wal,
 
-            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+            Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot resolve WAL delta on {}",
                     self.variant_name(),
@@ -409,7 +384,7 @@ impl Shard {
                 ))
             }),
 
-            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+            Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 Err(CollectionError::service_error(format!(
                     "Cannot get WAL version on {}",
                     self.variant_name(),
@@ -424,7 +399,6 @@ impl Shard {
     ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
         let local = match self {
             Shard::Local(local) => local,
-            Shard::Proxy(proxy) => &proxy.wrapped_shard,
             Shard::ForwardProxy(proxy) => &proxy.wrapped_shard,
 
             Shard::QueueProxy(proxy) => match proxy.wrapped_shard() {
@@ -441,7 +415,6 @@ impl Shard {
     pub async fn set_extended_wal_retention(&self) {
         match self {
             Shard::Local(local) => local.set_extended_wal_retention().await,
-            Shard::Proxy(proxy) => proxy.set_extended_wal_retention().await,
             Shard::ForwardProxy(forward_proxy) => forward_proxy.set_extended_wal_retention().await,
             Shard::QueueProxy(queue_proxy) => queue_proxy.set_extended_wal_retention().await,
             Shard::Dummy(_) => {} // Do nothing for dummy shard
@@ -452,7 +425,6 @@ impl Shard {
     pub async fn set_normal_wal_retention(&self) {
         match self {
             Shard::Local(local) => local.set_normal_wal_retention().await,
-            Shard::Proxy(proxy) => proxy.set_normal_wal_retention().await,
             Shard::ForwardProxy(forward_proxy) => forward_proxy.set_normal_wal_retention().await,
             Shard::QueueProxy(queue_proxy) => queue_proxy.set_normal_wal_retention().await,
             Shard::Dummy(_) => {} // Do nothing for dummy shard
@@ -465,7 +437,6 @@ impl Shard {
     ) -> CollectionResult<CardinalityEstimation> {
         match self {
             Shard::Local(local_shard) => local_shard.estimate_cardinality(filter).await,
-            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter).await,
             Shard::ForwardProxy(forward_proxy_shard) => {
                 forward_proxy_shard.estimate_cardinality(filter).await
             }
@@ -490,7 +461,6 @@ impl Shard {
     pub async fn stop_gracefully(self) {
         match self {
             Shard::Local(local_shard) => local_shard.stop_gracefully().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.stop_gracefully().await,
             Shard::ForwardProxy(forward_proxy_shard) => forward_proxy_shard.stop_gracefully().await,
             Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.stop_gracefully().await,
             Shard::Dummy(_) => {}
@@ -511,7 +481,6 @@ impl Shard {
 
         match self {
             Shard::Local(local_shard) => local_shard.plunge_async().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.wrapped_shard.plunge_async().await,
             Shard::ForwardProxy(forward_proxy_shard) => {
                 forward_proxy_shard.wrapped_shard.plunge_async().await
             }

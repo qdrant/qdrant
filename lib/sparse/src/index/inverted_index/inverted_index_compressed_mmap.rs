@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use blink_alloc::Blink;
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::ext::aligned_vec::ACow;
 use common::fs::atomic_save_json;
@@ -15,7 +14,6 @@ use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_to_u8, transmute_to_u8_slice};
-use common::reason::reason;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -108,7 +106,6 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         if index.file_header.total_sparse_size.is_none() {
             // legacy header: compute in memory, never write back
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
         }
 
@@ -144,8 +141,6 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             cold: AtomicBool::new(true),
             _phantom: PhantomData,
         };
-
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         if index.file_header.total_sparse_size.is_none() {
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
@@ -315,6 +310,27 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
             len => Some(len as DimId - 1),
         }
     }
+
+    /// Reads the whole header table in one sequential read, instead of one random read per
+    /// posting list as the default implementation does through [`Self::posting_list_len_batch`].
+    fn total_element_count(&self) -> UioResult<usize> {
+        let storage_len = self.storage.len::<u8>()?;
+        let headers = self.read_all_headers()?;
+        let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
+            .map_err(|_| corrupted_index())?;
+        headers
+            .iter()
+            .enumerate()
+            .try_fold(0usize, |total, (id, header)| {
+                let remainders_end = headers
+                    .get(id + 1)
+                    .map_or(storage_len, |next| next.ids_start);
+                let count = header
+                    .postings_count(remainders_end)
+                    .ok_or_else(corrupted_index)?;
+                Ok(total + count)
+            })
+    }
 }
 
 impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<W, S> {
@@ -341,6 +357,17 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         Ok(view)
     }
 
+    /// Reads the headers of all posting lists as one contiguous, sequential range.
+    fn read_all_headers(&self) -> UioResult<ACow<'_>> {
+        let headers = self.storage.read_bytes(
+            0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
+            Sequential,
+            align_of::<PostingListFileHeader<W>>(),
+        )?;
+        HwMetric::VectorIoRead.bump(headers.len());
+        Ok(headers)
+    }
+
     /// Calls `callback` for each posting list view in the file.
     /// Views are ephemeral, so they cannot outlive the closure.
     ///
@@ -351,12 +378,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<()> {
         // Phase 1: read all headers as one contiguous range.
         let storage_len = self.storage.len::<u8>()?;
-        let headers = self.storage.read_bytes(
-            0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
-            Sequential,
-            align_of::<PostingListFileHeader<W>>(),
-        )?;
-        HwMetric::VectorIoRead.bump(headers.len());
+        let headers = self.read_all_headers()?;
         let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
             .map_err(|_| corrupted_index())?;
 
@@ -374,6 +396,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         // Phase 2: read each posting's data via batched reads.
         for record in self.storage.read_bytes_iter(ranges, Random)? {
             let ((id, header), data) = record?;
+            HwMetric::VectorIoRead.bump(data.len());
             let view = CompressedPostingListView::new(header, &data).ok_or_else(corrupted_index)?;
             callback(id, view)?;
         }
@@ -471,8 +494,6 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<Self> {
         let total_posting_headers_size =
             index.postings.as_slice().len() * size_of::<PostingListFileHeader<W>>();
-
-        let _scope = ambient::unmeasured_guard(reason("Ignore HW on load"));
 
         let file_length = total_posting_headers_size
             + index
@@ -576,6 +597,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::universal_io::MmapFile;
     use tempfile::Builder;
 
@@ -617,6 +639,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_total_element_count_empty_mmap() {
+        let _scope = ambient::test_guard();
+        let ram = InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
+            &MmapFs,
+            Cow::Owned(InvertedIndexRam::empty()),
+            Builder::new().prefix("test_empty_ram").tempdir().unwrap(),
+        )
+        .unwrap();
+        let tmp_dir_path = Builder::new().prefix("test_empty_mmap").tempdir().unwrap();
+        InvertedIndexCompressedMmap::<f32, MmapFile>::convert_and_save(
+            &MmapFs,
+            &ram,
+            &tmp_dir_path,
+        )
+        .unwrap();
+        let index =
+            InvertedIndexCompressedMmap::<f32, MmapFile>::open_ro(&MmapFs, tmp_dir_path.path())
+                .unwrap();
+        assert_eq!(index.max_index(), None);
+        assert_eq!(index.total_element_count().unwrap(), 0);
+    }
+
     fn check_inverted_index_mmap<S: UniversalRead + 'static, W: Weight>()
     where
         S::Fs: Default,
@@ -635,6 +680,10 @@ mod tests {
         builder.add(8, [(1, 5.0)].into());
         builder.add(9, [(1, 6.0)].into());
         let inverted_index_ram = builder.build();
+        // 4 + 4 + 3 + 2 + 5 * 1 elements, whatever the format.
+        const ELEMENTS: usize = 18;
+        assert_eq!(inverted_index_ram.total_element_count().unwrap(), ELEMENTS);
+        assert_eq!(InvertedIndexRam::empty().total_element_count().unwrap(), 0);
         let tmp_dir_path = Builder::new().prefix("test_index_dir1").tempdir().unwrap();
         let inverted_index_ram = InvertedIndexCompressedImmutableRam::from_ram_index(
             &MmapFs,
@@ -642,6 +691,7 @@ mod tests {
             &tmp_dir_path,
         )
         .unwrap();
+        assert_eq!(inverted_index_ram.total_element_count().unwrap(), ELEMENTS);
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir2").tempdir().unwrap();
 
@@ -660,6 +710,19 @@ mod tests {
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);
+        assert_eq!(index.total_element_count().unwrap(), ELEMENTS);
+        // The sequential override agrees with the per-header batched lengths.
+        let mut batched = 0;
+        index
+            .posting_list_len_batch(
+                (0..=index.max_index().unwrap()).map(|dim| ((), dim)),
+                |(), len| {
+                    batched += len;
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(batched, ELEMENTS);
 
         compare_indexes(&inverted_index_ram, &index);
 
@@ -686,6 +749,7 @@ mod tests {
     /// the pool stay readable, while any fallback open hits `NotFound`.
     #[tokio::test]
     async fn preopen_then_open_ro_through_cached_fs() {
+        let _scope = ambient::async_test_guard();
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let mut builder = InvertedIndexBuilder::new();

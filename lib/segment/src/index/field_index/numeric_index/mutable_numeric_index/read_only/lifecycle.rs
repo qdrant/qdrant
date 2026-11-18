@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::{Blob, BlobstoreReader};
-use common::ambient;
 use common::ambient::hw::HwMetric;
-use common::reason::reason;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
@@ -52,6 +51,7 @@ where
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
             BlobstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
@@ -61,11 +61,13 @@ where
         };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),
                 |idx, values: Vec<T>| {
+                    if deleted.get(idx as usize).is_some_and(|deleted| *deleted) {
+                        return Ok(true);
+                    }
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },

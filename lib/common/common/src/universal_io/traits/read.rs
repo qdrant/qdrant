@@ -106,7 +106,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             access_pattern,
             align_of::<T>(),
         )?;
-        Ok(bytes.try_cast_bytemuck().unwrap())
+        Ok(bytes.try_cast_bytemuck()?)
     }
 
     fn read_bytes<P: AccessPattern>(
@@ -222,6 +222,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// Whether the backend chooses to populate when using `Populate::Auto`
     fn populate_auto() -> bool;
 
+    /// Hint that these byte ranges are about to be read, so the backend may
+    /// fetch them concurrently.
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>);
+
     /// Ask to evict related data from RAM cache, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
@@ -231,3 +235,6 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
+
+#[cfg(test)]
+mod alignment_tests;

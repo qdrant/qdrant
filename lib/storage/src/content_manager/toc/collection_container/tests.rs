@@ -23,7 +23,8 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
-use crate::rbac::{Access, AccessRequirements};
+use crate::dispatcher::Dispatcher;
+use crate::rbac::{Access, AccessRequirements, Auth};
 use crate::types::{PerformanceConfig, StorageConfig};
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -285,6 +286,66 @@ fn snapshot_recreates_collection_with_different_uuid_and_removes_obsolete_collec
 }
 
 #[test]
+fn snapshot_assigns_missing_uuid_without_recreating_collection() {
+    let (_storage_dir, toc) = new_toc();
+    // Created outside of consensus, e.g. in standalone mode before migrating to a cluster
+    create_collection_with_uuid(&toc, "legacy", 1, None);
+    let before = get_collection(&toc, "legacy");
+
+    let mut snapshot = toc.collections_snapshot_sync();
+    let state = snapshot.collections.get_mut("legacy").unwrap();
+    assert_eq!(state.config.uuid, None);
+    let uuid = uuid::Uuid::new_v4();
+    state.config.uuid = Some(uuid);
+    let expected = state.clone();
+
+    toc.apply_collections_snapshot(snapshot).unwrap();
+
+    let after = get_collection(&toc, "legacy");
+    assert!(
+        Arc::ptr_eq(&before, &after),
+        "collection must not be recreated"
+    );
+    assert_eq!(toc.general_runtime.block_on(after.state()), expected);
+
+    // A snapshot without UUID, from a peer migrated by an older version, keeps the local one
+    let mut snapshot = toc.collections_snapshot_sync();
+    snapshot.collections.get_mut("legacy").unwrap().config.uuid = None;
+    toc.apply_collections_snapshot(snapshot).unwrap();
+
+    let after = get_collection(&toc, "legacy");
+    assert!(
+        Arc::ptr_eq(&before, &after),
+        "collection must not be recreated"
+    );
+    assert_eq!(toc.general_runtime.block_on(after.uuid()), Some(uuid));
+}
+
+#[test]
+fn standalone_dispatcher_assigns_uuid_to_new_collection() {
+    let (_storage_dir, toc) = new_toc();
+    let dispatcher = Dispatcher::new(toc.clone());
+
+    let config: CreateCollection = serde_json::from_value(serde_json::json!({
+        "vectors": {"size": 4, "distance": "Dot"},
+    }))
+    .unwrap();
+    assert_eq!(config.uuid, None);
+    let operation = CreateCollectionOperation::new("standalone".to_string(), config).unwrap();
+
+    toc.general_runtime
+        .block_on(dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::CreateCollection(operation),
+            Auth::new_internal(Access::full("standalone uuid test")),
+            None,
+        ))
+        .unwrap();
+
+    let collection = get_collection(&toc, "standalone");
+    assert!(toc.general_runtime.block_on(collection.uuid()).is_some());
+}
+
+#[test]
 fn snapshot_recreates_collection_with_incompatible_config() {
     let (_storage_dir, toc) = new_toc();
     create_collection(&toc, "recreated");
@@ -390,9 +451,19 @@ fn create_collection(toc: &TableOfContent, name: &str) {
 }
 
 fn create_collection_with_shards(toc: &TableOfContent, name: &str, shard_number: u32) {
+    create_collection_with_uuid(toc, name, shard_number, Some(uuid::Uuid::new_v4()));
+}
+
+fn create_collection_with_uuid(
+    toc: &TableOfContent,
+    name: &str,
+    shard_number: u32,
+    uuid: Option<uuid::Uuid>,
+) {
     let config: CreateCollection = serde_json::from_value(serde_json::json!({
         "vectors": {"size": 4, "distance": "Dot"},
         "shard_number": shard_number,
+        "uuid": uuid,
     }))
     .unwrap();
     let operation = CreateCollectionOperation::new(name.to_string(), config).unwrap();

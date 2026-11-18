@@ -49,7 +49,8 @@ pub fn safe_delete_in_tmp(path: &Path, temp_dir: &Path) -> io::Result<TempDir> {
     let (parent, _file_name) = split(path).ok_or_else(|| err_invalid_path(path))?;
     fs::create_dir_all(temp_dir)?;
     let to_delete = tempfile::Builder::new().prefix("").tempdir_in(temp_dir)?;
-    rename_with_retry(path, to_delete.path())?;
+    // Append /x as older Windows can't rename onto an existing dir. See #5924.
+    rename_with_retry(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -73,7 +74,7 @@ pub fn safe_delete_with_suffix(path: &Path) -> io::Result<()> {
         .prefix(file_name)
         .suffix(".deleted")
         .tempdir_in(parent)?;
-    rename_with_retry(path, to_delete.path())?;
+    rename_with_retry(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -148,6 +149,7 @@ mod tests {
 
         // Case 2: delete in background thread
         let to_delete = safe_delete_in_tmp(&segment2, &tmp)?;
+        assert_eq!(fs::read(to_delete.path().join("x/file"))?, b"test");
         let handle = std::thread::spawn(move || to_delete.close());
         handle.join().unwrap()?;
 

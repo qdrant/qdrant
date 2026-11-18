@@ -37,7 +37,9 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in &self.payload {
+        let mut points: Vec<_> = self.payload.iter().collect();
+        points.sort_unstable_by_key(|&(&point_id, _)| point_id);
+        for (key, val) in points {
             let do_continue = callback(*key, val)?;
             if !do_continue {
                 return Ok(());
@@ -67,6 +69,22 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         for (user_data, point_offset) in point_offsets {
             let encoded = self.payload.get(&point_offset).map(Blob::to_bytes);
             callback(user_data, encoded.as_deref())?;
+        }
+
+        Ok(())
+    }
+
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        for (user_data, point_offset) in point_offsets {
+            let len = self
+                .payload
+                .get(&point_offset)
+                .map(|payload| payload.to_bytes().len());
+            callback(user_data, len)?;
         }
 
         Ok(())

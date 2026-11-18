@@ -11,6 +11,7 @@ use super::page::AppendOnlyPages;
 use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
+use crate::blobstore::ITER_BATCH_SIZE;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
@@ -163,8 +164,9 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
-        self.view().get_value::<P>(point_offset)
+        self.view().get_value::<P>(point_offset, hw_metric)
     }
 
     /// Get the serialized value for a given point offset.
@@ -173,9 +175,10 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         let view = self.view();
-        let bytes = view.get_value_bytes::<P>(point_offset)?;
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
         Ok(bytes.map(std::borrow::Cow::into_owned))
     }
 
@@ -197,13 +200,17 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         let view = self.view();
 
         // Iterate in batches to bound the size of the tracker reads
-        const BATCH_SIZE: PointOffset = 256;
-
+        let mut batch = Vec::new();
         let mut current_offset = 0;
         while current_offset < max_id {
-            let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_id);
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
 
-            if !view.iter_range(current_offset..end_offset, &mut callback, hw_metric)? {
+            if !view.iter_range(
+                current_offset..end_offset,
+                &mut batch,
+                &mut callback,
+                hw_metric,
+            )? {
                 return Ok(());
             }
 

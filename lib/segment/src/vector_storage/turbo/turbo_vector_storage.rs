@@ -373,14 +373,8 @@ impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
     }
 
     fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
-        let deleted_flusher = self.deleted.flusher();
-
-        Box::new(move || {
-            storage_flusher()?;
-            deleted_flusher()?;
-            Ok(())
-        })
+        // The vector blob is immutable, only deletions change.
+        self.deleted.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -427,6 +421,9 @@ impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         Self::get_quantized_vector(self, key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }
 

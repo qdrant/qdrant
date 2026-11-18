@@ -229,6 +229,7 @@ fn test_graph_inline_storage_contract(
     #[case] datatype: Option<VectorStorageDatatype>,
     #[case] storage_type: VectorStorageType,
 ) {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let vectors = random_vectors(NUM_VECTORS, datatype);
@@ -355,15 +356,16 @@ fn graph_inline_deletes_and_remerge(
     let has_vector = Filter::new_must(Condition::HasVector(HasVectorCondition::from(
         DEFAULT_VECTOR_NAME.to_owned(),
     )));
-    let with_vector = graph_backed
-        .read_filtered(
+    let with_vector = ambient::test(|| {
+        graph_backed.read_filtered(
             None,
             Some(NUM_VECTORS),
             Some(&has_vector),
             &AtomicBool::new(false),
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
+    })
+    .unwrap();
     assert_eq!(with_vector.len(), NUM_VECTORS - deleted.len());
 
     let extra_dir = Builder::new().prefix("extra_dir").tempdir().unwrap();
@@ -401,6 +403,7 @@ fn graph_inline_deletes_and_remerge(
 
 #[test]
 fn test_graph_inline_storage_flag_off() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let vectors = random_vectors(NUM_VECTORS, None);

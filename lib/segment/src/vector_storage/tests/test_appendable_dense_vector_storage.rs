@@ -248,7 +248,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     };
 
     id_tracker
-        .drop(PointIdType::NumId(u64::from(top_idx)))
+        .drop(PointIdType::NumId(u64::from(top_idx)), None)
         .unwrap();
 
     let mut raw_scorer = FilteredScorer::new(

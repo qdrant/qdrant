@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use blobstore::Blob;
-use common::ambient;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
 use uuid::Uuid;
@@ -22,6 +20,7 @@ use crate::index::field_index::{
     PrimaryCondition,
 };
 use crate::index::query_estimator::combine_should_estimations;
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchValue, PayloadKeyType,
     UuidIntType, ValueVariants,
@@ -55,6 +54,14 @@ impl PayloadFieldIndexRead for MapIndex<UuidIntType> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
@@ -94,6 +101,14 @@ where
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         filter_impl(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
@@ -267,11 +282,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = ambient::unmeasured(
-            reason("payload_blocks only used in HNSW building, which is unmeasured."),
-            || index.get_count_for_value(value),
-        )
-        .unwrap_or(0);
+        let count = index.get_count_for_value(value).unwrap_or(0);
         if count >= threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(

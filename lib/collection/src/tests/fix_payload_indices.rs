@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use segment::pending_changes::PersistedProxyChanges;
@@ -16,6 +16,7 @@ use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fix_payload_indices() {
+    let _scope = ambient::async_test_guard();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
     let config = create_collection_config();

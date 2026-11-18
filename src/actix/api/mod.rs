@@ -6,6 +6,7 @@ use validator::Validate;
 pub mod audit_api;
 pub mod cluster_api;
 pub mod collections_api;
+pub mod consensus_state_api;
 pub mod count_api;
 pub mod debug_api;
 pub mod discover_api;

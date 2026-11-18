@@ -1,36 +1,33 @@
 //! Edge-side BM25 wiring.
 //!
-//! Builds [`bm25::Bm25`] and runs it over `segment`'s tokenizer pipeline (so
-//! stopwords, stemming, and language defaults match server behavior). Emits
-//! [`sparse::common::sparse_vector::SparseVector`] which the rest of the edge
-//! API already understands.
+//! A thin wrapper over segment's [`Bm25Embedder`], the same embedder the server runs for its
+//! local `qdrant/bm25` model, so edge and server produce identical sparse vectors. Emits
+//! [`sparse::common::sparse_vector::SparseVector`] which the rest of the edge API already
+//! understands.
 //!
-//! No `api` crate dependency: the public contract types belong to the REST/gRPC
-//! layer; edge consumers (e.g. Python bindings) construct [`EdgeBm25Config`]
-//! from their own input format.
+//! No `api` crate dependency: the public contract types belong to the REST/gRPC layer; edge
+//! consumers (e.g. Python bindings) construct [`EdgeBm25Config`] from their own input format.
 
-use std::borrow::Cow;
 use std::fmt;
-use std::str::FromStr;
-use std::sync::Arc;
 
-use bm25::SparseEmbedding;
-use ordered_float::NotNan;
-use segment::data_types::index::{Language, StemmingAlgorithm, StopwordsInterface, TokenizerType};
-use segment::index::field_index::full_text_index::stop_words::StopwordsFilter;
-use segment::index::field_index::full_text_index::tokenizers::{
-    Stemmer, Tokenizer, TokensProcessor,
+use segment::index::field_index::full_text_index::bm25_embedder::{
+    Bm25Embedder, Bm25EmbedderConfig, Bm25EmbedderError, UnknownLanguage,
 };
 use sparse::common::sparse_vector::SparseVector;
 
-const DEFAULT_LANGUAGE: Language = Language::English;
+/// Configuration for an edge-side BM25 model.
+///
+/// JSON shape mirrors `lib/api`'s REST `Bm25Config` so configs are portable between cloud and
+/// edge.
+pub type EdgeBm25Config = Bm25EmbedderConfig;
 
 /// Error returned by [`EdgeBm25::new`] for invalid configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EdgeBm25Error {
     /// BM25 hyperparameters failed validation (see [`bm25::Bm25Error`]).
     Bm25(bm25::Bm25Error),
-    /// `language` did not match any supported [`Language`] variant.
+    /// `language` did not match any supported
+    /// [`Language`](segment::data_types::index::Language) variant.
     UnsupportedLanguage(String),
 }
 
@@ -51,181 +48,41 @@ impl From<bm25::Bm25Error> for EdgeBm25Error {
     }
 }
 
-/// Configuration for an edge-side BM25 model.
-///
-/// JSON shape mirrors `lib/api`'s REST `Bm25Config` so configs are portable
-/// between cloud and edge: `k`, `b`, `avg_len`, `tokenizer`, plus the
-/// preprocessing fields (`language`, `lowercase`, `ascii_folding`, `stopwords`,
-/// `stemmer`, `min_token_len`, `max_token_len`).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EdgeBm25Config {
-    /// Term-frequency saturation. Higher values make TF have more impact.
-    /// Default 1.2.
-    #[serde(default = "default_k")]
-    pub k: NotNan<f64>,
-    /// Document length normalization. 0 = none, 1 = full. Default 0.75.
-    #[serde(default = "default_b")]
-    pub b: NotNan<f64>,
-    /// Expected average document length in tokens. Default 256.
-    #[serde(default = "default_avg_len")]
-    pub avg_len: NotNan<f64>,
-    /// Tokenizer type used for text preprocessing.
-    #[serde(default)]
-    pub tokenizer: TokenizerType,
-    /// Language for default stopwords / stemmer (English if unset).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    /// Lowercase before tokenization. Default true.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lowercase: Option<bool>,
-    /// Fold accented characters to ASCII (e.g. `"ação" → "acao"`). Default false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ascii_folding: Option<bool>,
-    /// Stopwords filter configuration; defaults from `language`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stopwords: Option<StopwordsInterface>,
-    /// Stemmer configuration; defaults from `language`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stemmer: Option<StemmingAlgorithm>,
-    /// Discard tokens shorter than this.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_token_len: Option<usize>,
-    /// Discard tokens longer than this.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_token_len: Option<usize>,
-}
-
-const fn default_k() -> NotNan<f64> {
-    // Safe: 1.2 is not NaN.
-    unsafe { NotNan::new_unchecked(1.2) }
-}
-
-const fn default_b() -> NotNan<f64> {
-    // Safe: 0.75 is not NaN.
-    unsafe { NotNan::new_unchecked(0.75) }
-}
-
-const fn default_avg_len() -> NotNan<f64> {
-    // Safe: 256.0 is not NaN.
-    unsafe { NotNan::new_unchecked(256.0) }
-}
-
-impl Default for EdgeBm25Config {
-    fn default() -> Self {
-        Self {
-            k: default_k(),
-            b: default_b(),
-            avg_len: default_avg_len(),
-            tokenizer: TokenizerType::default(),
-            language: None,
-            lowercase: None,
-            ascii_folding: None,
-            stopwords: None,
-            stemmer: None,
-            min_token_len: None,
-            max_token_len: None,
+impl From<Bm25EmbedderError> for EdgeBm25Error {
+    fn from(e: Bm25EmbedderError) -> Self {
+        match e {
+            Bm25EmbedderError::Bm25(e) => Self::Bm25(e),
+            Bm25EmbedderError::UnsupportedLanguage(language) => Self::UnsupportedLanguage(language),
         }
     }
 }
 
 /// Edge-side BM25 model. Embeds raw text into [`SparseVector`].
 #[derive(Debug)]
-pub struct EdgeBm25 {
-    bm25: bm25::Bm25,
-    tokenizer: Tokenizer,
-}
+pub struct EdgeBm25(Bm25Embedder);
 
 impl EdgeBm25 {
+    /// Unlike the server, edge rejects an unrecognized `language` up front instead of silently
+    /// disabling stemming and stopwords (the server's deprecated `language: "none"` behavior).
     pub fn new(config: EdgeBm25Config) -> Result<Self, EdgeBm25Error> {
-        let params = bm25::Bm25Params {
-            k1: config.k.into_inner(),
-            b: config.b.into_inner(),
-            avg_doc_len: config.avg_len.into_inner(),
-        };
-
-        let processor = build_tokens_processor(
-            config.language,
-            config.lowercase,
-            config.ascii_folding,
-            config.stopwords,
-            config.stemmer,
-            config.min_token_len,
-            config.max_token_len,
-        )?;
-        let tokenizer = Tokenizer::new(config.tokenizer, processor);
-
-        Ok(Self {
-            bm25: bm25::Bm25::new(params)?,
-            tokenizer,
-        })
+        Ok(Self(Bm25Embedder::new(config, UnknownLanguage::Reject)?))
     }
 
     pub fn embed_query(&self, text: &str) -> SparseVector {
-        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
-        self.tokenizer.tokenize_query(text, |t| tokens.push(t));
-        to_sparse_vector(self.bm25.embed_query(&tokens))
+        self.0.embed_query(text)
     }
 
     pub fn embed_document(&self, text: &str) -> SparseVector {
-        let mut tokens: Vec<Cow<'_, str>> = Vec::new();
-        self.tokenizer.tokenize_doc(text, |t| tokens.push(t));
-        to_sparse_vector(self.bm25.embed_document(&tokens))
+        self.0.embed_document(text)
     }
-}
-
-fn to_sparse_vector(e: SparseEmbedding) -> SparseVector {
-    SparseVector {
-        indices: e.indices,
-        values: e.values,
-    }
-}
-
-fn build_tokens_processor(
-    language: Option<String>,
-    lowercase: Option<bool>,
-    ascii_folding: Option<bool>,
-    stopwords: Option<StopwordsInterface>,
-    stemmer: Option<StemmingAlgorithm>,
-    min_token_len: Option<usize>,
-    max_token_len: Option<usize>,
-) -> Result<TokensProcessor, EdgeBm25Error> {
-    let lowercase = lowercase.unwrap_or(true);
-    let ascii_folding = ascii_folding.unwrap_or(false);
-
-    // Resolve language up-front so a typo / unsupported value fails the build
-    // instead of silently disabling stemming and stopwords.
-    let resolved_language = match language {
-        Some(name) => {
-            Language::from_str(&name).map_err(|_| EdgeBm25Error::UnsupportedLanguage(name))?
-        }
-        None => DEFAULT_LANGUAGE,
-    };
-    let language_str = resolved_language.to_string();
-
-    let stemmer = match stemmer {
-        None => Stemmer::try_default_from_language(&language_str),
-        // `Disabled` resolves to `None` here, giving an explicit opt-out of stemming.
-        Some(algorithm) => Stemmer::from_algorithm(&algorithm),
-    };
-
-    let stopwords_config = match stopwords {
-        None => Some(StopwordsInterface::Language(resolved_language)),
-        Some(interface) => Some(interface),
-    };
-
-    Ok(TokensProcessor::new(
-        lowercase,
-        ascii_folding,
-        Arc::new(StopwordsFilter::new(&stopwords_config, lowercase)),
-        stemmer,
-        min_token_len,
-        max_token_len,
-    ))
 }
 
 #[cfg(test)]
 mod tests {
     use std::assert_matches;
+
+    use ordered_float::NotNan;
+    use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface};
 
     use super::*;
 

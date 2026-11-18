@@ -55,7 +55,9 @@ impl InMemoryIdTracker {
 
         // Delete points after creating the id tracker completely to maintain consistency.
         for to_delete_internal_id in preserved_size..size {
-            id_tracker.drop_internal(to_delete_internal_id).unwrap();
+            id_tracker
+                .drop_internal(to_delete_internal_id, None)
+                .unwrap();
         }
 
         id_tracker
@@ -173,7 +175,12 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    /// Never persisted, so the delete's `version` is not kept.
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        _version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist.
         // In-memory trackers never carry deferred heads, but resolve with
         // deferred preference for consistency with the other drop paths.
@@ -186,7 +193,11 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        _version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         if let Some(external_id) = self.mappings.external_id(internal_id) {
@@ -247,7 +258,7 @@ mod test {
 
         // We drop the available point and assert that it has the same `internal_version` as the deleted one from the `id_tracker`
         // and that both don't have an external ID anymore.
-        id_tracker.drop_internal(available_point_id).unwrap();
+        id_tracker.drop_internal(available_point_id, None).unwrap();
 
         for internal_id in [available_point_id, deleted_point_id] {
             // Assert the dropped point's version has been set to `DELETED_POINT_VERSION`.

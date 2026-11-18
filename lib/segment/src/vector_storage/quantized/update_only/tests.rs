@@ -23,7 +23,7 @@ use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
 use quantization::turboquant::TQRotation;
-use quantization::{EncodedStorage as _, EncodedVectors as _};
+use quantization::{EncodedStorage as _, EncodedVectors as _, EncodedVectorsWrite as _};
 use rstest::rstest;
 use tempfile::TempDir;
 

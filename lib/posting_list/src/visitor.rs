@@ -37,7 +37,7 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
     /// Returns the decompressed slice of ids for a chunk.
     ///
     /// Assumes the chunk_idx is valid.
-    fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_LEN] {
+    pub(crate) fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_LEN] {
         if self.decompressed_chunk_idx != Some(chunk_idx) {
             self.list
                 .decompress_chunk(chunk_idx, &mut self.decompressed_chunk);

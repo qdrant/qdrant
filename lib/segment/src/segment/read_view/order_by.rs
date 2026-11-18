@@ -10,6 +10,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -29,6 +30,7 @@ where
         order_by: &OrderBy,
         limit: Option<usize>,
         condition: &Filter,
+        cardinality_estimation: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
@@ -39,15 +41,13 @@ where
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
-
         let start_from = order_by.start_from();
 
         let values_ids_iterator = self
             .payload_index
             .iter_filtered_points(
                 condition,
-                &cardinality_estimation,
+                cardinality_estimation,
                 is_stopped,
                 deferred_behavior,
             )?
@@ -157,11 +157,13 @@ where
                 deferred_behavior,
             ),
             Some(filter) => {
-                if self.should_pre_filter(filter, limit)? {
+                let cardinality_estimation = self.payload_index.estimate_cardinality(filter)?;
+                if self.should_pre_filter(&cardinality_estimation, limit) {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,
                         filter,
+                        &cardinality_estimation,
                         is_stopped,
                         deferred_behavior,
                     )

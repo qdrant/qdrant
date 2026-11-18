@@ -22,9 +22,7 @@ use std::time::Duration;
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::common::adaptive_handle::{AdaptiveSearchHandle, SearchMode};
-use collection::config::{
-    CollectionConfigInternal, default_replication_factor, default_shard_number,
-};
+use collection::config::{CollectionConfigInternal, default_replication_factor};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::AbortShardTransfer;
@@ -111,7 +109,7 @@ pub struct TableOfContent {
     telemetry: TocTelemetryCollector,
     /// Cluster-wide resource quotas, applied to updates on top of strict mode.
     quota_manager: Arc<QuotaManager>,
-    /// Collections changed outside consensus since the last shadow resync
+    /// Collections changed outside consensus since the last state machine resync
     dirty_collections: parking_lot::Mutex<BTreeSet<CollectionId>>,
 }
 
@@ -305,7 +303,7 @@ impl TableOfContent {
         })
     }
 
-    /// Mark a collection for shadow-state resync
+    /// Mark a collection for consensus state machine resync
     pub fn mark_collection_dirty(&self, collection: &str) {
         self.dirty_collections.lock().insert(collection.to_string());
     }
@@ -547,7 +545,7 @@ impl TableOfContent {
         Ok(aliases)
     }
 
-    pub fn suggest_shard_distribution(
+    pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
         collection_defaults: Option<&CollectionConfigDefaults>,
@@ -556,10 +554,14 @@ impl TableOfContent {
         let non_zero_number_of_peers =
             NonZeroU32::new(number_of_peers as u32).expect("NUmber of peers must be at least 1");
 
+        let number_of_collections = self.collections.read().await.len();
+        let shard_number_per_node =
+            default_shard_number_per_node(number_of_peers, number_of_collections);
+
         let suggested_shard_number = collection_defaults
-            .map(|cd| cd.get_shard_number(number_of_peers as u32))
+            .map(|cd| cd.get_shard_number(number_of_peers as u32, shard_number_per_node.get()))
             .map(|x| NonZeroU32::new(x).expect("Shard number must be at least 1"))
-            .unwrap_or_else(|| default_shard_number().saturating_mul(non_zero_number_of_peers));
+            .unwrap_or_else(|| shard_number_per_node.saturating_mul(non_zero_number_of_peers));
 
         let shard_number = op
             .create_collection
@@ -603,15 +605,16 @@ impl TableOfContent {
 
     /// Initiate receiving shard.
     ///
-    /// Fails if the collection does not exist
+    /// Fails if the collection does not exist.
     ///
     /// # Cancel safety
     ///
-    /// This is cancel safe. If the future is dropped, initialization is aborted.
+    /// This method is cancel safe.
     ///
-    /// If the shard was in dummy state, it will be recreated. Aborting this may leave it in
-    /// partial state. In that case it will remain a dummy shard, signaled by the initialization
-    /// flag on disk. It may then be fully reinitialized on the next transfer attempt.
+    /// If the future is dropped, initialization is cancelled. If the local shard was a dummy,
+    /// it stays a dummy, which should be recovered on transfer retry.
+    ///
+    /// See [`Collection::initiate_shard_transfer`].
     pub async fn initiate_receiving_shard(
         &self,
         collection_name: String,
@@ -620,11 +623,11 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
-        let initiate_shard_transfer_future = self
-            .get_collection_unchecked(&collection_name)
+        self.get_collection_unchecked(&collection_name)
             .await?
-            .initiate_shard_transfer(shard_id, from_peer_id);
-        initiate_shard_transfer_future.await?;
+            .initiate_shard_transfer(shard_id, from_peer_id)
+            .await?;
+
         Ok(())
     }
 
@@ -882,7 +885,7 @@ impl TableOfContent {
             .map(|i| {
                 let key = i.key().clone();
                 let data = i.load();
-                let m = |metric: HwMetric| data[metric];
+                let m = |metric: HwMetric| Some(data[metric]);
                 let hw_usage = HardwareUsage {
                     cpu: m(HwMetric::Cpu),
                     payload_io_read: m(HwMetric::PayloadIoRead),
@@ -891,6 +894,10 @@ impl TableOfContent {
                     payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
                     vector_io_read: m(HwMetric::VectorIoRead),
                     vector_io_write: m(HwMetric::VectorIoWrite),
+                    remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
+                    remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
+                    updated_bytes: None,
+                    updated_indexed_bytes: None,
                 };
                 (key, hw_usage)
             })
@@ -899,5 +906,39 @@ impl TableOfContent {
 
     pub fn general_runtime_handle(&self) -> &Handle {
         self.general_runtime.handle()
+    }
+}
+
+/// Shards per peer for an auto-sharded collection when neither the request nor the config sets
+/// a shard number.
+///
+/// A cluster of 3 or more peers with fewer collections than peers likely holds collections that
+/// grow with it. They get spare shards, so new peers can take whole shards instead of resharding,
+/// which re-indexes the data. Smaller clusters and clusters with many collections keep one shard
+/// per peer.
+fn default_shard_number_per_node(
+    number_of_peers: usize,
+    number_of_collections: usize,
+) -> NonZeroU32 {
+    let shards = if number_of_peers >= 3 && number_of_collections < number_of_peers {
+        2
+    } else {
+        1
+    };
+    NonZeroU32::new(shards).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_shard_number_per_node() {
+        assert_eq!(default_shard_number_per_node(1, 0).get(), 1);
+        assert_eq!(default_shard_number_per_node(2, 0).get(), 1);
+        assert_eq!(default_shard_number_per_node(3, 0).get(), 2);
+        assert_eq!(default_shard_number_per_node(3, 2).get(), 2);
+        assert_eq!(default_shard_number_per_node(3, 3).get(), 1);
+        assert_eq!(default_shard_number_per_node(3, 1000).get(), 1);
     }
 }

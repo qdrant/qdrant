@@ -139,7 +139,7 @@ impl MutableFullTextIndex {
         }
 
         let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
-        let str_tokens =
+        let document =
             FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
         // Measured here, before `serialize_stored_document` may deduplicate the
@@ -148,7 +148,8 @@ impl MutableFullTextIndex {
             .inner
             .inverted_index
             .records_doc_len()
-            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
+            .then(|| document.length());
+        let str_tokens = document.tokens;
 
         self.inner
             .inverted_index
@@ -182,18 +183,24 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc_len(&self, idx: PointOffsetType) -> Option<u32> {
         use common::generic_consts::Random;
-        ambient::test(|| self.storage.get_value::<Random>(idx))
-            .unwrap()
-            .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
+        ambient::test(|| {
+            self.storage
+                .get_value::<Random>(idx, HwMetric::PayloadIndexIoRead)
+        })
+        .unwrap()
+        .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
     }
 
     /// Get the tokenized document stored for a given point ID. Only for testing purposes.
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         use common::generic_consts::Random;
-        ambient::test(|| self.storage.get_value::<Random>(idx))
-            .unwrap()
-            .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
+        ambient::test(|| {
+            self.storage
+                .get_value::<Random>(idx, HwMetric::PayloadIndexIoRead)
+        })
+        .unwrap()
+        .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }
 }
 

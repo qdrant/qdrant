@@ -84,8 +84,12 @@ jobs:
           echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
       shell: bash
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       with:
+        # Cache breaks when paths to system libraries change,
+        # e.g. during Ubuntu 24.04→26.04 update.
+        # Related: https://github.com/Swatinem/rust-cache/issues/214
+        env-vars: ImageOS
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget.
         # Both partitions build the same thing, so one of them saves it.
         save-if: ${{ github.ref == 'refs/heads/dev' && matrix.partition == 1 }}
@@ -97,12 +101,19 @@ jobs:
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
       run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
-    # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
-    # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
-    # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
+    # Test temp files go on tmpfs: the `model_testing` harness gates preallocate 32 MB gridstore
+    # pages per storage per segment and are dominated by IO on a disk-backed temp dir. On
+    # ubuntu-26.04 `/dev/shm` carries a per-user quota that the gates exceed (os error 122), so
+    # mount a dedicated tmpfs without one, sized like `/dev/shm`.
+    # Linux only: macOS and Windows have no tmpfs.
     - name: Put test temp files on tmpfs
       if: matrix.os == 'ubuntu-latest'
-      run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
+      run: |
+        findmnt -o TARGET,FSTYPE,SIZE,OPTIONS --target /dev/shm || true
+        findmnt -n -o TARGET,FSTYPE,SIZE,OPTIONS --target /tmp || true
+        sudo mkdir -p /mnt/test-tmp
+        sudo mount -t tmpfs -o size=50%,mode=1777 tmpfs /mnt/test-tmp
+        echo "TMPDIR=/mnt/test-tmp" >> "$GITHUB_ENV"
       shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.

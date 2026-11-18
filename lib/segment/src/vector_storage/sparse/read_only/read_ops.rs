@@ -1,8 +1,7 @@
 use blobstore::Blob;
-use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Random};
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 use sparse::common::sparse_vector::SparseVector;
@@ -24,11 +23,10 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
-            self.storage.get_value::<P>(key)
-        })?
-        .map(SparseVector::try_from)
-        .transpose()
+        self.storage
+            .get_value::<P>(key, HwMetric::VectorIoRead)?
+            .map(SparseVector::try_from)
+            .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(
@@ -100,9 +98,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match ambient::unmeasured(reason("Vector storage read IO not measured"), || {
-            self.storage.get_value::<P>(key)
-        }) {
+        match self.storage.get_value::<P>(key, HwMetric::VectorIoRead) {
             Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),
             _ => None,
         }

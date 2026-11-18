@@ -336,6 +336,13 @@ pub struct RangeConditionChecker<'a, I, T> {
     typed_range: Range<T>,
 }
 
+impl<'a, I, T> RangeConditionChecker<'a, I, T> {
+    /// The index whose values this checker reads.
+    pub fn index(&self) -> &'a I {
+        self.index
+    }
+}
+
 impl<I, T> ConditionChecker for RangeConditionChecker<'_, I, T>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,

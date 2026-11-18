@@ -3,9 +3,10 @@
 //! points it touches, not the operations in it.
 
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 use ahash::AHashMap;
-use common::ambient;
+use common::ambient::{self, ThreadPoolExt as _};
 use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
@@ -23,12 +24,14 @@ use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
+use crate::update_only::metering::{UpdateBytes, UpdateMetering};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
+    pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
     /// Points removed.
@@ -68,6 +71,28 @@ pub struct PointApplyRecord {
     /// invisible until a rebuild indexes it, so these keep serving readers
     /// until the rebuild's deduplication retires them.
     pub shadowed: Vec<(Uuid, PointOffsetType)>,
+    /// `None` unless the point was stored by a metered apply.
+    pub usage: Option<PointUsage>,
+}
+
+/// `version` is the highest operation number folded into the point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointUsage {
+    pub version: SeqNumberType,
+    pub bytes: UpdateBytes,
+}
+
+impl UpdateBatchOutcome {
+    /// Usage of the points stored at a version within `versions`.
+    pub fn usage_in(&self, versions: RangeInclusive<SeqNumberType>) -> UpdateBytes {
+        let mut total = UpdateBytes::default();
+        for usage in self.points.iter().filter_map(|record| record.usage) {
+            if versions.contains(&usage.version) {
+                total += usage.bytes;
+            }
+        }
+        total
+    }
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -110,6 +135,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
     ///
+    /// Every delete the batch writes, of a deleted point or of the old copy a
+    /// stored point replaces, records the batch version: the highest operation
+    /// number in `operations`. A follower applies such a delete once it knows
+    /// every write up to that version is in view, so the caller publishes that
+    /// version as its cursor only after this returns.
+    ///
     /// Consumes the writer and hands it back on success, ready for the next
     /// batch: the lookup half of every segment this one wrote to is
     /// live-reloaded, so the next batch resolves against what this one
@@ -119,8 +150,26 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// writer over the directory, which also retires whatever the failed
     /// batch left unpublished.
     pub fn apply_batch(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.apply_batch_inner(operations, None)
+    }
+
+    pub fn apply_batch_metered(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: &UpdateMetering,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.apply_batch_inner(operations, Some(metering))
+    }
+
+    fn apply_batch_inner(
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: Option<&UpdateMetering>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         const LOG_TARGET: &str = "apply_batch";
 
@@ -130,7 +179,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             return Ok((self, UpdateBatchOutcome::default()));
         }
 
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let version = plan.version();
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -165,6 +214,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 action,
             } = point;
 
+            let mut usage = None;
             let kind = match action {
                 PointAction::Skip => {
                     outcome.skipped += 1;
@@ -179,6 +229,14 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     PointApplyKind::Missing
                 }
                 PointAction::Store(point) => {
+                    if let Some(metering) = metering {
+                        let bytes = metering.measure(&point)?;
+                        outcome.usage += bytes;
+                        usage = Some(PointUsage {
+                            version: point.version,
+                            bytes,
+                        });
+                    }
                     to_store.push(*point);
                     stored_records.push(outcome.points.len());
                     outcome.stored += 1;
@@ -196,6 +254,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 tombstoned: Vec::new(),
                 superseded: None,
                 shadowed: Vec::new(),
+                usage,
             };
 
             if kind.retires_slots() {
@@ -279,14 +338,18 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
-                writer.tombstone_points(&points)?;
+                writer.tombstone_points(&points, version, self.delete_versioning)?;
             }
             written.push(uuid);
         }
 
         let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
         for (uuid, points) in to_tombstone {
-            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
+            get_writer(&mut self.writers, uuid)?.tombstone_points(
+                &points,
+                version,
+                self.delete_versioning,
+            )?;
             written.push(uuid);
         }
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());
@@ -305,9 +368,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// reloaded lookup and its held writer describe the same log.
     fn reload_lookups(&self, written: &[Uuid]) -> OperationResult<()> {
         let segments = self.segments.read();
-        self.pool.install(|| {
+        self.pool.ambient_install(|handoff| {
             written.par_iter().try_for_each(|&uuid| {
-                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                let _scope = handoff.enter_guard();
                 segments.get(uuid)?.write().live_reload()
             })
         })
@@ -334,12 +397,15 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-    let per_segment = pool.install(|| {
+    let per_segment = pool.ambient_install(|handoff| {
         segments
             .iter()
             .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|(uuid, segment)| locate_in(uuid, &*segment.read(), &ids))
+            .map(|(uuid, segment)| {
+                let _scope = handoff.enter_guard();
+                locate_in(uuid, &*segment.read(), &ids)
+            })
             .collect::<OperationResult<Vec<_>>>()
     })?;
     Ok(merge_locations(per_segment))
@@ -366,19 +432,19 @@ pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
         }
     }
 
-    let per_segment: Vec<Vec<(PointIdType, StoredPoint)>> = pool.install(|| {
+    let per_segment: Vec<Vec<(PointIdType, StoredPoint)>> = pool.ambient_install(|handoff| {
         by_segment
             .into_iter()
             .collect::<Vec<_>>()
             .into_par_iter()
             .map(|(uuid, entries)| {
+                let _scope = handoff.enter_guard();
                 let segment = segments.get(uuid)?.read();
 
                 let internal_ids: Vec<PointOffsetType> = entries
                     .iter()
                     .map(|(_, internal_id)| *internal_id)
                     .collect();
-                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
                 let points = segment.read_stored_points(&internal_ids)?;
 
                 Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())

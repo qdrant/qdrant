@@ -77,8 +77,9 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
 
             let mut applied = 0;
 
+            let versions = segment.point_versions(ids)?;
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
+                let version = versions.get(&id).copied().ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
                 })?;
 
@@ -157,8 +158,9 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
 
             let mut applied = 0;
 
+            let versions = segment.point_versions(ids)?;
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
+                let version = versions.get(&id).copied().ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
                 })?;
 

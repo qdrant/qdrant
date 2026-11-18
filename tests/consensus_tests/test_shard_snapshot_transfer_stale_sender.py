@@ -118,6 +118,8 @@ def test_restarted_sender_replaying_aborted_transfer_start_leaves_receiver_intac
         )
     )
     start_commit = get_cluster_info(source_uri)["raft_info"]["commit"]
+    sender_log = pathlib.Path(init_pytest_log_folder()) / "peer_sender_delayed.log"
+    wait_for(lambda: "Staging: pausing shard transfer start" in sender_log.read_text())
 
     def sender_paused_in_apply():
         raft_info = get_cluster_info(peer_api_uris[sender])["raft_info"]

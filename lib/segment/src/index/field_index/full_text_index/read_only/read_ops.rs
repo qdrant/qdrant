@@ -16,6 +16,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::types::{FieldCondition, PayloadKeyType};
 
 /// Dispatcher impl: forwards every [`FullTextIndexRead`] method to the active
@@ -44,6 +45,14 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
             ReadOnlyFullTextIndex::Appendable(index) => index.points_count(),
             ReadOnlyFullTextIndex::OnDisk(index) => index.points_count(),
             ReadOnlyFullTextIndex::Immutable(index) => index.points_count(),
+        }
+    }
+
+    fn document_count(&self) -> usize {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.document_count(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.document_count(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.document_count(),
         }
     }
 
@@ -103,6 +112,14 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.token_bytes(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.token_bytes(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.token_bytes(),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),
@@ -131,6 +148,18 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
             ReadOnlyFullTextIndex::Appendable(index) => index.filter_query(query),
             ReadOnlyFullTextIndex::OnDisk(index) => index.filter_query(query),
             ReadOnlyFullTextIndex::Immutable(index) => index.filter_query(query),
+        }
+    }
+
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.filter_query_into(query, sink),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.filter_query_into(query, sink),
+            ReadOnlyFullTextIndex::Immutable(index) => index.filter_query_into(query, sink),
         }
     }
 
@@ -231,6 +260,14 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFullTextIndex<S> {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         read_ops::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        read_ops::filter_into(self, condition, sink)
     }
 
     fn estimate_cardinality(

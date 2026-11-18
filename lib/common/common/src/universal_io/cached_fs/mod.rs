@@ -12,7 +12,6 @@ mod async_io;
 
 use crate::ambient::AmbientFutureExt as _;
 use crate::mmap::AdviceSetting;
-use crate::reason::reason;
 use crate::universal_io::{
     CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
     UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
@@ -320,12 +319,15 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         }
     }
 
-    fn schedule_open(
+    fn schedule_open_with<Fut>(
         &self,
         path: &Path,
         open_arguments: Option<OpenOptions>,
         open_extra: Option<Fs::OpenExtra>,
-    ) {
+        then: impl FnOnce(Fs::File) -> Fut + Send + 'static,
+    ) where
+        Fut: Future<Output = UioResult<Fs::File>> + Send + 'static,
+    {
         let mut files_prefetched = self.files_prefetched.lock();
 
         if files_prefetched.contains_key(path) {
@@ -359,8 +361,11 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
         let mut fut = Box::pin(
-            async move { fs.open_async(path_owned, open_options, open_extra).await }
-                .unmeasured(reason("Prefetching is an internal operation")),
+            async move {
+                let file = fs.open_async(path_owned, open_options, open_extra).await?;
+                then(file).await
+            }
+            .in_current_ambient(),
         );
 
         // Poll once, so that real async work begins right away
@@ -393,16 +398,6 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 
         // Otherwise schedule normally
         self.schedule_open(path, open_arguments, open_extra)
-    }
-
-    fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        let mut fut = Box::pin(fut.unmeasured(reason("Prefetching is an internal operation")));
-        // Poll once, so that real async work begins right away
-        let scheduled = match fut.as_mut().now_or_never() {
-            Some(file) => ScheduledFile::Ready(file),
-            None => ScheduledFile::Future(fut),
-        };
-        self.files_prefetched.lock().insert(path, scheduled);
     }
 
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Fs> {

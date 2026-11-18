@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::ambient;
 use common::fs::safe_delete_with_suffix;
 use common::reason::reason;
@@ -15,6 +15,7 @@ use crate::common::operation_error::{OperationError, OperationResult, SegmentFai
 use crate::common::{Flusher, check_named_vectors, check_vector_name};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -32,8 +33,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
@@ -71,6 +72,15 @@ impl ReadSegmentEntry for Segment {
                 query_context,
             )
         })
+    }
+
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        self.with_view(|view| view.share_filter(filter, users, query_context))
     }
 
     fn score_bm25(
@@ -156,6 +166,25 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| {
+            view.retrieve_at(
+                points,
+                with_payload,
+                with_vector,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
+    }
+
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],
@@ -214,6 +243,21 @@ impl ReadSegmentEntry for Segment {
             .is_some()
     }
 
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        self.with_view(|view| view.has_points(point_ids, deferred_behavior))
+    }
+
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        self.with_view(|view| view.point_versions(point_ids))
+    }
+
     fn is_empty(&self) -> bool {
         self.id_tracker.borrow().total_point_count() == 0
     }
@@ -228,6 +272,10 @@ impl ReadSegmentEntry for Segment {
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
+    }
+
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        Ok(self.with_view(|view| view.max_available_vectors_size_in_bytes()))
     }
 
     fn estimate_point_count<'a>(

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use edge::Filter;
 
-use crate::parse::{build_kv_filter, read_data_arg};
+use crate::parse::{build_kv_filter, parse_filter_arg};
 
 /// Storage backend to read the shard from.
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -23,7 +23,7 @@ pub enum Backend {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search/count/facet)"
+    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search/text/count/facet)"
 )]
 pub struct Cli {
     /// Object-storage connection and shard-location options. Must be given
@@ -194,6 +194,8 @@ pub enum Command {
     Search(SearchArgs),
     /// Nearest-neighbour search for a sparse query vector, optionally filtered.
     SearchSparse(SearchSparseArgs),
+    /// BM25 search over the text index of a payload field, optionally filtered.
+    Text(TextArgs),
     /// Count points matching an optional filter.
     Count(CountArgs),
     /// Count points per unique value of a payload key.
@@ -228,10 +230,7 @@ impl CommonFilterArgs {
     /// sources are mutually exclusive and that key/value come as a pair.
     pub fn resolve_filter(&self) -> Result<Option<Filter>> {
         if let Some(raw) = &self.filter {
-            let json = read_data_arg(raw)?;
-            let filter = serde_json::from_str(&json)
-                .with_context(|| format!("failed to parse --filter as a JSON filter: {json}"))?;
-            return Ok(Some(filter));
+            return parse_filter_arg("--filter", raw).map(Some);
         }
         build_kv_filter(self.filter_key.as_deref(), self.filter_value.as_deref())
     }
@@ -338,6 +337,48 @@ pub struct SearchSparseArgs {
     /// Search exhaustively without the sparse index (slow, exact).
     #[arg(long, default_value_t = false)]
     pub exact: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct TextArgs {
+    #[command(flatten)]
+    pub common: CommonReadArgs,
+
+    /// Payload field to score. Its text index must have `scoring` set.
+    #[arg(long)]
+    pub field: String,
+
+    /// Query text, tokenized as the field's text index tokenizes a query.
+    /// Taken literally: a query may start with `@`.
+    #[arg(long)]
+    pub query: String,
+
+    /// BM25 term frequency saturation, non-negative. Default: 1.2.
+    #[arg(long)]
+    pub k1: Option<f32>,
+
+    /// BM25 document length normalization, within `[0, 1]`. Default: 0.75.
+    #[arg(long)]
+    pub b: Option<f32>,
+
+    /// Gather the BM25 statistics over the points matching this filter only,
+    /// independent of `--filter`. Same forms as `--filter`. Omit to gather them
+    /// over every point.
+    #[arg(long)]
+    pub idf_corpus: Option<String>,
+
+    /// Number of results to skip before collecting `--limit` results.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Only return results scoring above this value.
+    #[arg(long)]
+    pub score_threshold: Option<f32>,
+
+    /// Leave payloads out of the results, so the load profile keeps the
+    /// payload storage cold: the read cost of the BM25 query alone.
+    #[arg(long, default_value_t = false)]
+    pub no_payload: bool,
 }
 
 #[derive(ClapArgs, Debug)]

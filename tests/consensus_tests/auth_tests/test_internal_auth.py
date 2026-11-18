@@ -72,7 +72,6 @@ def internal_auth_cluster(tmp_path_factory: pytest.TempPathFactory):
             "QDRANT__SERVICE__ALT_API_KEY": ALT_SECRET,
             "QDRANT__SERVICE__READ_ONLY_API_KEY": READ_ONLY_API_KEY,
             "QDRANT__SERVICE__JWT_RBAC": "true",
-            "QDRANT__SERVICE__ENFORCE_INTERNAL_AUTH": "true",
         },
         headers=API_KEY_HEADERS,
     )

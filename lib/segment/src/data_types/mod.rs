@@ -1,6 +1,7 @@
 pub mod build_index_result;
 pub mod collection_defaults;
 pub mod facets;
+pub mod filter_user;
 pub mod fully_qualified_point;
 pub mod groups;
 pub mod index;
@@ -13,5 +14,6 @@ pub mod primitive;
 pub mod query_context;
 pub mod segment_record;
 pub mod tiny_map;
+pub mod update_metering;
 pub mod vector_name_config;
 pub mod vectors;

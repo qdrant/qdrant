@@ -44,7 +44,7 @@ enum IndexBuilder {
 }
 
 impl IndexBuilder {
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             IndexBuilder::Mutable(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload)

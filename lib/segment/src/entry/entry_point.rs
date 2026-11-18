@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
@@ -11,6 +11,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -24,8 +25,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -52,6 +53,19 @@ pub trait ReadSegmentEntry {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
+    /// Resolve `filter` once for several searches of a batch, if that is cheaper than each
+    /// search evaluating it: `users` are the [`Self::search_batch`] calls that will use it.
+    ///
+    /// Returns a filter equivalent to `filter` in this segment, to search with instead, or
+    /// `None` to keep `filter`. The result holds offsets of this segment: it must be used
+    /// only in this segment, and only while the segment stays read-locked since the call.
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>>;
 
     /// Rank points by BM25 over the text index of `field` and return the `top`
     /// best, highest first.
@@ -108,6 +122,19 @@ pub trait ReadSegmentEntry {
     fn retrieve(
         &self,
         point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
+
+    /// Records of `points`, read by their offsets in this segment without
+    /// looking their ids up. A point the segment no longer holds there at its
+    /// version, or a deferred one `deferred_behavior` hides, is left out, for
+    /// the caller to read by id.
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
@@ -192,6 +219,23 @@ pub trait ReadSegmentEntry {
     /// deferred-only point counts as present.
     fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
 
+    /// The ids among `point_ids` that [`Self::has_point`] accepts. Segments
+    /// whose id lookups read storage resolve them in one batch and propagate
+    /// its errors.
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>>;
+
+    /// [`Self::point_version`] of each of `point_ids`; points without one are
+    /// left out. Segments whose id lookups read storage resolve them in one
+    /// batch and propagate its errors.
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>>;
+
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(
         &'a self,
@@ -226,14 +270,7 @@ pub trait ReadSegmentEntry {
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 
     /// Max value from all `available_vectors_size_in_bytes`
-    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        let mut max_size = 0;
-        for vector_name in self.vector_names() {
-            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
-            max_size = std::cmp::max(max_size, inner_size);
-        }
-        Ok(max_size)
-    }
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize>;
 
     /// Get segment uuid
     fn segment_uuid(&self) -> Uuid;

@@ -85,6 +85,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vector,
             shard_key,
             order_value,
+            location: _,
         } = value;
         ScoredPoint {
             id,

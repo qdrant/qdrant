@@ -29,4 +29,6 @@ pub mod test_sse;
 #[cfg(test)]
 pub mod test_tq;
 #[cfg(test)]
+pub mod test_tq_matrix;
+#[cfg(test)]
 pub mod test_vnni;

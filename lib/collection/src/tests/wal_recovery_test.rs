@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -49,6 +49,7 @@ fn create_collection_config_with_prevent_unoptimized() -> CollectionConfigIntern
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
+    let _scope = ambient::async_test_guard();
     //  Init the logger
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -184,6 +185,7 @@ async fn test_delete_from_indexed_payload() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_partial_flush_recovery() {
+    let _scope = ambient::async_test_guard();
     //  Init the logger
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -454,6 +456,7 @@ async fn test_truncate_unapplied_wal() {
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_loads_pending_to_queue() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -623,6 +626,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
 /// with no plunger, no queue drain and no polling.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -750,6 +754,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
 /// there turns one bad tail record into a shard, and by default a node, that cannot start.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_tolerates_corrupt_tail_entry() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -891,6 +896,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
 /// entries: everything before `first_index` is already durably flushed.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_truncated_past_applied_seq() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -1029,6 +1035,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_with_smaller_queue_size() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -1176,6 +1183,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
 /// point set as the original run (issue #9575).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_filter_ops_resolved_to_ids_in_wal() {
+    let _scope = ambient::async_test_guard();
     use ahash::AHashSet;
     use segment::types::{Condition, Filter};
     use shard::operations::point_ops::{ConditionalInsertOperationInternal, UpdateMode};
@@ -1360,6 +1368,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
 /// apply semantics.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_old_wal_filter_op_replays_with_apply_semantics() {
+    let _scope = ambient::async_test_guard();
     use ahash::AHashSet;
     use segment::types::{Condition, Filter};
     use shard::operations::OperationWithClockTag;
@@ -1589,6 +1598,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let raw_upsert = |id: u64, bytes: Vec<u8>| {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
             PointStructRawPersisted {
@@ -1632,6 +1642,7 @@ async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
 /// reaches the WAL unparsed, so a bad one is only found on apply and must be skipped.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_raw_payload_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let vector_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
         .iter()
         .flat_map(|f| f.to_ne_bytes())
@@ -1666,6 +1677,7 @@ async fn test_malformed_raw_payload_upsert_is_skipped_on_wal_replay() {
 /// a raw sparse blob that doesn't decode as a stored sparse vector.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let sparse_name = "sparse";
 
     // Sparse-only collection: one sparse vector, default index parameters.
@@ -1714,6 +1726,7 @@ async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
 /// path rejects it, after the WAL write.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     const DIM: usize = 128;
 
     // Single multivector with TurboQuant (Turbo4) storage.
@@ -1765,6 +1778,7 @@ async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
 /// must come back through pending changes recovery — the WAL no longer holds it.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proxy_pending_changes_crash_recovery() {
+    let _scope = ambient::async_test_guard();
     use shard::proxy_segment::UnsyncedProxySegment;
 
     init_test_feature_flags();

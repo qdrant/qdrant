@@ -18,6 +18,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::types::{
     FieldCondition, Match, MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchSubstring,
     MatchText, MatchTextAny, MatchValue, PayloadKeyType,
@@ -45,6 +46,14 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => index.points_count(),
             Self::Immutable(index) => index.points_count(),
             Self::OnDisk(index) => index.points_count(),
+        }
+    }
+
+    fn document_count(&self) -> usize {
+        match self {
+            Self::Mutable(index) => index.document_count(),
+            Self::Immutable(index) => index.document_count(),
+            Self::OnDisk(index) => index.document_count(),
         }
     }
 
@@ -98,6 +107,14 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        match self {
+            Self::Mutable(index) => index.token_bytes(),
+            Self::Immutable(index) => index.token_bytes(),
+            Self::OnDisk(index) => index.token_bytes(),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             Self::Mutable(index) => index.values_is_empty(point_id),
@@ -126,6 +143,18 @@ impl FullTextIndexRead for FullTextIndex {
             Self::Mutable(index) => index.filter_query(query),
             Self::Immutable(index) => index.filter_query(query),
             Self::OnDisk(index) => index.filter_query(query),
+        }
+    }
+
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.filter_query_into(query, sink),
+            Self::Immutable(index) => index.filter_query_into(query, sink),
+            Self::OnDisk(index) => index.filter_query_into(query, sink),
         }
     }
 
@@ -212,6 +241,14 @@ impl PayloadFieldIndexRead for FullTextIndex {
         filter(self, condition)
     }
 
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        filter_into(self, condition, sink)
+    }
+
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
@@ -257,12 +294,12 @@ impl FullTextIndex {
     }
 }
 
-/// Body for [`PayloadFieldIndexRead::filter`]. Shared between [`FullTextIndex`]
-/// and `ReadOnlyFullTextIndex<S>`.
-pub fn filter<'a, T: FullTextIndexRead>(
-    index: &'a T,
+/// The query of a text `condition`: `None` if the condition is not one this index serves,
+/// `Some(None)` if it can't match anything (e.g. no tokens).
+fn parse_condition_query<T: FullTextIndexRead>(
+    index: &T,
     condition: &FieldCondition,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+) -> OperationResult<Option<Option<ParsedQuery>>> {
     let Some(r#match) = &condition.r#match else {
         return Ok(None);
     };
@@ -280,11 +317,42 @@ pub fn filter<'a, T: FullTextIndexRead>(
         }
     }?;
 
+    Ok(Some(parsed_query_opt))
+}
+
+/// Body for [`PayloadFieldIndexRead::filter`]. Shared between [`FullTextIndex`]
+/// and `ReadOnlyFullTextIndex<S>`.
+pub fn filter<'a, T: FullTextIndexRead>(
+    index: &'a T,
+    condition: &FieldCondition,
+) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    let Some(parsed_query_opt) = parse_condition_query(index, condition)? else {
+        return Ok(None);
+    };
+
     let Some(parsed_query) = parsed_query_opt else {
         return Ok(Some(Box::new(std::iter::empty())));
     };
 
     Ok(Some(index.filter_query(parsed_query)?))
+}
+
+/// Body for [`PayloadFieldIndexRead::filter_into`]. Shared between [`FullTextIndex`]
+/// and `ReadOnlyFullTextIndex<S>`.
+pub fn filter_into<T: FullTextIndexRead>(
+    index: &T,
+    condition: &FieldCondition,
+    sink: &mut impl PointSink,
+) -> OperationResult<bool> {
+    let Some(parsed_query_opt) = parse_condition_query(index, condition)? else {
+        return Ok(false);
+    };
+
+    if let Some(parsed_query) = parsed_query_opt {
+        index.filter_query_into(parsed_query, sink)?;
+    }
+
+    Ok(true)
 }
 
 /// Body for [`PayloadFieldIndexRead::estimate_cardinality`]. Shared.

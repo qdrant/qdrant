@@ -172,8 +172,15 @@ impl MmapSparseVectorStorage {
                 HwMetric::VectorIoWrite,
             )?;
         } else if (key as usize) < self.next_point_offset {
-            // delete vector
-            self.storage.delete_value(key)?;
+            // Soft-delete is already recorded on the deleted bitflag by
+            // `delete_vector`. Hard-delete reclaims Gridstore space; Logstore
+            // forbids it, and the bitflag alone is enough for append-only
+            // correctness (same contract as dense appendable storages).
+            // Skipping the call matters for clone-and-mutate: writing `None`
+            // at a fresh offset inserts a placeholder then soft-deletes it.
+            if self.storage.supports_delete() {
+                self.storage.delete_value(key)?;
+            }
         }
         // else: nothing was ever stored at this key, nothing to delete
 
@@ -214,11 +221,10 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
-            self.storage.get_value::<P>(key)
-        })?
-        .map(SparseVector::try_from)
-        .transpose()
+        self.storage
+            .get_value::<P>(key, HwMetric::VectorIoRead)?
+            .map(SparseVector::try_from)
+            .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(
@@ -250,9 +256,6 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _scope = ambient::unmeasured_guard(reason(
-            "This function is only used for internal operations. No need to measure.",
-        ));
         let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
             // Do not perform preprocessing - vectors should be already processed
@@ -479,6 +482,7 @@ mod test {
 
     #[test]
     fn test_reload_counts_trailing_deleted_offset() {
+        let _scope = ambient::test_guard();
         use std::borrow::Cow;
         use std::sync::atomic::AtomicBool;
 

@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::flags::feature_flags;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
+use segment::data_types::filter_user::FilterUser;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -246,6 +247,42 @@ impl ReadSegmentEntry for ProxySegment {
         Ok(wrapped_results)
     }
 
+    /// Resolved by the wrapped segment, in the view `search_batch` gives it: a search on a stale
+    /// vector doesn't evaluate the filter, and the filter is redacted the same way. Proxy
+    /// deletions are left out of the resolved points: `search_batch` still applies them on top,
+    /// through the deleted mask or a `must_not` of their ids.
+    ///
+    /// The points are only guaranteed valid while the wrapped segment doesn't change. It doesn't
+    /// while this proxy is installed and read-locked: changes reach it only through
+    /// `propagate_to_wrapped`, which holds this proxy's write lock. A search still holding this
+    /// proxy after it was unwrapped can see the wrapped segment change between this call and its
+    /// search, and then search with points resolved just before the change.
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        let vector_name_changes = self.pending_changes.vector_name_changes();
+
+        // `search_batch` returns nothing for these without evaluating the filter
+        let users: Vec<FilterUser<'_>> = users
+            .iter()
+            .filter(|user| !vector_name_changes.is_wrapped_data_stale(user.vector_name))
+            .copied()
+            .collect();
+        if users.len() < 2 {
+            return Ok(None);
+        }
+
+        let filter = vector_name_changes.redact_filter(filter);
+
+        self.wrapped_segment
+            .get()
+            .read()
+            .share_filter(&filter, &users, query_context)
+    }
+
     fn score_bm25(
         &self,
         field: PayloadKeyTypeRef,
@@ -443,6 +480,39 @@ impl ReadSegmentEntry for ProxySegment {
             self.redact_and_filter_for_retrieve(with_vector, point_ids);
         self.wrapped_segment.get().read().retrieve(
             &filtered_point_ids,
+            with_payload,
+            with_vector.as_ref(),
+            is_stopped,
+            deferred_behavior,
+        )
+    }
+
+    /// Like [`Self::retrieve`]: the wrapped segment's records, with the vectors
+    /// redacted and without the points marked for deletion here.
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let with_vector = self
+            .pending_changes
+            .vector_name_changes()
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let points: Vec<_> = points
+            .iter()
+            .filter(|point| {
+                !self
+                    .pending_changes
+                    .deleted_points()
+                    .contains_key(&point.id)
+            })
+            .copied()
+            .collect();
+        self.wrapped_segment.get().read().retrieve_at(
+            &points,
             with_payload,
             with_vector.as_ref(),
             is_stopped,
@@ -649,6 +719,41 @@ impl ReadSegmentEntry for ProxySegment {
                 .has_point(point_id, deferred_behavior)
     }
 
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        let mut held = self
+            .wrapped_segment
+            .get()
+            .read()
+            .has_points(point_ids, deferred_behavior)?;
+        let deleted_points = self.pending_changes.deleted_points();
+        held.retain(|point_id| !deleted_points.contains_key(point_id));
+        Ok(held)
+    }
+
+    /// Like [`Self::point_version`]: the wrapped segment's versions, without
+    /// those already marked for deletion at a newer version.
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        let mut versions = self
+            .wrapped_segment
+            .get()
+            .read()
+            .point_versions(point_ids)?;
+        let deleted_points = self.pending_changes.deleted_points();
+        versions.retain(|point_id, version| {
+            !deleted_points
+                .get(point_id)
+                .is_some_and(|delete| *version <= delete.local_version)
+        });
+        Ok(versions)
+    }
+
     fn is_empty(&self) -> bool {
         self.wrapped_segment.get().read().is_empty()
     }
@@ -713,6 +818,17 @@ impl ReadSegmentEntry for ProxySegment {
         } else {
             Ok(0)
         }
+    }
+
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        // Per-name sizes are adjusted for stale vectors and pending deletes, so take
+        // the max over `available_vectors_size_in_bytes` rather than the wrapped's max.
+        let mut max_size = 0;
+        for vector_name in self.vector_names() {
+            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
+            max_size = cmp::max(max_size, inner_size);
+        }
+        Ok(max_size)
     }
 
     fn estimate_point_count<'a>(

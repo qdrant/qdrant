@@ -1041,7 +1041,7 @@ pub struct GeoDistance {
 pub struct GeoDistanceParams {
     /// The origin geo point to measure from
     pub origin: GeoPoint,
-    /// Payload field with the destination geo point
+    /// Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used
     pub to: JsonPath,
 }
 

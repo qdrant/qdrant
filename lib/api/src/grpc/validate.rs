@@ -591,6 +591,7 @@ impl Validate for super::qdrant::IntegerIndexParams {
             on_disk: _,
             enable_hnsw: _,
             memory: _,
+            nested: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }
@@ -611,6 +612,7 @@ impl Validate for super::qdrant::TextIndexParams {
             enable_hnsw: _,
             memory: _,
             scoring: _,
+            nested: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }

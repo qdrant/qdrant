@@ -1,6 +1,7 @@
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
+use super::materialization::MaterializationHint;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -59,13 +60,40 @@ where
                 Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
             PrimaryCondition::HasVector(_) => Ok(None),
+            PrimaryCondition::Points(resolved) => Ok(Some(Box::new(resolved.points().iter()))),
         }
     }
 
+    /// Estimated number of points the primary clauses of `estimation` yield, which is
+    /// how many points get checked against the rest of the filter.
+    pub(super) fn count_primary_candidates(
+        &self,
+        estimation: &CardinalityEstimation,
+    ) -> OperationResult<usize> {
+        let available = self.available_point_count();
+        let candidates = estimation
+            .primary_clauses
+            .iter()
+            .map(|clause| {
+                Ok(match clause {
+                    PrimaryCondition::Condition(condition) => self
+                        .estimate_field_condition(condition, None)?
+                        .map_or(available, |estimation| estimation.exp),
+                    PrimaryCondition::Ids(ids) => ids.resolved_point_offsets.len(),
+                    PrimaryCondition::HasVector(_) => available,
+                    PrimaryCondition::Points(resolved) => resolved.len(),
+                })
+            })
+            .sum::<OperationResult<usize>>()?;
+        Ok(candidates.min(available))
+    }
+
+    /// `materialization`: see [`Self::optimize_filter`].
     pub fn optimized_filter<'q>(
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
@@ -74,6 +102,7 @@ where
             payload_provider,
             self.available_point_count(),
             deferred_behavior,
+            materialization,
         )?;
 
         Ok(optimized_filter)
@@ -114,6 +143,10 @@ where
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
                 )?;
+                // Iterate in offset order, not in the hash order of `point_ids`: it keeps
+                // the order of equally scored points deterministic, and reads storage
+                // sequentially
+                resolved_point_offsets.sort_unstable();
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
@@ -153,6 +186,11 @@ where
             Condition::CustomIdChecker(cond) => {
                 cond.0.estimate_cardinality(self.available_point_count())
             }
+
+            // The original filter's estimate, so searches plan as they would with it
+            Condition::ResolvedPoints(resolved) => resolved
+                .estimation()
+                .with_primary_clause(PrimaryCondition::Points(resolved.clone())),
         })
     }
 }

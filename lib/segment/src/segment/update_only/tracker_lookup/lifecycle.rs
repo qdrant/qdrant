@@ -5,6 +5,7 @@ use common::universal_io::{CachedFs, CachedReadFs, UniversalReadFsAsync, read_js
 
 use super::TrackerLookup;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::segment::update_only::lookup::{WRITER_POPULATE, build_cached_fs};
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
@@ -43,6 +44,8 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
             None,
             max_committed_offset,
             WRITER_POPULATE,
+            // A writer resolves against every delete, versioned or not
+            DeleteGating::Immediate,
         )?;
 
         fs.rotate_cache_file_info();

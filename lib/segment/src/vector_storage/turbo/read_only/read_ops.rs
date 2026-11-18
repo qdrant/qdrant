@@ -4,8 +4,9 @@ use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
+use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
-use quantization::{EncodedStorage, EncodedStorageWrite};
+use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::super::shared;
 use super::ReadOnlyChunkedTurboVectorStorage;
@@ -172,5 +173,8 @@ impl<S: UniversalRead> TurboScoring for ReadOnlyChunkedTurboVectorStorage<S> {
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_vector_data(key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }

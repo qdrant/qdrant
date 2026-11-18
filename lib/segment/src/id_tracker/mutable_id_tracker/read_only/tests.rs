@@ -82,7 +82,7 @@ fn test_open_matches_mutable_tracker() {
     insert(&mut mutable, 100.into(), 0, 10);
     insert(&mut mutable, 200.into(), 1, 11);
     insert(&mut mutable, 300.into(), 2, 12);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
@@ -149,7 +149,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
     // Append more changes: insert two new points, delete one existing point
     insert(&mut mutable, 400.into(), 3, 13);
     insert(&mut mutable, 500.into(), 4, 14);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let result = reload(&mut read_only, None);
@@ -177,7 +177,7 @@ fn test_live_reload_insert_then_delete_within_batch() {
 
     // Insert a brand-new point and delete it again, all before the read-only view reloads.
     insert(&mut mutable, 200.into(), 1, 11);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let result = reload(&mut read_only, None);
@@ -426,6 +426,53 @@ fn test_live_reload_repeated_relinks_keep_the_published_slot() {
     );
 }
 
+/// A re-insert whose version is not flushed yet must not hide the earlier insert of the same point
+/// whose version is: the point resolves to the earlier offset until the re-insert's version lands.
+/// A reload that read the versions before the earlier insert's version landed reads both inserts
+/// as pending, and must still stage the earlier one once its version is read. A fresh open reads
+/// both inserts in one go.
+#[test]
+fn test_unversioned_reinsert_keeps_earlier_versioned_insert() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let resolve = |read_only: &ReadOnlyTracker| {
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly)
+    };
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    let mut reloaded = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // Point 100 is inserted at offset 0 and re-inserted at offset 1, and the reload reads both
+    // inserts before either version
+    insert(&mut mutable, 100.into(), 0, 10);
+    mutable.set_link(100.into(), 1).unwrap();
+    mutable.mapping_flusher()().unwrap();
+    assert_eq!(reload(&mut reloaded, None), LiveReloadResult::default());
+    assert_eq!(resolve(&reloaded), None);
+
+    // The first insert's version lands, the re-insert has none yet
+    mutable.versions_flusher()().unwrap();
+    let result = reload(&mut reloaded, None);
+    assert_eq!(result.inserted, vec![0]);
+    assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+    assert_eq!(resolve(&reloaded), Some(0));
+    assert_eq!(reloaded.internal_version(0), Some(10));
+
+    let mut opened = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(resolve(&opened), Some(0), "fresh open");
+
+    // The re-insert's version lands: the point moves to the new offset
+    mutable.set_internal_version(1, 20).unwrap();
+    mutable.versions_flusher()().unwrap();
+    for read_only in [&mut reloaded, &mut opened] {
+        let result = reload(read_only, None);
+        assert_eq!(result.inserted, vec![1]);
+        assert_eq!(result.deleted, vec![0]);
+        assert_eq!(resolve(read_only), Some(1));
+        assert_in_sync(read_only, &mutable);
+    }
+}
+
 /// A partially-written trailing mapping entry (e.g. a flush observed mid-append) must be ignored,
 /// and the next live-reload must re-read from the start of that incomplete entry.
 #[test]
@@ -656,7 +703,7 @@ fn test_upsert_keeps_old_offset_until_publish() {
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // Move point 100 from offset 0 to offset 1
-    mutable.drop(100.into()).unwrap();
+    mutable.drop(100.into(), None).unwrap();
     insert(&mut mutable, 100.into(), 1, 11);
     flush(&mutable);
 
@@ -721,7 +768,7 @@ fn test_retry_after_unpublished_insert_was_deleted() {
     assert_eq!(pending.inserted, vec![1]);
 
     // The writer deletes the point before the retry
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     // The staged offset is reported as deleted, so a component that already ingested it drops it
@@ -800,7 +847,7 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     assert_eq!(read_only.available_point_count(), 3);
 
     // 3. Pure delete without inserts: versions.dat does not grow, but mappings.dat changed
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
@@ -818,6 +865,7 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
 
 #[test]
 fn test_probe_committed_over_disk_cache() {
+    let _scope = common::ambient::test_guard();
     use std::sync::Arc;
 
     use common::universal_io::{

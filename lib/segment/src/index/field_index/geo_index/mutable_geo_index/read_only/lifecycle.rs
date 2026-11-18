@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::ambient;
 use common::ambient::hw::HwMetric;
-use common::reason::reason;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
@@ -48,6 +47,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
             BlobstoreReader::<Vec<RawGeoPoint>, S>::open(fs, path, Populate::Blocking)
@@ -58,11 +58,13 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         };
 
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),
                 |idx, values: Vec<RawGeoPoint>| {
+                    if deleted.get(idx as usize).is_some_and(|deleted| *deleted) {
+                        return Ok(true);
+                    }
                     let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
                     in_memory_index.add_many_geo_points(idx, geo_points)?;
                     Ok(true)

@@ -41,13 +41,22 @@ pub fn adjust_to_available_vectors(
     let number_of_deleted_vectors = available_points.saturating_sub(available_vectors);
 
     // It is possible, all deleted vectors are selected in worst case
-    let min = estimation.min.saturating_sub(number_of_deleted_vectors);
+    let mut min = estimation.min.saturating_sub(number_of_deleted_vectors);
     // Another extreme case - all deleted vectors are not selected
     let max = estimation.max.min(available_vectors).min(available_points);
+    // Payload-index estimates can arrive with min > max; keep the interval well-formed
+    // before clamping exp (usize::clamp panics on an inverted range).
+    min = min.min(max);
 
+    // Cap at 1.0: append-only clone-and-tombstone can leave available_vectors above
+    // available_points (vector slots outlive the id-tracker count). Scaling above 1 would
+    // inflate exp past max.
     let availability_prob = (available_vectors as f64 / available_points as f64).min(1.0);
 
-    let exp = (estimation.exp as f64 * availability_prob).round() as usize;
+    // Keep the postcondition even when the inputs are inconsistent (payload index counting
+    // tombstones, or vectors > points under append-only). Release builds used to plan with
+    // exp > max; clamp instead of only asserting.
+    let exp = ((estimation.exp as f64 * availability_prob).round() as usize).clamp(min, max);
 
     debug_assert!(
         min <= exp,
@@ -85,13 +94,14 @@ pub fn adjust_for_deferred_points(
     let number_of_deferred_points = total_points.saturating_sub(visible_points);
 
     // It is possible, all deferred points are selected in worst case
-    let min = estimation.min.saturating_sub(number_of_deferred_points);
+    let mut min = estimation.min.saturating_sub(number_of_deferred_points);
     // Another extreme case - all deferred points are not selected
     let max = estimation.max.min(visible_points).min(total_points);
+    min = min.min(max);
 
     let availability_prob = (visible_points as f64 / total_points as f64).min(1.0);
 
-    let exp = (estimation.exp as f64 * availability_prob).round() as usize;
+    let exp = ((estimation.exp as f64 * availability_prob).round() as usize).clamp(min, max);
 
     debug_assert!(
         min <= exp,
@@ -221,6 +231,12 @@ pub fn combine_must_estimations(
     }
 }
 
+/// Estimate a single condition, bounded by `total`.
+///
+/// The combinators below treat `estimation / total` as a probability, so they only keep
+/// `min <= exp <= max` when every input is within `total`. A field index can estimate above
+/// `total`: under append-only deletion it still counts tombstoned points until the segment is
+/// rebuilt, while `total` only counts available points.
 fn estimate_condition<F>(
     estimator: &F,
     condition: &Condition,
@@ -238,7 +254,10 @@ where
         | Condition::HasVector(_)
         | Condition::Slice(_)
         | Condition::Nested(_)
-        | Condition::CustomIdChecker(_) => estimator(condition),
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => {
+            estimator(condition).map(|estimation| estimation.bounded_by(total))
+        }
     }
 }
 
@@ -389,6 +408,7 @@ mod tests {
             Condition::Filter(_) => panic!("unexpected Filter"),
             Condition::Nested(_) => panic!("unexpected Nested"),
             Condition::CustomIdChecker(_) => panic!("unexpected CustomIdChecker"),
+            Condition::ResolvedPoints(_) => panic!("unexpected ResolvedPoints"),
             Condition::Slice(_) => panic!("unexpected Slice"),
             Condition::Field(field) => match field.key.to_string().as_str() {
                 "color" => CardinalityEstimation {
@@ -719,5 +739,65 @@ mod tests {
         assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
         assert_eq!(adjusted.max, 11);
         assert_eq!(adjusted.exp, 11);
+    }
+
+    /// A field index that still counts tombstoned points (append-only deletion) can estimate
+    /// a condition above the available points. Combining such estimates must still yield
+    /// `min <= exp <= max`. Unbounded, this `must` gave `min: 25, exp: 24, max: 20`.
+    #[test]
+    fn test_condition_estimates_above_total() {
+        const SMALL_TOTAL: usize = 25;
+        let estimator = |condition: &Condition| -> OperationResult<CardinalityEstimation> {
+            let Condition::Field(field) = condition else {
+                panic!("unexpected condition {condition:?}");
+            };
+            let count = match field.key.to_string().as_str() {
+                "over" => 30,
+                "under" => 20,
+                key => panic!("unexpected key {key}"),
+            };
+            Ok(CardinalityEstimation::exact(count))
+        };
+        let conditions = vec![test_condition("over"), test_condition("under")];
+        let must = Filter {
+            should: None,
+            min_should: None,
+            must: Some(conditions.clone()),
+            must_not: None,
+        };
+        let should = Filter {
+            should: Some(conditions),
+            min_should: None,
+            must: None,
+            must_not: None,
+        };
+
+        for query in [must, should] {
+            let estimation = estimate_filter(&estimator, &query, SMALL_TOTAL).unwrap();
+            assert!(
+                estimation.min <= estimation.exp && estimation.exp <= estimation.max,
+                "{estimation:?}",
+            );
+            assert!(estimation.max <= SMALL_TOTAL, "{estimation:?}");
+        }
+    }
+
+    /// Live `harness_edge_verify` failure (seed 3989159445767383720): after append-only
+    /// clone-and-tombstone churn, `available_vectors` exceeded `available_points`, and the
+    /// payload-side estimate arrived with `exp > max`. Adjustment must still return a
+    /// well-formed triple instead of tripping the debug assert.
+    #[test]
+    fn test_adjust_vectors_above_points_with_inverted_estimate() {
+        let estimation = CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: 5,
+            max: 4,
+        };
+
+        let adjusted = adjust_to_available_vectors(estimation, 100, 33);
+        assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
+        assert_eq!(adjusted.max, 4);
+        assert_eq!(adjusted.exp, 4);
     }
 }

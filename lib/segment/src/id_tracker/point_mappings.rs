@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-#[cfg(test)]
 use std::collections::btree_map::Entry;
 use std::iter;
 
@@ -261,6 +260,54 @@ impl PointMappings {
         // Preserve the prior single-return signature: prefer active (the
         // visible head) when both tracks held this ext.
         active.or(deferred)
+    }
+
+    /// Drop the head of `external_id` that sits at `internal_id`, if either of its heads does, and
+    /// return whether one did. Unlike [`Self::drop`] this leaves the other head alone: it serves a
+    /// delete that only applies to the slots the point held when it was deleted, not to a copy
+    /// linked after.
+    pub(crate) fn drop_head(
+        &mut self,
+        external_id: PointIdType,
+        internal_id: PointOffsetType,
+    ) -> bool {
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|cutoff| internal_id >= cutoff);
+
+        let removed = match (external_id, is_deferred) {
+            (PointIdType::NumId(num), false) => {
+                remove_if_at(&mut self.external_to_internal_num, num, internal_id)
+            }
+            (PointIdType::NumId(num), true) => remove_if_at(
+                &mut self.external_to_internal_num_deferred,
+                num,
+                internal_id,
+            ),
+            (PointIdType::Uuid(uuid), false) => {
+                remove_if_at(&mut self.external_to_internal_uuid, uuid, internal_id)
+            }
+            (PointIdType::Uuid(uuid), true) => remove_if_at(
+                &mut self.external_to_internal_uuid_deferred,
+                uuid,
+                internal_id,
+            ),
+        };
+        if !removed {
+            return false;
+        }
+
+        self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
+        self.tombstone_slot(internal_id);
+
+        // With its deferred head gone, nothing shadows the active head anymore
+        if is_deferred && let Some(active) = self.internal_id_active(&external_id) {
+            let active = active as usize;
+            if active < self.shadowed.len() {
+                self.shadowed.set(active, false);
+            }
+        }
+        true
     }
 
     /// Mark `internal_id` as soft-deleted. Idempotent on the deleted bit, and
@@ -825,6 +872,21 @@ impl PointMappings {
             + external_to_internal_uuid_deferred.len())
             * uuid_entry_size;
         deleted_bytes + shadowed_bytes + internal_to_external_bytes + num_map_bytes + uuid_map_bytes
+    }
+}
+
+/// Remove `key` from `map` if it maps to `internal_id`, returning whether it did.
+fn remove_if_at<K: Ord>(
+    map: &mut BTreeMap<K, PointOffsetType>,
+    key: K,
+    internal_id: PointOffsetType,
+) -> bool {
+    match map.entry(key) {
+        Entry::Occupied(entry) if *entry.get() == internal_id => {
+            entry.remove();
+            true
+        }
+        Entry::Occupied(_) | Entry::Vacant(_) => false,
     }
 }
 

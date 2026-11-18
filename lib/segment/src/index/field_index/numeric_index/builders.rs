@@ -42,7 +42,7 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         self.0.add_point(id, payload)
     }
 
@@ -94,13 +94,14 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
             let payload_values = <NumericIndex<T, P> as ValueIndexer>::get_values(value);
             flatten_values.extend(payload_values);
         }
+        let has_values = !flatten_values.is_empty();
         let flatten_values = flatten_values
             .into_iter()
             .map(NumericIndex::into_inner_value)
@@ -109,7 +110,7 @@ where
         HwMetric::PayloadIndexIoWrite.bump(size_of_val(&flatten_values));
 
         self.in_memory_index.add_many_to_list(id, flatten_values);
-        Ok(())
+        Ok(has_values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -191,7 +192,7 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "NumericIndexGridstoreBuilder: index must be initialized before adding points",

@@ -23,7 +23,7 @@ use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
 use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
@@ -81,6 +81,7 @@ fn test_slow_down_action_replay() {
 
 #[test]
 fn create_collection_action_replay() {
+    let _scope = ambient::test_guard();
     let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
     create_collection(&handle, &dispatcher, "other");
 
@@ -408,11 +409,13 @@ fn create_and_register_shards_action_build_failure_reload() {
 
 #[test]
 fn create_and_register_shards_action_auto_resharding_reload() {
+    let _scope = ambient::test_guard();
     create_and_register_shards_action_resharding_reload(false);
 }
 
 #[test]
 fn create_and_register_shards_action_custom_resharding_reload() {
+    let _scope = ambient::test_guard();
     create_and_register_shards_action_resharding_reload(true);
 }
 
@@ -1004,6 +1007,73 @@ fn drop_named_vector_action_replay() {
 
     let state = toc.collection_state("test").unwrap();
     assert!(state.config.params.vectors.get_params("text").is_none());
+}
+
+#[test]
+fn update_collection_config_action_preserves_healthy_and_restarts_failed_optimizers() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let replica_set = handle.block_on(async {
+        collection
+            .shards_holder()
+            .read()
+            .await
+            .get_shard(0)
+            .unwrap()
+            .clone()
+    });
+    let initial = handle
+        .block_on(replica_set.local_optimizers_for_test())
+        .unwrap();
+    let m = toc.collection_state("test").unwrap().config.hnsw_config.m;
+    let unchanged = Action::UpdateCollectionConfig {
+        collection: "test".into(),
+        diff: Box::new(CollectionConfigDiff::Hnsw(HnswConfigDiff {
+            m: Some(m),
+            ..Default::default()
+        })),
+    };
+
+    toc.apply_action(unchanged.clone()).unwrap();
+    handle.block_on(async { tokio::time::sleep(Duration::from_millis(100)).await });
+
+    let current = handle
+        .block_on(replica_set.local_optimizers_for_test())
+        .unwrap();
+    assert!(
+        Arc::ptr_eq(&initial, &current),
+        "unchanged healthy config must retain optimizers"
+    );
+    let segments = handle
+        .block_on(replica_set.local_segments_for_test())
+        .unwrap();
+    segments
+        .write()
+        .report_optimizer_error("injected optimizer error");
+
+    toc.apply_action(unchanged).unwrap();
+
+    handle.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let current = replica_set.local_optimizers_for_test().await.unwrap();
+                if !Arc::ptr_eq(&initial, &current) && !collection.has_optimizer_errors().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("unchanged config must restart failed optimizers");
+    });
 }
 
 #[test]

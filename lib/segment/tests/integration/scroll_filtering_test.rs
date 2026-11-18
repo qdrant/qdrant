@@ -30,10 +30,12 @@ fn test_filtering_context_consistency() {
         let random_offset = rng.random_range(0..10);
 
         let read_by_index_res = segment.with_view(|view| {
+            let cardinality_estimation = view.estimate_point_count(Some(&filter)).unwrap();
             view.filtered_read_by_index(
                 Some(random_offset.into()),
                 Some(10),
                 &filter,
+                &cardinality_estimation,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )

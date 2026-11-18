@@ -23,7 +23,9 @@ pub(super) struct Node {
 
 /// One per request.
 struct Root {
+    /// Always collected. Measures _only this_ request.
     hw: HwSharedDrain,
+    /// When present, measurements are _also_ added to this drain.
     collection: Option<Arc<HwSharedDrain>>,
     cpu_utilization: CpuUtilization,
     sink: Option<Sink>,
@@ -76,6 +78,8 @@ impl AmbientContext {
         self.0.root.hw.add(src);
     }
 
+    /// Get hardware usage for this request.
+    /// Not related to the collection drain.
     pub fn hw_data(&self) -> HardwareData {
         self.0.root.hw.load()
     }

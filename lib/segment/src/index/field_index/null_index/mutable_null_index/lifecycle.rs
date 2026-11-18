@@ -104,7 +104,7 @@ impl MutableNullIndex {
         })
     }
 
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let (has_values, is_null) = classify_payload(payload);
 
         self.storage.has_values_flags.set(id, has_values);
@@ -116,7 +116,7 @@ impl MutableNullIndex {
         // Account for I/O cost as if we were writing to disk now
         HwMetric::PayloadIndexIoWrite.bump(2);
 
-        Ok(())
+        Ok(has_values)
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -199,7 +199,7 @@ impl FieldIndexBuilderTrait for MutableNullIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-    ) -> OperationResult<()> {
+    ) -> OperationResult<bool> {
         self.0.add_point(id, payload)
     }
 

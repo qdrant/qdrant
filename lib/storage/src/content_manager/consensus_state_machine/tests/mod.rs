@@ -17,12 +17,26 @@ use segment::types::*;
 use shard::operations::VectorNameConfig;
 
 use super::*;
+use crate::content_manager::errors::StorageResult;
 
 pub(crate) const PEER_ID: u64 = 42;
 const OTHER_PEER_ID: u64 = 43;
 
 fn state_machine(state: ClusterState) -> ConsensusStateMachine {
     ConsensusStateMachine::new(state, node_context())
+}
+
+/// Project successful plans in tests that assert final state or construct a replay prefix
+trait ApplyOperation {
+    fn apply(&mut self, operation: &ConsensusOperations) -> StorageResult<Plan>;
+}
+
+impl ApplyOperation for ConsensusStateMachine {
+    fn apply(&mut self, operation: &ConsensusOperations) -> StorageResult<Plan> {
+        let plan = self.plan(operation)?;
+        self.apply_actions(&plan.actions);
+        Ok(plan)
+    }
 }
 
 /// Node config is fixed, except for the parts used in tests. Extend it as needed.

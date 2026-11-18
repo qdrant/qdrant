@@ -5,7 +5,10 @@ use rand::distr::{Alphanumeric, SampleString};
 use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 
-use crate::{CHUNK_LEN, PostingBuilder, PostingList, PostingValue, UnsizedHandler, UnsizedValue};
+use crate::{
+    CHUNK_LEN, PostingBuilder, PostingLenIterator, PostingList, PostingValue, UnsizedHandler,
+    UnsizedValue,
+};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
@@ -110,6 +113,51 @@ fn test_len_iter_matches_values() {
                     expected.as_ref().map(|e| expected_len(&e.value)),
                 );
                 assert_eq!(len_cursor.current(), actual);
+            }
+
+            // Walking the rest a chunk at a time yields what `next` would:
+            // from the start, from part way in (on a chunk boundary, and off
+            // one), and from a seeked element, which it includes.
+            let walk = |cursor: &mut PostingLenIterator<'_, V>| {
+                let mut out = Vec::new();
+                cursor.for_each_remaining(|elem| out.push(elem));
+                assert_eq!(cursor.current(), None);
+                assert_eq!(cursor.next(), None, "the walk leaves the cursor exhausted");
+                out
+            };
+            assert_eq!(walk(&mut posting_list.view().len_iter()), lens);
+            for skip in [1, 3, CHUNK_LEN, CHUNK_LEN + 5] {
+                let mut cursor = posting_list.view().len_iter();
+                for _ in 0..skip {
+                    cursor.next();
+                }
+                let from = skip.saturating_sub(1).min(lens.len());
+                assert_eq!(walk(&mut cursor), lens[from..], "after {skip} next");
+            }
+            for (at, elem) in lens.iter().enumerate().step_by(lens.len() / 10 + 1) {
+                let mut cursor = posting_list.view().len_iter();
+                cursor.advance_until_greater_or_equal(elem.id);
+                assert_eq!(walk(&mut cursor), lens[at..], "after seeking {}", elem.id);
+            }
+            // Bounded walks over consecutive windows yield the same elements,
+            // each stopping on the first element at or past its bound.
+            for window in [1, 3, 50, 1000] {
+                let mut cursor = posting_list.view().len_iter();
+                let mut out = Vec::new();
+                let mut end: PointOffsetType = 0;
+                loop {
+                    end += window;
+                    let more = cursor.for_each_below(end, |elem| out.push(elem));
+                    let first_past = lens
+                        .get(lens.partition_point(|elem| elem.id < end))
+                        .copied();
+                    assert_eq!(cursor.current(), first_past, "window {window}, end {end}");
+                    assert_eq!(more, first_past.is_some());
+                    if !more {
+                        break;
+                    }
+                }
+                assert_eq!(out, lens, "window {window}");
             }
         });
     }
@@ -259,4 +307,28 @@ fn next_after_seek_yields_the_seeked_element_again() {
     let mut lens = posting_list.view().len_iter();
     assert_eq!(lens.advance_until_greater_or_equal(5).unwrap().id, 9);
     assert_eq!(lens.next().unwrap().id, 9);
+}
+
+#[test]
+fn test_for_each_id_chunk_yields_all_ids_in_order() {
+    check_various_lengths(|len| {
+        let mut builder = PostingBuilder::new();
+        // Gaps of 1..=3, so the chunks are bitpacked with more than one bit.
+        let ids: Vec<PointOffsetType> = (0..len).map(|i| i * 2 + i % 3).collect();
+        for &id in &ids {
+            builder.add_id(id);
+        }
+        let list: PostingList<()> = builder.build();
+
+        let mut chunks = Vec::new();
+        list.view()
+            .for_each_id_chunk(|chunk| chunks.push(chunk.to_vec()));
+
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| !chunk.is_empty() && chunk.len() <= CHUNK_LEN)
+        );
+        assert_eq!(chunks.concat(), ids);
+    });
 }

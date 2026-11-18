@@ -7,7 +7,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
@@ -18,6 +18,7 @@ use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_reloading() {
+    let _scope = ambient::async_test_guard();
     test_collection_reloading_with_shards(1).await;
     test_collection_reloading_with_shards(N_SHARDS).await;
 }
@@ -79,6 +80,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_payload_reloading() {
+    let _scope = ambient::async_test_guard();
     test_collection_payload_reloading_with_shards(1).await;
     test_collection_payload_reloading_with_shards(N_SHARDS).await;
 }
@@ -163,6 +165,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_payload_custom_payload() {
+    let _scope = ambient::async_test_guard();
     test_collection_payload_custom_payload_with_shards(1).await;
     test_collection_payload_custom_payload_with_shards(N_SHARDS).await;
 }

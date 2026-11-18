@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 use std::ops::Bound;
 
-use common::ambient;
 use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::generic_consts::Random;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead, UserData};
 use itertools::Either;
@@ -35,18 +33,12 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         }
     }
 
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        mut on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&T) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&T) -> bool,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
@@ -57,11 +49,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         if self.storage.deleted.is_active(idx) {
             Some(Box::new(
-                ambient::unmeasured(reason("TODO: Propagate counter upwards"), || {
-                    self.storage.point_to_values.values_iter(idx)
-                })
-                .ok()??
-                .map(|v| *v),
+                self.storage
+                    .point_to_values
+                    .values_iter(idx)
+                    .ok()??
+                    .map(|v| *v),
             ))
         } else {
             None

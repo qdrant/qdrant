@@ -54,6 +54,8 @@ pub mod stored_bitslice;
 pub mod tar_ext;
 pub mod tar_unpack;
 pub mod tempfile_ext;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod top_k;
 pub mod toposort;
 pub mod typelevel;

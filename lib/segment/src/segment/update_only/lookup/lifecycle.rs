@@ -12,6 +12,7 @@ use common::universal_io::{
 use super::LookupSegment;
 use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, SegmentVersion};
@@ -154,6 +155,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             deferred_internal_id.filter(|_| appendable),
             max_committed_offset,
             WRITER_POPULATE,
+            // A writer resolves against every delete, versioned or not
+            DeleteGating::Immediate,
         )?));
 
         let mut vector_data = HashMap::new();

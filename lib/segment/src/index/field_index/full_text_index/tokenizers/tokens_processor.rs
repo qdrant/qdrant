@@ -4,6 +4,24 @@ use std::sync::Arc;
 use super::stemmer::Stemmer;
 use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
+/// Tokens are cut to this many characters before any other processing, whatever `max_token_len`
+/// is. Real words are much shorter, and processing longer tokens gets expensive: snowball
+/// stemming takes time quadratic in token length. Cutting instead of dropping keeps long tokens,
+/// like URLs, searchable by their beginning.
+pub const MAX_TOKEN_CHARS: usize = 1024;
+
+/// Cuts `token` to its first [`MAX_TOKEN_CHARS`] characters.
+pub fn truncate_to_max_token_chars(token: Cow<'_, str>) -> Cow<'_, str> {
+    // A character takes at least one byte, so most tokens don't need counting
+    if token.len() <= MAX_TOKEN_CHARS {
+        return token;
+    }
+    match token.char_indices().nth(MAX_TOKEN_CHARS) {
+        Some((end, _)) => super::truncate_cow(token, end),
+        None => token,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TokensProcessor {
     pub lowercase: bool,
@@ -52,6 +70,17 @@ impl TokensProcessor {
         }
     }
 
+    /// Whether processing an ASCII token does nothing but (optionally) lowercase it: no stopwords,
+    /// stemming or configured length limits. ASCII folding leaves ASCII unchanged.
+    ///
+    /// Tokens are still cut to [`MAX_TOKEN_CHARS`].
+    pub fn is_ascii_lowercase_only(&self) -> bool {
+        self.stopwords_filter.is_empty()
+            && self.stemmer.is_none()
+            && self.min_token_len.is_none()
+            && self.max_token_len.is_none()
+    }
+
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords_filter.is_stopword(token)
     }
@@ -74,6 +103,8 @@ impl TokensProcessor {
             return None;
         }
 
+        token_cow = truncate_to_max_token_chars(token_cow);
+
         // Handle ASCII folding (normalize accents)
         if *ascii_folding {
             token_cow = super::ascii_folding::fold_to_ascii_cow(token_cow);
@@ -81,7 +112,7 @@ impl TokensProcessor {
 
         // Handle lowercase
         if *lowercase {
-            token_cow = Cow::Owned(token_cow.to_lowercase());
+            token_cow = lowercase_cow(token_cow);
         }
 
         // Handle stopwords
@@ -105,7 +136,8 @@ impl TokensProcessor {
         Some(token_cow)
     }
 
-    /// Processes a token for indexing. Applies all configured options to the token.
+    /// Processes a token for indexing. Cuts it to [`MAX_TOKEN_CHARS`], and applies all configured
+    /// options to it.
     ///
     /// Returns `None` if:
     /// - The token is empty.
@@ -114,4 +146,17 @@ impl TokensProcessor {
     pub fn process_token<'a>(&self, token: &'a str, check_max_len: bool) -> Option<Cow<'a, str>> {
         self.process_token_cow(Cow::Borrowed(token), check_max_len)
     }
+}
+
+/// Lowercases `token`, without allocating when it is ASCII and already lowercase.
+fn lowercase_cow(token: Cow<'_, str>) -> Cow<'_, str> {
+    if !token.is_ascii() {
+        return Cow::Owned(token.to_lowercase());
+    }
+    if !token.bytes().any(|b| b.is_ascii_uppercase()) {
+        return token;
+    }
+    let mut owned = token.into_owned();
+    owned.make_ascii_lowercase();
+    Cow::Owned(owned)
 }

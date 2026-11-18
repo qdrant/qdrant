@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
-use common::mmap::Flusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
@@ -605,21 +604,9 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         None
     }
 
-    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[f32]) -> std::io::Result<()> {
-        debug_assert!(false, "PQ does not support upsert_vector",);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "PQ does not support upsert_vector",
-        ))
-    }
-
     fn vectors_count(&self) -> usize {
         // `vector_division` size is equal to quantized vector size because each chunk is replaced by one `u8` centroid index.
         self.encoded_vectors.vectors_count()
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 
 /// A structure, that performs topological sorting over
@@ -51,6 +51,36 @@ impl<T: Eq + std::hash::Hash + Copy, V> TopoSort<T, V> {
     /// Returns the elements `element` depends on, with the value stored per dependency.
     pub fn dependencies_of(&self, element: &T) -> impl Iterator<Item = (&T, &V)> {
         self.dependencies.get(element).into_iter().flatten()
+    }
+
+    /// Whether `from` depends on `to`, directly or transitively.
+    ///
+    /// Adding `element` depends on `depends_on` creates a cycle exactly when
+    /// `depends_on` already reaches `element`.
+    pub fn reaches(&self, from: &T, to: &T) -> bool {
+        // Common case on the copy-on-write path: `from` has no dependencies at all
+        if !self.dependencies.contains_key(from) {
+            return false;
+        }
+        let mut visited = HashSet::new();
+        let mut stack = vec![*from];
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+            for depends_on in self
+                .dependencies
+                .get(&node)
+                .into_iter()
+                .flat_map(HashMap::keys)
+            {
+                if depends_on == to {
+                    return true;
+                }
+                stack.push(*depends_on);
+            }
+        }
+        false
     }
 
     /// Removes dependencies for which the filter function returns false
@@ -254,5 +284,38 @@ mod tests {
         let result: Vec<_> = topo.sort_elements(&elements).collect();
         // 4 is missing, only element 2 is depending on 3
         assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_reaches() {
+        let mut topo = TopoSort::new();
+        topo.add_dependency(1, 2, ());
+        topo.add_dependency(2, 3, ());
+        topo.add_dependency(4, 2, ());
+
+        assert!(topo.reaches(&1, &2));
+        assert!(topo.reaches(&1, &3)); // transitive
+        assert!(!topo.reaches(&3, &1)); // edges are directed
+        assert!(!topo.reaches(&2, &4));
+        assert!(!topo.reaches(&5, &1)); // unknown node
+        assert!(!topo.reaches(&1, &1)); // no self loop without a cycle
+
+        topo.add_dependency(3, 1, ());
+        assert!(topo.reaches(&1, &1)); // cycle 1 -> 2 -> 3 -> 1
+    }
+
+    /// Each target is behind a different branch, so a search that follows only one
+    /// branch misses one of them whatever the map iteration order.
+    #[test]
+    fn test_reaches_follows_all_branches() {
+        let mut topo = TopoSort::new();
+        topo.add_dependency(1, 2, ());
+        topo.add_dependency(2, 4, ());
+        topo.add_dependency(1, 3, ());
+        topo.add_dependency(3, 5, ());
+
+        assert!(topo.reaches(&1, &4)); // only through 1 -> 2
+        assert!(topo.reaches(&1, &5)); // only through 1 -> 3
+        assert!(!topo.reaches(&4, &5));
     }
 }

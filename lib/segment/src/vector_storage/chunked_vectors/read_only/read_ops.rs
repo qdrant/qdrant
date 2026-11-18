@@ -116,6 +116,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         count: usize,
         force_sequential: bool,
     ) -> Option<Cow<'_, [T]>> {
+        // An empty run reads nothing, so it need not land on an allocated chunk:
+        // a multi-vector point without a vector owns no rows.
+        if count == 0 {
+            return (start_key <= self.len).then_some(Cow::Borrowed(&[]));
+        }
+
         let mut parts = self.read_ranges(start_key, count)?;
 
         let (chunk_idx, range) = parts.next()?;
@@ -249,6 +255,15 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
                         let Some((user_data, offset, count)) = offsets.next() else {
                             break;
                         };
+
+                        // An empty run has nothing to read, see `get_many_impl`
+                        if count == 0 {
+                            if offset as usize > self.len {
+                                return Err(out_of_bounds());
+                            }
+                            callback(user_data, Cow::Borrowed(&[]))?;
+                            continue;
+                        }
 
                         let mut ranges = self
                             .read_ranges(offset as _, count as _)

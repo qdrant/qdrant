@@ -340,7 +340,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
     sparse_vector_index
         .id_tracker()
         .borrow_mut()
-        .drop(deleted_external)
+        .drop(deleted_external, None)
         .unwrap();
 
     assert!(
