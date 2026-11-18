@@ -123,6 +123,53 @@ fn resharding_start_down_reject_target() {
     }
 }
 
+#[test]
+fn resharding_start_up_custom_reject_target() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1]);
+    add_shard_key(&mut state, "south".into(), &[2]);
+
+    // A shard of this key, a shard of another key, and a gap after the last shard
+    for shard_id in [1, 2, 4] {
+        let mut key = resharding_key(ReshardingDirection::Up, shard_id);
+        key.shard_key = Some(shard_key.clone());
+
+        resharding_start_rejects_without_change(state.clone(), key);
+    }
+}
+
+#[test]
+fn resharding_start_down_custom_reject_target() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1, 2]);
+    add_shard_key(&mut state, "south".into(), &[3]);
+
+    // Shard of another key
+    let mut key = resharding_key(ReshardingDirection::Down, 3);
+    key.shard_key = Some(shard_key);
+
+    resharding_start_rejects_without_change(state, key);
+}
+
+#[test]
+fn resharding_start_down_custom() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1, 2]);
+    add_shard_key(&mut state, "south".into(), &[3]);
+
+    // Not the last shard of the key, but still one of its shards
+    let mut key = resharding_key(ReshardingDirection::Down, 1);
+    key.shard_key = Some(shard_key);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
+
 fn resharding_start_rejects_without_change(state: ClusterState, key: ReshardKey) {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
