@@ -59,9 +59,7 @@ pub struct Bm25Accept<'a> {
     filtered_points: Option<ListFilteredPoints<'a>>,
 }
 
-/// Lists the points `filter` allows, in any order, if at most `budget` of them
-/// may, so a narrow filter can score them directly instead of walking every
-/// posting of the query's terms. `visible` still applies to them.
+/// Lists the points `filter` allows if both their count and the cost of finding them fit `budget`.
 pub type ListFilteredPoints<'a> =
     &'a dyn Fn(usize) -> OperationResult<Option<Vec<PointOffsetType>>>;
 
@@ -88,7 +86,6 @@ impl<'a> Bm25Accept<'a> {
         }
     }
 
-    /// Only the mask, for points already known to pass the filter.
     fn without_filter(&self) -> Bm25Accept<'_> {
         Bm25Accept {
             visible: self.visible,
@@ -379,8 +376,7 @@ pub trait TermCursors {
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32;
 }
 
-/// [`score_top_k`], or, when `accept` can list few enough filtered points,
-/// scores just those: a seek per point and term instead of a step per posting.
+/// [`score_top_k`], or [`score_points`] when the filter's points cost fewer seeks than the postings.
 #[allow(clippy::too_many_arguments)]
 pub fn score<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
@@ -391,9 +387,11 @@ pub fn score<C: TermCursors, const BLOCK: usize>(
     limit: usize,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let terms = query.terms().len();
     let postings: usize = (0..terms).map(|term| cursors.posting_len(term)).sum();
-    // Worth it while `points * terms < postings`
     if let Some(list) = accept.filtered_points
         && postings > 0
         && let Some(mut points) = list((postings - 1) / terms)?

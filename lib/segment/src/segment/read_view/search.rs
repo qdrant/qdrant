@@ -498,12 +498,12 @@ where
         };
         let mut accept = Bm25Accept::new(&visible, filter_context.as_ref());
 
-        // Lets the index score a narrow filter's points directly
         let list;
         if let Some(filter) = filter {
             list = |budget: usize| -> OperationResult<Option<Vec<PointOffsetType>>> {
                 let cardinality = self.payload_index.estimate_cardinality(filter)?;
-                if cardinality.max > budget {
+                let cost = self.payload_index.materialization_cost(&cardinality)?;
+                if cardinality.max.max(cost) > budget {
                     return Ok(None);
                 }
                 let points = self.payload_index.iter_filtered_points(
