@@ -919,3 +919,84 @@ fn test_probe_committed_over_disk_cache() {
         "probe_committed over DiskCache must report changed after inserts"
     );
 }
+
+/// A writer that recovers an abandoned relocation (its mappings flushed, its version not) must
+/// leave the point on its previous copy for every reader of the log, also once a later version
+/// write covers the abandoned slots. Writing a version past them extends the versions file with
+/// zero-filled gaps, after which those slots look committed to a reader of the log.
+#[test]
+fn recovered_relocation_survives_covered_abandoned_slots() {
+    use common::types::DeferredBehavior;
+
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let relocated = PointIdType::NumId(203);
+    let resolve = |tracker: &dyn Fn(PointIdType) -> Option<PointOffsetType>| tracker(relocated);
+
+    {
+        let mut writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        insert(&mut writer, relocated, 0, 53);
+        insert(&mut writer, PointIdType::NumId(7), 1, 54);
+        flush(&writer);
+
+        // Relocate twice, then crash after flushing mappings only
+        insert(&mut writer, relocated, 2, 600);
+        insert(&mut writer, relocated, 3, 601);
+        writer.mapping_flusher()().unwrap();
+    }
+
+    // A follower that was live across the crash holds the abandoned inserts as pending
+    let mut live_follower = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(
+        live_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+    );
+
+    {
+        // Writer restarts and recovers
+        let mut writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        writer.fix_inconsistencies().unwrap();
+        assert_eq!(
+            resolve(&|id| writer.internal_id_with_behavior(id, DeferredBehavior::WithDeferred)),
+            Some(0),
+        );
+
+        // A new point lands above the abandoned slots: their versions become zero-filled gaps
+        assert_eq!(writer.total_point_count(), 4);
+        insert(&mut writer, PointIdType::NumId(8), 4, 700);
+        flush(&writer);
+    }
+    assert_eq!(
+        fs::metadata(versions_path(segment_dir.path()))
+            .unwrap()
+            .len(),
+        5 * size_of::<SeqNumberType>() as u64,
+        "the abandoned slots must be covered for this test to mean anything",
+    );
+
+    let writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    assert_eq!(
+        writer.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "writer reopened over covered abandoned slots",
+    );
+    assert_eq!(writer.internal_version(0), Some(53));
+
+    let fresh_follower = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(
+        fresh_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "follower opened over covered abandoned slots",
+    );
+
+    let result = reload(&mut live_follower, None);
+    assert_eq!(
+        live_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "live follower reloaded over covered abandoned slots",
+    );
+    assert!(
+        !result.inserted.contains(&2) && !result.inserted.contains(&3),
+        "abandoned slots must never be reported as inserted: {result:?}",
+    );
+    assert_in_sync(&live_follower, &writer);
+}
