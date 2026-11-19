@@ -31,6 +31,7 @@ mod apply;
 mod batch;
 mod holder;
 mod lifecycle;
+mod listing;
 pub(crate) mod locate;
 mod metering;
 #[cfg(test)]

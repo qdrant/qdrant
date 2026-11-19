@@ -188,32 +188,14 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
     /// Files matching `prefix_path` in the snapshot; empty before
     /// [`CachedFs::cache_file_info`].
     ///
-    /// A path matches when its component at the prefix's final position
-    /// starts with the prefix's final component (`dir/chunk_` matches
-    /// `dir/chunk_1.dat` and everything under `dir/chunk_extra/`) — the
-    /// same name-based matching as the local backends, immune to mixed
-    /// `/` and `\` separators on Windows.
+    /// Matching is [`PrefixMatcher`]'s, the same name-based matching as the
+    /// local backends.
     fn cached_list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
-        let dir = prefix_path.parent().unwrap_or(Path::new(""));
-        let name_prefix = prefix_path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-
+        let matcher = PrefixMatcher::new(prefix_path);
         self.files_info
             .iter()
             .flatten()
-            .filter(|(path, _)| {
-                path.strip_prefix(dir)
-                    .ok()
-                    .and_then(|rel| rel.components().next())
-                    .is_some_and(|first| {
-                        first
-                            .as_os_str()
-                            .to_string_lossy()
-                            .starts_with(&name_prefix)
-                    })
-            })
+            .filter(|(path, _)| matcher.matches(path))
             .map(|(path, info)| ListedFile {
                 path: path.clone(),
                 size: info.size,
@@ -262,6 +244,27 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
         self.files_info = Some(files_info);
     }
 
+    /// Take the listing snapshot from `listing`, a LIST someone else already
+    /// did, instead of listing this wrapper's prefix again: the entries under
+    /// the prefix (by the same name-based matching as
+    /// [`UniversalReadFs::list_files`]) become the snapshot, the rest is
+    /// ignored.
+    ///
+    /// Equivalent to [`CachedReadFs::cache_file_info`] when `listing` lists a
+    /// prefix covering this wrapper's — e.g. the parent directory of several
+    /// segments, so that one LIST serves all of them — and was taken at the
+    /// point in time this snapshot has to reflect. Like `cache_file_info`, it
+    /// leaves the previous snapshot and the prefetch pool alone.
+    pub fn cache_file_info_from(&mut self, listing: &[ListedFile]) {
+        let matcher = PrefixMatcher::new(&self.prefix_path);
+        let own = listing
+            .iter()
+            .filter(|file| matcher.matches(&file.path))
+            .cloned()
+            .collect();
+        self.apply_file_info(own);
+    }
+
     /// Set or remove file info in the snapshot depending on whether `file_info` is `Some`.
     pub fn set_file_info(&mut self, path: PathBuf, file_info: Option<FileInfo>) {
         if let Some(info) = file_info {
@@ -271,6 +274,40 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
         } else {
             self.files_info.as_mut().and_then(|info| info.remove(&path));
         }
+    }
+}
+
+/// The name-based prefix matching of [`UniversalReadFs::list_files`]: a path
+/// matches when its component at the prefix's final position starts with the
+/// prefix's final component (`dir/chunk_` matches `dir/chunk_1.dat` and
+/// everything under `dir/chunk_extra/`), immune to mixed `/` and `\`
+/// separators on Windows.
+struct PrefixMatcher<'a> {
+    dir: &'a Path,
+    name_prefix: String,
+}
+
+impl<'a> PrefixMatcher<'a> {
+    fn new(prefix_path: &'a Path) -> Self {
+        Self {
+            dir: prefix_path.parent().unwrap_or(Path::new("")),
+            name_prefix: prefix_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn matches(&self, path: &Path) -> bool {
+        path.strip_prefix(self.dir)
+            .ok()
+            .and_then(|rel| rel.components().next())
+            .is_some_and(|first| {
+                first
+                    .as_os_str()
+                    .to_string_lossy()
+                    .starts_with(&self.name_prefix)
+            })
     }
 }
 

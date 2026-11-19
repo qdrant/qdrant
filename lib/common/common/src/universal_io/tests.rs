@@ -224,3 +224,45 @@ async fn cached_fs_prefetch_error() {
     cached_fs.discard_prefetched();
     cached_fs.prefetch_error().unwrap();
 }
+
+/// A snapshot taken from the listing of the parent directory — one LIST shared
+/// by sibling segments — is the snapshot the segment's own LIST would take,
+/// name-prefix matching included (`a` also takes `ab`, as every backend's LIST
+/// does), while other siblings stay out.
+#[test]
+fn cached_fs_snapshot_from_parent_listing() {
+    let dir = tempfile::tempdir().unwrap();
+    let segments = dir.path().join("segments");
+    for (segment, file) in [
+        ("a", "id_tracker.mappings"),
+        ("a", "vector_storage/chunk_0.mmap"),
+        ("ab", "id_tracker.mappings"),
+        ("b", "payload_storage/page_0.dat"),
+    ] {
+        let path = segments.join(segment).join(file);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(&path, b"123").unwrap();
+    }
+    let segment = segments.join("a");
+
+    let mut own = CachedFs::new(MmapFs, &segment).unwrap();
+    own.cache_file_info().unwrap();
+
+    let listing = MmapFs.list_files(&segments).unwrap();
+    assert_eq!(listing.len(), 4);
+    let mut shared = CachedFs::new(MmapFs, &segment).unwrap();
+    shared.cache_file_info_from(&listing);
+
+    let mut own_files = own.list_files(&segment).unwrap();
+    let mut shared_files = shared.list_files(&segment).unwrap();
+    own_files.sort();
+    shared_files.sort();
+    assert_eq!(own_files.len(), 3);
+    assert_eq!(own_files, shared_files);
+    assert!(shared.exists(&segment.join("id_tracker.mappings")).unwrap());
+    assert!(
+        !shared
+            .exists(&segments.join("b/payload_storage/page_0.dat"))
+            .unwrap()
+    );
+}
