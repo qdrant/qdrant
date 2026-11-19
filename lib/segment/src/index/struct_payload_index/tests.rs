@@ -808,3 +808,154 @@ fn materialized_conditions_match_per_point_checks() {
         }
     });
 }
+
+/// Unindexed field, `is_empty` and `is_null` conditions read only the first key of their path
+/// from the Mmap payload storage. They must match a check on the full payload, for deep paths
+/// and payloads where the path is missing, null, empty or has another shape.
+#[test]
+fn unindexed_conditions_on_mmap_match_full_payload_checks() {
+    use common::condition_checker::ConditionChecker;
+    use common::types::DeferredBehavior;
+    use serde_json::{Value, json};
+
+    use crate::common::utils::IndexesMap;
+    use crate::payload_storage::PayloadStorageRead;
+    use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+    use crate::payload_storage::query_checker::check_payload;
+    use crate::types::OwnedPayloadRef;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let num_points = 600u64;
+    let payload_for = |i: u64| -> Payload {
+        // `z` has the shape of `a`, so a check reading the wrong key would see other values
+        let a = match i % 7 {
+            0 => json!({
+                "b": {"c": i % 10, "k": format!("k{}", i % 3), "tags": [i % 4, (i + 1) % 4]},
+                "arr": [{"v": i % 5}, {"v": (i + 1) % 5}],
+            }),
+            1 => json!({"b": {"c": null, "k": null}, "arr": []}),
+            2 => json!({"b": [{"c": i % 10}, {"c": (i + 3) % 10}], "arr": [{"v": null}]}),
+            3 => json!({"b": {}, "arr": [{"w": 1}, 7]}),
+            4 => Value::Null,
+            5 => json!([{"b": {"c": i % 10}}]),
+            _ => json!({"b": {"c": [i % 10, 9], "k": ["k0", "k2"]}, "arr": [{"v": [2, 4]}]}),
+        };
+        let mut payload = json!({
+            "pad": {"blob": "x".repeat((i % 13) as usize), "list": [i, i + 1, {"c": i}]},
+            "a": a,
+            "z": {"b": {"c": 3, "k": "k1"}, "arr": [{"v": 2}]},
+        });
+        if i.is_multiple_of(11) {
+            payload.as_object_mut().unwrap().remove("a");
+        }
+        serde_json::from_value(payload).unwrap()
+    };
+
+    // No field index: every condition below falls back to the payload storage
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for i in 0..num_points {
+        segment
+            .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(0, i.into(), &payload_for(i))
+            .unwrap();
+    }
+
+    let payload_storage = segment.payload_storage.borrow();
+    assert!(
+        matches!(&*payload_storage, PayloadStorageEnum::Mmap(_)),
+        "test must run on the storage that parses partially",
+    );
+
+    // Storage level: only the requested first key, with the same value as the full payload
+    for point in 0..num_points as u32 {
+        let full = payload_storage.get(point).unwrap();
+        for key in ["a", "z", "pad", "missing"] {
+            let partial = payload_storage.payload_ref_field(point, key).unwrap();
+            assert!(partial.len() <= 1, "point {point}, key {key}");
+            assert_eq!(
+                partial.get(key),
+                full.0.get(key),
+                "point {point}, key {key}"
+            );
+        }
+    }
+
+    let filters = [
+        json!({"must": [{"key": "a.b.c", "match": {"value": 3}}]}),
+        json!({"must": [{"key": "a.b.c", "range": {"gte": 5}}]}),
+        json!({"must": [{"key": "a.b.c", "values_count": {"gte": 2}}]}),
+        json!({"must": [{"key": "a.b.k", "match": {"value": "k1"}}]}),
+        json!({"must": [{"key": "a.b.k", "match": {"any": ["k0", "k2"]}}]}),
+        json!({"must": [{"key": "a.b.tags[]", "match": {"value": 1}}]}),
+        json!({"must": [{"key": "a.b.tags[1]", "range": {"lt": 2}}]}),
+        json!({"must": [{"key": "a.arr[].v", "match": {"value": 2}}]}),
+        json!({"must": [{"key": "a.arr[0].v", "range": {"lte": 1}}]}),
+        json!({"must": [{"key": "a[].b.c", "match": {"value": 4}}]}),
+        json!({"must": [{"is_empty": {"key": "a.b.c"}}]}),
+        json!({"must": [{"is_null": {"key": "a.b.c"}}]}),
+        json!({"must": [{"is_empty": {"key": "a.arr[].v"}}]}),
+        json!({"must": [{"is_empty": {"key": "a"}}]}),
+        json!({"must": [{"is_null": {"key": "a"}}]}),
+        json!({"must_not": [{"key": "a.b.c", "range": {"lt": 5}}]}),
+        json!({
+            "should": [
+                {"key": "a.b.c", "match": {"value": 1}},
+                {"key": "a.arr[].v", "match": {"value": 4}},
+            ],
+            "must": [{"key": "z.b.c", "match": {"value": 3}}],
+            "must_not": [{"is_null": {"key": "a.b.k"}}],
+        }),
+        // Nested keeps the full parse, mixed with a partial one
+        json!({"must": [
+            {"nested": {"key": "a.arr", "filter": {"must": [{"key": "v", "match": {"value": 2}}]}}},
+            {"key": "a.b.c", "range": {"gte": 2}},
+        ]}),
+    ];
+
+    let field_indexes = IndexesMap::new();
+    let vector_storages = std::collections::HashMap::new();
+
+    segment.payload_index.borrow().with_view(|view| {
+        for (case, filter) in filters.iter().enumerate() {
+            let filter: Filter = serde_json::from_value(filter.clone()).unwrap();
+
+            let expected: Vec<u32> = (0..num_points as u32)
+                .filter(|&point| {
+                    let full = payload_storage.get(point).unwrap();
+                    check_payload(
+                        Box::new(|| OwnedPayloadRef::from(&full)),
+                        None,
+                        &vector_storages,
+                        &filter,
+                        point,
+                        &field_indexes,
+                    )
+                })
+                .collect();
+            assert!(
+                !expected.is_empty() && expected.len() < num_points as usize,
+                "case {case} should split the points, matched {}",
+                expected.len(),
+            );
+
+            let checker = view
+                .optimized_filter(&filter, DeferredBehavior::VisibleOnly, None)
+                .unwrap();
+            for point in 0..num_points as u32 {
+                assert_eq!(
+                    checker.check(point).unwrap(),
+                    expected.binary_search(&point).is_ok(),
+                    "case {case}, point {point}",
+                );
+            }
+
+            let mut hits = view.query_points(&filter, &AtomicBool::new(false)).unwrap();
+            hits.sort_unstable();
+            assert_eq!(hits, expected, "case {case}");
+        }
+    });
+}
