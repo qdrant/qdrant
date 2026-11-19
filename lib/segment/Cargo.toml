@@ -223,10 +223,6 @@ name = "nested_filtering"
 harness = false
 
 [[bench]]
-name = "bm25_filtering"
-harness = false
-
-[[bench]]
 name = "in_memory_id_tracker"
 harness = false
 
