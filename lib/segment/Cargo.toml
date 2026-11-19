@@ -36,6 +36,7 @@ segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
 object_store = { workspace = true }
+io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 bytes = { workspace = true }
 tokio = { workspace = true }
 tap = { workspace = true }
@@ -44,7 +45,7 @@ tap = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-io_bridge_object_store = { path = "../common/io_bridge_object_store" }
+io_bridge = { workspace = true }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
 bitpacking = { workspace = true }

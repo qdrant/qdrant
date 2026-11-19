@@ -7267,6 +7267,7 @@ dependencies = [
  "indexmap 2.14.2",
  "indicatif",
  "integer-encoding",
+ "io_bridge",
  "io_bridge_object_store",
  "itertools 0.15.0",
  "log",
