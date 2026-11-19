@@ -18,6 +18,8 @@ use super::{RemoteShard, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+#[cfg(feature = "staging")]
+use crate::shards::local_shard::shard_ops::SubmitOutcome;
 use crate::shards::local_shard::shard_ops::await_update_result;
 use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
@@ -427,8 +429,16 @@ impl ShardReplicaSet {
 
                     let outcome = local_shard.submit_update(operation, local_wait).await?;
 
+                    // A rejected clock tick is not written to the local WAL,
+                    // so we don't abort and let the update retry with a newer tick
                     #[cfg(feature = "staging")]
-                    if abort_after_local_update {
+                    let is_written_to_wal = match &outcome {
+                        SubmitOutcome::Submitted { .. } => true,
+                        SubmitOutcome::ClockRejected { .. } => false,
+                    };
+
+                    #[cfg(feature = "staging")]
+                    if abort_after_local_update && is_written_to_wal {
                         log::warn!(
                             "Aborting after local update of shard {}:{}, \
                              before sending it to remote replicas",
