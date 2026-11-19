@@ -81,9 +81,18 @@ impl<
         self.hw.cpu(ids.len());
         self.hw.vector_io_read(ids.len());
 
+        // Four vectors per pass share the loads of the query
         self.vector_storage
-            .for_each_in_dense_batch(ids, |idx, vector| {
-                scores[idx] = TMetric::similarity(&self.query, vector);
+            .for_each_dense_chunk(ids, |offset, vectors| {
+                let scores = &mut scores[offset..offset + vectors.len()];
+                let (groups, rest) = vectors.as_chunks::<4>();
+                let (outs, rest_out) = scores.as_chunks_mut::<4>();
+                for (group, out) in groups.iter().zip(outs) {
+                    *out = TMetric::similarity_4(&self.query, group.each_ref().map(|v| &**v));
+                }
+                for (score, vector) in rest_out.iter_mut().zip(rest) {
+                    *score = TMetric::similarity(&self.query, vector);
+                }
             })
     }
 

@@ -236,6 +236,41 @@ pub(crate) unsafe fn dot_similarity_avx(
     }
 }
 
+/// [`dot_similarity_avx`] of `v1` with four vectors at once: the query is loaded once
+/// per step for all four, and each score sums exactly as in [`dot_similarity_avx`].
+#[target_feature(enable = "avx")]
+#[target_feature(enable = "fma")]
+pub(crate) unsafe fn dot_similarity_avx_4(
+    v1: &[VectorElementType],
+    v2: [&[VectorElementType]; 4],
+) -> [ScoreType; 4] {
+    unsafe {
+        let n = v1.len();
+        let m = n - (n % 32);
+        let q = v1.as_ptr();
+        let p = v2.map(<[VectorElementType]>::as_ptr);
+        let mut sums = [[_mm256_setzero_ps(); 4]; 4];
+        let mut i: usize = 0;
+        while i < m {
+            for (lane, offset) in [0, 8, 16, 24].into_iter().enumerate() {
+                let query = _mm256_loadu_ps(q.add(i + offset));
+                for (sum, ptr) in sums.iter_mut().zip(p) {
+                    sum[lane] =
+                        _mm256_fmadd_ps(query, _mm256_loadu_ps(ptr.add(i + offset)), sum[lane]);
+                }
+            }
+            i += 32;
+        }
+        let mut result = sums.map(|[a, b, c, d]| four_way_hsum(a, b, c, d));
+        for (score, ptr) in result.iter_mut().zip(p) {
+            for j in m..n {
+                *score += (*q.add(j)) * (*ptr.add(j));
+            }
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
