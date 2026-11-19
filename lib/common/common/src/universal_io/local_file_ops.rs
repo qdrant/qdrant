@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
-use crate::universal_io::{ListedFile, UioResult, UniversalIoError};
+use crate::universal_io::{ListPrefix, ListedFile, UioResult, UniversalIoError};
 
 /// `writev(2)`-family syscalls accept at most this many iovecs per call
 /// (`IOV_MAX`, 1024 on Linux).
@@ -90,13 +90,15 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> UioResult<()> {
 /// the prefix's final component: `dir/chunk_` matches `dir/chunk_1.dat` and
 /// everything under `dir/chunk_extra/`. Matching is name-based, never a
 /// whole-path string comparison — a joined prefix may mix `/` and `\` on
-/// Windows, where entry paths use `\` throughout.
+/// Windows, where entry paths use `\` throughout. A prefix ending with a
+/// separator lists exactly the tree of that directory, see [`ListPrefix`].
 pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-    let dir = prefix_path.parent().unwrap_or(Path::new("."));
-    let name_prefix = prefix_path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let ListPrefix { dir, name_prefix } = ListPrefix::new(prefix_path);
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
 
     let mut results = Vec::new();
     // Directories whose name matched the prefix: the whole tree beneath each
@@ -110,7 +112,7 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         if !entry
             .file_name()
             .to_string_lossy()
-            .starts_with(&name_prefix)
+            .starts_with(name_prefix.as_ref())
         {
             continue;
         }

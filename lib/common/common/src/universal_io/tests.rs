@@ -266,3 +266,38 @@ fn cached_fs_snapshot_from_parent_listing() {
             .unwrap()
     );
 }
+
+/// A prefix ending with a separator lists exactly that directory's tree — not
+/// the siblings that share its name as a prefix, which a plain prefix takes.
+#[test]
+fn local_list_files_trailing_separator_lists_the_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    for file in [
+        "segments/a/id_tracker.mappings",
+        "segments/b/payload_storage/page_0.dat",
+        "segments_manifest.json",
+        "updates/0001",
+    ] {
+        let path = dir.path().join(file);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(&path, b"123").unwrap();
+    }
+    let segments = dir.path().join("segments");
+
+    let as_dir = MmapFs.list_files(&segments.join("")).unwrap();
+    assert_eq!(as_dir.len(), 2);
+    assert!(as_dir.iter().all(|file| file.path.starts_with(&segments)));
+
+    let as_name_prefix = MmapFs.list_files(&segments).unwrap();
+    assert_eq!(
+        as_name_prefix.len(),
+        3,
+        "the manifest matches `segments` too"
+    );
+
+    // The snapshot matcher splits the prefix the same way.
+    let mut cached = CachedFs::new(MmapFs, &dir.path().join("")).unwrap();
+    cached.cache_file_info().unwrap();
+    assert_eq!(cached.list_files(&segments.join("")).unwrap().len(), 2);
+    assert_eq!(cached.list_files(&segments).unwrap().len(), 3);
+}

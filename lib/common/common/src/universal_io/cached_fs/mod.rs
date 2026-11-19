@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
@@ -13,8 +14,8 @@ mod async_io;
 use crate::ambient::AmbientFutureExt as _;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
-    CachedReadFs, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
-    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
+    CachedReadFs, ListPrefix, ListedFile, OpenExtra, OpenOptions, Populate, UioResult,
+    UniversalIoError, UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs,
 };
 
 #[derive(Clone, Debug)]
@@ -281,21 +282,17 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
 /// matches when its component at the prefix's final position starts with the
 /// prefix's final component (`dir/chunk_` matches `dir/chunk_1.dat` and
 /// everything under `dir/chunk_extra/`), immune to mixed `/` and `\`
-/// separators on Windows.
+/// separators on Windows. The prefix splits as [`ListPrefix`] says, so one
+/// ending with a separator matches exactly that directory's tree.
 struct PrefixMatcher<'a> {
     dir: &'a Path,
-    name_prefix: String,
+    name_prefix: Cow<'a, str>,
 }
 
 impl<'a> PrefixMatcher<'a> {
     fn new(prefix_path: &'a Path) -> Self {
-        Self {
-            dir: prefix_path.parent().unwrap_or(Path::new("")),
-            name_prefix: prefix_path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-        }
+        let ListPrefix { dir, name_prefix } = ListPrefix::new(prefix_path);
+        Self { dir, name_prefix }
     }
 
     fn matches(&self, path: &Path) -> bool {
@@ -306,7 +303,7 @@ impl<'a> PrefixMatcher<'a> {
                 first
                     .as_os_str()
                     .to_string_lossy()
-                    .starts_with(&self.name_prefix)
+                    .starts_with(self.name_prefix.as_ref())
             })
     }
 }

@@ -7,9 +7,15 @@
 //! whole directory and filter by name, see the object-store bridge), so every
 //! one of those LISTs pays for the whole shard. Listing the common parent once
 //! and handing each segment its part costs a single LIST instead.
+//!
+//! The common parent is listed *as a directory* — with a trailing separator,
+//! see [`ListPrefix`](common::universal_io::ListPrefix). Listed as a name
+//! prefix, `<shard>/segments` would make an object store list all of
+//! `<shard>/`, which also holds the shard's WAL, cursor and, in serverless,
+//! the whole backlog of pending update requests.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::universal_io::{ListedFile, UniversalReadFsAsync};
 use segment::common::operation_error::OperationResult;
@@ -41,10 +47,12 @@ pub(super) fn list_segment_dirs<'a, Fs: UniversalReadFsAsync>(
             .collect()
     };
 
+    // Each prefix as a directory: exactly its tree, not its siblings'.
+    let prefixes: Vec<PathBuf> = prefixes.into_iter().map(|p| p.join("")).collect();
+
     futures::executor::block_on(async {
         let listings =
-            futures::future::try_join_all(prefixes.into_iter().map(|p| fs.list_files_async(p)))
-                .await?;
+            futures::future::try_join_all(prefixes.iter().map(|p| fs.list_files_async(p))).await?;
         Ok(listings.into_iter().flatten().collect())
     })
 }
