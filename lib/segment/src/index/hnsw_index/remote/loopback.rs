@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use common::types::PointOffsetType;
 use parking_lot::Mutex;
+use uuid::Uuid;
 
 use super::blocks::BlocksBatch;
 use super::executor::{
@@ -159,6 +160,8 @@ pub struct LoopbackIndexer {
     shutdown: Arc<AtomicBool>,
     /// Number of submissions received.
     pub submissions: AtomicUsize,
+    /// Number of cancellations received.
+    pub cancellations: AtomicUsize,
     /// Outcomes of finished runs, in order.
     pub outcomes: Mutex<Vec<RunOutcome>>,
     /// Reports of the runs that went through `run_task`, in order.
@@ -181,6 +184,7 @@ impl LoopbackIndexer {
             work_dir: std::env::temp_dir(),
             shutdown: Arc::new(AtomicBool::new(false)),
             submissions: AtomicUsize::new(0),
+            cancellations: AtomicUsize::new(0),
             outcomes: Mutex::new(Vec::new()),
             reports: Mutex::new(Vec::new()),
             #[cfg(feature = "testing")]
@@ -220,6 +224,10 @@ impl LoopbackIndexer {
 impl RemoteIndexer for Arc<LoopbackIndexer> {
     fn config(&self) -> &RemoteIndexingConfig {
         &self.config
+    }
+
+    fn cancel(&self, _task_id: Uuid, _token: &TaskToken) {
+        self.cancellations.fetch_add(1, Ordering::SeqCst);
     }
 
     fn submit(&self, task: &TaskSubmission) -> Result<(), SubmitError> {

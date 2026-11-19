@@ -21,7 +21,7 @@ pub mod wire;
 
 use std::cell::RefCell;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use parking_lot::RwLock;
 use uuid::Uuid;
@@ -80,6 +80,9 @@ pub struct TaskSubmission {
     pub graph_format_versions: Vec<u32>,
     /// 0 for the first submission, then one more per retry.
     pub attempt: u32,
+    /// Core gives the task up if no indexer fetches it by then (`queue_timeout`), so a queue
+    /// in front of the indexers does not hand it out later.
+    pub queue_deadline: SystemTime,
 }
 
 /// Hands tasks to the indexing service. Implemented by the server (gRPC `SubmitTask`, to an
@@ -91,6 +94,13 @@ pub trait RemoteIndexer: Send + Sync {
     /// never from an async context: implementations must not use the caller's runtime.
     /// Must return within bounded time.
     fn submit(&self, task: &TaskSubmission) -> Result<(), SubmitError>;
+
+    /// Core no longer waits for task `task_id`, which no indexer may have fetched yet: tell
+    /// the entry point, so that a queue drops it. Best effort and non-blocking: the token is
+    /// revoked anyway. Called from the optimizer thread, like `submit`.
+    fn cancel(&self, task_id: Uuid, token: &TaskToken) {
+        let _ = (task_id, token);
+    }
 }
 
 static REMOTE_INDEXER: RwLock<Option<Arc<dyn RemoteIndexer>>> = RwLock::new(None);

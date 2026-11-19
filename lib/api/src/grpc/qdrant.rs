@@ -5405,6 +5405,11 @@ pub struct IndexingTaskSubmission {
     /// not build, or not that large, before any data moves. Same as in `GetTask`.
     #[prost(message, optional, tag = "13")]
     pub index: ::core::option::Option<IndexingIndexParams>,
+    /// Core gives the task up if no indexer fetches it (`GetTask`) by this time, in milliseconds
+    /// since the Unix epoch: its `queue_timeout_sec`. A queue does not hand the task out after
+    /// that. 0: not set (older cores).
+    #[prost(uint64, tag = "14")]
+    pub queue_deadline_unix_ms: u64,
 }
 /// The index a task builds, with the parameters of its kind. A new kind of index, or a version
 /// of one with other parameters, is a new case of `index`. Indexers refuse a task whose case
@@ -5508,6 +5513,25 @@ pub struct SubmitIndexingTaskResponse {
     /// Why the task was refused. Ignored when `accepted`.
     #[prost(enumeration = "IndexingTaskRefusal", tag = "3")]
     pub refusal: i32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CancelIndexingTaskRequest {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    /// The task's token, hex, as submitted: only the submitter may cancel.
+    #[prost(string, tag = "2")]
+    pub token: ::prost::alloc::string::String,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CancelIndexingTaskResponse {
+    /// Whether a task waiting to be handed out was dropped. False if it was unknown, handed off
+    /// already, or the token did not match.
+    #[prost(bool, tag = "1")]
+    pub removed: bool,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -5660,6 +5684,33 @@ pub mod indexing_service_client {
                 .insert(GrpcMethod::new("qdrant.IndexingService", "SubmitTask"));
             self.inner.unary(req, path, codec).await
         }
+        /// Core no longer waits for a task it submitted: drop it if it was not handed to an indexer
+        /// yet. Best effort: core revokes the token anyway, so a task handed off already fails at
+        /// `GetTask`. A queue in front of indexers uses it to keep dead tasks out of its queue.
+        pub async fn cancel_task(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CancelIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CancelIndexingTaskResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingService/CancelTask",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingService", "CancelTask"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -5680,6 +5731,16 @@ pub mod indexing_service_server {
             request: tonic::Request<super::IndexingTaskSubmission>,
         ) -> std::result::Result<
             tonic::Response<super::SubmitIndexingTaskResponse>,
+            tonic::Status,
+        >;
+        /// Core no longer waits for a task it submitted: drop it if it was not handed to an indexer
+        /// yet. Best effort: core revokes the token anyway, so a task handed off already fails at
+        /// `GetTask`. A queue in front of indexers uses it to keep dead tasks out of its queue.
+        async fn cancel_task(
+            &self,
+            request: tonic::Request<super::CancelIndexingTaskRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CancelIndexingTaskResponse>,
             tonic::Status,
         >;
     }
@@ -5793,6 +5854,51 @@ pub mod indexing_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SubmitTaskSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingService/CancelTask" => {
+                    #[allow(non_camel_case_types)]
+                    struct CancelTaskSvc<T: IndexingService>(pub Arc<T>);
+                    impl<
+                        T: IndexingService,
+                    > tonic::server::UnaryService<super::CancelIndexingTaskRequest>
+                    for CancelTaskSvc<T> {
+                        type Response = super::CancelIndexingTaskResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CancelIndexingTaskRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingService>::cancel_task(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CancelTaskSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
