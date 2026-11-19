@@ -4,6 +4,7 @@
 //! ones as `FilteredScorer::new_internal`, and describes them to the kernels as
 //! [`MatrixOperands`]. A build scores in phases: a [`MatrixPhase`] takes the jobs of a phase,
 //! schedules their matrix calls, and hands each job's result, a [`MatrixPicks`], to the caller.
+//! [`stored_records`] describes the same vectors as they are stored, for scoring them elsewhere.
 
 mod cpu_jobs;
 mod dense_operands;
@@ -11,6 +12,7 @@ mod job;
 mod phase;
 mod picks;
 mod raw_picks;
+mod stored;
 #[cfg(test)]
 mod tests;
 mod top_k_pool;
@@ -23,6 +25,7 @@ use quantization::encoded_vectors_binary::BinaryOperands;
 use quantization::encoded_vectors_u8::ScalarOperands;
 use quantization::turboquant::matrix::{TurboMatrixOperands, TurboSource};
 
+pub use self::dense_operands::DenseCombine;
 use self::dense_operands::{DenseOperands, MatrixElement};
 pub use self::job::MatrixJob;
 use self::phase::CpuPhase;
@@ -30,6 +33,11 @@ pub use self::phase::MatrixPhase;
 pub(crate) use self::phase::{Consume, DynPhase, Scored};
 pub use self::picks::MatrixPicks;
 pub(crate) use self::raw_picks::RawPicks;
+#[cfg(test)]
+pub(crate) use self::stored::reference;
+pub use self::stored::{
+    StoredCombine, StoredForm, StoredFormat, StoredRecords, StoredValue, stored_records,
+};
 use self::turbo_source::TurboStorageSource;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::quantized::quantized_vectors::{

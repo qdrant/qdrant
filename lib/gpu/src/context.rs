@@ -19,6 +19,9 @@ pub struct Context {
     // Which device to execute on.
     device: Arc<Device>,
 
+    // Which of the device's queues the context submits to.
+    queue: ContextQueue,
+
     // GPU execution handler.
     vk_queue: vk::Queue,
 
@@ -35,10 +38,36 @@ pub struct Context {
     resources: Vec<Arc<dyn Resource>>,
 }
 
+/// Which device queue a `Context` records for and submits to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextQueue {
+    /// `Device::compute_queue`: shaders, copies, and clears.
+    Compute,
+
+    /// `Device::transfer_queue`: copies and clears only, so uploads and downloads can run while
+    /// the compute queue works. Every buffer such a context touches must be created with
+    /// `BufferQueues::ComputeAndTransfer`.
+    ///
+    /// The two queues aren't ordered with respect to each other. Before compute work reads what a
+    /// transfer context wrote, wait for the transfer context (`wait_finish`), then `run` the
+    /// compute context; in the other direction, wait for the compute context before a transfer
+    /// context overwrites a buffer region that compute work still reads.
+    Transfer,
+}
+
 impl Context {
+    /// Context on the compute queue.
     pub fn new(device: Arc<Device>) -> GpuResult<Self> {
+        Self::with_queue(device, ContextQueue::Compute)
+    }
+
+    /// Context on the given queue of `device`.
+    pub fn with_queue(device: Arc<Device>, queue_kind: ContextQueue) -> GpuResult<Self> {
         // Get GPU execution queue from device.
-        let queue = device.compute_queue();
+        let queue = match queue_kind {
+            ContextQueue::Compute => device.compute_queue(),
+            ContextQueue::Transfer => device.transfer_queue(),
+        };
 
         // Create command pool.
         let command_pool_create_info = vk::CommandPoolCreateInfo::default()
@@ -73,6 +102,7 @@ impl Context {
         };
 
         let mut context = Self {
+            queue: queue_kind,
             vk_queue: queue.vk_queue,
             device,
             vk_command_pool,
@@ -86,7 +116,39 @@ impl Context {
         Ok(context)
     }
 
+    /// The queue this context submits to.
+    pub fn queue(&self) -> ContextQueue {
+        self.queue
+    }
+
+    /// Native handle of the queue this context submits to.
+    #[cfg(test)]
+    pub(crate) fn vk_queue(&self) -> vk::Queue {
+        self.vk_queue
+    }
+
+    /// Keep `buffers` alive until the work recorded in this context has finished, as the context
+    /// does for the buffers it binds or copies. For buffers that shaders reach only through their
+    /// device address (`Buffer::device_address`): the context can't see those, and dropping one
+    /// while a shader still uses its address lets the shader write into freed or reused memory.
+    /// The context releases them in `wait_finish` once the work has finished. If the work never
+    /// finishes, they are leaked together with the context's other resources.
+    pub fn keep_alive(&mut self, buffers: &[Arc<Buffer>]) -> GpuResult<()> {
+        if self.vk_command_buffer == vk::CommandBuffer::null() {
+            self.init_command_buffer()?;
+        }
+
+        self.resources.extend(
+            buffers
+                .iter()
+                .map(|buffer| buffer.clone() as Arc<dyn Resource>),
+        );
+        Ok(())
+    }
+
     pub fn dispatch(&mut self, x: usize, y: usize, z: usize) -> GpuResult<()> {
+        self.check_compute_queue("Dispatch")?;
+
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
         }
@@ -120,6 +182,8 @@ impl Context {
     /// In practice, we use `context.wait_finish()` to synchronize between different shaders.
     /// But, for additional safety, we have this `barrier_buffers` to synchronize access to buffers.
     pub fn barrier_buffers(&mut self, buffers: &[Arc<Buffer>]) -> GpuResult<()> {
+        self.check_compute_queue("Buffer barrier")?;
+
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
         }
@@ -128,16 +192,21 @@ impl Context {
             .iter()
             .map(|buffer| {
                 self.resources.push(buffer.clone() as Arc<dyn Resource>);
+                // No queue family ownership transfer: equal families for an exclusive buffer.
+                // For a buffer shared by several families, Vulkan without `synchronization2`
+                // requires `VK_QUEUE_FAMILY_IGNORED`.
+                let queue_family_index = if buffer.vk_sharing_mode() == vk::SharingMode::CONCURRENT
+                {
+                    vk::QUEUE_FAMILY_IGNORED
+                } else {
+                    self.device.compute_queue().vk_queue_family_index as u32
+                };
                 vk::BufferMemoryBarrier::default()
                     .buffer(buffer.vk_buffer())
                     .offset(0)
                     .size(buffer.size() as vk::DeviceSize)
-                    .src_queue_family_index(
-                        self.device.compute_queue().vk_queue_family_index as u32,
-                    )
-                    .dst_queue_family_index(
-                        self.device.compute_queue().vk_queue_family_index as u32,
-                    )
+                    .src_queue_family_index(queue_family_index)
+                    .dst_queue_family_index(queue_family_index)
                     .src_access_mask(vk::AccessFlags::SHADER_WRITE)
                     .dst_access_mask(
                         vk::AccessFlags::TRANSFER_READ
@@ -170,6 +239,8 @@ impl Context {
         pipeline: Arc<Pipeline>,
         descriptor_sets: &[Arc<DescriptorSet>],
     ) -> GpuResult<()> {
+        self.check_compute_queue("Pipeline binding")?;
+
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
         }
@@ -223,6 +294,9 @@ impl Context {
             return Ok(());
         }
 
+        self.check_buffer_queues(&src)?;
+        self.check_buffer_queues(&dst)?;
+
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
         }
@@ -264,6 +338,8 @@ impl Context {
                 "Buffer size must be a multiple of `uint32` size to clear it".to_string(),
             ));
         }
+
+        self.check_buffer_queues(&buffer)?;
 
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
@@ -316,10 +392,13 @@ impl Context {
         // Start execution of recorded commands.
         let submit_buffers = [self.vk_command_buffer];
         let submit_info = vec![vk::SubmitInfo::default().command_buffers(&submit_buffers)];
-        let submit_result = unsafe {
-            self.device
-                .vk_device()
-                .queue_submit(self.vk_queue, &submit_info, self.vk_fence)
+        let submit_result = {
+            let _queue_submit_guard = self.device.lock_queue_submit();
+            unsafe {
+                self.device
+                    .vk_device()
+                    .queue_submit(self.vk_queue, &submit_info, self.vk_fence)
+            }
         };
 
         if let Err(e) = submit_result {
@@ -378,6 +457,29 @@ impl Context {
                 self.destroy_command_buffer();
                 Err(e)
             }
+        }
+    }
+
+    /// Shaders and buffer barriers are recorded on the compute queue only.
+    fn check_compute_queue(&self, operation: &str) -> GpuResult<()> {
+        match self.queue {
+            ContextQueue::Compute => Ok(()),
+            ContextQueue::Transfer => Err(GpuError::NotSupported(format!(
+                "{operation} is not available in a transfer context"
+            ))),
+        }
+    }
+
+    /// A transfer context only accepts buffers created for the transfer queue.
+    fn check_buffer_queues(&self, buffer: &Buffer) -> GpuResult<()> {
+        match (self.queue, buffer.queues()) {
+            (ContextQueue::Compute, BufferQueues::Compute | BufferQueues::ComputeAndTransfer)
+            | (ContextQueue::Transfer, BufferQueues::ComputeAndTransfer) => Ok(()),
+            (ContextQueue::Transfer, BufferQueues::Compute) => Err(GpuError::NotSupported(
+                "A transfer context only accepts buffers created with \
+                 `BufferQueues::ComputeAndTransfer`"
+                    .to_string(),
+            )),
         }
     }
 
