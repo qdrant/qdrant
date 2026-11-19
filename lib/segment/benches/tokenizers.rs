@@ -57,6 +57,7 @@ fn tokenizers(c: &mut Criterion) {
         ("prefix", TokenizerType::Prefix),
         ("multilingual", TokenizerType::Multilingual),
         ("code", TokenizerType::Code),
+        ("unicode", TokenizerType::Unicode),
     ];
     for (name, tokenizer_type) in types {
         let tokenizer = Tokenizer::new_from_text_index_params(&TextIndexParams {

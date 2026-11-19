@@ -235,6 +235,7 @@ pub enum PyTokenizerType {
     Word,
     Multilingual,
     Code,
+    Unicode,
 }
 
 impl Repr for PyTokenizerType {
@@ -245,6 +246,7 @@ impl Repr for PyTokenizerType {
             Self::Word => "Word",
             Self::Multilingual => "Multilingual",
             Self::Code => "Code",
+            Self::Unicode => "Unicode",
         };
 
         f.simple_enum::<Self>(repr)
@@ -259,6 +261,7 @@ impl From<TokenizerType> for PyTokenizerType {
             TokenizerType::Word => PyTokenizerType::Word,
             TokenizerType::Multilingual => PyTokenizerType::Multilingual,
             TokenizerType::Code => PyTokenizerType::Code,
+            TokenizerType::Unicode => PyTokenizerType::Unicode,
         }
     }
 }
@@ -271,6 +274,7 @@ impl From<PyTokenizerType> for TokenizerType {
             PyTokenizerType::Word => TokenizerType::Word,
             PyTokenizerType::Multilingual => TokenizerType::Multilingual,
             PyTokenizerType::Code => TokenizerType::Code,
+            PyTokenizerType::Unicode => TokenizerType::Unicode,
         }
     }
 }
