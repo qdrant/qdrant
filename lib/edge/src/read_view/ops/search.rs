@@ -4,7 +4,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
-use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint};
+use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint, validate_search_params};
 use shard::query::query_context::init_query_context_with_stopping_flag;
 use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
@@ -59,6 +59,10 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 return Err(OperationError::validation_error(
                     "`max_sparse_dims` must be at least 1",
                 ));
+            }
+            if let Some(params) = &search.params {
+                validate_search_params(params)
+                    .map_err(|error| OperationError::validation_error(error.to_string()))?;
             }
         }
 

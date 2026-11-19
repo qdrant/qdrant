@@ -682,6 +682,7 @@ pub struct AcornSearchParams {
 
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[validate(schema(function = "validate_search_params"))]
 #[serde(rename_all = "snake_case")]
 pub struct SearchParams {
     /// Params relevant to HNSW index
@@ -691,6 +692,7 @@ pub struct SearchParams {
     pub hnsw_ef: Option<usize>,
 
     /// Search without approximation. If set to true, search may run long but with exact results.
+    /// Cannot be used together with `max_sparse_dims`.
     #[serde(default)]
     pub exact: bool,
 
@@ -724,11 +726,34 @@ pub struct SearchParams {
     /// Only applicable to sparse vectors.
     /// Keep only the provided number of dimensions from the query. Dimensions are selected by
     /// largest absolute weight. This parameter enables approximate sparse search (Qdrant's
-    /// default is exact): use with caution.
+    /// default is exact): use with caution. Cannot be used together with `exact`.
     #[serde(default)]
     #[validate(range(min = 1))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_sparse_dims: Option<usize>,
+}
+
+/// `exact` promises exact results, and `max_sparse_dims` makes sparse search approximate.
+/// The two contradict each other, so they are rejected together. Allowing the combination
+/// later is easier than forbidding it after clients rely on it.
+pub fn validate_search_params(params: &SearchParams) -> Result<(), ValidationError> {
+    let SearchParams {
+        hnsw_ef: _,
+        exact,
+        quantization: _,
+        indexed_only: _,
+        acorn: _,
+        idf: _,
+        max_sparse_dims,
+    } = params;
+    if *exact && max_sparse_dims.is_some() {
+        return Err(
+            ValidationError::new("exact_with_max_sparse_dims").with_message(Cow::Borrowed(
+                "`max_sparse_dims` cannot be used together with `exact`",
+            )),
+        );
+    }
+    Ok(())
 }
 
 /// Population over which IDF statistics are computed for scoring — the *IDF

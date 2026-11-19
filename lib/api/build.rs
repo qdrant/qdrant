@@ -489,6 +489,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ReadBatchRequest.path", "length(min = 1)"),
             ("ReadBatchRequest.ranges", "length(min = 1)"),
         ], &[])
+        // Cross-field validation: `exact` cannot be combined with `max_sparse_dims`
+        .type_attribute("SearchParams", "#[validate(schema(function = \"crate::grpc::validate::validate_search_params\"))]")
 }
 
 fn append_to_file(path: &str, line: &str) {

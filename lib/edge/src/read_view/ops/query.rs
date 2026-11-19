@@ -650,6 +650,48 @@ mod tests {
         shard.query(valid).unwrap();
     }
 
+    /// `exact` together with `max_sparse_dims` must be rejected at the top level and inside a
+    /// prefetch, as the server does.
+    #[test]
+    fn query_rejects_exact_with_max_sparse_dims() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = shard_with_points(&dir, 4);
+
+        let conflicting = || SearchParams {
+            exact: true,
+            max_sparse_dims: Some(1),
+            ..Default::default()
+        };
+        let top_level = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .params(conflicting())
+            .build();
+        let prefetch = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .prefetches(vec![
+                PrefetchBuilder::new(2)
+                    .query(nearest_query(1.0))
+                    .params(conflicting())
+                    .build(),
+            ])
+            .build();
+
+        for request in [top_level, prefetch] {
+            let error = shard.query(request).unwrap_err();
+            assert!(error.to_string().contains("max_sparse_dims"), "{error}");
+        }
+
+        // `exact` alone stays valid.
+        let exact_only = QueryRequestBuilder::new(2)
+            .query(nearest_query(1.0))
+            .params(SearchParams {
+                exact: true,
+                ..Default::default()
+            })
+            .build();
+        shard.query(exact_only).unwrap();
+    }
+
     #[test]
     fn query_batch_empty_returns_empty() {
         let dir = tempfile::tempdir().unwrap();

@@ -16103,7 +16103,7 @@
             "nullable": true
           },
           "exact": {
-            "description": "Search without approximation. If set to true, search may run long but with exact results.",
+            "description": "Search without approximation. If set to true, search may run long but with exact results. Cannot be used together with `max_sparse_dims`.",
             "default": false,
             "type": "boolean"
           },
@@ -16146,7 +16146,7 @@
             ]
           },
           "max_sparse_dims": {
-            "description": "Only applicable to sparse vectors. Keep only the provided number of dimensions from the query. Dimensions are selected by largest absolute weight. This parameter enables approximate sparse search (Qdrant's default is exact): use with caution.",
+            "description": "Only applicable to sparse vectors. Keep only the provided number of dimensions from the query. Dimensions are selected by largest absolute weight. This parameter enables approximate sparse search (Qdrant's default is exact): use with caution. Cannot be used together with `exact`.",
             "type": "integer",
             "format": "uint",
             "minimum": 1,

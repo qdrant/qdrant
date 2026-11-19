@@ -207,3 +207,23 @@ fn max_sparse_dims_rest_name() {
     let message = invalid.validate().unwrap_err().to_string();
     assert!(message.contains("max_sparse_dims"), "{message}");
 }
+
+/// `exact` promises exact results and `max_sparse_dims` makes sparse search approximate, so the
+/// two are rejected together. Each is still valid alone, and `exact: false` does not conflict.
+#[test]
+fn max_sparse_dims_rejects_exact() {
+    let rejected: SearchParams =
+        serde_json::from_str(r#"{"exact": true, "max_sparse_dims": 2}"#).unwrap();
+    let message = rejected.validate().unwrap_err().to_string();
+    assert!(message.contains("max_sparse_dims"), "{message}");
+    assert!(message.contains("exact"), "{message}");
+
+    for valid in [
+        r#"{"exact": true}"#,
+        r#"{"max_sparse_dims": 2}"#,
+        r#"{"exact": false, "max_sparse_dims": 2}"#,
+    ] {
+        let params: SearchParams = serde_json::from_str(valid).unwrap();
+        assert!(params.validate().is_ok(), "{valid}");
+    }
+}
