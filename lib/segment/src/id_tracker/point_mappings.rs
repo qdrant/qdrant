@@ -310,6 +310,27 @@ impl PointMappings {
         true
     }
 
+    /// Grow the slot range to cover `internal_id` without linking it. New slots start deleted,
+    /// and are counted as such. A no-op for slots already in range.
+    ///
+    /// Keeps `internal_id` allocated, so that it is never handed out again: its storages may
+    /// already hold data written for it.
+    pub(crate) fn reserve_slot(&mut self, internal_id: PointOffsetType) {
+        let internal_id_usize = internal_id as usize;
+        if internal_id_usize >= self.internal_to_external.len() {
+            self.internal_to_external
+                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
+        }
+        if internal_id_usize >= self.deleted.len() {
+            let new_from = self.deleted.len();
+            self.deleted.resize(internal_id_usize + 1, true);
+            if let Some(deferred_from) = self.deferred_internal_id {
+                self.deferred_deleted_count +=
+                    (internal_id_usize + 1).saturating_sub(new_from.max(deferred_from as usize));
+            }
+        }
+    }
+
     /// Mark `internal_id` as soft-deleted. Idempotent on the deleted bit, and
     /// keeps `deferred_deleted_count` in sync — increments only on the
     /// live → tombstoned transition for slots at or above the cutoff. Also
@@ -613,19 +634,7 @@ impl PointMappings {
             .is_some_and(|cutoff| internal_id >= cutoff);
 
         let internal_id_usize = internal_id as usize;
-        if internal_id_usize >= self.internal_to_external.len() {
-            self.internal_to_external
-                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
-        }
-        if internal_id_usize >= self.deleted.len() {
-            // New slots start deleted, and are counted as such.
-            let new_from = self.deleted.len();
-            self.deleted.resize(internal_id_usize + 1, true);
-            if let Some(deferred_from) = self.deferred_internal_id {
-                self.deferred_deleted_count +=
-                    (internal_id_usize + 1).saturating_sub(new_from.max(deferred_from as usize));
-            }
-        }
+        self.reserve_slot(internal_id);
 
         // Same-track insert; capture the prior head for tombstoning.
         let same_track_prior = match (external_id, is_deferred) {

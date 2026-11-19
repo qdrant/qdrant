@@ -120,7 +120,7 @@ fn heals_a_torn_mappings_tail() {
     let healed = fs_err::read(&path).unwrap();
     assert_eq!(healed[..committed.len()], committed);
 
-    let (mappings, read_to) = load_mappings(&path, None).unwrap();
+    let (mappings, read_to) = load_mappings(&path, None, |_| true).unwrap();
     assert_eq!(read_to, healed.len() as u64, "log must parse to its end");
     assert_eq!(
         mappings.internal_id_with_behavior(&num(10), DeferredBehavior::VisibleOnly),
