@@ -233,10 +233,6 @@ fn drop_shard_key() {
                 collection: COLLECTION.into(),
                 shard_ids: vec![1, 3],
             },
-            Action::RemoveShardKey {
-                collection: COLLECTION.into(),
-                shard_key: shard_key.clone(),
-            },
             Action::DropShard {
                 collection: COLLECTION.into(),
                 shard_id: 1,
@@ -244,6 +240,10 @@ fn drop_shard_key() {
             Action::DropShard {
                 collection: COLLECTION.into(),
                 shard_id: 3,
+            },
+            Action::RemoveShardKey {
+                collection: COLLECTION.into(),
+                shard_key: shard_key.clone(),
             },
         ],
     );
@@ -299,10 +299,13 @@ fn drop_shard_key_replay_after_mapping_removal() {
     };
     let goal = uncrashed.state().clone();
 
-    assert!(matches!(&actions[1], Action::RemoveShardKey { .. }));
+    let remove_shard_key = actions
+        .iter()
+        .position(|action| matches!(action, Action::RemoveShardKey { .. }))
+        .expect("dropping a shard key removes the mapping");
 
     let mut crashed = state;
-    for action in &actions[..=1] {
+    for action in &actions[..=remove_shard_key] {
         crashed.apply_action(action);
     }
 
