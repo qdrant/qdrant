@@ -5,10 +5,13 @@ use segment::data_types::facets::FacetParams;
 use serde_json::Value;
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
+use shard::query::query_enum::QueryEnum;
 use shard::scroll::ScrollRequestInternal;
+use shard::search::{CoreSearchRequest, CoreSearchRequestBatch};
 
 use crate::operations::types::PointRequestInternal;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::profiling::workload::normalize;
 
 /// Log entries are retained in memory indefinitely, so a snapshot must not keep
 /// unbounded request data alive. E.g. internally generated distance matrix
@@ -24,6 +27,39 @@ pub trait Loggable {
 
     /// Hash of the query, which is going to be used for approximate deduplication and counting.
     fn request_hash(&self) -> u64;
+
+    /// The complete request with literals stripped (see [`normalize`]), for workload
+    /// fingerprints. Unlike [`Self::to_log_value`], arrays are not cut: two requests that
+    /// differ only after the first [`MAX_LOGGED_ARRAY_LEN`] filter conditions must not share
+    /// a fingerprint.
+    fn to_fingerprint_value(&self) -> Value {
+        let mut value = self.to_log_value();
+        normalize(&mut value);
+        value
+    }
+}
+
+/// Serialize the whole request and strip its literals, for [`Loggable::to_fingerprint_value`].
+fn normalized_value<T: serde::Serialize>(request: &T) -> Value {
+    let mut value = serde_json::to_value(request).unwrap_or_default();
+    normalize(&mut value);
+    value
+}
+
+/// [`normalized_value`] of a batch, one item at a time: memory is bounded by the distinct
+/// shapes, not by the size of the batch.
+fn normalized_batch_value<T>(
+    items: impl IntoIterator<Item = T>,
+    value: impl Fn(T) -> Value,
+) -> Value {
+    let mut distinct: Vec<Value> = Vec::new();
+    for item in items {
+        let item = value(item);
+        if !distinct.contains(&item) {
+            distinct.push(item);
+        }
+    }
+    Value::Array(distinct)
 }
 
 /// Serialize a request for the slow-requests log, bounding all arrays.
@@ -96,6 +132,10 @@ impl Loggable for Vec<ShardQueryRequest> {
         "query"
     }
 
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_batch_value(self.iter(), normalized_value)
+    }
+
     fn request_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.request_name().hash(&mut hasher);
@@ -107,6 +147,10 @@ impl Loggable for Vec<ShardQueryRequest> {
 impl Loggable for ScrollRequestInternal {
     fn to_log_value(&self) -> Value {
         bounded_log_value(self)
+    }
+
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_value(self)
     }
 
     fn request_name(&self) -> &'static str {
@@ -133,11 +177,87 @@ impl<T: Loggable> Loggable for Arc<T> {
     fn request_hash(&self) -> u64 {
         self.as_ref().request_hash()
     }
+
+    fn to_fingerprint_value(&self) -> Value {
+        self.as_ref().to_fingerprint_value()
+    }
+}
+
+/// A search for logs and fingerprints: the query is reduced to its kind and vector name,
+/// the vectors are not serialized.
+fn core_search_value(search: &CoreSearchRequest) -> Value {
+    let CoreSearchRequest {
+        query,
+        filter,
+        params,
+        limit,
+        offset,
+        with_payload,
+        with_vector,
+        score_threshold,
+    } = search;
+    let kind = match query {
+        QueryEnum::Nearest(_) => "nearest",
+        QueryEnum::RecommendBestScore(_) => "recommend_best_score",
+        QueryEnum::RecommendSumScores(_) => "recommend_sum_scores",
+        QueryEnum::Discover(_) => "discover",
+        QueryEnum::Context(_) => "context",
+        QueryEnum::FeedbackNaive(_) => "feedback_naive",
+    };
+    serde_json::json!({
+        "query": { "kind": kind, "using": query.get_vector_name() },
+        "filter": filter,
+        "params": params,
+        "limit": limit,
+        "offset": offset,
+        "with_payload": with_payload,
+        "with_vector": with_vector,
+        "score_threshold": score_threshold,
+    })
+}
+
+impl Loggable for CoreSearchRequestBatch {
+    fn to_log_value(&self) -> Value {
+        let mut items: Vec<Value> = self
+            .searches
+            .iter()
+            .take(MAX_LOGGED_ARRAY_LEN)
+            .map(core_search_value)
+            .collect();
+        items.iter_mut().for_each(truncate_long_arrays);
+        if self.searches.len() > MAX_LOGGED_ARRAY_LEN {
+            items.push(omission_marker(self.searches.len() - MAX_LOGGED_ARRAY_LEN));
+        }
+        Value::Array(items)
+    }
+
+    fn request_name(&self) -> &'static str {
+        "search"
+    }
+
+    fn request_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.request_name().hash(&mut hasher);
+        self.to_log_value().to_string().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_batch_value(self.searches.iter(), |search| {
+            let mut value = core_search_value(search);
+            normalize(&mut value);
+            value
+        })
+    }
 }
 
 impl Loggable for FacetParams {
     fn to_log_value(&self) -> Value {
         bounded_log_value(self)
+    }
+
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_value(self)
     }
 
     fn request_name(&self) -> &'static str {
@@ -157,6 +277,10 @@ impl Loggable for CountRequestInternal {
         bounded_log_value(self)
     }
 
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_value(self)
+    }
+
     fn request_name(&self) -> &'static str {
         "count"
     }
@@ -172,6 +296,10 @@ impl Loggable for CountRequestInternal {
 impl Loggable for PointRequestInternal {
     fn to_log_value(&self) -> Value {
         bounded_log_value(self)
+    }
+
+    fn to_fingerprint_value(&self) -> Value {
+        normalized_value(self)
     }
 
     fn request_name(&self) -> &'static str {

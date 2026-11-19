@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use common::ambient::profile::{SegmentInfo, SegmentScope};
 use itertools::Itertools;
+use segment::data_types::load_profile::filter_payload_keys;
 use segment::data_types::query_context::SegmentQueryContext;
 use segment::data_types::vectors::QueryVector;
 use segment::entry::entry_point::ReadSegmentEntry;
-use segment::types::{Condition, Filter, Indexes, ScoredPoint, SegmentConfig, VectorName};
+use segment::types::{Filter, Indexes, ScoredPoint, SegmentConfig, VectorName};
 use shard::search::{
     BatchSearchParams, CoreSearchRequestBatch, SearchBatchGroup, group_search_batches,
 };
@@ -203,36 +204,14 @@ pub(super) fn unindexed_filter_keys(
     segment: &dyn ReadSegmentEntry,
     filter: &Filter,
 ) -> Vec<String> {
-    fn collect(filter: &Filter, keys: &mut Vec<String>) {
-        for condition in filter.iter_conditions() {
-            match condition {
-                Condition::Filter(inner) => collect(inner, keys),
-                Condition::Field(_)
-                | Condition::IsEmpty(_)
-                | Condition::IsNull(_)
-                | Condition::Nested(_)
-                | Condition::HasId(_)
-                | Condition::HasVector(_)
-                | Condition::Slice(_)
-                | Condition::CustomIdChecker(_)
-                | Condition::ResolvedPoints(_) => {
-                    if let Some(key) = condition.targeted_key() {
-                        keys.push(key.to_string());
-                    }
-                }
-            }
-        }
-    }
-
+    // Full keys, including the paths inside nested conditions (`diet[].likes`), as the
+    // payload index is selected for them at query time
     let indexed = segment.get_indexed_fields();
-    let mut keys = Vec::new();
-    collect(filter, &mut keys);
-    keys.retain(|key| {
-        !indexed
-            .keys()
-            .any(|indexed_key| indexed_key.to_string() == *key)
-    });
+    let mut keys: Vec<String> = filter_payload_keys(Some(filter))
+        .into_iter()
+        .filter(|key| !indexed.contains_key(key))
+        .map(|key| key.to_string())
+        .collect();
     keys.sort();
-    keys.dedup();
     keys
 }

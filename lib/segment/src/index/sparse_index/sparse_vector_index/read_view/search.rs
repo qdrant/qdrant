@@ -87,6 +87,11 @@ where
         let Some(filter) = filter else {
             return Ok(None);
         };
+        // Resolving may enumerate every matching point: explain plans with the filter as is,
+        // like the HNSW index, which returns before resolving
+        if profile::is_explain() {
+            return Ok(None);
+        }
         // Other queries score the filtered points directly, and share them already
         let all_nearest = vectors.iter().all(|vector| is_nearest(vector));
         if vectors.len() < 2 || !all_nearest || contains_resolved_points(filter) {

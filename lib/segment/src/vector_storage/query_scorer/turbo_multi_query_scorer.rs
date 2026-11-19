@@ -28,7 +28,7 @@ impl<'a, TStorage: TurboMultiScoring> TurboMultiQueryScorer<'a, TStorage> {
 
         Self {
             hw: HwScale {
-                kind: ScoreKind::Original,
+                kind: ScoreKind::Quantized,
                 cpu: 1,
                 vector_io_read: usize::from(storage.is_cold()),
             },

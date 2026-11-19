@@ -36,7 +36,7 @@ impl<'a> SparseMetricQueryScorer<'a> {
 
     fn score_sparse(&self, a: &SparseVector, b: &SparseVector) -> ScoreType {
         // Calculate the amount of comparisons needed for sparse vector scoring.
-        self.hw.cpu(std::cmp::min(a.len(), b.len()));
+        self.hw.cpu_units(std::cmp::min(a.len(), b.len()), 1);
 
         a.score(b).unwrap_or_default()
     }

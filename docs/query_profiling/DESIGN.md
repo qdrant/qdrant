@@ -196,12 +196,18 @@ the metrics they did before. Flushing hardware counters skips zero metrics, so t
 operations when unused. Workload stats are guarded by a `OnceLock<bool>` read of the flag; the request is cloned
 and fingerprinted only when it is set, after the operation, and not for rate-limited calls.
 
-Distance counts per scorer: dense and sparse scorers count one per scored point (`HwScale`); multi-vectors count one
-per sub-vector pair, original and quantized alike (the quantized MaxSim functions count `query × point` sub-vectors);
-quantized scorers count explicitly because their CPU is bumped inside the `quantization` crate; the filtered sparse
-fallback (`plain_search`) counts one per scored point; the sparse inverted index counts the posting-list entries of
-the lists it searches, an upper bound (pruning and the filter can skip entries; counting exactly would mean a bump in
-the innermost loop).
+Distance counts per scorer: one per comparison of the query (or of each example, for recommend, discover and
+context queries) with a stored vector. Dense scorers count through `HwScale::cpu`; sparse scorers count one per dot
+product, separately from their CPU cost, which depends on vector lengths (`HwScale::cpu_units`); multi-vectors count
+one per sub-vector pair, original and quantized alike (the quantized MaxSim functions count `query × point`
+sub-vectors); quantized scorers count explicitly because their CPU is bumped inside the `quantization` crate;
+TurboQuant storages keep only encoded vectors, so their comparisons count as quantized; the filtered sparse fallback
+(`plain_search`) counts one per scored point; the sparse inverted index counts the posting-list entries of the lists it
+searches, an upper bound (pruning and the filter can skip entries; counting exactly would mean a bump in the innermost
+loop).
+
+`filter.unindexed_keys` lists full payload paths, including keys inside `nested` conditions (`diet[].likes`), as the
+payload index is selected for them at query time (`segment::data_types::load_profile::filter_payload_keys`).
 
 ## Overhead measurements
 
@@ -289,6 +295,15 @@ counting all reads, `null` disk bytes without task I/O accounting, tolerant enum
 `order_by` explain checking the range index, and less fragile I/O tests. Three findings only applied to mixed versions
 with an intermediate, unreleased commit of this branch.
 
+### CodeRabbit review
+
+CodeRabbit's review of the draft PR led to: `segment_search` timed from dispatch; nested filter keys reported with
+their full path; fingerprints over the complete request; workload samples for `search` (`core_search`); unknown I/O
+kept unknown when merging phase calls; phase I/O counted once inside segment scopes; sparse and custom quantized
+scores counted per comparison; TurboQuant scores counted as quantized; no filter resolution in sparse explain; and the
+`query_profiling` flag in the OpenAPI schema. Adding the workload endpoints to the OpenAPI spec, JWT access table and
+metrics whitelist is left for GA, like `/profiler/slow_requests`.
+
 ## Access control
 
 - **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only
@@ -304,8 +319,10 @@ with an intermediate, unreleased commit of this branch.
 
 ## Workload: fingerprints and counters
 
-- Fingerprint = hash(collection, request type, normalized request). Normalization serializes the shard-level request
-  (the same `Loggable` the slow log uses; for queries after `remove_details()` strips vectors), replaces every number
+- Fingerprint = hash(collection, request type, normalized request). Normalization serializes the whole shard-level
+  request (`Loggable::to_fingerprint_value`; unlike the slow log's value, arrays are not cut, and batches are normalized
+  item by item so memory is bounded by the distinct shapes; for queries after `remove_details()` strips vectors, for
+  searches with the query reduced to its kind and vector name), replaces every number
   and every string under a literal key (`value`, `any`, `except`, `text`, `phrase`, `gt/gte/lt/lte`, `id(s)`,
   `has_id`, `offset`, `nearest`, `positive/negative`, `shard_key`, …) with `"?"`, and squashes arrays to their distinct
   elements, so `should` over 3 cities and a batch of 10 same-shaped queries fingerprint like one (as Postgres 18 squashes

@@ -366,7 +366,12 @@ impl SegmentScope {
         // Nested shard data cannot happen; nested phases are folded into the shard
         let (phases, _, _, notes) = handle.frame.take_shard_parts();
         for phase in phases {
-            parent.record_phase_profile(phase);
+            // Its I/O already is in this segment's counters: keep it once
+            parent.record_phase_profile(PhaseProfile {
+                major_page_faults: None,
+                disk_read_bytes: None,
+                ..phase
+            });
         }
         for note in notes {
             parent.push_note(note);
@@ -420,10 +425,8 @@ impl Frame {
         let mut data = self.0.lock();
         match data.phases.iter_mut().find(|p| p.name == phase.name) {
             Some(existing) => {
-                let add = |a: Option<u64>, b: Option<u64>| match (a, b) {
-                    (Some(a), Some(b)) => Some(a + b),
-                    (a, b) => a.or(b),
-                };
+                // Unknown if any call was not measured: a partial total would look complete
+                let add = |a: Option<u64>, b: Option<u64>| Some(a? + b?);
                 existing.time_ms += phase.time_ms;
                 existing.calls += phase.calls;
                 existing.major_page_faults =

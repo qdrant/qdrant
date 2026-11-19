@@ -42,7 +42,7 @@ where
 
         Self {
             hw: HwScale {
-                kind: ScoreKind::Original,
+                kind: ScoreKind::Quantized,
                 cpu: storage.quantized_vector_size(),
                 vector_io_read: if storage.is_cold() {
                     storage.quantized_vector_size()

@@ -150,6 +150,8 @@ impl SegmentsSearcher {
         let start = Instant::now();
         let query_context_arc = Arc::new(query_context);
 
+        // Started before dispatch: workers may finish searches while others are being spawned
+        let segments_timer = profile::phase("segment_search");
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
             let segments: Vec<_> = {
@@ -215,7 +217,6 @@ impl SegmentsSearcher {
 
         // perform search on all segments concurrently
         // the resulting Vec is in the same order as the segment searches were provided.
-        let segments_timer = profile::phase("segment_search");
         let (all_search_results_per_segment, further_results) =
             Self::execute_searches(searches).await?;
         drop(segments_timer);

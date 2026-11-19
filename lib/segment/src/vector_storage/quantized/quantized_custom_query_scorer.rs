@@ -93,12 +93,12 @@ where
         hw::scale_cpu(self.hw.cpu, || {
             storage.for_each_batch(ids, |idx, vector| {
                 scores[idx] = self.query.score_by(|query| {
-                    storage.score(query, &vector) // inhibit `rustfmt`
+                    // One score per example (CPU is bumped by the quantization crate)
+                    self.hw.count_scores(1);
+                    storage.score(query, &vector)
                 });
             })
         })?;
-        // CPU is bumped by the quantization crate
-        self.hw.count_scores(ids.len());
         Ok(())
     }
 
@@ -108,10 +108,11 @@ where
 
     type SupportsBytes = TEncodedVectors::SupportsBytes;
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
-        self.hw.count_scores(1);
         hw::scale_cpu(self.hw.cpu, || {
-            self.query
-                .score_by(|this| self.quantized_storage.score_bytes(enabled, this, bytes))
+            self.query.score_by(|this| {
+                self.hw.count_scores(1);
+                self.quantized_storage.score_bytes(enabled, this, bytes)
+            })
         })
     }
 }

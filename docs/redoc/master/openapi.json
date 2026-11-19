@@ -12077,6 +12077,11 @@
             "default": false,
             "type": "boolean"
           },
+          "query_profiling": {
+            "description": "Beta: allow the `profile` parameter on search, query, scroll, count and facet requests, which returns a query profile (`EXPLAIN` / `EXPLAIN ANALYZE`) with the response. When disabled, requests asking for a profile are rejected. Requests without the parameter are not affected either way.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
             "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and [`Self::versioned_deletes`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,

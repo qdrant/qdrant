@@ -443,6 +443,10 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
         let operation = async move {
             // Check read rate limiter before proceeding
             self.check_read_rate_limiter_with_plan(
@@ -454,7 +458,8 @@ impl ShardOperation for LocalShard {
             self.do_search(request, search_runtime_handle, timeout)
                 .await
         };
-        self.profiled("core_search", operation).await
+        self.profiled_with_workload("core_search", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.

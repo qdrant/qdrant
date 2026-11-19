@@ -317,6 +317,22 @@ def test_explain_executes_nothing_and_scores_are_counted(tmp_path: pathlib.Path)
                           {"query": query_vector(), "limit": 5, "params": {"quantization": {"rescore": False}}})
     assert sum(s["counters"]["quantized_vector_scores"] for s in all_segments(profile)) > 0
 
+    # Nested conditions: un-indexed keys are reported with their full path
+    nested = {"must": [{"nested": {"key": "diet", "filter": {"must": [{"key": "likes", "match": {"value": True}}]}}}]}
+    _, profile = profiled(url, f"/collections/{COLLECTION}/points/query",
+                          {"query": query_vector(), "limit": 3, "filter": nested})
+    unindexed = {k for s in all_segments(profile) if s["filter"] for k in s["filter"]["unindexed_keys"]}
+    assert "diet[].likes" in unindexed, unindexed
+
+    # `/points/search` is counted in the workload statistics, as `search`
+    requests.delete(f"{url}/profiler/workload").raise_for_status()
+    for _ in range(3):
+        post(url, f"/collections/{COLLECTION}/points/search", {"vector": query_vector(), "limit": 3})
+    workload = requests.get(f"{url}/profiler/workload", params={"collection": COLLECTION}).json()["result"]
+    searches = [e for e in workload["fingerprints"] if e["request_name"] == "search"]
+    assert len(searches) == 1 and searches[0]["calls"] == 3, workload["fingerprints"]
+    assert searches[0]["vector_scores"] + searches[0]["quantized_vector_scores"] > 0
+
     # gRPC: `profile` on a batch item is rejected, not silently ignored
     client = Client.get_by_endpoint(f"localhost:{grpc_port(url)}")
     with pytest.raises(Exception) as error:
@@ -363,12 +379,14 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
         "optimizers_config": {"indexing_threshold": 1, "default_segment_number": 1},
     }).raise_for_status()
     rnd = random.Random(7)
-    for start in range(0, 20_000, 2_000):
+    for start in range(0, 10_000, 2_000):
         requests.put(f"{url}/collections/{collection}/points?wait=true", json={"points": [
             {"id": i, "vector": [rnd.random() for _ in range(256)], "payload": {"text": "x" * 100}}
             for i in range(start, start + 2_000)
         ]}).raise_for_status()
-    wait_for(lambda: requests.get(f"{url}/collections/{collection}").json()["result"]["status"] == "green")
+    # Indexing in a debug build on a CI runner can take a while
+    wait_for(lambda: requests.get(f"{url}/collections/{collection}").json()["result"]["status"] == "green",
+             wait_for_timeout=180)
     body = {"query": [rnd.random() for _ in range(256)], "limit": 5, "with_payload": True}
     path = f"/collections/{collection}/points/query"
 
@@ -388,7 +406,6 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     assert segments
     for segment in segments:
         assert segment["counters"]["major_page_faults"] is not None
-        assert segment["counters"]["disk_read_bytes"] is not None
     cold_faults = sum(s["counters"]["major_page_faults"] for s in segments)
 
     # The same request again: (mostly) cached now
@@ -402,7 +419,10 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     # Eviction is advisory (and a no-op on tmpfs): only check cold reads if it worked
     if _fs_type(tmp_path) in ("tmpfs", "ramfs") or cold_faults == 0:
         pytest.skip("the page cache could not be evicted here: cold reads not exercised")
-    assert sum(s["counters"]["disk_read_bytes"] for s in segments) > 0
+    # `null` without task I/O accounting in the kernel (no /proc/self/io)
+    if os.path.exists("/proc/self/io"):
+        assert all(s["counters"]["disk_read_bytes"] is not None for s in segments)
+        assert sum(s["counters"]["disk_read_bytes"] for s in segments) > 0
     assert any("Waited for the disk" in note for note in cold["notes"])
     # Memory pressure could evict some pages again; the hot run still reads far less
     assert hot_faults < cold_faults

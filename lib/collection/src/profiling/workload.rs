@@ -113,8 +113,7 @@ pub struct Fingerprint {
 
 impl Fingerprint {
     pub fn of(collection_name: &str, request: &dyn Loggable) -> Self {
-        let mut normalized = request.to_log_value();
-        normalize(&mut normalized);
+        let mut normalized = request.to_fingerprint_value();
         let mut hasher = DefaultHasher::new();
         collection_name.hash(&mut hasher);
         request.request_name().hash(&mut hasher);
@@ -212,7 +211,7 @@ pub struct WorkloadEntry {
     /// Hex hash of collection, request type and normalized request.
     pub fingerprint: String,
     pub collection_name: String,
-    /// Shard-level operation: `query`, `scroll`, `count`, `facet`, `retrieve`.
+    /// Shard-level operation: `search`, `query`, `scroll`, `count`, `facet`, `retrieve`.
     pub request_name: &'static str,
     /// The request with literal values replaced by `"?"`.
     pub normalized_request: Value,

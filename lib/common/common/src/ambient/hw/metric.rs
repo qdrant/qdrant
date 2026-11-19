@@ -89,6 +89,17 @@ impl HwScale {
         }
     }
 
+    /// `units` of CPU and `scores` scores, for scorers whose CPU cost is not one unit per
+    /// score, e.g. sparse vectors, whose cost depends on their lengths.
+    #[inline]
+    pub fn cpu_units(self, units: usize, scores: usize) {
+        if score_counting() {
+            slot::bump2(HwMetric::Cpu, units * self.cpu, self.kind.metric(), scores);
+        } else {
+            slot::bump(HwMetric::Cpu, units * self.cpu);
+        }
+    }
+
     /// Count `delta` scores without CPU, for scorers whose CPU is bumped elsewhere.
     #[inline]
     pub fn count_scores(self, delta: usize) {
