@@ -9,6 +9,10 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 // pulls the data through the `IndexingTask` service.
 service IndexingService {
   rpc SubmitTask(IndexingTaskSubmission) returns (SubmitIndexingTaskResponse) {}
+  // Core no longer waits for a task it submitted: drop it if it was not handed to an indexer
+  // yet. Best effort: core revokes the token anyway, so a task handed off already fails at
+  // `GetTask`. A queue in front of indexers uses it to keep dead tasks out of its queue.
+  rpc CancelTask(CancelIndexingTaskRequest) returns (CancelIndexingTaskResponse) {}
 }
 
 message IndexingTaskSubmission {
@@ -34,6 +38,10 @@ message IndexingTaskSubmission {
   // The index to build and its parameters, so that the entry point can refuse what it does
   // not build, or not that large, before any data moves. Same as in `GetTask`.
   IndexingIndexParams index = 13;
+  // Core gives the task up if no indexer fetches it (`GetTask`) by this time, in milliseconds
+  // since the Unix epoch: its `queue_timeout_sec`. A queue does not hand the task out after
+  // that. 0: not set (older cores).
+  uint64 queue_deadline_unix_ms = 14;
 }
 
 // The index a task builds, with the parameters of its kind. A new kind of index, or a version
@@ -94,6 +102,18 @@ message SubmitIndexingTaskResponse {
   string message = 2;
   // Why the task was refused. Ignored when `accepted`.
   IndexingTaskRefusal refusal = 3;
+}
+
+message CancelIndexingTaskRequest {
+  string task_id = 1;
+  // The task's token, hex, as submitted: only the submitter may cancel.
+  string token = 2;
+}
+
+message CancelIndexingTaskResponse {
+  // Whether a task waiting to be handed out was dropped. False if it was unknown, handed off
+  // already, or the token did not match.
+  bool removed = 1;
 }
 
 enum IndexingTaskRefusal {

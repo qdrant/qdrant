@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::vec::BitVec;
@@ -300,6 +300,8 @@ impl<'a> RemoteBuilder<'a> {
                         "Remote indexing task {} cancelled: optimization stopped",
                         handle.task_id(),
                     );
+                    // A queue may still hold it
+                    self.args.indexer.cancel(handle.task_id(), &handle.token());
                     // Dropping the handle revokes the token: the next heartbeat gets CANCEL
                     drop(handle);
                     return Err(OperationError::cancelled(
@@ -315,6 +317,8 @@ impl<'a> RemoteBuilder<'a> {
                         handle.task_id(),
                         config.queue_timeout,
                     );
+                    // A queue may still hold it
+                    self.args.indexer.cancel(handle.task_id(), &handle.token());
                 }
                 Err(WaitInterrupt::LeaseExpired) => {
                     REMOTE_INDEXING_METRICS
@@ -342,6 +346,9 @@ fn submit_attempt(
     prepared: &Prepared,
     attempt: u32,
 ) -> Result<TaskHandle, SubmitError> {
+    // Taken before the task is registered, which starts its queue lease: never later than
+    // the time core gives the task up
+    let queue_deadline = SystemTime::now() + args.indexer.config().queue_timeout;
     let handle = REMOTE_INDEXING_TASKS.register(NewTask {
         scope: args.scope.clone(),
         params: prepared.params.clone(),
@@ -360,6 +367,7 @@ fn submit_attempt(
         index: prepared.params.index,
         graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
         attempt,
+        queue_deadline,
     };
     log::debug!(
         "Remote indexing task {} for {:?} (attempt {attempt}): {} points, {} bytes",
