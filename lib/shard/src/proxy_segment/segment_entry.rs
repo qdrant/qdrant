@@ -1027,8 +1027,13 @@ impl StorageSegmentEntry for ProxySegment {
                 if let Some(wrapped_flusher) = wrapped_flusher {
                     wrapped_flusher()?;
                 }
+                // TODO(persist_proxy_segments): remove the `force` condition once
+                // `persist_proxy_segments` is enabled by default.
+                // Temporary mitigation: forced flushes persist pending changes even if the feature
+                // is disabled. A shard snapshot force-flushes before packing segments, and packs
+                // this log to not lose the changes buffered in an optimizer proxy, such as deletes.
                 if let Some(pending_changes_flusher) = pending_changes_flusher
-                    && feature_flags().persist_proxy_segments
+                    && (force || feature_flags().persist_proxy_segments)
                 {
                     pending_changes_flusher()?;
                 }
