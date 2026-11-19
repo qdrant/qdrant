@@ -129,9 +129,12 @@ mod tests {
         let delta = ThreadIo::now().since(before);
         let proc_after = proc_read_bytes();
         assert_eq!(sum, 7 * 1024);
-        // Eviction can be refused, or the file is on tmpfs: then the pages are simply cached
-        if evicted.is_ok() && delta.major_page_faults.unwrap() > 0 {
-            let bytes = delta.disk_read_bytes.unwrap();
+        // Eviction can be refused, or the file is on tmpfs: then the pages are simply cached,
+        // and this test checks nothing more. Without task I/O accounting, bytes are unknown.
+        if evicted.is_ok()
+            && delta.major_page_faults.unwrap() > 0
+            && let Some(bytes) = delta.disk_read_bytes
+        {
             assert!(bytes > 0);
             if let (Some(before), Some(after)) = (proc_before, proc_after) {
                 // Same counter as the task I/O accounting, in 512-byte units. Bracketed by

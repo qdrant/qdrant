@@ -144,6 +144,7 @@ impl RemoteShard {
         operation: &'static str,
         started: Option<std::time::Instant>,
         remote: Option<api::grpc::qdrant::QueryProfile>,
+        fallback: profile::ExplainFallback,
     ) -> profile::RemoteResults {
         let Some(started) = started else {
             return profile::RemoteResults::Keep;
@@ -156,11 +157,21 @@ impl RemoteShard {
             }
             Some(Err(err)) => {
                 log::debug!("Invalid query profile from peer {}: {err}", self.peer_id);
-                profile::record_remote_without_profile(self.id, self.peer_id, operation, round_trip)
+                profile::record_remote_without_profile(
+                    self.id,
+                    self.peer_id,
+                    operation,
+                    round_trip,
+                    fallback,
+                )
             }
-            None => {
-                profile::record_remote_without_profile(self.id, self.peer_id, operation, round_trip)
-            }
+            None => profile::record_remote_without_profile(
+                self.id,
+                self.peer_id,
+                operation,
+                round_trip,
+                fallback,
+            ),
         }
     }
 
@@ -1364,8 +1375,12 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = scroll_response.usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        let remote_results =
-            self.profile_finish("scroll", profile_started, scroll_response.profile.clone());
+        let remote_results = self.profile_finish(
+            "scroll",
+            profile_started,
+            scroll_response.profile.clone(),
+            profile::ExplainFallback::DiscardResults,
+        );
         if remote_results == profile::RemoteResults::Discard {
             return Ok(Vec::new());
         }
@@ -1462,7 +1477,12 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        let remote_results = self.profile_finish("core_search", profile_started, profile);
+        let remote_results = self.profile_finish(
+            "core_search",
+            profile_started,
+            profile,
+            profile::ExplainFallback::DiscardResults,
+        );
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
             .into_iter()
@@ -1540,8 +1560,13 @@ impl ShardOperation for RemoteShard {
         }
         // An approximate count is only an estimate: explain mode returns it from upgraded
         // shards too, so keep it to not under-count. Discard an exact count, which was executed.
-        if self.profile_finish("count", profile_started, profile) == profile::RemoteResults::Discard
-            && request.exact
+        let fallback = if request.exact {
+            profile::ExplainFallback::DiscardResults
+        } else {
+            profile::ExplainFallback::KeepEstimate
+        };
+        if self.profile_finish("count", profile_started, profile, fallback)
+            == profile::RemoteResults::Discard
         {
             return Ok(CountResult { count: 0 });
         }
@@ -1660,7 +1685,12 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = hardware_usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        let remote_results = self.profile_finish("query_batch", profile_started, profile);
+        let remote_results = self.profile_finish(
+            "query_batch",
+            profile_started,
+            profile,
+            profile::ExplainFallback::DiscardResults,
+        );
 
         let mut result: Vec<ShardQueryResponse> = results
             .into_iter()
@@ -1737,8 +1767,12 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = response.usage {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
-        if self.profile_finish("facet", profile_started, response.profile.clone())
-            == profile::RemoteResults::Discard
+        if self.profile_finish(
+            "facet",
+            profile_started,
+            response.profile.clone(),
+            profile::ExplainFallback::DiscardResults,
+        ) == profile::RemoteResults::Discard
         {
             timer.set_success(true);
             return Ok(FacetResponse { hits: Vec::new() });

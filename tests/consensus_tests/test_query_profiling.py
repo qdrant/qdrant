@@ -327,7 +327,8 @@ def test_explain_executes_nothing_and_scores_are_counted(tmp_path: pathlib.Path)
     # `/points/search` is counted in the workload statistics, as `search`
     requests.delete(f"{url}/profiler/workload").raise_for_status()
     for _ in range(3):
-        post(url, f"/collections/{COLLECTION}/points/search", {"vector": query_vector(), "limit": 3})
+        response = post(url, f"/collections/{COLLECTION}/points/search", {"vector": query_vector(), "limit": 3})
+        assert response.ok, response.text
     workload = requests.get(f"{url}/profiler/workload", params={"collection": COLLECTION}).json()["result"]
     searches = [e for e in workload["fingerprints"] if e["request_name"] == "search"]
     assert len(searches) == 1 and searches[0]["calls"] == 3, workload["fingerprints"]
@@ -387,7 +388,9 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     # Indexing in a debug build on a CI runner can take a while
     wait_for(lambda: requests.get(f"{url}/collections/{collection}").json()["result"]["status"] == "green",
              wait_for_timeout=180)
-    body = {"query": [rnd.random() for _ in range(256)], "limit": 5, "with_payload": True}
+    # Exact: reads every on-disk vector, so a cold run faults many times, deterministically
+    body = {"query": [rnd.random() for _ in range(256)], "limit": 5, "with_payload": True,
+            "params": {"exact": True}}
     path = f"/collections/{collection}/points/query"
 
     # Restart: pages mapped by a running process can't be evicted
@@ -416,13 +419,24 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     assert (sum(s["counters"]["vector_io_read_bytes"] for s in hot_segments)
             == sum(s["counters"]["vector_io_read_bytes"] for s in segments))
 
-    # Eviction is advisory (and a no-op on tmpfs): only check cold reads if it worked
-    if _fs_type(tmp_path) in ("tmpfs", "ramfs") or cold_faults == 0:
-        pytest.skip("the page cache could not be evicted here: cold reads not exercised")
-    # `null` without task I/O accounting in the kernel (no /proc/self/io)
-    if os.path.exists("/proc/self/io"):
+    # Readahead and prefetching bring a whole segment in after a single fault: bytes read
+    # from disk tell how cold a run was, faults don't. They are unknown (`null`) without task
+    # I/O accounting in the kernel (no /proc/self/io); then fall back to faults.
+    def disk_bytes(segments):
+        return sum(s["counters"]["disk_read_bytes"] or 0 for s in segments)
+
+    accounting = os.path.exists("/proc/self/io")
+    if accounting:
         assert all(s["counters"]["disk_read_bytes"] is not None for s in segments)
-        assert sum(s["counters"]["disk_read_bytes"] for s in segments) > 0
+    cold_bytes = disk_bytes(segments)
+    # Eviction is advisory (and a no-op on tmpfs): only check cold reads if it worked.
+    # The exact search reads ~10 MB of vectors; require a clearly cold run.
+    clearly_cold = cold_bytes >= 1 << 20 if accounting else cold_faults >= 1
+    if _fs_type(tmp_path) in ("tmpfs", "ramfs") or not clearly_cold:
+        pytest.skip(f"the page cache could not be evicted here ({cold_bytes} bytes, {cold_faults} faults)")
+    assert cold_faults > 0
     assert any("Waited for the disk" in note for note in cold["notes"])
     # Memory pressure could evict some pages again; the hot run still reads far less
-    assert hot_faults < cold_faults
+    if accounting:
+        assert disk_bytes(hot_segments) < cold_bytes / 2
+    assert hot_faults <= cold_faults

@@ -87,7 +87,7 @@ Start with **`notes`**, which summarize the findings. Then look at the **segment
 | `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". Multi-vectors count sub-vector pairs. For the sparse inverted index, the posting-list entries of the searched lists (an upper bound). |
 | `counters.*_io_read_bytes` | Bytes touched in on-disk storage (vectors, payload, payload indexes, object storage), **whether or not they were in the page cache**. RAM storage is not counted. |
 | `counters.major_page_faults` | Accesses to on-disk (mmap) data that had to wait for the disk because the page was not in the page cache. `null` where the OS doesn't report it. |
-| `counters.disk_read_bytes` | Bytes actually read from the disk for this segment, including readahead. `0` when everything was cached. |
+| `counters.disk_read_bytes` | Bytes actually read from the disk for this segment, including readahead. `0` when everything was cached. **The best signal of a cold cache**: sequential reads and prefetching can bring a whole segment in after a single page fault, so a low `major_page_faults` doesn't mean little was read. |
 
 In a distributed cluster, a remote shard's `time_ms` is measured on the peer that holds it, and `network_time_ms` is
 the rest of the round trip (network, serialization, queueing).

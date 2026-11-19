@@ -33,7 +33,7 @@ pub fn set_this_peer_id(peer_id: u64) {
     let _ = THIS_PEER_ID.set(peer_id);
 }
 
-pub(crate) fn this_peer_id() -> Option<u64> {
+pub fn this_peer_id() -> Option<u64> {
     THIS_PEER_ID.get().copied()
 }
 
@@ -70,6 +70,11 @@ impl Profiler {
 
     pub(crate) fn handle(&self) -> ProfileHandle {
         self.handle.clone()
+    }
+
+    /// Record a finding for the whole request.
+    pub fn note(&self, text: String) {
+        self.handle.frame.push_note(text);
     }
 
     /// Snapshot of the profile so far, with notes derived from it.
@@ -268,12 +273,22 @@ pub enum RemoteResults {
     Discard,
 }
 
+/// What explain mode does with the results of a peer that returned no profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExplainFallback {
+    /// The peer executed the request: its results must not be returned.
+    DiscardResults,
+    /// The peer only estimated (approximate count): explain returns estimates, keep it.
+    KeepEstimate,
+}
+
 /// Record a remote shard call that returned no profile (e.g. an older peer).
 pub fn record_remote_without_profile(
     shard_id: u32,
     peer_id: u64,
     operation: &'static str,
     round_trip: Duration,
+    fallback: ExplainFallback,
 ) -> RemoteResults {
     with_handle(|handle| {
         handle
@@ -289,14 +304,24 @@ pub fn record_remote_without_profile(
                 ));
                 RemoteResults::Keep
             }
-            ProfileMode::Explain => {
-                handle.frame.push_note(format!(
-                    "Peer {peer_id} does not support explain (it may run an older version) and \
-                     executed the request: its results were discarded and its shards are not \
-                     planned in this profile."
-                ));
-                RemoteResults::Discard
-            }
+            ProfileMode::Explain => match fallback {
+                ExplainFallback::DiscardResults => {
+                    handle.frame.push_note(format!(
+                        "Peer {peer_id} does not support explain (it may run an older version) \
+                         and executed the request: its results were discarded and its shards \
+                         are not planned in this profile."
+                    ));
+                    RemoteResults::Discard
+                }
+                ExplainFallback::KeepEstimate => {
+                    handle.frame.push_note(format!(
+                        "Peer {peer_id} does not support explain (it may run an older version): \
+                         its approximate count is included, but its shards are not planned in \
+                         this profile."
+                    ));
+                    RemoteResults::Keep
+                }
+            },
         }
     })
     .unwrap_or(RemoteResults::Keep)

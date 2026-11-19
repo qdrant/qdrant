@@ -11,6 +11,7 @@ use shard::search::{CoreSearchRequest, CoreSearchRequestBatch};
 
 use crate::operations::types::PointRequestInternal;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::profiling::fingerprint::{filter_shape, shard_query_shape};
 use crate::profiling::workload::normalize;
 
 /// Log entries are retained in memory indefinitely, so a snapshot must not keep
@@ -52,10 +53,12 @@ fn normalized_batch_value<T>(
     items: impl IntoIterator<Item = T>,
     value: impl Fn(T) -> Value,
 ) -> Value {
+    let mut seen = ahash::AHashSet::new();
     let mut distinct: Vec<Value> = Vec::new();
     for item in items {
         let item = value(item);
-        if !distinct.contains(&item) {
+        // `Value` is not `Hash`; its string is canonical enough for deduplication
+        if seen.insert(item.to_string()) {
             distinct.push(item);
         }
     }
@@ -133,7 +136,12 @@ impl Loggable for Vec<ShardQueryRequest> {
     }
 
     fn to_fingerprint_value(&self) -> Value {
-        normalized_batch_value(self.iter(), normalized_value)
+        // Shapes, not the full requests: filters may hold large id sets (distance matrix)
+        normalized_batch_value(self.iter(), |request| {
+            let mut value = shard_query_shape(request);
+            normalize(&mut value);
+            value
+        })
     }
 
     fn request_hash(&self) -> u64 {
@@ -206,7 +214,7 @@ fn core_search_value(search: &CoreSearchRequest) -> Value {
     };
     serde_json::json!({
         "query": { "kind": kind, "using": query.get_vector_name() },
-        "filter": filter,
+        "filter": filter.as_ref().map(filter_shape),
         "params": params,
         "limit": limit,
         "offset": offset,

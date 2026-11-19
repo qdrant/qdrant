@@ -23,16 +23,40 @@ pub type PreciseScoreOrdered = OrderedFloat<PreciseScore>;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParsedFormula {
     /// Variables used in the formula
+    #[serde(serialize_with = "serialize_sorted_set")]
     pub payload_vars: HashSet<JsonPath>,
 
     /// Conditions used in the formula. Their index in the array is used as a variable id
     pub conditions: Vec<Condition>,
 
     /// Defaults to use when variable is not found
+    #[serde(serialize_with = "serialize_sorted_map")]
     pub defaults: HashMap<VariableId, Value>,
 
     /// Root of the formula expression
     pub formula: ParsedExpression,
+}
+
+/// Serialized for logs and workload fingerprints only: in a deterministic order, which a
+/// `HashSet` doesn't have.
+fn serialize_sorted_set<S: serde::Serializer>(
+    set: &HashSet<JsonPath>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut items: Vec<&JsonPath> = set.iter().collect();
+    items.sort();
+    serializer.collect_seq(items)
+}
+
+/// As `[variable, default]` pairs, sorted: JSON object keys must be strings, which
+/// [`VariableId`] is not, so a map would fail to serialize.
+fn serialize_sorted_map<S: serde::Serializer>(
+    map: &HashMap<VariableId, Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut items: Vec<(&VariableId, &Value)> = map.iter().collect();
+    items.sort_by(|a, b| a.0.cmp(b.0));
+    serializer.collect_seq(items)
 }
 
 impl Hash for ParsedFormula {
@@ -329,6 +353,32 @@ mod tests {
     use common::math::is_close;
 
     use super::*;
+
+    #[test]
+    fn test_formula_serializes_deterministically() {
+        let path = |p: &str| JsonPath::from_str(p).unwrap();
+        let formula = |vars: &[&str]| ParsedFormula {
+            payload_vars: vars.iter().map(|v| path(v)).collect(),
+            conditions: vec![],
+            defaults: HashMap::from([
+                (VariableId::Payload(path("b")), Value::from(2)),
+                (VariableId::Score(0), Value::from(0)),
+                (VariableId::Payload(path("a")), Value::from(1)),
+            ]),
+            formula: ParsedExpression::Constant(OrderedFloat(1.0)),
+        };
+        // A map keyed by `VariableId` used to fail: JSON keys must be strings
+        let value = serde_json::to_value(formula(&["z", "a", "m"])).unwrap();
+        assert_eq!(value["payload_vars"], serde_json::json!(["a", "m", "z"]));
+        assert_eq!(value["defaults"].as_array().unwrap().len(), 3);
+        // Same formula, any insertion order: same serialization
+        for _ in 0..10 {
+            assert_eq!(
+                serde_json::to_value(formula(&["m", "z", "a"])).unwrap(),
+                value
+            );
+        }
+    }
 
     #[test]
     fn test_variable_id_from_str() {

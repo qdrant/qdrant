@@ -168,7 +168,15 @@ fn remote_profile_is_grafted_with_network_time() {
 fn remote_without_profile_is_discarded_in_explain_only() {
     let duration = std::time::Duration::from_millis(5);
     let (profiler, ctx, _) = profiled(ProfileMode::Explain);
-    let action = ctx.measure(|| record_remote_without_profile(1, 9, "query_batch", duration));
+    let action = ctx.measure(|| {
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults,
+        )
+    });
     assert_eq!(action, RemoteResults::Discard);
     let profile = profiler.finish();
     assert_eq!(profile.shards.len(), 1);
@@ -180,7 +188,15 @@ fn remote_without_profile_is_discarded_in_explain_only() {
     );
 
     let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
-    let action = ctx.measure(|| record_remote_without_profile(1, 9, "query_batch", duration));
+    let action = ctx.measure(|| {
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults,
+        )
+    });
     assert_eq!(action, RemoteResults::Keep);
     assert!(
         profiler
@@ -190,9 +206,33 @@ fn remote_without_profile_is_discarded_in_explain_only() {
             .any(|note| note.contains("no profile"))
     );
 
+    // Approximate count from an older peer: kept, and the note says so
+    let (profiler, ctx, _) = profiled(ProfileMode::Explain);
+    let action = ctx.measure(|| {
+        record_remote_without_profile(1, 9, "count", duration, ExplainFallback::KeepEstimate)
+    });
+    assert_eq!(action, RemoteResults::Keep);
+    let notes = profiler.finish().notes;
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("approximate count is included")),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|note| note.contains("discarded")),
+        "{notes:?}"
+    );
+
     // Not profiled: always keep
     assert_eq!(
-        record_remote_without_profile(1, 9, "query_batch", duration),
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults
+        ),
         RemoteResults::Keep
     );
 }
@@ -335,6 +375,13 @@ fn disk_note_counts_all_reads_and_places() {
     .unwrap();
     assert!(note.contains("5 major page fault(s), 2.0 MiB"), "{note}");
     assert!(note.contains("1 segment(s), `retrieve_records`"), "{note}");
+
+    // Faults without a byte count (no task I/O accounting): the amount is unknown, not 0
+    let note = disk_note(&io_profile((Some(4), None), (None, None))).unwrap();
+    assert!(
+        note.contains("4 major page fault(s), an unknown amount read"),
+        "{note}"
+    );
 
     // Nothing read, or not measured: no note
     assert_eq!(

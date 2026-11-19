@@ -67,13 +67,19 @@ impl RequestHwCounter {
         profile: Option<ProfileMode>,
         audience: ProfileAudience,
     ) -> Self {
-        if profile.is_some() {
-            // Usually set at startup with the feature flag. A peer with the flag disabled can
-            // still serve the shards of a profiled request (the coordinator checked the flag):
-            // count from now on, so this profile has distance counts too.
-            common::ambient::hw::enable_score_counting();
-        }
         let profiler = profile.map(|mode| Profiler::new(mode, audience));
+        if let Some(profiler) = &profiler
+            && !feature_flags().query_profiling
+        {
+            // A peer with the flag disabled serves the shards of a profiled request (the
+            // coordinator checked its own flag). It doesn't count distances: that would cost
+            // every request of this process. Say so, rather than report zeros.
+            profiler.note(format!(
+                "Peer {} has `query_profiling` disabled: distance counts (`vector_scores`, \
+                 `quantized_vector_scores`) of its shards are not measured and show as 0.",
+                common::ambient::profile::this_peer_id().unwrap_or_default(),
+            ));
+        }
         Self {
             counter: AmbientContext::request_profiled(name, collection, profiler.as_ref()),
             report_to_api,

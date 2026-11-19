@@ -79,7 +79,8 @@ message QueryResponse { ... optional QueryProfile profile = 4; }
   BM25 leaf): planning (cardinality estimation, sampling) is real work, scoring is skipped. Operations that do the
   same work in explain mode cost the same: `retrieve` (e.g. the vectors of recommend examples), scroll and count.
 - A peer with `query_profiling` disabled still serves profiled internal requests (the coordinator checked the
-  flag); the first one turns distance counting on in that process, so its profile has distance counts.
+  flag), but doesn't count distances, which would cost every request of that process: its profile says so in a
+  note, and its distance counts show as 0.
 - Unknown enum values from a newer peer (`strategy`, `strategy_reason`) are reported as absent, not as an invalid
   profile, so new values can be added within schema version 1.
 - gRPC batches take `profile` on the batch request; `profile` on a batch item is rejected rather than ignored.
@@ -204,7 +205,8 @@ sub-vectors); quantized scorers count explicitly because their CPU is bumped ins
 TurboQuant storages keep only encoded vectors, so their comparisons count as quantized; the filtered sparse fallback
 (`plain_search`) counts one per scored point; the sparse inverted index counts the posting-list entries of the lists it
 searches, an upper bound (pruning and the filter can skip entries; counting exactly would mean a bump in the innermost
-loop).
+loop). Sparse indexes count as original whatever their weight type (`float16`, `uint8`, compressed `QuantizedU8`), like
+dense storages with a smaller datatype; telling them apart would need the weight type in the search context.
 
 `filter.unindexed_keys` lists full payload paths, including keys inside `nested` conditions (`diet[].likes`), as the
 payload index is selected for them at query time (`segment::data_types::load_profile::filter_payload_keys`).
@@ -267,7 +269,10 @@ So each segment scope also samples the OS counters of the thread that runs it, a
   readahead and `MADV_WILLNEED` prefetching. Linux fills `ru_inblock` from task I/O accounting
   (`/proc/thread-self/io` `read_bytes`); a unit test checks they agree.
 
-Both are `null` when unknown: non-Linux, or a scope that ended on another thread than it started on. Record retrieval
+Both are `null` when unknown: non-Linux, a kernel without task I/O accounting (`disk_read_bytes` only), or a scope
+that ended on another thread than it started on. `disk_read_bytes` is the better measure of coldness: a full scan of a
+cold 2 MB segment showed 1 major fault and 2 MB read, because sequential readahead and `MADV_WILLNEED` prefetching
+bring the rest in without further faults. Record retrieval
 after search (payload and vectors for the results, `SegmentsSearcher::retrieve`) runs in one blocking task outside
 segment scopes; it is reported as phase `retrieve_records`, the first phase with these counters.
 
@@ -304,6 +309,15 @@ scores counted per comparison; TurboQuant scores counted as quantized; no filter
 `query_profiling` flag in the OpenAPI schema. Adding the workload endpoints to the OpenAPI spec, JWT access table and
 metrics whitelist is left for GA, like `/profiler/slow_requests`.
 
+### Third review
+
+A third Codex review found: O(N²) fingerprinting of distance-matrix batches (now shapes without id sets, and no
+`remove_details()` clone); a profiled request permanently enabling distance counting on a peer with the flag off
+(now a note instead); a wrong note for older peers' approximate counts; multivector scores counted before a fallible
+read; non-deterministic formula fingerprints and formula defaults that failed to serialize (also in the slow log);
+"0.0 MiB" instead of an unknown amount without task I/O accounting; nested-phase I/O stripping that could erase a
+standalone phase's I/O; and fragile cold-I/O test conditions. All fixed with tests.
+
 ## Access control
 
 - **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only
@@ -321,8 +335,12 @@ metrics whitelist is left for GA, like `/profiler/slow_requests`.
 
 - Fingerprint = hash(collection, request type, normalized request). Normalization serializes the whole shard-level
   request (`Loggable::to_fingerprint_value`; unlike the slow log's value, arrays are not cut, and batches are normalized
-  item by item so memory is bounded by the distinct shapes; for queries after `remove_details()` strips vectors, for
-  searches with the query reduced to its kind and vector name), replaces every number
+  item by item so memory is bounded by the distinct shapes. Queries and searches use explicit *shapes*
+  (`profiling/fingerprint.rs`): vectors are reduced to their dimensions and id sets (`has_id`, resolved points) to
+  `"?"` without being serialized, so a distance matrix request (N searches, each with a `has_id` of N ids) costs
+  O(N) to fingerprint, not O(N²). Formulas serialize their variables and defaults sorted, so equal formulas
+  fingerprint equally (their defaults used to fail to serialize, as a map with non-string keys). The rest
+  replaces every number
   and every string under a literal key (`value`, `any`, `except`, `text`, `phrase`, `gt/gte/lt/lte`, `id(s)`,
   `has_id`, `offset`, `nearest`, `positive/negative`, `shard_key`, …) with `"?"`, and squashes arrays to their distinct
   elements, so `should` over 3 cities and a batch of 10 same-shaped queries fingerprint like one (as Postgres 18 squashes

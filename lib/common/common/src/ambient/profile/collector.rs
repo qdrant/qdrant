@@ -366,10 +366,12 @@ impl SegmentScope {
         // Nested shard data cannot happen; nested phases are folded into the shard
         let (phases, _, _, notes) = handle.frame.take_shard_parts();
         for phase in phases {
-            // Its I/O already is in this segment's counters: keep it once
+            // Its I/O already is in this segment's counters: count it there only. Zero, not
+            // unknown, so merging with a standalone phase of the same name keeps its I/O.
+            let counted_in_segment = |io: Option<u64>| io.map(|_| 0);
             parent.record_phase_profile(PhaseProfile {
-                major_page_faults: None,
-                disk_read_bytes: None,
+                major_page_faults: counted_in_segment(phase.major_page_faults),
+                disk_read_bytes: counted_in_segment(phase.disk_read_bytes),
                 ..phase
             });
         }
@@ -564,21 +566,30 @@ pub(crate) fn derive_notes(profile: &QueryProfile) -> Vec<String> {
             .filter_map(|s| s.counters.major_page_faults)
             .chain(phases().filter_map(|p| p.major_page_faults))
             .sum();
-        let bytes: u64 = segments()
-            .filter_map(|s| s.counters.disk_read_bytes)
-            .chain(phases().filter_map(|p| p.disk_read_bytes))
+        // Unknown if a place that faulted has no byte count (no task I/O accounting)
+        let bytes: Option<u64> = segments()
+            .filter(|s| did_io(s.counters.major_page_faults, s.counters.disk_read_bytes))
+            .map(|s| s.counters.disk_read_bytes)
+            .chain(
+                phases()
+                    .filter(|p| did_io(p.major_page_faults, p.disk_read_bytes))
+                    .map(|p| p.disk_read_bytes),
+            )
             .sum();
+        let bytes = match bytes {
+            Some(bytes) => format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0)),
+            None => "an unknown amount".to_string(),
+        };
         let mut places = Vec::new();
         if io_segments > 0 {
             places.push(format!("{io_segments} segment(s)"));
         }
         places.extend(io_phases.iter().map(|name| format!("`{name}`")));
         notes.push(format!(
-            "Waited for the disk: {faults} major page fault(s), {:.1} MiB read from disk, in {}. \
+            "Waited for the disk: {faults} major page fault(s), {bytes} read from disk, in {}. \
              The data was not in the page cache, e.g. after a restart or under memory pressure; \
              repeated requests are faster. Consider more RAM, or keeping the hot data in memory \
              (`on_disk: false`, quantization with `always_ram: true`).",
-            bytes as f64 / (1024.0 * 1024.0),
             places.join(", "),
         ));
     }

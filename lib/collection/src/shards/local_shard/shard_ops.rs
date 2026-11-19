@@ -593,7 +593,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let fingerprint = workload::enabled().then(|| {
             let request = requests.clone();
-            move |collection: &str| Fingerprint::of(collection, &request.remove_details())
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
         });
         let operation = async move {
             let start_time = Instant::now();

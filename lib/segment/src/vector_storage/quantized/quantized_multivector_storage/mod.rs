@@ -338,7 +338,6 @@ where
         self.offsets
             .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
-        hw::count_scores(ScoreKind::Quantized, query.len() * offsets.len());
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
@@ -353,6 +352,8 @@ where
                     }
                 }
             })?;
+        // After the read: a failed read scored nothing
+        hw::count_scores(ScoreKind::Quantized, query.len() * offsets.len());
 
         Ok(max_sim.into_iter().sum())
     }
