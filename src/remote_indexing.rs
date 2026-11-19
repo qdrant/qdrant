@@ -6,16 +6,21 @@
 
 use std::path::{Component, Path};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use api::grpc::qdrant::indexing_service_client::IndexingServiceClient;
-use api::grpc::qdrant::{IndexingTaskRefusal, IndexingTaskSubmission, SubmitIndexingTaskResponse};
+use api::grpc::qdrant::{
+    CancelIndexingTaskRequest, IndexingTaskRefusal, IndexingTaskSubmission,
+    SubmitIndexingTaskResponse,
+};
 use api::grpc::remote_indexing::index_params_to_grpc;
 use segment::index::hnsw_index::remote::{
-    OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission, set_remote_indexer,
+    OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission, TaskToken,
+    set_remote_indexer,
 };
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
+use uuid::Uuid;
 
 use crate::settings::{IndexingOnFailure, IndexingServiceConfig, Settings};
 
@@ -159,19 +164,53 @@ impl ClientInner {
             attempt: task.attempt,
             cluster_id: self.config.cluster_id.clone(),
             index: Some(index_params_to_grpc(&task.index)),
+            queue_deadline_unix_ms: task
+                .queue_deadline
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_millis() as u64),
         });
-        if let Some(api_key) = &self.config.api_key {
-            let value = api_key
-                .parse()
-                .map_err(|err| SubmitError::Permanent(format!("invalid api key: {err}")))?;
-            request.metadata_mut().insert(API_KEY_HEADER, value);
-        }
+        self.authorize(&mut request)
+            .map_err(|err| SubmitError::Permanent(format!("invalid api key: {err}")))?;
         let response = IndexingServiceClient::new(self.channel.clone())
             .submit_task(request)
             .await
             .map_err(|status| SubmitError::Transient(format!("SubmitTask: {status}")))?
             .into_inner();
         refusal_to_result(&response)
+    }
+
+    /// Add the entry point's API key, if configured.
+    fn authorize<T>(
+        &self,
+        request: &mut tonic::Request<T>,
+    ) -> Result<(), tonic::metadata::errors::InvalidMetadataValue> {
+        if let Some(api_key) = &self.config.api_key {
+            request
+                .metadata_mut()
+                .insert(API_KEY_HEADER, api_key.parse()?);
+        }
+        Ok(())
+    }
+
+    async fn cancel_async(&self, task_id: Uuid, token: TaskToken) {
+        let mut request = tonic::Request::new(CancelIndexingTaskRequest {
+            task_id: task_id.to_string(),
+            token: token.to_hex(),
+        });
+        if self.authorize(&mut request).is_err() {
+            return;
+        }
+        match IndexingServiceClient::new(self.channel.clone())
+            .cancel_task(request)
+            .await
+        {
+            Ok(response) => log::debug!(
+                "Remote indexing task {task_id} cancelled at the entry point (removed: {})",
+                response.into_inner().removed,
+            ),
+            // An indexer without a queue may not implement it: nothing to drop there
+            Err(status) => log::debug!("CancelTask of remote indexing task {task_id}: {status}"),
+        }
     }
 }
 
@@ -212,6 +251,14 @@ impl RemoteIndexer for RemoteIndexingClient {
             .unwrap_or_else(|_| Err(SubmitError::Transient("submission timed out".to_string())));
         join.abort();
         result
+    }
+
+    fn cancel(&self, task_id: Uuid, token: &TaskToken) {
+        // Fire and forget, bounded by the channel's timeout
+        let inner = self.inner.clone();
+        let token = *token;
+        self.runtime
+            .spawn(async move { inner.cancel_async(task_id, token).await });
     }
 }
 

@@ -501,6 +501,23 @@ fn queued_task_outlives_heartbeat_timeout() {
 }
 
 #[test]
+fn task_not_fetched_in_time_is_cancelled() {
+    // Accepted, never fetched: core gives it up at the queue timeout, tells the entry point
+    // so that a queue drops it, and builds locally
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(12);
+    let (_dir, segment) = segment(&mut rng);
+    let stopped = AtomicBool::new(false);
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config(OnFailure::Local, Duration::from_millis(300)),
+        vec![LoopbackBehavior::Ignore],
+    ));
+    build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
+    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
+    assert_eq!(indexer.cancellations.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn heartbeats_keep_a_slow_task_alive() {
     // The stalled indexer heartbeats every 100ms: with a 300ms lease, the task stays alive
     // until the optimization is stopped
