@@ -119,8 +119,29 @@ pub enum TQRotation {
     Unpadded,
 }
 
-/// Encoded query type for Turbo Quant.
-pub struct EncodedQueryTQ {
+/// Encoded query type for Turbo Quant: a vector to search for, scored asymmetrically, or a
+/// stored vector, scored symmetrically against the others.
+pub struct EncodedQueryTQ(EncodedQueryTQForm);
+
+enum EncodedQueryTQForm {
+    /// From [`quantization::TurboQuantizer::precompute_query`]
+    Asymmetric(AsymmetricQueryTQ),
+    /// From [`quantization::TurboQuantizer::stored_query`]
+    Stored(StoredQueryTQ),
+}
+
+/// A stored vector as a query: it scores the others as
+/// [`quantization::TurboQuantizer::score_symmetric`] scores two stored vectors, so an index built
+/// with it needs only the codes.
+struct StoredQueryTQ {
+    /// The stored record: the codes, then the extras.
+    record: Vec<u8>,
+    /// What the symmetric score reads of the record besides its codes.
+    values: quantization::SymmetricValues,
+}
+
+/// A vector to search for, rotated and encoded for asymmetric scoring.
+struct AsymmetricQueryTQ {
     /// SIMD-encoded query for the asymmetric scoring path. For TQ+, the
     /// rotated query is pre-multiplied by `D' = 1/scale` per coord so the
     /// SIMD raw_dot computes `⟨Q · D', X+⟩` directly — the asymmetric score
