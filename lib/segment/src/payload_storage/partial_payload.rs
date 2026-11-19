@@ -138,6 +138,85 @@ mod tests {
         assert_eq!(partial["a.b"], serde_json::json!({"c": 2}));
     }
 
+    /// Deep paths resolve like on the full payload: only their first key is parsed.
+    #[test]
+    fn deep_paths() {
+        use crate::json_path::JsonPath;
+
+        // `b` mirrors the shape of `a`, so a path that leaked into it would see other values
+        let json = br#"{
+            "a": {
+                "b": {"c": {"d": 1, "e": [10, 20]}},
+                "arr": [
+                    {"c": {"d": 2}, "m": [[1, 2], [3]]},
+                    {"c": {"d": 3}, "m": []},
+                    {"c": null},
+                    5
+                ],
+                "n": null,
+                "empty": {}
+            },
+            "b": {
+                "b": {"c": {"d": 100, "e": [100]}},
+                "arr": [{"c": {"d": 200}}]
+            },
+            "a": {
+                "b": {"c": {"d": 4, "e": [30]}},
+                "arr": [{"c": {"d": 5}, "m": [[6]]}, {"c": {"d": 7}}],
+                "n": null,
+                "empty": {}
+            }
+        }"#;
+        let full: Map<String, Value> = serde_json::from_slice(json).unwrap();
+
+        // (path, number of values found). `a` appears twice: the last one wins.
+        let cases = [
+            ("a.b.c.d", 1),
+            ("a.b.c.e", 1),
+            ("a.b.c.e[1]", 0),
+            ("a.b.c.e[0]", 1),
+            ("a.b.c", 1),
+            ("a.arr[].c.d", 2),
+            ("a.arr[1].c.d", 1),
+            ("a.arr[5].c.d", 0),
+            ("a.arr[].m[]", 1),
+            ("a.arr[0].m[0]", 1),
+            ("a.n", 1),
+            ("a.n.x", 0),
+            ("a.empty.x.y.z", 0),
+            ("a.b.c.d.too_deep", 0),
+            ("b.b.c.d", 1),
+            ("b.arr[].c.d", 1),
+            ("missing.b.c.d", 0),
+        ];
+
+        for (path, expected_count) in cases {
+            let path: JsonPath = path.parse().unwrap_or_else(|()| panic!("bad path {path}"));
+            let partial = parse_payload_field(json, &path.first_key).unwrap();
+
+            let from_partial = path.value_get(&partial);
+            assert_eq!(from_partial, path.value_get(&full), "{path}");
+            assert_eq!(from_partial.len(), expected_count, "{path}");
+            assert!(partial.len() <= 1, "{path}");
+        }
+
+        // Spot-check values, to tell the last `a` from the first one and from `b`
+        let get = |path: &str| {
+            let path: JsonPath = path.parse().unwrap();
+            let partial = parse_payload_field(json, &path.first_key).unwrap();
+            path.value_get(&partial)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(get("a.b.c.d"), [serde_json::json!(4)]);
+        assert_eq!(
+            get("a.arr[].c.d"),
+            [serde_json::json!(5), serde_json::json!(7)]
+        );
+        assert_eq!(get("b.b.c.d"), [serde_json::json!(100)]);
+    }
+
     #[test]
     fn rejects_invalid_json() {
         assert!(parse_payload_field(br#"{"a": 1"#, "a").is_err());
