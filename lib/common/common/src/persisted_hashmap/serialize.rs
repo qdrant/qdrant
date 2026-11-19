@@ -110,7 +110,7 @@ where
 
     file.sync_all()?;
     drop(file);
-    crate::fs::persist_with_retry(temp_path, path)?;
+    crate::fs::persist_while_held(temp_path, path)?;
 
     Ok(())
 }
