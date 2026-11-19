@@ -488,10 +488,11 @@ impl TableOfContent {
         // `Collection::update_from_client` is cancel safe, so it's safe to use `TryStreamExt::try_collect`
         let results: Vec<_> = updates.try_collect().await?;
 
-        results
-            .into_iter()
-            .next()
-            .ok_or_else(|| StorageError::bad_input("Empty shard keys selection"))
+        let mut result = *results
+            .first()
+            .ok_or_else(|| StorageError::bad_input("Empty shard keys selection"))?;
+        result.applied = UpdateResult::aggregate_applied(&results);
+        Ok(result)
     }
 
     /// # Cancel safety
@@ -578,6 +579,7 @@ impl TableOfContent {
                             return Ok(UpdateResult {
                                 operation_id: None,
                                 status: UpdateStatus::Acknowledged,
+                                applied: None,
                                 clock_tag: operation.clock_tag,
                             });
                         }

@@ -59,6 +59,7 @@ def test_conditional_update(collection_name):
         query_params={"wait": "true"},
     )
     assert response.ok
+    assert response.json()["result"]["applied"] is False
 
     # Check that the point was not updated
     response = request_with_validation(
@@ -102,8 +103,9 @@ def test_conditional_update(collection_name):
         query_params={"wait": "true"},
     )
     assert response.ok
+    assert response.json()["result"]["applied"] is True
 
-    # Check that the point was not updated
+    # Check that the point was updated
     response = request_with_validation(
         api="/collections/{collection_name}/points/{id}",
         method="GET",
@@ -143,6 +145,7 @@ def test_conditional_update(collection_name):
         query_params={"wait": "true"},
     )
     assert response.ok
+    assert "applied" not in response.json()["result"]
 
     # Check that the point was not updated
     response = request_with_validation(

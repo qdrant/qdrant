@@ -32,6 +32,7 @@ def test_update_only_mode(collection_name):
         query_params={"wait": "true"},
     )
     assert response.ok
+    assert response.json()["result"]["applied"] is True
 
     # Existing point 1 should be modified
     response = request_with_validation(
@@ -69,6 +70,7 @@ def test_insert_only_mode(collection_name):
         query_params={"wait": "true"},
     )
     assert response.ok
+    assert response.json()["result"]["applied"] is True
 
     # Existing point 1 should NOT be modified (original vector was [0.05, 0.61, 0.76, 0.74])
     response = request_with_validation(
@@ -88,3 +90,25 @@ def test_insert_only_mode(collection_name):
     )
     assert response.ok
     assert response.json()["result"]["payload"]["new"] is True
+
+
+@pytest.mark.parametrize("wait", [True, False])
+def test_insert_only_skips_existing_point(collection_name, wait):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        body={
+            "points": [{"id": 1, "vector": [9.0, 9.0, 9.0, 9.0]}],
+            "update_mode": "insert_only",
+        },
+        query_params={"wait": str(wait).lower()},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    if wait:
+        assert result["status"] == "completed"
+        assert result["applied"] is False
+    else:
+        assert result["status"] == "acknowledged"
+        assert "applied" not in result

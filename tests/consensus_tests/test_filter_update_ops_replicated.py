@@ -30,6 +30,7 @@ def upsert(peer_uri: str, body: dict):
     r = requests.put(
         f"{peer_uri}/collections/{COLLECTION}/points?wait=true", json=body)
     assert_http_ok(r)
+    return r.json()["result"]
 
 
 def scroll_local_replica(peer_uri: str) -> dict:
@@ -68,7 +69,7 @@ def test_filter_ops_resolved_per_replica(tmp_path: pathlib.Path):
         collection_name=COLLECTION, peer_api_uris=peer_api_uris)
 
     # Points 1..=10: odd ids in group "drop", even ids in group "keep".
-    upsert(peer_api_uris[0], {
+    result = upsert(peer_api_uris[0], {
         "points": [
             {
                 "id": point_id,
@@ -81,11 +82,12 @@ def test_filter_ops_resolved_per_replica(tmp_path: pathlib.Path):
             for point_id in range(1, 11)
         ],
     })
+    assert result["applied"] is True
 
     # Conditional insert-only upsert: existing point 2 must NOT be modified,
     # new point 11 must be inserted. Every replica resolves the existence
     # condition against its own state.
-    upsert(peer_api_uris[0], {
+    result = upsert(peer_api_uris[0], {
         "points": [
             {"id": 2, "vector": vector(99), "payload": {"hacked": True}},
             {"id": 11, "vector": vector(11),
@@ -93,10 +95,11 @@ def test_filter_ops_resolved_per_replica(tmp_path: pathlib.Path):
         ],
         "update_mode": "insert_only",
     })
+    assert result["applied"] is True
 
     # Conditional upsert with update filter: point 4 matches (n < 5) and is
     # replaced, point 6 does not match and must stay untouched.
-    upsert(peer_api_uris[0], {
+    result = upsert(peer_api_uris[0], {
         "points": [
             {"id": 4, "vector": vector(4),
              "payload": {"group": "keep", "n": 4, "touched": True}},
@@ -105,6 +108,13 @@ def test_filter_ops_resolved_per_replica(tmp_path: pathlib.Path):
         ],
         "update_filter": {"must": [{"key": "n", "range": {"lt": 5}}]},
     })
+    assert result["applied"] is True
+
+    result = upsert(peer_api_uris[1], {
+        "points": [{"id": 2, "vector": vector(99)}],
+        "update_mode": "insert_only",
+    })
+    assert result["applied"] is False
 
     # Delete-by-filter: removes the odd ids (1, 3, 5, 7, 9). Resolved to
     # concrete ids per shard per replica; shards without matches resolve to

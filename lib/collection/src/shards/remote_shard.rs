@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use api::grpc::pre_encoded::{PreEncodedMessage, update_batch_pre_encoded};
@@ -657,6 +658,7 @@ impl RemoteShard {
         // We want to know if operation wrote into WAL before re break connection on client side
         // So, we always want to propagate explicit timeout to the remote side
         let timeout = Some(timeout.unwrap_or(default_timeout).as_secs());
+        let upsert_attempts = AtomicUsize::new(0);
 
         let point_operation_response = match operation.operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
@@ -670,8 +672,9 @@ impl RemoteShard {
                         timeout,
                         ordering,
                     )?;
-                    self.with_points_client(|mut client| async move {
-                        client.upsert(tonic::Request::new(request.clone())).await
+                    self.with_points_client(|mut client| {
+                        upsert_attempts.fetch_add(1, Ordering::Relaxed);
+                        async move { client.upsert(tonic::Request::new(request.clone())).await }
                     })
                     .await?
                     .into_inner()
@@ -686,8 +689,9 @@ impl RemoteShard {
                         timeout,
                         ordering,
                     )?;
-                    self.with_points_client(|mut client| async move {
-                        client.upsert(tonic::Request::new(request.clone())).await
+                    self.with_points_client(|mut client| {
+                        upsert_attempts.fetch_add(1, Ordering::Relaxed);
+                        async move { client.upsert(tonic::Request::new(request.clone())).await }
                     })
                     .await?
                     .into_inner()
@@ -750,8 +754,9 @@ impl RemoteShard {
                         timeout,
                         ordering,
                     )?;
-                    self.with_points_client(|mut client| async move {
-                        client.upsert(tonic::Request::new(request.clone())).await
+                    self.with_points_client(|mut client| {
+                        upsert_attempts.fetch_add(1, Ordering::Relaxed);
+                        async move { client.upsert(tonic::Request::new(request.clone())).await }
                     })
                     .await?
                     .into_inner()
@@ -1019,6 +1024,7 @@ impl RemoteShard {
                 return Ok(UpdateResult {
                     operation_id: None,
                     status: crate::operations::types::UpdateStatus::Completed,
+                    applied: None,
                     clock_tag: operation.clock_tag,
                 });
             }
@@ -1032,7 +1038,14 @@ impl RemoteShard {
             None => Err(CollectionError::service_error(
                 "Malformed UpdateResult type".to_string(),
             )),
-            Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
+            Some(update_result) => {
+                let mut result = UpdateResult::try_from(update_result)?;
+                // The earlier RPC may have applied even if its response was lost.
+                if upsert_attempts.into_inner() > 1 {
+                    result.applied = None;
+                }
+                Ok(result)
+            }
         }
     }
 

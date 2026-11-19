@@ -192,6 +192,13 @@ pub enum PointInsertOperationsInternal {
 }
 
 impl PointInsertOperationsInternal {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::PointsBatch(batch) => batch.ids.is_empty(),
+            Self::PointsList(points) => points.is_empty(),
+        }
+    }
+
     pub fn point_ids(&self) -> Vec<PointIdType> {
         match self {
             Self::PointsBatch(batch) => batch.ids.clone(),

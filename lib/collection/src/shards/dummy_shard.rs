@@ -112,6 +112,7 @@ impl ShardOperation for DummyShard {
             | CollectionUpdateOperations::VectorNameOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
+                applied: None,
                 clock_tag: None,
             }),
             // Allow (and ignore) staging operations on dummy shards
@@ -119,6 +120,7 @@ impl ShardOperation for DummyShard {
             CollectionUpdateOperations::StagingOperation(_) => Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Acknowledged,
+                applied: None,
                 clock_tag: None,
             }),
         }
