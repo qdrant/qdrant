@@ -48,14 +48,23 @@ fn serialize_sorted_set<S: serde::Serializer>(
     serializer.collect_seq(items)
 }
 
-/// As `[variable, default]` pairs, sorted: JSON object keys must be strings, which
-/// [`VariableId`] is not, so a map would fail to serialize.
+/// As `{"variable": .., "value": ..}` entries, sorted by variable: JSON object keys must be
+/// strings, which [`VariableId`] is not, so a map would fail to serialize. Named `value` so
+/// workload fingerprints treat the default as a literal and keep the variable.
 fn serialize_sorted_map<S: serde::Serializer>(
     map: &HashMap<VariableId, Value>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    let mut items: Vec<(&VariableId, &Value)> = map.iter().collect();
-    items.sort_by(|a, b| a.0.cmp(b.0));
+    #[derive(Serialize)]
+    struct Default<'a> {
+        variable: &'a VariableId,
+        value: &'a Value,
+    }
+    let mut items: Vec<Default<'_>> = map
+        .iter()
+        .map(|(variable, value)| Default { variable, value })
+        .collect();
+    items.sort_by(|a, b| a.variable.cmp(b.variable));
     serializer.collect_seq(items)
 }
 
@@ -370,7 +379,14 @@ mod tests {
         // A map keyed by `VariableId` used to fail: JSON keys must be strings
         let value = serde_json::to_value(formula(&["z", "a", "m"])).unwrap();
         assert_eq!(value["payload_vars"], serde_json::json!(["a", "m", "z"]));
-        assert_eq!(value["defaults"].as_array().unwrap().len(), 3);
+        let defaults = value["defaults"].as_array().unwrap();
+        assert_eq!(defaults.len(), 3);
+        assert_eq!(defaults[0]["variable"], serde_json::json!({ "Score": 0 }));
+        assert_eq!(
+            defaults[1]["variable"],
+            serde_json::json!({ "Payload": "a" })
+        );
+        assert_eq!(defaults[1]["value"], serde_json::json!(1));
         // Same formula, any insertion order: same serialization
         for _ in 0..10 {
             assert_eq!(

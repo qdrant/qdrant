@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
+use common::ambient::profile::{ProfileAudience, ProfileMode, Profiler};
 use common::ambient::{AmbientContext, Handoff};
 use common::budget::ResourcePermit;
 use common::progress_tracker::ProgressTracker;
@@ -412,11 +413,23 @@ fn requests(
 /// Whether `segment` resolves the filter of `searches` for at least one group, as
 /// `search_in_segment` does before searching.
 fn segment_shares(segment: &LockedSegment, searches: &[CoreSearchRequest]) -> bool {
+    segment_shares_in(segment, searches, Handoff::Measured(AmbientContext::new()))
+}
+
+/// [`segment_shares`] for a request in explain mode: it must never share (resolve) a filter.
+fn segment_shares_in_explain(segment: &LockedSegment, searches: &[CoreSearchRequest]) -> bool {
+    let profiler = Profiler::new(ProfileMode::Explain, ProfileAudience::Client);
+    let ctx = AmbientContext::request_profiled("test", Default::default(), Some(&profiler));
+    segment_shares_in(segment, searches, Handoff::Measured(ctx))
+}
+
+fn segment_shares_in(
+    segment: &LockedSegment,
+    searches: &[CoreSearchRequest],
+    handoff: Handoff,
+) -> bool {
     let _scope = ambient::test_guard();
-    let query_context = QueryContext::new(
-        DEFAULT_INDEXING_THRESHOLD_KB,
-        Handoff::Measured(AmbientContext::new()),
-    );
+    let query_context = QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, handoff);
     let segment_query_context = query_context.get_segment_query_context();
     let groups = group_search_batches(searches);
     let read = segment.get_read().read();
@@ -488,6 +501,11 @@ async fn test_batch_with_shared_filter_equals_single_searches() {
                             segment_shares(segment, &searches),
                             shares,
                             "{filter_name} filter, {}: sharing",
+                            case.name,
+                        );
+                        assert!(
+                            !segment_shares_in_explain(segment, &searches),
+                            "{filter_name} filter, {}: explain must not resolve a filter",
                             case.name,
                         );
                     }

@@ -318,6 +318,22 @@ read; non-deterministic formula fingerprints and formula defaults that failed to
 "0.0 MiB" instead of an unknown amount without task I/O accounting; nested-phase I/O stripping that could erase a
 standalone phase's I/O; and fragile cold-I/O test conditions. All fixed with tests.
 
+### CodeRabbit review, round 2 (checked with Codex)
+
+- Explain no longer resolves filters shared by search groups (`search_shared_filter.rs`). The guard reads the mode from
+  the query's handoff: that code runs on a search worker before any profiled scope is entered.
+- Search slow-log values keep a bounded, deterministic sample of `has_id` (the smallest 63 ids and a count), built
+  without serializing the set; their hash is structural (id sets hash independently of order). Fingerprints keep
+  `"?"` for id sets.
+- Formula defaults serialize as `{variable, value}`, so the value normalizes as a literal.
+- Array deduplication and fingerprint hashes use a canonical string (object keys sorted): `serde_json` keeps key
+  order here (`preserve_order`).
+- Not changed: fingerprints merge requests that differ only in the number of examples (1 vs 100 recommend
+  positives), like filter value lists, by design; per-fingerprint distance counts show the total cost.
+- Known gaps: explain with a sparse IDF corpus filter still computes the IDF statistics, as query input (like
+  fetching recommend examples by id), and a `has_id` inside `params.idf.corpus` is serialized whole in search log
+  values (no production path logs search batches today).
+
 ## Access control
 
 - **Per-request profiles need the same access as the request** (read on the collection), not `manage`. A profile only

@@ -28,6 +28,14 @@ pub fn share_group_filters(
     query_context: &SegmentQueryContext,
 ) -> OperationResult<Vec<Option<Filter>>> {
     let mut shared: Vec<Option<Filter>> = vec![None; groups.len()];
+    // Resolving can enumerate every matching point: explain plans each group with its own
+    // filter instead, like the indexes do with their own resolution. Read from the query's
+    // handoff: this runs on a search worker, before entering any profiled scope.
+    if common::ambient::profile::handoff_mode(query_context.handoff())
+        == Some(common::ambient::profile::ProfileMode::Explain)
+    {
+        return Ok(shared);
+    }
 
     // Groups by filter, in the order each filter first appears. Hashing every filter once keeps
     // this linear in the number of groups, instead of comparing every pair of filters.

@@ -66,6 +66,46 @@ const LITERAL_KEYS: &[&str] = &[
     "shard_key_selector",
 ];
 
+/// `value` as a string that is equal for equal values: object keys sorted. Plain
+/// `to_string()` isn't, since `serde_json` keeps object keys in insertion order here
+/// (`preserve_order`), while `Value` equality ignores it.
+pub fn canonical_string(value: &Value) -> String {
+    fn write(value: &Value, out: &mut String) {
+        match value {
+            Value::Object(map) => {
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                out.push('{');
+                for (index, (key, item)) in entries.into_iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&Value::String(key.clone()).to_string());
+                    out.push(':');
+                    write(item, out);
+                }
+                out.push('}');
+            }
+            Value::Array(items) => {
+                out.push('[');
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    write(item, out);
+                }
+                out.push(']');
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+                out.push_str(&value.to_string())
+            }
+        }
+    }
+    let mut out = String::new();
+    write(value, &mut out);
+    out
+}
+
 /// Strip literal values from a serialized request, in place.
 ///
 /// Arrays are reduced to their distinct normalized elements, in first-seen order, so a batch
@@ -88,9 +128,11 @@ fn normalize_inner(value: &mut Value, literal: bool) {
             for item in items.iter_mut() {
                 normalize_inner(item, literal);
             }
+            // Linear: `Value` is not `Hash`, its canonical string is (see `canonical_string`)
+            let mut seen = ahash::AHashSet::with_capacity(items.len());
             let mut distinct: Vec<Value> = Vec::with_capacity(items.len().min(4));
             for item in items.drain(..) {
-                if !distinct.contains(&item) {
+                if seen.insert(canonical_string(&item)) {
                     distinct.push(item);
                 }
             }
@@ -118,7 +160,7 @@ impl Fingerprint {
         collection_name.hash(&mut hasher);
         request.request_name().hash(&mut hasher);
         // `Value` is not `Hash`; its canonical string is (object keys are sorted).
-        let canonical = normalized.to_string();
+        let canonical = canonical_string(&normalized);
         canonical.hash(&mut hasher);
         if canonical.len() > MAX_NORMALIZED_BYTES {
             let cut = canonical.floor_char_boundary(MAX_NORMALIZED_BYTES);
@@ -434,6 +476,61 @@ mod tests {
         normalize(&mut c);
         normalize(&mut d);
         assert_ne!(c, d);
+    }
+
+    #[test]
+    fn test_normalize_formula_defaults_as_literals() {
+        // Shape of serialized `ParsedFormula::defaults`: the variable stays, the value is literal
+        let defaults = |city: &str| {
+            let mut value = json!({"defaults": [
+                {"variable": {"Payload": "city"}, "value": city},
+                {"variable": {"Payload": "rank"}, "value": 3},
+            ]});
+            normalize(&mut value);
+            value
+        };
+        assert_eq!(defaults("London"), defaults("Paris"));
+        assert_eq!(
+            defaults("London")["defaults"][0]["variable"]["Payload"],
+            "city"
+        );
+        assert_eq!(defaults("London")["defaults"][0]["value"], "?");
+    }
+
+    #[test]
+    fn test_canonical_string_ignores_key_order() {
+        let a: Value = serde_json::from_str(r#"{"lat": 1, "lon": 2}"#).unwrap();
+        let b: Value = serde_json::from_str(r#"{"lon": 2, "lat": 1}"#).unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a.to_string(), b.to_string()); // `preserve_order`
+        assert_eq!(canonical_string(&a), canonical_string(&b));
+        // So equal objects in different key orders deduplicate, and fingerprint equally
+        let mut value: Value =
+            serde_json::from_str(r#"[{"lat": 1, "lon": 2}, {"lon": 4, "lat": 3}]"#).unwrap();
+        normalize(&mut value);
+        assert_eq!(value.as_array().unwrap().len(), 1);
+        let req = |json: &str| Req(serde_json::from_str(json).unwrap());
+        assert_eq!(
+            Fingerprint::of("c", &req(r#"{"geo": {"lat": 1, "lon": 2}}"#)).hash,
+            Fingerprint::of("c", &req(r#"{"geo": {"lon": 5, "lat": 6}}"#)).hash,
+        );
+    }
+
+    #[test]
+    fn test_normalize_dedup_is_linear() {
+        // 20k distinct conditions: quadratic dedup would take seconds
+        let conditions: Vec<_> = (0..20_000)
+            .map(|i| json!({"key": format!("k{i}"), "match": {"value": i}}))
+            .collect();
+        let mut value = json!({"must": conditions});
+        let started = std::time::Instant::now();
+        normalize(&mut value);
+        assert_eq!(value["must"].as_array().unwrap().len(), 20_000);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

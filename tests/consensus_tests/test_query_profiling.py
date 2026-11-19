@@ -414,7 +414,6 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     # The same request again: (mostly) cached now
     _, hot = profiled(url, path, body)
     hot_segments = [s for s in all_segments(hot) if s["points"] > 0]
-    hot_faults = sum(s["counters"]["major_page_faults"] for s in hot_segments)
     # The logical counters can't tell the difference
     assert (sum(s["counters"]["vector_io_read_bytes"] for s in hot_segments)
             == sum(s["counters"]["vector_io_read_bytes"] for s in segments))
@@ -434,9 +433,9 @@ def test_page_faults_and_disk_reads_on_cold_mmap(tmp_path: pathlib.Path):
     clearly_cold = cold_bytes >= 1 << 20 if accounting else cold_faults >= 1
     if _fs_type(tmp_path) in ("tmpfs", "ramfs") or not clearly_cold:
         pytest.skip(f"the page cache could not be evicted here ({cold_bytes} bytes, {cold_faults} faults)")
-    assert cold_faults > 0
+    # No fault count assertions: prefetching (`will_need`) can read a whole segment in without
+    # any page fault, so bytes decide
     assert any("Waited for the disk" in note for note in cold["notes"])
     # Memory pressure could evict some pages again; the hot run still reads far less
     if accounting:
         assert disk_bytes(hot_segments) < cold_bytes / 2
-    assert hot_faults <= cold_faults
