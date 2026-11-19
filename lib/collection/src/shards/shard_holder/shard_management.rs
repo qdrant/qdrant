@@ -377,9 +377,20 @@ impl ShardHolder {
                     .unwrap_or(false);
 
                 // Validate that shard exists on disk
-                let shard_path = check_shard_path(collection_path, shard_id)
-                    .await
-                    .expect("Failed to check shard path");
+                //
+                // The mapping only drops an entry after the shard files are gone, so a mapping
+                // entry without a shard is what a drop leaves behind when it is interrupted:
+                // the shard was removed, the mapping was not rewritten yet. There is nothing to
+                // load in that case, and failing here would take the whole collection down.
+                let shard_path = match check_shard_path(collection_path, shard_id).await {
+                    Ok(shard_path) => shard_path,
+                    Err(err) => {
+                        log::warn!(
+                            "Shard {collection_id}:{shard_id} is still mapped but has no config on disk, skipping it: {err}",
+                        );
+                        return None;
+                    }
+                };
 
                 // Load replica set
                 let replica_set = ShardReplicaSet::load(
@@ -402,7 +413,7 @@ impl ShardHolder {
                 )
                 .await;
 
-                (replica_set, shard_key_for_add)
+                Some((replica_set, shard_key_for_add))
             }
         });
         let mut shard_stream = stream::iter(shard_futures).buffer_unordered(
@@ -411,9 +422,14 @@ impl ShardHolder {
                 .get_concurrent_shards()
                 .get(),
         );
-        while let Some((replica_set, shard_key)) = shard_stream.next().await {
+        while let Some(loaded) = shard_stream.next().await {
+            let Some((replica_set, shard_key)) = loaded else {
+                continue;
+            };
+
             // Change local shards stuck in Initializing state to Active
             let local_peer_id = replica_set.this_peer_id();
+
             let not_distributed = !shared_storage_config.is_distributed;
             let is_local =
                 replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;

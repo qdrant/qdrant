@@ -15,7 +15,9 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
+use collection::shards::shard_config::SHARD_CONFIG_FILE;
 use collection::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
+use common::ambient;
 use common::budget::ResourceBudget;
 use segment::types::{Distance, ShardKey};
 use tempfile::Builder;
@@ -266,6 +268,41 @@ async fn test_create_shard_key_rejects_empty_placement() {
     assert_bad_request(err);
 
     assert!(collection.state().await.shards_key_mapping.is_empty());
+
+    collection.stop_gracefully().await;
+}
+
+/// Dropping a shard key removes the shard files first and the key mapping afterwards, so a crash
+/// in between leaves a mapping that still lists a shard whose config is already gone. Loading such
+/// a collection used to panic on the missing shard instead of tolerating the leftover entry.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_load_tolerates_mapped_shard_without_config() {
+    let _scope = ambient::async_test_guard();
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = new_collection(dir.path()).await;
+
+    collection
+        .create_shard_key(key("k"), placement(2), ReplicaState::Active)
+        .await
+        .unwrap();
+    collection.stop_gracefully().await;
+
+    // The state left behind by a drop that removed the shard but not yet its mapping entry
+    let dropped = dir.path().join("2");
+    assert!(dropped.join(SHARD_CONFIG_FILE).exists());
+    fs_err::remove_dir_all(&dropped).unwrap();
+
+    let collection = load_collection(dir.path()).await;
+
+    // The leftover entry is harmless: the remaining shard is loaded, the missing one is not
+    assert_eq!(registered_shard_ids(&collection).await, [1]);
+    assert_eq!(mapped_shard_ids(&collection, &key("k")).await, [1, 2]);
+
+    // The entry stays in the mapping, so dropping the key again still sees the whole key and
+    // finishes the cleanup the interrupted drop started
+    collection.drop_shard_key(key("k")).await.unwrap();
+    assert!(collection.get_shard_ids(&key("k")).await.is_err());
+    assert!(registered_shard_ids(&collection).await.is_empty());
 
     collection.stop_gracefully().await;
 }
