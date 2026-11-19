@@ -115,6 +115,9 @@ mod tests {
         fs::write(from.join("file"), b"test").unwrap();
 
         let file = fs::File::open(from.join("file")).unwrap();
+        // A plain rename fails while the file is held
+        fs::rename(&from, &to).unwrap_err();
+
         let handle = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(100));
             drop(file);
