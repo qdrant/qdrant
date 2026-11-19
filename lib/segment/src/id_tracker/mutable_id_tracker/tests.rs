@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Seek};
 use std::path::Path;
 
-use common::types::PointOffsetType;
+use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
 use itertools::Itertools;
 use rand::prelude::*;
@@ -874,4 +874,44 @@ fn deletes_persist_the_version_they_are_given() {
             .collect();
         assert_eq!(deletes, expected, "{versioning:?}");
     }
+}
+
+/// A crash after the mapping flush but before the versions flush leaves a deferred update's slot
+/// without a version. Repair must drop only that slot and keep the point's visible copy.
+#[test]
+fn test_repair_keeps_visible_copy_of_deferred_update() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let deferred_from = 5;
+    let point = PointIdType::NumId(7);
+
+    let mut id_tracker = MutableIdTracker::open(dir.path(), Some(deferred_from)).unwrap();
+    // Visible copy below the cutoff, then an in-place update landing above it.
+    id_tracker.set_link(point, 2).unwrap();
+    id_tracker.set_internal_version(2, 5).unwrap();
+    id_tracker.set_link(point, 9).unwrap();
+    id_tracker.set_internal_version(9, 8).unwrap();
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(point, DeferredBehavior::VisibleOnly),
+        Some(2),
+    );
+    id_tracker.mapping_flusher()().unwrap();
+    id_tracker.versions_flusher()().unwrap();
+    drop(id_tracker);
+
+    // Drop the update's version, as the crash leaves it
+    fs::OpenOptions::new()
+        .write(true)
+        .open(versions_path(dir.path()))
+        .unwrap()
+        .set_len(9 * VERSION_ELEMENT_SIZE)
+        .unwrap();
+
+    let mut id_tracker = MutableIdTracker::open(dir.path(), Some(deferred_from)).unwrap();
+    id_tracker.fix_inconsistencies().unwrap();
+
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(point, DeferredBehavior::VisibleOnly),
+        Some(2),
+        "repair removed the visible copy of a point with a deferred update",
+    );
 }

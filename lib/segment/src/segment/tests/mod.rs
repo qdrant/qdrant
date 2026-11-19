@@ -653,6 +653,57 @@ fn test_check_consistency() {
     );
 }
 
+/// An append-only update moves a point to a new slot. A crash after the mapping flush but before
+/// the versions flush must not cost the point its acknowledged copy.
+#[test]
+fn test_repair_keeps_point_moved_by_append_only_update() {
+    init_logger();
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+    segment.append_only_mutations = true;
+    let segment_path = segment.segment_path.clone();
+    let point = 1.into();
+
+    // Op 1 is fully flushed, so the WAL acknowledges it and drops it
+    segment
+        .upsert_point(1, point, only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
+        .unwrap();
+    segment.flush(true).unwrap();
+    let versions_path = segment_path.join("mutable_id_tracker.versions");
+    let state_path = segment_path.join(SEGMENT_STATE_FILE);
+    let versions_after_op1 = fs::read(&versions_path).unwrap();
+    let state_after_op1 = fs::read(&state_path).unwrap();
+
+    // Op 2 clones the point to a new slot and repoints its mapping
+    let payload = serde_json::from_value(serde_json::json!({ "color": "red" })).unwrap();
+    segment.set_payload(2, point, &payload, &None).unwrap();
+    segment.flush(true).unwrap();
+    drop(segment);
+
+    // Crash after the mapping, vector and payload flushes, before the versions flush and the
+    // state save: op 2 is still in the WAL, op 1 is not
+    fs::write(&versions_path, versions_after_op1).unwrap();
+    fs::write(&state_path, state_after_op1).unwrap();
+
+    let mut segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .unwrap();
+    segment.check_consistency_and_repair().unwrap();
+
+    // Replaying op 2 needs the point; nothing else can bring op 1 back
+    assert!(
+        segment.has_point(point, DeferredBehavior::VisibleOnly),
+        "repair dropped a point whose acknowledged copy was durable",
+    );
+}
+
 #[test]
 fn test_point_vector_count() {
     init_logger();
