@@ -67,6 +67,12 @@ impl RequestHwCounter {
         profile: Option<ProfileMode>,
         audience: ProfileAudience,
     ) -> Self {
+        if profile.is_some() {
+            // Usually set at startup with the feature flag. A peer with the flag disabled can
+            // still serve the shards of a profiled request (the coordinator checked the flag):
+            // count from now on, so this profile has distance counts too.
+            common::ambient::hw::enable_score_counting();
+        }
         let profiler = profile.map(|mode| Profiler::new(mode, audience));
         Self {
             counter: AmbientContext::request_profiled(name, collection, profiler.as_ref()),

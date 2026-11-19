@@ -28,8 +28,9 @@ impl ThreadIo {
                     major_page_faults: u64::try_from(usage.major_page_faults()).ok(),
                     // Linux fills `ru_inblock` from the task I/O accounting: `read_bytes / 512`
                     // of `/proc/thread-self/io`, so this is the same counter without the file read
-                    disk_read_bytes: u64::try_from(usage.block_reads())
-                        .ok()
+                    disk_read_bytes: task_io_accounting()
+                        .then(|| u64::try_from(usage.block_reads()).ok())
+                        .flatten()
                         .map(|blocks| blocks * 512),
                 }
             }
@@ -37,7 +38,7 @@ impl ThreadIo {
         }
     }
 
-    fn unknown() -> Self {
+    pub(crate) fn unknown() -> Self {
         Self {
             major_page_faults: None,
             disk_read_bytes: None,
@@ -52,6 +53,14 @@ impl ThreadIo {
             disk_read_bytes: delta(self.disk_read_bytes, earlier.disk_read_bytes),
         }
     }
+}
+
+/// Whether the kernel keeps task I/O accounting (`CONFIG_TASK_IO_ACCOUNTING`). Without it,
+/// `ru_inblock` is always 0, which must not read as "nothing was read from disk".
+#[cfg(target_os = "linux")]
+fn task_io_accounting() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| std::path::Path::new("/proc/self/io").exists())
 }
 
 #[cfg(test)]
@@ -73,12 +82,14 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_disk_read_bytes_match_task_io_accounting() {
-        let Some(proc_bytes) = proc_read_bytes() else {
+        let Some(before) = proc_read_bytes() else {
             return; // no task I/O accounting in this kernel
         };
         let ours = ThreadIo::now().disk_read_bytes.unwrap();
-        // Same counter, in 512-byte units
-        assert_eq!(ours, proc_bytes / 512 * 512);
+        let after = proc_read_bytes().unwrap();
+        // Same counter, in 512-byte units. Bracketed: a page fault between the samples (e.g.
+        // paging in our own code) can move it.
+        assert!((before / 512 * 512..=after / 512 * 512).contains(&ours));
     }
 
     #[test]
@@ -123,8 +134,12 @@ mod tests {
             let bytes = delta.disk_read_bytes.unwrap();
             assert!(bytes > 0);
             if let (Some(before), Some(after)) = (proc_before, proc_after) {
-                // Same counter as the task I/O accounting, in 512-byte units
-                assert_eq!(bytes, after / 512 * 512 - before / 512 * 512);
+                // Same counter as the task I/O accounting, in 512-byte units. Bracketed by
+                // the /proc reads, so it can't be more than they saw (plus rounding).
+                assert!(
+                    bytes <= after - before + 512,
+                    "{bytes} > {after} - {before}"
+                );
             }
         }
     }

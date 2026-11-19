@@ -53,8 +53,9 @@ it is rejected on batch items); the response carries the same `QueryProfile` mes
 - **`explain`** runs the planning steps (cardinality estimation and, where needed, sampling, which are real), but
   scores no vectors, reads no points and returns an empty result. Stages that work on prefetch results (rescoring,
   fusion, grouping) and BM25 text searches have nothing to plan in explain mode. An approximate count
-  (`exact: false`) returns its estimate, which is its plan. Explain requests count against the read rate limit at
-  the minimal cost.
+  (`exact: false`) returns its estimate, which is its plan. Queries that reference points by id (e.g. recommend)
+  still fetch those points' vectors to build the query. Explain requests count against the read rate limit, at one
+  unit per planned search instead of the cost of running it.
 - In a cluster running mixed versions, peers that don't support profiling return no profile. In `explain` mode, their
   results are discarded and `notes` names them.
 
@@ -83,7 +84,7 @@ Start with **`notes`**, which summarize the findings. Then look at the **segment
 | `filter.actual_cardinality` | The exact number of matches, when the request computed it anyway (exact count, full scan). |
 | `filter.indexed_keys` / `unindexed_keys` | Payload keys that used a payload index / that are checked by reading each candidate's payload. |
 | `filter.full_payload_scan` | No payload index narrowed the candidates down: every point of the segment was a candidate. |
-| `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". For the sparse inverted index, posting-list entries traversed. |
+| `counters.vector_scores` / `quantized_vector_scores` | Distance computations: the number of "points visited". Multi-vectors count sub-vector pairs. For the sparse inverted index, the posting-list entries of the searched lists (an upper bound). |
 | `counters.*_io_read_bytes` | Bytes touched in on-disk storage (vectors, payload, payload indexes, object storage), **whether or not they were in the page cache**. RAM storage is not counted. |
 | `counters.major_page_faults` | Accesses to on-disk (mmap) data that had to wait for the disk because the page was not in the page cache. `null` where the OS doesn't report it. |
 | `counters.disk_read_bytes` | Bytes actually read from the disk for this segment, including readahead. `0` when everything was cached. |
@@ -232,7 +233,7 @@ restart and then again:
                 "major_page_faults": 143, "disk_read_bytes": 9768960, ... }
 }, ...],
 "notes": [
-  "Waited for the disk: 608 major page fault(s) read 80.0 MiB, in 11 segment(s). The data was not in the page cache, e.g. after a restart or under memory pressure; repeated requests are faster. Consider more RAM, or keeping the hot data in memory (`on_disk: false`, quantization with `always_ram: true`)."
+  "Waited for the disk: 608 major page fault(s), 80.0 MiB read from disk, in 11 segment(s). The data was not in the page cache, e.g. after a restart or under memory pressure; repeated requests are faster. Consider more RAM, or keeping the hot data in memory (`on_disk: false`, quantization with `always_ram: true`)."
 ]
 ```
 

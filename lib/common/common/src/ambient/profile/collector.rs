@@ -540,40 +540,41 @@ pub(crate) fn derive_notes(profile: &QueryProfile) -> Vec<String> {
         ));
     }
 
-    // Cold page cache: reads that waited for the disk
-    let cold: Vec<&SegmentProfile> = segments()
-        .filter(|segment| segment.counters.major_page_faults.unwrap_or(0) > 0)
-        .collect();
+    // Cold page cache: reads that went to the disk
     let phases = || {
         profile
             .phases
             .iter()
             .chain(profile.shards.iter().flat_map(|shard| &shard.phases))
     };
-    let segment_faults: u64 = cold
-        .iter()
-        .filter_map(|s| s.counters.major_page_faults)
-        .sum();
-    let phase_faults: u64 = phases().filter_map(|p| p.major_page_faults).sum();
-    if segment_faults + phase_faults > 0 {
-        let bytes: u64 = cold
-            .iter()
+    let did_io =
+        |faults: Option<u64>, bytes: Option<u64>| faults.unwrap_or(0) > 0 || bytes.unwrap_or(0) > 0;
+    let io_segments = segments()
+        .filter(|s| did_io(s.counters.major_page_faults, s.counters.disk_read_bytes))
+        .count();
+    let io_phases: Vec<&str> = phases()
+        .filter(|p| did_io(p.major_page_faults, p.disk_read_bytes))
+        .map(|p| p.name.as_str())
+        .collect();
+    if io_segments > 0 || !io_phases.is_empty() {
+        let faults: u64 = segments()
+            .filter_map(|s| s.counters.major_page_faults)
+            .chain(phases().filter_map(|p| p.major_page_faults))
+            .sum();
+        let bytes: u64 = segments()
             .filter_map(|s| s.counters.disk_read_bytes)
             .chain(phases().filter_map(|p| p.disk_read_bytes))
             .sum();
         let mut places = Vec::new();
-        if !cold.is_empty() {
-            places.push(format!("{} segment(s)", cold.len()));
+        if io_segments > 0 {
+            places.push(format!("{io_segments} segment(s)"));
         }
-        for phase in phases().filter(|p| p.major_page_faults.unwrap_or(0) > 0) {
-            places.push(format!("`{}`", phase.name));
-        }
+        places.extend(io_phases.iter().map(|name| format!("`{name}`")));
         notes.push(format!(
-            "Waited for the disk: {} major page fault(s) read {:.1} MiB, in {}. The data was not \
-             in the page cache, e.g. after a restart or under memory pressure; repeated requests \
-             are faster. Consider more RAM, or keeping the hot data in memory (`on_disk: false`, \
-             quantization with `always_ram: true`).",
-            segment_faults + phase_faults,
+            "Waited for the disk: {faults} major page fault(s), {:.1} MiB read from disk, in {}. \
+             The data was not in the page cache, e.g. after a restart or under memory pressure; \
+             repeated requests are faster. Consider more RAM, or keeping the hot data in memory \
+             (`on_disk: false`, quantization with `always_ram: true`).",
             bytes as f64 / (1024.0 * 1024.0),
             places.join(", "),
         ));
@@ -611,5 +612,8 @@ pub(crate) fn derive_notes(profile: &QueryProfile) -> Vec<String> {
         );
     }
 
+    // Recorded notes may already hold a derived one, e.g. from a peer that derives its own
+    let mut seen = std::collections::HashSet::new();
+    notes.retain(|note| seen.insert(note.clone()));
     notes
 }

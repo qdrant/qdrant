@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::slice;
 
 use ahash::HashMapExt as _;
-use common::ambient::hw::HwMetric;
+use common::ambient::hw::{self, HwMetric, ScoreKind};
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -304,6 +304,8 @@ where
         query: &[QuantizedStorage::EncodedQuery],
         multi_vector: &[Cow<'_, [u8]>],
     ) -> ScoreType {
+        // Distance counts for query profiles: one per sub-vector pair, like the original vectors
+        hw::count_scores(ScoreKind::Quantized, query.len() * multi_vector.len());
         let mut sum = 0.0;
 
         for inner_query in query {
@@ -336,6 +338,7 @@ where
         self.offsets
             .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
+        hw::count_scores(ScoreKind::Quantized, query.len() * offsets.len());
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
         max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
@@ -362,6 +365,10 @@ where
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
+        hw::count_scores(
+            ScoreKind::Quantized,
+            offset_a.count as usize * offset_b.count as usize,
+        );
         let mut sum = 0.0;
         for a in 0..offset_a.count {
             let mut max_sim = ScoreType::NEG_INFINITY;

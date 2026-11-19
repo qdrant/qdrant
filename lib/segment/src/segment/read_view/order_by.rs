@@ -148,6 +148,18 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
+        // Explain returns before reading, so before the reads look up the range index:
+        // check it here, so explain fails like the request would
+        if common::ambient::profile::is_explain()
+            && self
+                .payload_index
+                .numeric_index_for(&order_by.key)
+                .is_none()
+        {
+            return Err(OperationError::MissingRangeIndexForOrderBy {
+                key: order_by.key.to_string(),
+            });
+        }
         match filter {
             None => {
                 if super::scroll::note_unfiltered_read() {

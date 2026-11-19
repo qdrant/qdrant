@@ -116,8 +116,6 @@ where
                 scores,
             )
         })?;
-        // CPU is bumped by the quantization crate
-        self.hw.count_scores(ids.len());
         Ok(())
     }
 

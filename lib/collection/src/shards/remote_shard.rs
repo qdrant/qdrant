@@ -1538,7 +1538,10 @@ impl ShardOperation for RemoteShard {
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw::accumulate_request(HardwareData::from(hw_usage));
         }
+        // An approximate count is only an estimate: explain mode returns it from upgraded
+        // shards too, so keep it to not under-count. Discard an exact count, which was executed.
         if self.profile_finish("count", profile_started, profile) == profile::RemoteResults::Discard
+            && request.exact
         {
             return Ok(CountResult { count: 0 });
         }

@@ -445,9 +445,11 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let operation = async move {
             // Check read rate limiter before proceeding
-            self.check_read_rate_limiter("core_search", || {
-                request.searches.iter().map(|s| s.search_rate_cost()).sum()
-            })?;
+            self.check_read_rate_limiter_with_plan(
+                "core_search",
+                || request.searches.iter().map(|s| s.search_rate_cost()).sum(),
+                Some(request.searches.len()),
+            )?;
             let timeout = self.timeout_or_default_search_timeout(timeout);
             self.do_search(request, search_runtime_handle, timeout)
                 .await
@@ -593,15 +595,22 @@ impl ShardOperation for LocalShard {
             let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
             // Check read rate limiter before proceeding
-            self.check_read_rate_limiter("query_batch", || {
-                planned_query
-                    .searches
-                    .iter()
-                    .map(|s| s.search_rate_cost())
-                    .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
-                    .chain(planned_query.texts.iter().map(|t| t.text_rate_cost()))
-                    .sum()
-            })?;
+            let planned_leaves = planned_query.searches.len()
+                + planned_query.scrolls.len()
+                + planned_query.texts.len();
+            self.check_read_rate_limiter_with_plan(
+                "query_batch",
+                || {
+                    planned_query
+                        .searches
+                        .iter()
+                        .map(|s| s.search_rate_cost())
+                        .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
+                        .chain(planned_query.texts.iter().map(|t| t.text_rate_cost()))
+                        .sum()
+                },
+                Some(planned_leaves),
+            )?;
             let timeout = self.timeout_or_default_search_timeout(timeout);
             let cpu_utilization = hw::cpu_utilization();
             let result = self

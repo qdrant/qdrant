@@ -261,3 +261,94 @@ fn schema_roundtrips_through_json() {
     let back: QueryProfile = serde_json::from_value(json).unwrap();
     assert_eq!(back, profile);
 }
+
+fn io_profile(
+    segment_io: (Option<u64>, Option<u64>),
+    phase_io: (Option<u64>, Option<u64>),
+) -> QueryProfile {
+    let counters = SegmentCounters {
+        major_page_faults: segment_io.0,
+        disk_read_bytes: segment_io.1,
+        ..SegmentCounters::default()
+    };
+    QueryProfile {
+        version: PROFILE_SCHEMA_VERSION,
+        mode: ProfileMode::Analyze,
+        total_time_ms: 1.0,
+        phases: vec![],
+        shards: vec![ShardProfile {
+            shard_id: 0,
+            peer_id: None,
+            location: ShardLocation::Local,
+            operation: "scroll".to_string(),
+            time_ms: 1.0,
+            network_time_ms: None,
+            phases: vec![PhaseProfile {
+                name: "retrieve_records".to_string(),
+                time_ms: 0.5,
+                calls: 1,
+                major_page_faults: phase_io.0,
+                disk_read_bytes: phase_io.1,
+            }],
+            segments: vec![SegmentProfile {
+                segment_id: "seg".to_string(),
+                appendable: false,
+                indexed: true,
+                points: 10,
+                operation: "read".to_string(),
+                vector_name: None,
+                batch_size: 1,
+                limit: Some(10),
+                strategy: Some(SearchStrategy::UnfilteredRead),
+                strategy_reason: Some(StrategyReason::Unfiltered),
+                full_scan_threshold: None,
+                filter: None,
+                time_ms: 0.5,
+                counters,
+            }],
+        }],
+        notes: vec![],
+    }
+}
+
+fn disk_note(profile: &QueryProfile) -> Option<String> {
+    super::collector::derive_notes(profile)
+        .into_iter()
+        .find(|note| note.starts_with("Waited for the disk"))
+}
+
+#[test]
+fn disk_note_counts_all_reads_and_places() {
+    // Bytes read without a major fault (e.g. readahead by `pread`) still went to the disk
+    let note = disk_note(&io_profile((Some(0), Some(1 << 20)), (Some(0), Some(0)))).unwrap();
+    assert!(note.contains("0 major page fault(s), 1.0 MiB"), "{note}");
+    assert!(
+        note.contains("in 1 segment(s)") && !note.contains("retrieve_records"),
+        "{note}"
+    );
+
+    // Segment and phase both read: both are named, and all bytes are summed
+    let note = disk_note(&io_profile(
+        (Some(2), Some(1 << 20)),
+        (Some(3), Some(1 << 20)),
+    ))
+    .unwrap();
+    assert!(note.contains("5 major page fault(s), 2.0 MiB"), "{note}");
+    assert!(note.contains("1 segment(s), `retrieve_records`"), "{note}");
+
+    // Nothing read, or not measured: no note
+    assert_eq!(
+        disk_note(&io_profile((Some(0), Some(0)), (Some(0), Some(0)))),
+        None
+    );
+    assert_eq!(disk_note(&io_profile((None, None), (None, None))), None);
+}
+
+#[test]
+fn derived_notes_are_not_duplicated() {
+    let mut profile = io_profile((Some(1), Some(4096)), (None, None));
+    // A peer that derived its notes already sent the same note
+    profile.notes = vec![disk_note(&profile).unwrap()];
+    let notes = super::collector::derive_notes(&profile);
+    assert_eq!(notes.iter().filter(|n| n.starts_with("Waited")).count(), 1);
+}

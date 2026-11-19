@@ -70,9 +70,18 @@ message QueryResponse { ... optional QueryProfile profile = 4; }
   - BM25 text leaves are not run (they have no strategy to choose) and add a note saying so;
   - an older peer that ignores the mode (mixed-version cluster) returns no profile: its results are **discarded**
     and a note names the peer;
-  - approximate count (`exact: false`) still returns its estimate: estimating *is* its plan, nothing is read.
-- Explain is rate limited like any read, at the minimal cost (1): it does real planning work, so it must not bypass
-  the limit, but it scores nothing.
+  - approximate count (`exact: false`) still returns its estimate: estimating *is* its plan, nothing is read. From
+    an older peer, its (also estimated) count is kept, so a mixed-version cluster doesn't under-count;
+  - queries that reference points by id (recommend, `nearest` by id) still fetch those points' stored vectors to
+    build the query: that read is the input of the plan, not its execution;
+  - `order_by` without a range index fails like the request would, instead of reporting a plan that can't run.
+- Explain is rate limited like any read. Searches and query batches cost one unit per planned leaf (search, read or
+  BM25 leaf): planning (cardinality estimation, sampling) is real work, scoring is skipped. Operations that do the
+  same work in explain mode cost the same: `retrieve` (e.g. the vectors of recommend examples), scroll and count.
+- A peer with `query_profiling` disabled still serves profiled internal requests (the coordinator checked the
+  flag); the first one turns distance counting on in that process, so its profile has distance counts.
+- Unknown enum values from a newer peer (`strategy`, `strategy_reason`) are reported as absent, not as an invalid
+  profile, so new values can be added within schema version 1.
 - gRPC batches take `profile` on the batch request; `profile` on a batch item is rejected rather than ignored.
 - **Explain on facet is rejected** with a 400 that says why: a facet has no strategy to choose — it always reads one
   payload index and counts. Explain on count/scroll is supported (it shows indexed vs. full-scan reads).
@@ -187,9 +196,12 @@ the metrics they did before. Flushing hardware counters skips zero metrics, so t
 operations when unused. Workload stats are guarded by a `OnceLock<bool>` read of the flag; the request is cloned
 and fingerprinted only when it is set, after the operation, and not for rate-limited calls.
 
-Distance counts per scorer: dense, multi-vector and sparse plain scorers count one per scored point (`HwScale`);
-quantized scorers count explicitly because their CPU is bumped inside the `quantization` crate; the sparse inverted
-index counts posting-list entries traversed (each is one partial dot product).
+Distance counts per scorer: dense and sparse scorers count one per scored point (`HwScale`); multi-vectors count one
+per sub-vector pair, original and quantized alike (the quantized MaxSim functions count `query × point` sub-vectors);
+quantized scorers count explicitly because their CPU is bumped inside the `quantization` crate; the filtered sparse
+fallback (`plain_search`) counts one per scored point; the sparse inverted index counts the posting-list entries of
+the lists it searches, an upper bound (pruning and the filter can skip entries; counting exactly would mean a bump in
+the innermost loop).
 
 ## Overhead measurements
 
@@ -263,8 +275,19 @@ Validation against process-level `/proc/<pid>/stat` and `/proc/<pid>/io` deltas 
 | Un-indexed filter (full scan) | 3412 ms | 13141 / 95.8 MiB | 13141 / 95.8 MiB | 45.7 ms | 0 / 0 |
 | Scroll + payload | 97 ms | 141 / 0.6 MiB | 36 in segments + 105 in `retrieve_records` / 0.6 MiB | 5.0 ms | 0 / 0 |
 
-When any fault happened, a note says so ("Waited for the disk: 608 major page fault(s) read 80.0 MiB, in 11
-segment(s). ...").
+When anything was read from disk, a note says so, with the totals over all segments and phases and where it
+happened ("Waited for the disk: 608 major page fault(s), 80.0 MiB read from disk, in 11 segment(s). ..."). Bytes read
+without a page fault (e.g. `pread`-based storage) count too. On kernels without task I/O accounting (no
+`/proc/self/io`), `disk_read_bytes` is `null`, not 0.
+
+### Second review
+
+A second Codex review of the fixes rated 5 findings fixed and 5 partial, and found 9 new issues. The confirmed ones
+are fixed: explain rate cost per planned leaf (full cost for `retrieve`), approximate count kept from older peers,
+distance counts on peers with the flag disabled, consistent multi-vector and sparse counting units, the disk note
+counting all reads, `null` disk bytes without task I/O accounting, tolerant enum conversion, deduplicated notes,
+`order_by` explain checking the range index, and less fragile I/O tests. Three findings only applied to mixed versions
+with an intermediate, unreleased commit of this branch.
 
 ## Access control
 

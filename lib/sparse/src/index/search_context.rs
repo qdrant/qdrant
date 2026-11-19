@@ -95,6 +95,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
 
         let mut indices = Vec::with_capacity(self.query.indices.len());
         let mut values = Vec::with_capacity(self.query.values.len());
+        let mut scored = 0;
         for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
@@ -133,7 +134,10 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 score: sparse_score,
                 idx: id,
             });
+            scored += 1;
         }
+        // For query profiles: one sparse dot product per scored point
+        hw::count_scores(hw::ScoreKind::Original, scored);
         let top = std::mem::take(&mut self.top_results);
         top.into_vec()
     }
@@ -277,7 +281,9 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 cpu_cost += len * posting.posting_list_iterator.element_size();
             }
             HwMetric::Cpu.bump(cpu_cost);
-            // For query profiles: each posting entry is one partial dot product
+            // For query profiles: each posting entry is one partial dot product. An upper
+            // bound: pruning and the filter can skip entries, counting those would mean a
+            // bump in the innermost loop.
             hw::count_scores(hw::ScoreKind::Original, entries);
         }
 

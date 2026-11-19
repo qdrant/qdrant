@@ -319,20 +319,14 @@ impl TryFrom<grpc::SegmentProfile> for model::SegmentProfile {
             time_ms,
             counters,
         } = value;
+        // Values added by a newer peer are unknown here: report them as absent instead of
+        // rejecting the whole profile of that peer, so new enum values stay compatible.
         let strategy = strategy
-            .map(|s| {
-                grpc::SearchStrategy::try_from(s)
-                    .map(strategy_from_grpc)
-                    .map_err(|_| Status::invalid_argument("unknown search strategy"))
-            })
-            .transpose()?;
+            .and_then(|s| grpc::SearchStrategy::try_from(s).ok())
+            .map(strategy_from_grpc);
         let strategy_reason = strategy_reason
-            .map(|r| {
-                grpc::StrategyReason::try_from(r)
-                    .map(reason_from_grpc)
-                    .map_err(|_| Status::invalid_argument("unknown strategy reason"))
-            })
-            .transpose()?;
+            .and_then(|r| grpc::StrategyReason::try_from(r).ok())
+            .map(reason_from_grpc);
         Ok(Self {
             segment_id,
             appendable,
@@ -518,6 +512,21 @@ mod tests {
             notes: vec!["note".to_string()],
         };
         let grpc = grpc::QueryProfile::from(profile.clone());
-        assert_eq!(model::QueryProfile::try_from(grpc).unwrap(), profile);
+        assert_eq!(
+            model::QueryProfile::try_from(grpc.clone()).unwrap(),
+            profile
+        );
+
+        // A newer peer sends enum values this version doesn't know: the profile is kept,
+        // with those values absent
+        let mut newer = grpc;
+        let segment = &mut newer.shards[0].segments[0];
+        segment.strategy = Some(1000);
+        segment.strategy_reason = Some(1000);
+        let parsed = model::QueryProfile::try_from(newer).unwrap();
+        let segment = &parsed.shards[0].segments[0];
+        assert_eq!(segment.strategy, None);
+        assert_eq!(segment.strategy_reason, None);
+        assert_eq!(segment.counters, profile.shards[0].segments[0].counters);
     }
 }
