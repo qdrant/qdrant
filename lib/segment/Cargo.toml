@@ -45,7 +45,7 @@ tap = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-io_bridge = { workspace = true }
+io_bridge = { path = "../common/io_bridge" }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
 bitpacking = { workspace = true }
