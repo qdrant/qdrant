@@ -8,8 +8,8 @@ replica, and that replica's clock is one tick ahead of all other replicas.
 - If the transfer source has not seen a newer tick of that clock, it can't resolve a WAL delta,
   and the transfer falls back to a snapshot transfer.
 - After a restart the leader's clocks start from scratch. Its next update through the same clock
-  reuses the orphan operation's tick with a new token. The ticks are equal again, so the WAL delta
-  transfer succeeds and the orphan operation stays on the receiver only.
+  reuses the orphan operation's tick with a new token. The ticks are equal again, but the tokens
+  differ, so the source rejects the WAL delta and the transfer falls back to a snapshot transfer.
 
 Both tests use staging features and are skipped without them:
 - the `delay` debug operation, which the leader writes to its local WAL, while remote shards skip
@@ -28,6 +28,9 @@ SHARD_ID = 0
 
 # Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::HigherThanCurrent`
 HIGHER_THAN_CURRENT_ERROR = "recovery point requests higher clocks this WAL has"
+
+# Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::Diverged`
+DIVERGED_ERROR = "recovery point has an operation this WAL does not have"
 
 # Point upserted through the leader that aborts before sending it to other replicas
 ORPHAN_POINT_ID = 1_000_000
@@ -188,7 +191,7 @@ def test_wal_delta_transfer_rejects_operation_only_on_receiver(tmp_path: pathlib
     check_data_consistency(scroll_all_points(peer_api_uris))
 
 
-def test_wal_delta_transfer_keeps_operation_only_on_receiver(tmp_path: pathlib.Path):
+def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Path):
     assert_project_root()
 
     env = {
@@ -251,12 +254,12 @@ def test_wal_delta_transfer_keeps_operation_only_on_receiver(tmp_path: pathlib.P
     wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
     wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
 
-    # Each peer reads from its own replica here, because all of them are Active
-    orphan_on_peers = [has_point(uri, ORPHAN_POINT_ID) for uri in peer_api_uris]
-    if orphan_on_peers == [False, False, True]:
-        pytest.xfail(
-            "WAL delta resolution compares clock ticks but not tokens, "
-            "so the orphan point stays on R only"
-        )
+    # A found the same tick with another token in R's recovery point, and fell back to another
+    # transfer method
+    a_log = pathlib.Path(init_pytest_log_folder()) / "peer_0_0.log"
+    assert DIVERGED_ERROR in a_log.read_text()
 
+    # The fallback transfer replaced R's shard, so the orphan point is gone. Each peer reads from
+    # its own replica here, because all of them are Active
+    assert not any(has_point(uri, ORPHAN_POINT_ID) for uri in peer_api_uris)
     check_data_consistency(scroll_all_points(peer_api_uris))

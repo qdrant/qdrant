@@ -233,6 +233,11 @@ fn resolve_wal_delta(
         return Err(WalDeltaError::HigherThanCurrent);
     }
 
+    // Clocks for which our node has newer records than the recovery point. For each of them we
+    // look for the record at the recovery point's exact tick, to confirm that we have the same
+    // operation the recovering node has
+    let mut unverified_clocks = recovery_point.clocks_older_than(&newest_clocks);
+
     // From this point, increase all clocks by one
     // We must do that so we can specify clock tick 0 as needing everything from that clock
     recovery_point.increase_all_clocks_by(1);
@@ -250,6 +255,12 @@ fn resolve_wal_delta(
         return Err(WalDeltaError::Cutoff);
     }
 
+    // Equal clock ticks with different tokens are different operations. The recovering node has
+    // an operation that this node does not have, and a WAL delta cannot undo it
+    if recovery_point.has_equal_clocks_with_other_token(&newest_clocks) {
+        return Err(WalDeltaError::Diverged);
+    }
+
     // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
     recovery_point.remove_clocks_equal_to(&newest_clocks);
@@ -263,34 +274,69 @@ fn resolve_wal_delta(
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
 
+    let mut operations = operations.rev();
     let mut last_op_num = None;
+    let mut recover_from = None;
 
-    for entry in operations.rev() {
+    for entry in operations.by_ref() {
         let (op_num, clock_tag) = entry.map_err(|e| WalDeltaError::WalReadError(e.to_string()))?;
         // We cannot resolve a delta if we have untagged records
         let Some(clock_tag) = clock_tag else {
             return Err(WalDeltaError::UntaggedRecords);
         };
 
+        if !unverified_clocks.verify_clock_with_tag(clock_tag) {
+            return Err(WalDeltaError::Diverged);
+        }
+
         // Keep scrolling until we have no clocks left
         let removed_equal = recovery_point.remove_clock_if_newer_or_equal_to_tag(clock_tag);
 
         if recovery_point.is_empty() {
             // If we only removed newer clocks, delta-ing from the previous record is good enough
-
-            let recover_from = if removed_equal {
+            recover_from = Some(if removed_equal {
                 Some(op_num)
             } else {
                 last_op_num
-            };
+            });
 
-            return Ok(recover_from);
+            break;
         }
 
         last_op_num.replace(op_num);
     }
 
-    Err(WalDeltaError::NotFound)
+    let Some(recover_from) = recover_from else {
+        return Err(WalDeltaError::NotFound);
+    };
+
+    // Keep scrolling back past the start of the delta, until we find the records at the
+    // recovery point's exact ticks for the remaining clocks
+    for entry in operations {
+        if unverified_clocks.is_empty() {
+            break;
+        }
+
+        let (_, clock_tag) = entry.map_err(|e| WalDeltaError::WalReadError(e.to_string()))?;
+
+        // Records before an untagged record predate a transfer that did not keep clock tags, we
+        // cannot verify clocks against them
+        let Some(clock_tag) = clock_tag else {
+            break;
+        };
+
+        if !unverified_clocks.verify_clock_with_tag(clock_tag) {
+            return Err(WalDeltaError::Diverged);
+        }
+    }
+
+    // We may not find the exact records, because they are already truncated from our WAL. We
+    // cannot verify these clocks, and resolve the delta without verifying them
+    if !unverified_clocks.is_empty() {
+        log::debug!("Resolved WAL delta without verifying clocks: {unverified_clocks}");
+    }
+
+    Ok(recover_from)
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -302,6 +348,8 @@ pub enum WalDeltaError {
     UnknownClocks,
     #[error("recovery point requests higher clocks this WAL has")]
     HigherThanCurrent,
+    #[error("recovery point has an operation this WAL does not have")]
+    Diverged,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]
     Cutoff,
     #[error("WAL delta cannot include records without clock tags")]
@@ -1620,58 +1668,122 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         // Insert 3 operations with clocks
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(1),
-                Some(ClockTag::new(1, 0, 1)),
-            ))
-            .await
-            .unwrap();
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(2),
-                Some(ClockTag::new(1, 0, 2)),
-            ))
-            .await
-            .unwrap();
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(3),
-                Some(ClockTag::new(1, 0, 3)),
-            ))
-            .await
-            .unwrap();
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
 
         // Can resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 2);
+        recovery_point.insert_with_token(1, 0, 2, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, Some(2));
 
         // Insert operation 4 and 5, where operation 4 does not have a clock tag
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(mock_operation(4), None))
-            .await
-            .unwrap();
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(5),
-                Some(ClockTag::new(1, 0, 4)),
-            ))
-            .await
-            .unwrap();
+        write_operation(&wal, 4, None).await;
+        write_operation(&wal, 5, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
 
         // Can still resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 4);
+        recovery_point.insert_with_token(1, 0, 4, 4);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, None);
 
         // Cannot resolve a delta for our previous clock, it now has an untagged record after it
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 2);
+        recovery_point.insert_with_token(1, 0, 2, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
+    }
+
+    /// Recovery point at the same tick as our newest clock, but with another token, is at an
+    /// operation we don't have.
+    #[tokio::test]
+    async fn test_recover_point_equal_tick_other_token() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 20);
+
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Diverged);
+    }
+
+    /// Recovery point behind our newest clock is at an operation we don't have, if our record at
+    /// the same tick has another token.
+    #[tokio::test]
+    async fn test_recover_point_older_tick_other_token() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 4, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+
+        // Same token, resolves a delta from the record at tick 3
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 2);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, Some(2));
+
+        // Other token
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 20);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Diverged);
+    }
+
+    /// Recovery point behind our newest clock is at an operation we don't have, if we don't have
+    /// a record at that tick, but do have an older one.
+    #[tokio::test]
+    async fn test_recover_point_older_tick_missing() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 4, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 2);
+
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Diverged);
+    }
+
+    /// If our WAL has no record at the recovery point's tick, because it ends before it or an
+    /// untagged record comes first, we resolve the delta without verifying the tick.
+    #[tokio::test]
+    async fn test_recover_point_older_tick_unverified() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        // The record at tick 2 is not in our WAL, as if it was truncated
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 20);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, Some(0));
+
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        // The record at tick 2 is before an untagged record
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        write_operation(&wal, 2, None).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 4, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 20);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, Some(2));
+    }
+
+    async fn write_operation(wal: &RecoverableWal, id: u64, clock_tag: Option<ClockTag>) {
+        let mut operation = OperationWithClockTag::new(mock_operation(id), clock_tag);
+        let (_, _) = wal.lock_and_write(&mut operation).await.unwrap();
     }
 
     /// Empty recovery point should not resolve any diff.

@@ -360,11 +360,85 @@ impl RecoveryPoint {
         is_equal
     }
 
+    /// Check whether this recovery point has any clock with the same tick as in `other`, but a
+    /// different token.
+    ///
+    /// The same tick with a different token means two different operations were tagged with that
+    /// clock tick.
+    pub fn has_equal_clocks_with_other_token(&self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, &(tick, token))| {
+            other
+                .clocks
+                .get(key)
+                .is_some_and(|&(other_tick, other_token)| {
+                    tick == other_tick && token != other_token
+                })
+        })
+    }
+
+    /// Get the clocks of this recovery point that are older than the same clocks in `other`.
+    ///
+    /// Clocks that are not present in `other` are not included.
+    pub fn clocks_older_than(&self, other: &Self) -> Self {
+        let clocks = self
+            .clocks
+            .iter()
+            .filter(|(key, (tick, _token))| {
+                other
+                    .clocks
+                    .get(key)
+                    .is_some_and(|(other_tick, _token)| tick < other_tick)
+            })
+            .map(|(&key, &clock)| (key, clock))
+            .collect();
+
+        Self { clocks }
+    }
+
+    /// Verify a clock of this recovery point against a clock tag from a WAL, and remove the clock
+    /// once it is verified.
+    ///
+    /// Tags must be passed in reverse WAL order. The clock is verified by a tag with the same tick
+    /// and token. Tags with a newer tick are skipped.
+    ///
+    /// Returns `false` if the tag shows that the WAL does not have the operation at the clock's
+    /// tick: the tag has the same tick but a different token, or an older tick.
+    #[must_use = "verification result must be used"]
+    pub fn verify_clock_with_tag(&mut self, tag: ClockTag) -> bool {
+        let key = Key::from_tag(tag);
+
+        let Some(&(tick, token)) = self.clocks.get(&key) else {
+            return true;
+        };
+
+        if tag.clock_tick > tick {
+            return true;
+        }
+
+        let is_same_operation = tag.clock_tick == tick && tag.token == token;
+        if is_same_operation {
+            self.clocks.remove(&key);
+        }
+
+        is_same_operation
+    }
+
     #[cfg(test)]
     pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
         let random_token = rand::random::<ClockToken>();
+        self.insert_with_token(peer_id, clock_id, clock_tick, random_token);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_with_token(
+        &mut self,
+        peer_id: PeerId,
+        clock_id: u32,
+        clock_tick: u64,
+        token: ClockToken,
+    ) {
         self.clocks
-            .insert(Key::new(peer_id, clock_id), (clock_tick, random_token));
+            .insert(Key::new(peer_id, clock_id), (clock_tick, token));
     }
 }
 
