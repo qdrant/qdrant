@@ -481,9 +481,9 @@ fn listed_filtered_points_match_the_reference(#[values(1, 3, 1000)] limit: usize
 
 /// The list is offered the budget that keeps `points * terms < postings`.
 /// Listed points skip the filter; without a list, the walk checks it.
-#[test]
-fn filtered_points_get_the_posting_budget() {
-    let mutable = fixture(43, 300, &[]);
+#[rstest]
+fn filtered_points_get_the_posting_budget(#[values(300, 40_000)] documents: u32) {
+    let mutable = fixture(43, documents, &[]);
     let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
     let postings: usize = query
         .terms()
@@ -508,7 +508,12 @@ fn filtered_points_get_the_posting_budget() {
         score(Some(vec![1, 2, 3])).is_ok(),
         "listed points skip the filter"
     );
-    assert_eq!(offered.get(), Some((postings - 1) / 2));
+    // At most the sparse index's plain-search threshold, whatever the postings
+    let cap = MAX_LISTED_POINTS;
+    assert_eq!(offered.get(), Some(((postings - 1) / 2).min(cap)));
+    if documents > 10_000 {
+        assert!((postings - 1) / 2 > cap, "the large corpus reaches the cap");
+    }
     assert!(score(None).is_err(), "the walk checks the filter");
 }
 

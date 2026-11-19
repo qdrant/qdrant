@@ -31,6 +31,7 @@ use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::nested_index::ElementOffsetType;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
+use crate::types::DEFAULT_SPARSE_FULL_SCAN_THRESHOLD;
 
 /// Saturation and length normalization. Request-time parameters: they are not
 /// part of the index, so changing them never rebuilds anything.
@@ -380,7 +381,12 @@ pub trait TermCursors {
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32;
 }
 
-/// [`score_top_k`], or [`score_points`] when the filter's points cost fewer seeks than the postings.
+/// Most filtered points scored directly, as the sparse index's plain search: a wider filter
+/// fills the walk's top-k early, and the walk then skips most postings.
+const MAX_LISTED_POINTS: usize = DEFAULT_SPARSE_FULL_SCAN_THRESHOLD - 1;
+
+/// [`score_top_k`], or [`score_points`] when the filter's points are few, and cost fewer seeks
+/// than the postings.
 #[allow(clippy::too_many_arguments)]
 pub fn score<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
@@ -398,7 +404,7 @@ pub fn score<C: TermCursors, const BLOCK: usize>(
     let postings: usize = (0..terms).map(|term| cursors.posting_len(term)).sum();
     if let Some(list) = accept.filtered_points
         && postings > 0
-        && let Some(mut points) = list((postings - 1) / terms)?
+        && let Some(mut points) = list(((postings - 1) / terms).min(MAX_LISTED_POINTS))?
     {
         points.sort_unstable();
         points.dedup();
