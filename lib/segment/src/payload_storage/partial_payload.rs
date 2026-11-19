@@ -92,6 +92,52 @@ mod tests {
         }
     }
 
+    /// Quoted path keys and escaped JSON keys resolve like on the full payload.
+    #[test]
+    fn quoted_and_escaped_keys() {
+        use crate::json_path::JsonPath;
+
+        // `a.b` appears twice, the second time with an escaped dot: the last one wins
+        let json = r#"{
+            "a.b": {"c": 1},
+            "x[]": [1, 2],
+            "\u0061": "escaped a",
+            "tab\tkey": true,
+            "q\"k": {"c": "quote"},
+            "a\u002eb": {"c": 2},
+            "ключ": [{"v": 3}]
+        }"#
+        .as_bytes();
+        let full: Map<String, Value> = serde_json::from_slice(json).unwrap();
+
+        // (path, expected to match something)
+        let cases = [
+            (r#""a.b".c"#, true),
+            (r#""a.b""#, true),
+            (r#""x[]"[1]"#, true),
+            ("a", true),
+            ("\"tab\tkey\"", true),
+            ("ключ[].v", true),
+            // `a.b` as a path means key `a`, then key `b`
+            ("a.b", false),
+            ("missing.c", false),
+        ];
+
+        for (path, expect_found) in cases {
+            let path: JsonPath = path.parse().unwrap_or_else(|()| panic!("bad path {path}"));
+            let partial = parse_payload_field(json, &path.first_key).unwrap();
+
+            let from_partial = path.value_get(&partial);
+            assert_eq!(from_partial, path.value_get(&full), "{path}");
+            assert_eq!(!from_partial.is_empty(), expect_found, "{path}");
+            assert!(partial.len() <= 1, "{path}");
+        }
+
+        // Duplicate written with an escape: the last value wins, like a full parse
+        let partial = parse_payload_field(json, "a.b").unwrap();
+        assert_eq!(partial["a.b"], serde_json::json!({"c": 2}));
+    }
+
     #[test]
     fn rejects_invalid_json() {
         assert!(parse_payload_field(br#"{"a": 1"#, "a").is_err());
