@@ -324,38 +324,50 @@ fn test_point_mappings_de_serialization_single() {
 fn test_point_mappings_deserializing_special() {
     // Empty reader creates empty mappings
     let buf = Cursor::new(b"");
-    assert_eq!(read_mappings(buf, None).unwrap().total_point_count(), 0);
+    assert_eq!(
+        read_mappings(buf, None, |_| true)
+            .unwrap()
+            .total_point_count(),
+        0
+    );
 
     // Corrupt if reading invalid type byte
     let buf = Cursor::new(b"\x00");
     assert!(
-        read_mappings(buf, None)
+        read_mappings(buf, None, |_| true)
             .unwrap_err()
             .to_string()
             .contains("Corrupted ID tracker mapping storage")
     );
 
     let buf = Cursor::new(b"malformed!");
-    assert!(read_mappings(buf, None).is_err());
+    assert!(read_mappings(buf, None, |_| true).is_err());
 
     // Empty if change is not fully written
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00");
-    assert_eq!(read_mappings(buf, None).unwrap().total_point_count(), 0);
+    assert_eq!(
+        read_mappings(buf, None, |_| true)
+            .unwrap()
+            .total_point_count(),
+        0
+    );
 
     // Exactly one entry
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00");
     assert_eq!(
-        read_mappings(buf, None).unwrap().internal_id_with_behavior(
-            &PointIdType::NumId(1),
-            common::types::DeferredBehavior::VisibleOnly,
-        ),
+        read_mappings(buf, None, |_| true)
+            .unwrap()
+            .internal_id_with_behavior(
+                &PointIdType::NumId(1),
+                common::types::DeferredBehavior::VisibleOnly,
+            ),
         Some(2)
     );
 
     // Exactly one entry and a malformed second one
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01\x00");
     assert!(
-        read_mappings(buf, None)
+        read_mappings(buf, None, |_| true)
             .unwrap_err()
             .to_string()
             .contains("Corrupted ID tracker mapping storage")
@@ -363,7 +375,7 @@ fn test_point_mappings_deserializing_special() {
 
     // Exactly one entry and an incomplete second one
     let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00");
-    let mappings = read_mappings(buf, None).unwrap();
+    let mappings = read_mappings(buf, None, |_| true).unwrap();
     assert_eq!(mappings.total_point_count(), 1);
     assert_eq!(
         mappings.internal_id_with_behavior(
@@ -431,7 +443,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 13);
     assert_eq!(
-        load_mappings(&mappings_path, None)
+        load_mappings(&mappings_path, None, |_| true)
             .unwrap()
             .0
             .internal_id_with_behavior(
@@ -450,7 +462,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 14);
     assert_eq!(
-        load_mappings(&mappings_path, None)
+        load_mappings(&mappings_path, None, |_| true)
             .unwrap()
             .0
             .internal_id_with_behavior(
@@ -469,7 +481,7 @@ fn test_point_mappings_truncation() {
     .unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 16);
     assert_eq!(
-        load_mappings(&mappings_path, None)
+        load_mappings(&mappings_path, None, |_| true)
             .unwrap()
             .0
             .internal_id_with_behavior(
@@ -487,7 +499,7 @@ fn test_point_mappings_truncation() {
     ).unwrap();
     assert_eq!(fs::metadata(&mappings_path).unwrap().len(), 28);
     assert_eq!(
-        load_mappings(&mappings_path, None)
+        load_mappings(&mappings_path, None, |_| true)
             .unwrap()
             .0
             .internal_id_with_behavior(
@@ -874,4 +886,63 @@ fn deletes_persist_the_version_they_are_given() {
             .collect();
         assert_eq!(deletes, expected, "{versioning:?}");
     }
+}
+
+/// Append-only mutations relocate a point within its segment: the mutated copy is written to a
+/// fresh slot and `set_link` repoints the external id to it, tombstoning the old slot. Mappings
+/// are flushed before versions, so a crash between the two leaves the relocation on disk while
+/// the fresh slot has no version.
+///
+/// On reload the point must still resolve to its last fully persisted copy, the old slot, so that
+/// WAL replay of the relocating operation finds and mutates it again. Dropping the point instead
+/// loses it for good: the operation that created it is usually no longer in the WAL.
+#[test]
+fn relocation_without_persisted_version_keeps_previous_copy() {
+    use common::types::DeferredBehavior;
+
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let relocated = PointIdType::NumId(203);
+    let untouched = PointIdType::NumId(7);
+
+    {
+        let mut id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        id_tracker.set_link(relocated, 0).unwrap();
+        id_tracker.set_internal_version(0, 53).unwrap();
+        id_tracker.set_link(untouched, 1).unwrap();
+        id_tracker.set_internal_version(1, 54).unwrap();
+        id_tracker.mapping_flusher()().unwrap();
+        id_tracker.versions_flusher()().unwrap();
+
+        // Relocate twice (clone-and-mutate), then crash after flushing mappings only
+        id_tracker.set_link(relocated, 2).unwrap();
+        id_tracker.set_internal_version(2, 600).unwrap();
+        id_tracker.set_link(relocated, 3).unwrap();
+        id_tracker.set_internal_version(3, 601).unwrap();
+        id_tracker.mapping_flusher()().unwrap();
+    }
+
+    let mut id_tracker = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    let to_clean = id_tracker.fix_inconsistencies().unwrap();
+
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0)
+    );
+    assert_eq!(id_tracker.internal_version(0), Some(53));
+    assert_eq!(id_tracker.external_id(0), Some(relocated));
+    assert!(!id_tracker.is_deleted_point(0));
+    assert_eq!(
+        id_tracker.internal_id_with_behavior(untouched, DeferredBehavior::WithDeferred),
+        Some(1)
+    );
+    assert!(
+        !to_clean.contains(&0),
+        "the previous copy must not be cleaned up",
+    );
+
+    // The unversioned slots stay allocated, so new points never reuse their storage
+    assert_eq!(id_tracker.total_point_count(), 4);
+    assert_eq!(id_tracker.available_point_count(), 2);
+    assert!(id_tracker.is_deleted_point(2));
+    assert!(id_tracker.is_deleted_point(3));
 }
