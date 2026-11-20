@@ -814,6 +814,54 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, header
         raise e
 
 
+def check_replica_state(
+    peer_api_uri: str,
+    collection_name: str,
+    shard_id: int,
+    peer_id: int,
+    expected_state: str,
+) -> bool:
+    """Return True when the given replica reports `expected_state`."""
+    try:
+        info = get_collection_cluster_info(peer_api_uri, collection_name)
+    except requests.exceptions.ConnectionError:
+        return False
+    # local_shards omit peer_id; it lives on the cluster info root.
+    for shard in info.get("local_shards", []):
+        if shard["shard_id"] == shard_id and info.get("peer_id") == peer_id:
+            return shard["state"] == expected_state
+    for shard in info.get("remote_shards", []):
+        if shard["shard_id"] == shard_id and shard.get("peer_id") == peer_id:
+            return shard["state"] == expected_state
+    return False
+
+
+def wait_for_replica_state(
+    peer_api_uri: str,
+    collection_name: str,
+    shard_id: int,
+    peer_id: int,
+    expected_state: str = "Active",
+):
+    """Wait until a specific replica reaches `expected_state`.
+
+    Useful when some replicas are intentionally Dead (manual recovery tests)
+    and only the transfer source must be Active before `replicate_shard`.
+    """
+    try:
+        wait_for(
+            check_replica_state,
+            peer_api_uri,
+            collection_name,
+            shard_id,
+            peer_id,
+            expected_state,
+        )
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
 def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: Optional[str] = None, headers={}):
     """Wait for membership size and leader agreement, optionally requiring a specific leader."""
     try:

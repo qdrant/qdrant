@@ -132,8 +132,8 @@ def test_shard_snapshot_transfer_cancel_during_updates(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000)
+    # Batch the insert to avoid flaky healthcheck timeouts under CI load (#9261).
+    upsert_random_points(peer_api_uris[0], 10000, batch_size=1000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100)

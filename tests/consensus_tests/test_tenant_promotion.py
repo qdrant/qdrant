@@ -347,10 +347,18 @@ def test_tenant_promotion_background_updates(tmp_path: pathlib.Path):
         for shard in info["remote_shards"]:
             assert shard['state'] == 'Active'
 
-    # Stop background updates and check that `tenant1` contains all points (full sequence)
-
-    upload_process_1.kill()
-    set_payload_process_1.kill()
+    # Let background writers finish cleanly (duration=5) instead of killing mid-batch,
+    # then settle so in-flight replicate/proxy catch-up can land before the gap check.
+    upload_process_1.join(timeout=30)
+    set_payload_process_1.join(timeout=30)
+    if upload_process_1.is_alive():
+        upload_process_1.kill()
+        upload_process_1.join()
+    if set_payload_process_1.is_alive():
+        set_payload_process_1.kill()
+        set_payload_process_1.join()
+    time.sleep(2)
+    wait_for_all_replicas_active(peer_api_uris[0], COLLECTION_NAME)
 
     # Read all points from offset 10000 and check that there is no gaps
     # Use scroll API to get all points
