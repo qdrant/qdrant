@@ -598,9 +598,7 @@ mod store {
         assert_eq!(retrieve_payload(), Some(merged));
     }
 
-    /// A batch that fails before its first write — here a vector update of a
-    /// point no segment holds — hands the writer back, which then applies the
-    /// next batch.
+    /// An error before the first write hands back a usable writer.
     #[test]
     fn checked_apply_error_before_writing_keeps_the_writer() {
         let dir = leader_with_ten_points("edge-update-checked-unwritten");

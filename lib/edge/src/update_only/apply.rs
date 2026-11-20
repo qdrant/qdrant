@@ -31,15 +31,10 @@ use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 const LOG_TARGET: &str = "apply_batch";
 
-/// A batch resolved, checked and metered, with every store and retirement
-/// decided: what [`UpdateOnlyEdgeShard::prepare_batch`] hands to
-/// [`UpdateOnlyEdgeShard::write_batch`]. Nothing of it is written yet.
+/// A resolved batch, nothing of it written yet.
 struct PreparedBatch {
-    /// When the batch started, for the total-time trace.
     start: std::time::Instant,
-    /// The batch version every retirement records.
     version: SeqNumberType,
-    /// The appendable segment, checked to hold a writer that can store;
     /// `Some` whenever `to_store` is non-empty.
     write_target: Option<Uuid>,
     deferred_cutoff: Option<PointOffsetType>,
@@ -200,15 +195,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// point before anything is written — one resolution instead of a
     /// [`preview_batch`](Self::preview_batch) followed by an apply.
     ///
-    /// Errors split at the first write:
-    ///
-    /// * When `check` refuses a point, or the batch fails before anything is
-    ///   written — an unsupported operation, a vector update of a missing
-    ///   point, a failed read — the writer is handed back with
-    ///   [`CheckedApplyError`]. Its lookups still describe the durable state,
-    ///   so it can apply the next batch.
-    /// * An error once writing has started loses the writer, as in
-    ///   [`apply_batch`](Self::apply_batch).
+    /// A refusal or an error before the first write hands the writer back
+    /// with [`CheckedApplyError`]; a later error loses it.
     pub fn apply_batch_checked<E>(
         self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
@@ -225,8 +213,6 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         Ok((writer, Ok(outcome)))
     }
 
-    /// The unchecked apply keeps its contract: any error loses the writer,
-    /// one raised before the first write included.
     fn apply_batch_unchecked(
         self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
@@ -238,10 +224,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         }
     }
 
-    /// Everything before the first write: resolve the batch, run `check`,
-    /// meter, and decide every store and retirement. Borrows the writer
-    /// immutably, so nothing here can change the state its lookups describe,
-    /// and the writer stays usable whatever this returns.
+    /// Everything before the first write; `&self`, so it cannot touch the writers.
     fn prepare_batch<E>(
         &self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
@@ -377,8 +360,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         drop(segments);
 
-        // Every writer the batch will need, checked up front: a missing one
-        // found halfway through the writes would lose the writer.
+        // Check the writers up front, so a missing one fails before any write.
         let write_target = if to_store.is_empty() {
             None
         } else {
