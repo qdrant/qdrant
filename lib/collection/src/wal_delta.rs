@@ -223,14 +223,20 @@ fn resolve_wal_delta(
 
     // If the recovery point has clocks our current node does not know about
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_clocks_not_in(&newest_clocks) {
-        return Err(WalDeltaError::UnknownClocks);
+    let unknown_clocks = recovery_point.clocks_not_in(&newest_clocks);
+    if !unknown_clocks.is_empty() {
+        return Err(WalDeltaError::UnknownClocks(unknown_clocks));
     }
 
     // If our current node has any lower clock than the recovery point specifies,
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_any_newer_clocks_than(&newest_clocks) {
-        return Err(WalDeltaError::HigherThanCurrent);
+    let higher_clocks = recovery_point.clocks_newer_than(&newest_clocks);
+    if !higher_clocks.is_empty() {
+        let current_clocks = higher_clocks.same_clocks_in(&newest_clocks);
+        return Err(WalDeltaError::HigherThanCurrent {
+            higher_clocks,
+            current_clocks,
+        });
     }
 
     // Clocks for which our node has newer records than the recovery point. For each of them we
@@ -344,10 +350,18 @@ fn resolve_wal_delta(
 pub enum WalDeltaError {
     #[error("recovery point has no clocks to resolve delta for")]
     Empty,
-    #[error("recovery point requests clocks this WAL does not know about")]
-    UnknownClocks,
-    #[error("recovery point requests higher clocks this WAL has")]
-    HigherThanCurrent,
+    #[error("recovery point requests clocks this WAL does not know about: {0}")]
+    UnknownClocks(RecoveryPoint),
+    #[error(
+        "recovery point requests higher clocks this WAL has: {higher_clocks}, \
+         this WAL has {current_clocks}"
+    )]
+    HigherThanCurrent {
+        /// Clocks of the recovery point that are higher than ours
+        higher_clocks: RecoveryPoint,
+        /// The same clocks in this WAL
+        current_clocks: RecoveryPoint,
+    },
     #[error("recovery point has an operation this WAL does not have")]
     Diverged,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]
@@ -1818,7 +1832,7 @@ mod tests {
         // Recovery point has a clock our source does not know about
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 8);
-        recovery_point.insert(2, 1, 5);
+        recovery_point.insert_with_token(2, 1, 5, 50);
         newest_clocks.insert(1, 0, 20);
         newest_clocks.insert(1, 1, 8);
 
@@ -1831,7 +1845,14 @@ mod tests {
             newest_clocks,
             RecoveryPoint::default(),
         );
-        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UnknownClocks);
+
+        let mut unknown_clocks = RecoveryPoint::default();
+        unknown_clocks.insert_with_token(2, 1, 5, 50);
+
+        assert_eq!(
+            resolve_result.unwrap_err(),
+            WalDeltaError::UnknownClocks(unknown_clocks),
+        );
     }
 
     /// Recovery point with higher clocks than the source cannot resolve a diff.
@@ -1844,9 +1865,9 @@ mod tests {
 
         // Recovery point asks tick 10, but source only has tick 8
         recovery_point.insert(1, 0, 15);
-        recovery_point.insert(1, 1, 10);
+        recovery_point.insert_with_token(1, 1, 10, 100);
         newest_clocks.insert(1, 0, 20);
-        newest_clocks.insert(1, 1, 8);
+        newest_clocks.insert_with_token(1, 1, 8, 80);
 
         let resolve_result = resolve_wal_delta(
             wal.wal
@@ -1857,9 +1878,19 @@ mod tests {
             newest_clocks,
             RecoveryPoint::default(),
         );
+
+        let mut higher_clocks = RecoveryPoint::default();
+        higher_clocks.insert_with_token(1, 1, 10, 100);
+
+        let mut current_clocks = RecoveryPoint::default();
+        current_clocks.insert_with_token(1, 1, 8, 80);
+
         assert_eq!(
             resolve_result.unwrap_err(),
-            WalDeltaError::HigherThanCurrent
+            WalDeltaError::HigherThanCurrent {
+                higher_clocks,
+                current_clocks,
+            },
         );
     }
 

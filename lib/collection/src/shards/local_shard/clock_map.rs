@@ -258,7 +258,7 @@ impl Clock {
 /// The recovery point describes from what point we want to get operations from another node in
 /// case of recovery. In other words, the recovery point has the first clock tick values the
 /// recovering node has not seen yet.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecoveryPoint {
     clocks: HashMap<Key, (u64, ClockToken)>,
 }
@@ -282,24 +282,52 @@ impl RecoveryPoint {
         }
     }
 
-    /// Check whether this recovery point has any clocks that are not in `other`
-    pub fn has_clocks_not_in(&self, other: &Self) -> bool {
-        self.clocks
-            .keys()
-            .any(|key| !other.clocks.contains_key(key))
+    /// Get the clocks of this recovery point that are not in `other`
+    pub fn clocks_not_in(&self, other: &Self) -> Self {
+        let clocks = self
+            .clocks
+            .iter()
+            .filter(|(key, _clock)| !other.clocks.contains_key(key))
+            .map(|(&key, &clock)| (key, clock))
+            .collect();
+
+        Self { clocks }
     }
 
-    /// Check if this recovery point has any clock that is newer than the one in the `other`.
+    /// Get the clocks of this recovery point that are newer than the same clocks in `other`.
     ///
     /// A clock that is present in this recovery point, but not in the `other`,
     /// is always considered to be *newer*.
-    pub fn has_any_newer_clocks_than(&mut self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, &(tick, _token))| {
-            other
-                .clocks
-                .get(key)
-                .is_none_or(|&(other_tick, _token)| tick > other_tick)
-        })
+    pub fn clocks_newer_than(&self, other: &Self) -> Self {
+        let clocks = self
+            .clocks
+            .iter()
+            .filter(|(key, (tick, _token))| {
+                other
+                    .clocks
+                    .get(key)
+                    .is_none_or(|(other_tick, _token)| tick > other_tick)
+            })
+            .map(|(&key, &clock)| (key, clock))
+            .collect();
+
+        Self { clocks }
+    }
+
+    /// Get the clocks of this recovery point, with the ticks and tokens they have in `other`.
+    ///
+    /// Clocks that are not present in `other` get tick 0.
+    pub fn same_clocks_in(&self, other: &Self) -> Self {
+        let clocks = self
+            .clocks
+            .keys()
+            .map(|&key| {
+                let clock = other.clocks.get(&key).copied().unwrap_or((0, 0));
+                (key, clock)
+            })
+            .collect();
+
+        Self { clocks }
     }
 
     /// Check if this recovery point has any clock that is older than the one in the `other`.
@@ -711,6 +739,66 @@ mod test {
                 .advance(tag(current_tick).force(true))
                 .assert(true, current_tick);
         }
+    }
+
+    #[test]
+    fn recovery_point_clocks_not_in() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 10, 100);
+        recovery_point.insert_with_token(2, 0, 7, 101); // missing in other
+
+        let mut other = RecoveryPoint::default();
+        other.insert_with_token(1, 0, 20, 200);
+        other.insert_with_token(3, 0, 1, 201); // missing in recovery point
+
+        let not_in = recovery_point.clocks_not_in(&other);
+
+        let mut expected = RecoveryPoint::default();
+        expected.insert_with_token(2, 0, 7, 101);
+
+        assert_eq!(not_in, expected);
+    }
+
+    #[test]
+    fn recovery_point_clocks_newer_than() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 10, 100); // newer
+        recovery_point.insert_with_token(1, 1, 5, 101); // equal
+        recovery_point.insert_with_token(1, 2, 3, 102); // older
+        recovery_point.insert_with_token(2, 0, 7, 103); // missing in other
+
+        let mut other = RecoveryPoint::default();
+        other.insert_with_token(1, 0, 9, 200);
+        other.insert_with_token(1, 1, 5, 201);
+        other.insert_with_token(1, 2, 4, 202);
+        other.insert_with_token(3, 0, 1, 203); // missing in recovery point
+
+        let newer = recovery_point.clocks_newer_than(&other);
+
+        let mut expected = RecoveryPoint::default();
+        expected.insert_with_token(1, 0, 10, 100);
+        expected.insert_with_token(2, 0, 7, 103);
+
+        assert_eq!(newer.clocks, expected.clocks);
+    }
+
+    #[test]
+    fn recovery_point_same_clocks_in() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 10, 100);
+        recovery_point.insert_with_token(2, 0, 7, 101); // missing in other
+
+        let mut other = RecoveryPoint::default();
+        other.insert_with_token(1, 0, 9, 200);
+        other.insert_with_token(3, 0, 1, 201); // missing in recovery point
+
+        let same_clocks = recovery_point.same_clocks_in(&other);
+
+        let mut expected = RecoveryPoint::default();
+        expected.insert_with_token(1, 0, 9, 200);
+        expected.insert_with_token(2, 0, 0, 0);
+
+        assert_eq!(same_clocks.clocks, expected.clocks);
     }
 
     proptest! {
