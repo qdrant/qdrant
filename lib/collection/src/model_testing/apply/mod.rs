@@ -223,6 +223,7 @@ pub(super) async fn apply(
             unreachable!("CreateSnapshot is handled in the run loop, not apply()")
         }
         Op::SetFlushInterval(sec) => writes::apply_set_flush_interval(collection, *sec).await,
+        Op::SetOptimizer(state) => writes::apply_set_optimizer(collection, *state).await,
         Op::QueryText {
             text,
             limit,
