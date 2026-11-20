@@ -1036,12 +1036,14 @@ impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
         let UpdateResult {
             operation_id,
             status,
+            applied,
             clock_tag,
         } = res;
         Self {
             operation_id,
             status: status.into(),
             clock_tag: clock_tag.map(ClockTag::into),
+            applied,
         }
     }
 }
@@ -1060,10 +1062,12 @@ impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
             operation_id,
             status,
             clock_tag,
+            applied,
         } = res;
         let res = Self {
             operation_id,
             status: status.try_into()?,
+            applied,
             clock_tag: clock_tag.map(ClockTag::from),
         };
 

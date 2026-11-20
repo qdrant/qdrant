@@ -676,6 +676,9 @@ impl ShardOperation for ForwardProxyShard {
             .update(operation.clone(), WaitUntil::Segment, timeout)
             .await?;
 
+        // During a transfer, the outcome is only known for the source shard.
+        result.applied = None;
+
         let points_matching_filter_before = {
             if let Some(filter) = &self.filter
                 && let Some(point_ids) = operation.operation.upsert_point_ids()

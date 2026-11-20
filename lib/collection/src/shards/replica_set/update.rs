@@ -276,6 +276,7 @@ impl ShardReplicaSet {
                 )
             })?;
 
+        let mut outcome_uncertain = false;
         for attempt in 1..=UPDATE_MAX_CLOCK_REJECTED_RETRIES {
             let is_non_zero_tick = clock.current_tick().is_some();
 
@@ -289,9 +290,15 @@ impl ShardReplicaSet {
                 )
                 .await?;
 
-            if let Some(res) = res {
+            if let Some(mut res) = res {
+                if outcome_uncertain {
+                    res.applied = None;
+                }
                 return Ok(res);
             }
+
+            // A nonzero attempt may have applied on some replicas before another rejected its clock.
+            outcome_uncertain |= is_non_zero_tick;
 
             // Log a warning, if operation was rejected... but only if operation had a non-0 tick,
             // because operations with tick 0 should *always* be rejected and rejection is *expected*.
@@ -847,6 +854,12 @@ impl ShardReplicaSet {
             .expect("successes is not empty");
 
         result.status = status;
+        result.applied = result.applied.filter(|&applied| {
+            status == UpdateStatus::Completed
+                && successes
+                    .iter()
+                    .all(|(_, replica)| replica.applied == Some(applied))
+        });
         result
     }
 
@@ -968,6 +981,7 @@ mod tests {
                 UpdateResult {
                     operation_id: Some(10),
                     status: UpdateStatus::Completed,
+                    applied: Some(true),
                     clock_tag: Some(local_tag),
                 },
             ),
@@ -976,6 +990,7 @@ mod tests {
                 UpdateResult {
                     operation_id: Some(20),
                     status: UpdateStatus::WaitTimeout,
+                    applied: None,
                     clock_tag: Some(remote_tag),
                 },
             ),
@@ -984,6 +999,7 @@ mod tests {
         let merged = ShardReplicaSet::merge_successful_update_results(&successes);
 
         assert_eq!(merged.status, UpdateStatus::WaitTimeout);
+        assert_eq!(merged.applied, None);
         assert_eq!(merged.operation_id, Some(20));
         assert_eq!(merged.clock_tag.unwrap().clock_tick, 12);
     }
@@ -1001,6 +1017,7 @@ mod tests {
                 UpdateResult {
                     operation_id: Some(10),
                     status: UpdateStatus::Acknowledged,
+                    applied: None,
                     clock_tag: Some(local_tag),
                 },
             ),
@@ -1009,6 +1026,7 @@ mod tests {
                 UpdateResult {
                     operation_id: Some(20),
                     status: UpdateStatus::Completed,
+                    applied: None,
                     clock_tag: Some(remote_tag),
                 },
             ),
@@ -1019,6 +1037,29 @@ mod tests {
         assert_eq!(merged.status, UpdateStatus::Completed);
         assert_eq!(merged.operation_id, Some(20));
         assert_eq!(merged.clock_tag.unwrap().clock_tick, 11);
+    }
+
+    #[test]
+    fn test_merge_successful_update_results_requires_agreement() {
+        let result = UpdateResult {
+            operation_id: Some(1),
+            status: UpdateStatus::Completed,
+            applied: Some(false),
+            clock_tag: None,
+        };
+        let mut successes = [(1, result), (2, result)];
+        assert_eq!(
+            ShardReplicaSet::merge_successful_update_results(&successes).applied,
+            Some(false),
+        );
+
+        for outcome in [Some(true), None] {
+            successes[0].1.applied = outcome;
+            assert_eq!(
+                ShardReplicaSet::merge_successful_update_results(&successes).applied,
+                None,
+            );
+        }
     }
 
     #[tokio::test]

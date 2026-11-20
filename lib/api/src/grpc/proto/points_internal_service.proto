@@ -232,6 +232,8 @@ message UpdateResultInternal {
   // Operation status
   UpdateStatus status = 2;
   optional ClockTag clock_tag = 3;
+  // Whether a completed upsert applied at least one point. Only reported when the outcome is known.
+  optional bool applied = 4;
 }
 
 message ClockTag {

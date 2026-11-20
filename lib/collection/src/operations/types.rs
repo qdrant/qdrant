@@ -494,10 +494,23 @@ pub struct UpdateResult {
     /// Update status
     pub status: UpdateStatus,
 
+    /// Whether a completed upsert applied at least one point. Only reported when the outcome is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied: Option<bool>,
+
     /// Updated value for the external clock tick
     /// Provided if incoming update request also specify clock tick
     #[serde(skip)]
     pub clock_tag: Option<ClockTag>,
+}
+
+impl UpdateResult {
+    /// Combine outcomes from disjoint parts of the same upsert.
+    pub fn aggregate_applied<'a>(results: impl IntoIterator<Item = &'a Self>) -> Option<bool> {
+        results.into_iter().try_fold(false, |any, result| {
+            result.applied.map(|applied| any || applied)
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

@@ -443,6 +443,7 @@ impl Collection {
         Ok(UpdateResult {
             operation_id: None,
             status,
+            applied: None,
             clock_tag: None,
         })
     }

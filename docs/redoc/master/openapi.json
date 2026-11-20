@@ -8875,6 +8875,11 @@
           },
           "status": {
             "$ref": "#/components/schemas/UpdateStatus"
+          },
+          "applied": {
+            "description": "Whether a completed upsert applied at least one point. Only reported when the outcome is known.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

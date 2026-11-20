@@ -203,29 +203,46 @@ impl Collection {
                     let mut result = UpdateResult {
                         operation_id: None,
                         status: UpdateStatus::Acknowledged,
+                        applied: None,
                         clock_tag: None,
                     };
+                    let mut applied = Some(false);
+                    let updates = operation
+                        .update_all
+                        .into_iter()
+                        .map(|operation| (operation, false))
+                        .chain(
+                            operation
+                                .update_only_existing
+                                .into_iter()
+                                .map(|operation| (operation, true)),
+                        );
 
-                    for operation in operation.update_all {
-                        result = shard
-                            .update_with_consistency(operation, wait, timeout, ordering, false)
-                            .await?;
-                    }
-
-                    for operation in operation.update_only_existing {
+                    for (operation, update_only_existing) in updates {
                         let res = shard
-                            .update_with_consistency(operation, wait, timeout, ordering, true)
+                            .update_with_consistency(
+                                operation,
+                                wait,
+                                timeout,
+                                ordering,
+                                update_only_existing,
+                            )
                             .await;
 
                         if let Err(err) = &res
+                            && update_only_existing
                             && err.is_missing_point()
                         {
                             continue;
                         }
 
                         result = res?;
+                        applied = applied
+                            .zip(result.applied)
+                            .map(|(any, current)| any || current);
                     }
 
+                    result.applied = applied.filter(|_| result.status == UpdateStatus::Completed);
                     CollectionResult::Ok(result)
                 });
             }
@@ -298,11 +315,13 @@ impl Collection {
                 });
             }
 
+            let applied = UpdateResult::aggregate_applied(&results);
             let max_operation_id = results.into_iter().map(|r| r.operation_id).max().unwrap(); // We checked that results is not empty above
 
             Ok(UpdateResult {
                 operation_id: max_operation_id,
                 status,
+                applied,
                 clock_tag: None, // clock_tag is not used in the user response
             })
         }
