@@ -2,11 +2,12 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient::trace;
 use common::bitvec::BitSlice;
+use common::condition_checker::ConditionChecker;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -14,7 +15,7 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{FilteredPoints, GraphSearchArgs, SearchScorers};
-use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
+use crate::index::hnsw_index::graph_layers::{GraphSearchError, SearchAlgorithm};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
@@ -55,11 +56,12 @@ where
 
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
-        let first_filtered_points = filter.map(|filter| {
-            let is_stopped = &is_stopped;
-            move |n| self.first_filtered_points(filter, n, is_stopped)
-        });
-        let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
+        // Unfiltered queries also need seeds if every stored entry point was deleted.
+        let fallback_points = |n| match filter {
+            Some(filter) => self.first_filtered_points(filter, n, &is_stopped),
+            None => self.first_unfiltered_points(n, deleted_points, &is_stopped),
+        };
+        let filtered_points_reader = Some(&fallback_points as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
@@ -95,7 +97,7 @@ where
             };
 
             trace::mark!("graph_search begin (inline vectors, ef={ef})");
-            let result = self.graph.search(GraphSearchArgs {
+            match self.graph.search(GraphSearchArgs {
                 top,
                 ef: std::cmp::max(ef, oversampled_top),
                 algorithm: SearchAlgorithm::Hnsw,
@@ -107,8 +109,11 @@ where
                 custom_entry_points,
                 filtered_points_reader,
                 is_stopped: &is_stopped,
-            })?;
-            Ok(Some(result))
+            }) {
+                Ok(result) => Ok(Some(result)),
+                Err(GraphSearchError::Operation(error)) => Err(error),
+                Err(GraphSearchError::AcornTraversalLimit) => Ok(None),
+            }
         };
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
@@ -125,7 +130,7 @@ where
             )?;
 
             trace::mark!("graph_search begin (ef={ef})");
-            let search_result = self.graph.search(GraphSearchArgs {
+            let search_result = match self.graph.search(GraphSearchArgs {
                 top: oversampled_top,
                 ef,
                 algorithm,
@@ -133,7 +138,22 @@ where
                 custom_entry_points,
                 filtered_points_reader,
                 is_stopped: &is_stopped,
-            })?;
+            }) {
+                Ok(result) => result,
+                Err(GraphSearchError::Operation(error)) => return Err(error),
+                Err(GraphSearchError::AcornTraversalLimit) => {
+                    // A large deleted component must not cause unbounded random graph reads.
+                    // A sequential scan still finds live vectors beyond the traversal budget.
+                    return self
+                        .search_plain_unfiltered_batched(
+                            &[vector],
+                            top,
+                            params,
+                            vector_query_context,
+                        )
+                        .map(|mut results| results.remove(0));
+                }
+            };
 
             trace::mark!("postprocess begin");
             postprocess_search_result(
@@ -335,6 +355,31 @@ where
             Some(n),
         )?;
         Ok(points.collect())
+    }
+
+    /// Live vectors to seed the graph after all stored entry points were deleted.
+    pub(super) fn first_unfiltered_points(
+        &self,
+        n: usize,
+        deleted_points: &BitSlice,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let available_vectors = self.vector_storage.available_vector_count();
+        if n == 0 || available_vectors == 0 {
+            return Ok(Vec::new());
+        }
+        let not_deleted = self.vector_storage.not_deleted_checker(deleted_points);
+        let mut points = Vec::new();
+        for point in self.id_tracker.point_mappings().iter_internal() {
+            check_process_stopped(is_stopped)?;
+            if not_deleted.check(point)? {
+                points.push(point);
+                if points.len() == n {
+                    break;
+                }
+            }
+        }
+        Ok(points)
     }
 
     fn discover_search_with_graph(

@@ -16,7 +16,7 @@ use itertools::Itertools as _;
 
 use super::GraphWithVectorsScorers;
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayers, SearchAlgorithm, SearchEntry};
+use super::graph_layers::{GraphLayers, GraphSearchError, SearchAlgorithm, SearchEntry};
 use super::graph_layers_batched::GraphLayersBatched;
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLinksResidency};
 use super::hnsw::{LINK_COMPRESSION_CONVERT_EXISTING, graph_residency};
@@ -162,7 +162,10 @@ impl<S: UniversalRead> HnswGraph<S> {
         Ok(())
     }
 
-    pub fn search(&self, args: GraphSearchArgs<'_>) -> OperationResult<Vec<ScoredPointOffset>> {
+    pub fn search(
+        &self,
+        args: GraphSearchArgs<'_>,
+    ) -> Result<Vec<ScoredPointOffset>, GraphSearchError> {
         let GraphSearchArgs {
             top,
             ef,
@@ -177,7 +180,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             SearchScorers::Regular(scorer) => scorer,
             SearchScorers::WithVectors(scorers) => scorers.links,
         };
-        let seeds_num = SEEDS_PER_EF * ef.max(top);
+        let seeds_num = SEEDS_PER_EF.saturating_mul(ef.max(top));
         let Some(entry) = self.get_entry_point(
             scorer,
             custom_entry_points,
@@ -206,15 +209,15 @@ impl<S: UniversalRead> HnswGraph<S> {
             (HnswGraph::Direct(graph), SearchScorers::Regular(scorer)) => {
                 Ok(graph.search(top, ef, algorithm, scorer, &entry, is_stopped)?)
             }
-            (HnswGraph::Direct(graph), SearchScorers::WithVectors(scorers)) => {
-                Ok(graph.search_with_vectors(top, ef, *scorers, &entry, is_stopped)?)
-            }
+            (HnswGraph::Direct(graph), SearchScorers::WithVectors(scorers)) => graph
+                .search_with_vectors(top, ef, *scorers, &entry, is_stopped)
+                .map_err(GraphSearchError::from),
             (HnswGraph::Batched(graph), SearchScorers::Regular(scorer)) => {
                 graph.search(top, ef, algorithm, scorer, &entry, batch_size, is_stopped)
             }
-            (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => {
-                graph.search_with_vectors(top, ef, *scorers, &entry, batch_size, is_stopped)
-            }
+            (HnswGraph::Batched(graph), SearchScorers::WithVectors(scorers)) => graph
+                .search_with_vectors(top, ef, *scorers, &entry, batch_size, is_stopped)
+                .map_err(GraphSearchError::from),
         }
     }
 
