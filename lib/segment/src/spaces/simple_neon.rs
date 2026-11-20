@@ -194,6 +194,45 @@ pub(crate) unsafe fn dot_similarity_neon(
     }
 }
 
+/// [`dot_similarity_neon`] of `v1` with four vectors at once: the query is loaded once
+/// per step for all four, and each score sums exactly as in [`dot_similarity_neon`].
+#[cfg(target_feature = "neon")]
+pub(crate) unsafe fn dot_similarity_neon_4(
+    v1: &[VectorElementType],
+    v2: [&[VectorElementType]; 4],
+) -> [ScoreType; 4] {
+    unsafe {
+        let n = v1.len();
+        let m = n - (n % 16);
+        let q = v1.as_ptr();
+        let p = v2.map(<[VectorElementType]>::as_ptr);
+        let mut sums = [[vdupq_n_f32(0.); 4]; 4];
+        let mut i: usize = 0;
+        while i < m {
+            let query = [
+                vld1q_f32(q.add(i)),
+                vld1q_f32(q.add(i + 4)),
+                vld1q_f32(q.add(i + 8)),
+                vld1q_f32(q.add(i + 12)),
+            ];
+            for (sum, ptr) in sums.iter_mut().zip(p) {
+                for (lane, offset) in [0, 4, 8, 12].into_iter().enumerate() {
+                    sum[lane] = vfmaq_f32(sum[lane], query[lane], vld1q_f32(ptr.add(i + offset)));
+                }
+            }
+            i += 16;
+        }
+        let mut result =
+            sums.map(|[a, b, c, d]| vaddvq_f32(a) + vaddvq_f32(b) + vaddvq_f32(c) + vaddvq_f32(d));
+        for (score, ptr) in result.iter_mut().zip(p) {
+            for j in m..n {
+                *score += (*q.add(j)) * (*ptr.add(j));
+            }
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(target_feature = "neon")]
