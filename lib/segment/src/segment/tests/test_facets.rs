@@ -8,6 +8,7 @@
 //! | `sampling_unfiltered_*`                | tag    | none       | sampling → counts     |
 //! | `sampling_selective_filter_*`          | tag    | seq <  9%  | sampling → filter iter|
 //! | `sampling_broad_filter_*`              | tag    | seq < 95%  | sampling → facet iter |
+//! | `sampling_veto_multi_valued_*`         | tag ×2 | seq <  1%  | full → filter iter    |
 //! | `sampling_filter_matching_nothing_*`   | tag    | unindexed  | sampling → no cands   |
 //! | `all_points_deleted_*`                 | tag    | any        | empty segment         |
 //!
@@ -66,6 +67,12 @@ fn build_segment() -> (TempDir, Segment) {
 /// Build a fixture of `n` points, each with a `colour` (3 uniques), a unique
 /// `tag`, and a `seq` equal to its index (for filters of exact selectivity).
 fn build_segment_n(n: usize) -> (TempDir, Segment) {
+    build_segment_tags(n, 1)
+}
+
+/// Like [`build_segment_n`], but each point carries `tags_per_point` unique
+/// tags (as an array when > 1), so `tag` has `n * tags_per_point` uniques.
+fn build_segment_tags(n: usize, tags_per_point: usize) -> (TempDir, Segment) {
     let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
 
@@ -80,9 +87,18 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
         segment.insert_new_vectors(point_id, op, &vectors).unwrap();
         op += 1;
 
+        let tag = if tags_per_point == 1 {
+            serde_json::json!(format!("tag_{i}"))
+        } else {
+            serde_json::json!(
+                (0..tags_per_point)
+                    .map(|t| format!("tag_{i}_{t}"))
+                    .collect::<Vec<_>>()
+            )
+        };
         let payload = payload_json! {
             COLOUR_KEY: COLOURS[i % 3],
-            TAG_KEY: format!("tag_{i}"),
+            TAG_KEY: tag,
             SEQ_KEY: i as f64,
         };
         segment.set_full_payload(op, point_id, &payload).unwrap();
@@ -321,6 +337,31 @@ fn sampling_selective_filter_iterates_filter() {
 
     assert!(!hits.is_empty());
     assert!(hits.len() < N_FILTER_ITER);
+    assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
+}
+
+/// Multi-valued field with more unique values than points: the veto must still
+/// see that a selective filter makes random sampling expensive.
+///
+/// Expected draws to collect `sample_target` values is
+/// `sample_target * points / uniques` = 1000 * 2000 / 4000 = 500. Truncating
+/// `points / uniques` to 0 instead disabled the veto, so a 1% filter (20
+/// points) went down the sampling path despite needing ~48k random draws.
+#[test]
+fn sampling_veto_multi_valued_selective_filter_falls_back_to_full() {
+    const TAGS_PER_POINT: usize = 2;
+    let (_dir, segment) = build_segment_tags(N_POINTS, TAGS_PER_POINT);
+    let filter = seq_below(N_POINTS / 100);
+
+    let hits = run_facet(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFilterIter,
+    );
+
+    // Full strategy reports every matching value: 20 points × 2 tags.
+    assert_eq!(hits.len(), N_POINTS / 100 * TAGS_PER_POINT);
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
 
