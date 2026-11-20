@@ -12,6 +12,7 @@ use segment::common::operation_error::OperationError;
 use shard::files::{clear_data, move_data};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 
+use crate::budget::ResourceBudget;
 use crate::config::{EdgeConfig, HnswIndexConfig, OptimizersConfig};
 use crate::error::{EdgeError, Result};
 
@@ -205,6 +206,24 @@ impl EdgeShard {
     /// [`EdgeError::OperationError`] if an optimizer fails.
     pub fn optimize(&self) -> Result<bool> {
         self.with_shard(|shard| Ok(shard.optimize()?))
+    }
+
+    /// Like [`EdgeShard::optimize`], but each optimization takes its CPU and
+    /// IO permits from `budget`, waiting until they are available. Share one
+    /// budget between shards to cap their combined resource use.
+    ///
+    /// Like `optimize`, it holds the shard for the whole call, so
+    /// [`EdgeShard::unload`] waits for it — including while it waits for
+    /// permits other shards hold.
+    ///
+    /// Returns `true` if any segment was optimized, `false` if already optimal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EdgeError::ShardClosed`] if the shard has been unloaded, or
+    /// [`EdgeError::OperationError`] if an optimizer fails.
+    pub fn optimize_with_budget(&self, budget: Arc<ResourceBudget>) -> Result<bool> {
+        self.with_shard(|shard| Ok(shard.optimize_with_budget(budget.share())?))
     }
 
     /// Eagerly releases the shard's WAL and segment file handles, flushing any

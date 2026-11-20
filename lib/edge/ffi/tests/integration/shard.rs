@@ -3334,7 +3334,10 @@ fn lifecycle_additions_work() {
     let err = EdgeShard::create(path_string, make_config())
         .err()
         .expect("create over an existing shard must fail");
-    assert!(matches!(err, EdgeError::OperationError { .. }), "got {err:?}");
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "got {err:?}"
+    );
 
     let dir2 = tempfile::tempdir().expect("tempdir failed");
     let fresh = EdgeShard::create(dir2.path().to_string_lossy().into_owned(), make_config())
@@ -5129,4 +5132,171 @@ fn second_load_of_wal_less_shard_reports_shard_locked() {
     first.unload().expect("unload");
     let reopened = EdgeShard::load(path, None).expect("load after unload");
     assert_eq!(reopened.info().expect("info").points_count, 3);
+}
+
+// ── BM25 embeddings and shared optimizer budgets ─────────────────────────────
+
+/// Documents embedded with `Bm25` into an IDF sparse field are found by the
+/// embedding of a query that shares their words, best match first.
+#[test]
+fn bm25_embeddings_search_a_sparse_field() {
+    use qdrant_edge_ffi::config::{Modifier, SparseVectorDataConfig};
+    use qdrant_edge_ffi::{Bm25, Bm25Config};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let config = EdgeConfig {
+        vector_data: HashMap::new(),
+        sparse_vector_data: HashMap::from([(
+            "bm25".to_string(),
+            SparseVectorDataConfig {
+                full_scan_threshold: None,
+                datatype: None,
+                modifier: Some(Modifier::Idf),
+                memory: None,
+            },
+        )]),
+        payload_memory: None,
+        id_tracker_memory: None,
+        wal_enabled: None,
+    };
+    let shard = EdgeShard::load(dir.path().to_string_lossy().into_owned(), Some(config))
+        .expect("load failed");
+    let bm25 = Bm25::new(Some(Bm25Config {
+        language: Some("english".to_string()),
+        ..Default::default()
+    }))
+    .expect("bm25 failed");
+
+    let docs = [
+        (1, "The cat sat on the mat"),
+        (2, "Cats are chasing cats around the garden"),
+        (3, "A dog barked at the mailman"),
+    ];
+    let points = docs
+        .iter()
+        .map(|(id, text)| Point {
+            id: PointId::NumId { value: *id },
+            vector: Vector::Named {
+                map: HashMap::from([(
+                    "bm25".to_string(),
+                    NamedVector::Sparse {
+                        vector: bm25.embed_document(text.to_string()),
+                    },
+                )]),
+            },
+            payload: None,
+        })
+        .collect();
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+
+    let hits = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: NamedVector::Sparse {
+                    vector: bm25.embed_query("cats".to_string()),
+                },
+                using: Some("bm25".to_string()),
+            },
+            limit: 10,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+    let ids: Vec<_> = hits
+        .iter()
+        .map(|hit| match hit.id {
+            PointId::NumId { value } => value,
+            PointId::Uuid { .. } => panic!("unexpected uuid id"),
+        })
+        .collect();
+    // English stemming matches `cat` and `cats`; the document saying it twice
+    // ranks first, and the one without it is not a hit.
+    assert_eq!(ids, vec![2, 1]);
+}
+
+/// One budget shared by two shards, optimizing from two threads, takes both
+/// through a real vacuum, and is reusable afterwards: a permit that leaked
+/// would hang the second call.
+#[test]
+fn optimize_with_a_shared_budget() {
+    use qdrant_edge_ffi::ResourceBudget;
+    use qdrant_edge_ffi::config::OptimizersConfig;
+
+    let budget = ResourceBudget::new(1, 1).expect("budget failed");
+    let dirs: Vec<_> = (0..2)
+        .map(|_| tempfile::tempdir().expect("tempdir failed"))
+        .collect();
+    let shards: Vec<Arc<EdgeShard>> = dirs
+        .iter()
+        .map(|dir| {
+            let shard = EdgeShard::load(
+                dir.path().to_string_lossy().into_owned(),
+                Some(make_config()),
+            )
+            .expect("load failed");
+            shard
+                .set_optimizers_config(OptimizersConfig {
+                    deleted_threshold: Some(0.1),
+                    vacuum_min_vector_number: Some(10),
+                    default_segment_number: None,
+                    max_segment_size_kb: None,
+                    indexing_threshold_kb: None,
+                    prevent_unoptimized: None,
+                })
+                .expect("set_optimizers_config failed");
+            let points = (1..=200u64)
+                .map(|i| Point {
+                    id: PointId::NumId { value: i },
+                    vector: named_vec([i as f32, 1.0, 0.0, 0.0]),
+                    payload: None,
+                })
+                .collect();
+            shard
+                .update(UpdateOperation::upsert_points(points, None, None).expect("upsert failed"))
+                .expect("update failed");
+            let deleted = (1..=100u64).map(|i| PointId::NumId { value: i }).collect();
+            shard
+                .update(UpdateOperation::delete_points(deleted).expect("delete failed"))
+                .expect("delete update failed");
+            shard
+        })
+        .collect();
+
+    let optimized: Vec<bool> = std::thread::scope(|scope| {
+        let handles: Vec<_> = shards
+            .iter()
+            .map(|shard| {
+                let budget = Arc::clone(&budget);
+                scope.spawn(move || {
+                    shard
+                        .optimize_with_budget(budget)
+                        .expect("optimize_with_budget failed")
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert_eq!(optimized, vec![true, true], "each shard must be vacuumed");
+
+    for shard in &shards {
+        assert!(
+            !shard
+                .optimize_with_budget(Arc::clone(&budget))
+                .expect("second optimize failed"),
+            "an optimized shard has nothing left to do",
+        );
+        let count = shard
+            .count(CountRequest {
+                filter: None,
+                exact: true,
+            })
+            .expect("count failed");
+        assert_eq!(count, 100);
+    }
 }

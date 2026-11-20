@@ -9,6 +9,8 @@
 //! [`filter`], [`config`], [`payload_index`], and [`error`]. The crate root
 //! re-exports the whole public surface.
 
+pub mod bm25;
+pub mod budget;
 pub mod config;
 pub mod error;
 pub mod filter;
@@ -20,6 +22,8 @@ pub mod update;
 
 uniffi::setup_scaffolding!();
 
+pub use crate::bm25::{Bm25, Bm25Config};
+pub use crate::budget::ResourceBudget;
 pub use crate::config::OptimizersConfig;
 pub use crate::ops::{
     Bm25Params, ContextPair, CountRequest, DecayKind, Direction, Expression, FacetHit,
