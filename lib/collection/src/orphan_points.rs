@@ -8,9 +8,11 @@
 
 use std::collections::{HashMap, HashSet};
 
+use api::grpc::qdrant::RecoveryPointClockTag;
 use segment::types::PointIdType;
 use shard::operations::affected_points::AffectedPoints;
 use thiserror::Error;
+use tonic::Status;
 
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
@@ -29,6 +31,68 @@ pub struct OrphanPoints {
     pub point_ids: HashSet<PointIdType>,
     /// For each clock, the tag of the last record at or below the source's tick, if any
     pub clocks: Vec<ClockTag>,
+}
+
+impl From<OrphanPoints> for api::grpc::qdrant::OrphanPoints {
+    fn from(orphan_points: OrphanPoints) -> Self {
+        let OrphanPoints { point_ids, clocks } = orphan_points;
+
+        let point_ids = point_ids
+            .into_iter()
+            .map(api::grpc::qdrant::PointId::from)
+            .collect();
+
+        let clocks = clocks
+            .into_iter()
+            .map(|clock_tag| {
+                let ClockTag {
+                    peer_id,
+                    clock_id,
+                    clock_tick,
+                    token,
+                    force: _,
+                } = clock_tag;
+
+                RecoveryPointClockTag {
+                    peer_id,
+                    clock_id,
+                    clock_tick,
+                    token,
+                }
+            })
+            .collect();
+
+        Self { point_ids, clocks }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::OrphanPoints> for OrphanPoints {
+    type Error = Status;
+
+    fn try_from(orphan_points: api::grpc::qdrant::OrphanPoints) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::OrphanPoints { point_ids, clocks } = orphan_points;
+
+        let point_ids = point_ids
+            .into_iter()
+            .map(PointIdType::try_from)
+            .collect::<Result<_, _>>()?;
+
+        let clocks = clocks
+            .into_iter()
+            .map(|clock_tag| {
+                let RecoveryPointClockTag {
+                    peer_id,
+                    clock_id,
+                    clock_tick,
+                    token,
+                } = clock_tag;
+
+                ClockTag::new_with_token(peer_id, clock_id, clock_tick, token)
+            })
+            .collect();
+
+        Ok(Self { point_ids, clocks })
+    }
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -308,6 +372,23 @@ mod tests {
             orphan_points.unwrap_err(),
             OrphanPointsError::UnknownPoints { op_num: 1 },
         );
+    }
+
+    #[test]
+    fn test_orphan_points_grpc_round_trip() {
+        let orphan_points = OrphanPoints {
+            point_ids: ids(&[1, 2, 3]),
+            clocks: vec![
+                ClockTag::new_with_token(PEER_ID, 0, 5, 50),
+                ClockTag::new_with_token(PEER_ID, 1, 7, 70),
+            ],
+        };
+
+        let grpc = api::grpc::qdrant::OrphanPoints::from(orphan_points.clone());
+        let OrphanPoints { point_ids, clocks } = OrphanPoints::try_from(grpc).unwrap();
+
+        assert_eq!(point_ids, orphan_points.point_ids);
+        assert_eq!(clocks, orphan_points.clocks);
     }
 
     #[test]

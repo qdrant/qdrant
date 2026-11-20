@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "collections.proto";
+import "qdrant_common.proto";
 
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
@@ -21,6 +22,9 @@ service CollectionsInternal {
   // Update shard cutoff point
   rpc UpdateShardCutoffPoint(UpdateShardCutoffPointRequest)
       returns (CollectionOperationResponse) {}
+  // Get points changed by orphan operations in the shard's WAL
+  rpc GetShardOrphanPoints(GetShardOrphanPointsRequest)
+      returns (GetShardOrphanPointsResponse) {}
   // Get shard optimizations info
   rpc GetShardOptimizations(GetShardOptimizationsRequest)
       returns (GetShardOptimizationsResponse) {}
@@ -86,6 +90,30 @@ message UpdateShardCutoffPointRequest {
   uint32 shard_id = 2;
   // Cutoff point of the shard
   RecoveryPoint cutoff = 3;
+}
+
+message GetShardOrphanPointsRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Id of the shard
+  uint32 shard_id = 2;
+  // Transfer source's tick for each clock the shard is ahead on,
+  // or tick 0 for a clock the source doesn't know
+  RecoveryPoint source_clocks = 3;
+}
+
+message GetShardOrphanPointsResponse {
+  // Points changed by orphan operations
+  OrphanPoints orphan_points = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message OrphanPoints {
+  // Points the orphan operations can have changed
+  repeated PointId point_ids = 1;
+  // For each clock, the tag of the last record at or below the source's tick
+  repeated RecoveryPointClockTag clocks = 2;
 }
 
 message GetShardOptimizationsRequest {
