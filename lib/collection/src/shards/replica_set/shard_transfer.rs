@@ -7,6 +7,7 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::orphan_points::OrphanPoints;
 use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
@@ -542,6 +543,23 @@ impl ShardReplicaSet {
         };
 
         local_shard.resolve_wal_delta(recovery_point).await
+    }
+
+    /// Find the points changed by orphan operations in the WAL of the local shard
+    ///
+    /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
+    pub async fn find_orphan_points(
+        &self,
+        source_clocks: &RecoveryPoint,
+    ) -> CollectionResult<OrphanPoints> {
+        let local_shard_read = self.local.read().await;
+        let Some(local_shard) = local_shard_read.deref() else {
+            return Err(CollectionError::service_error(
+                "Cannot find orphan points, shard replica set does not have local shard",
+            ));
+        };
+
+        local_shard.find_orphan_points(source_clocks).await
     }
 
     pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {

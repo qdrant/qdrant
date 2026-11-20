@@ -16,6 +16,12 @@ use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::shard::PeerId;
 
+/// Maximum number of points that orphan operations may have changed.
+///
+/// Bounds the size of the orphan points response and the number of points a transfer has to
+/// overwrite. Above it, a full shard transfer is used instead.
+pub const MAX_ORPHAN_POINTS: usize = 10_000;
+
 /// Points that orphan operations changed, found by [`find_orphan_points`].
 #[derive(Clone, Debug, Default)]
 pub struct OrphanPoints {
