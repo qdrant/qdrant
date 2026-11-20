@@ -9,6 +9,10 @@
 //! | `sampling_selective_filter_*`          | tag    | seq <  9%  | sampling → filter iter|
 //! | `sampling_broad_filter_*`              | tag    | seq < 95%  | sampling → facet iter |
 //!
+//! Each test asserts the [`FacetPlan`] it actually executed, not just the
+//! counts: every plan returns identical counts, so a threshold change could
+//! otherwise silently route a test down a different path.
+//!
 //! The sampling → filter iter plan needs the segment to be much larger than the
 //! sampling budget: a filter selective enough to prefer filter iter (< 10% of
 //! candidate mass) is also selective enough for the strategy veto to fall back
@@ -34,6 +38,7 @@ use crate::entry::entry_point::{
 use crate::json_path::JsonPath;
 use crate::payload_json;
 use crate::segment::Segment;
+use crate::segment::read_view::{FacetPlan, default_sample_target};
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
@@ -119,10 +124,16 @@ fn facet_request(key: &str, filter: Option<Filter>) -> FacetParams {
     }
 }
 
-fn run_facet(segment: &Segment, key: &str, filter: Option<Filter>) -> HashMap<FacetValue, usize> {
-    segment
-        .facet(&facet_request(key, filter), &AtomicBool::new(false))
-        .unwrap()
+/// Run the facet with the production sampling budget and assert it executed
+/// the `expected` plan.
+fn run_facet(
+    segment: &Segment,
+    key: &str,
+    filter: Option<Filter>,
+    expected: FacetPlan,
+) -> HashMap<FacetValue, usize> {
+    let request = facet_request(key, filter);
+    run_planned(segment, &request, default_sample_target(&request), expected)
 }
 
 /// Like [`run_facet`], but with an explicit per-segment sampling budget instead
@@ -132,17 +143,29 @@ fn run_facet_with_sample_target(
     key: &str,
     filter: Option<Filter>,
     sample_target: usize,
+    expected: FacetPlan,
 ) -> HashMap<FacetValue, usize> {
-    let request = facet_request(key, filter);
-    segment
+    run_planned(
+        segment,
+        &facet_request(key, filter),
+        sample_target,
+        expected,
+    )
+}
+
+fn run_planned(
+    segment: &Segment,
+    request: &FacetParams,
+    sample_target: usize,
+    expected: FacetPlan,
+) -> HashMap<FacetValue, usize> {
+    let (hits, plan) = segment
         .with_view(|view| {
-            view.approximate_facet_with_sample_target(
-                &request,
-                sample_target,
-                &AtomicBool::new(false),
-            )
+            view.approximate_facet_planned(request, sample_target, &AtomicBool::new(false))
         })
-        .unwrap()
+        .unwrap();
+    assert_eq!(plan, expected, "unexpected facet plan");
+    hits
 }
 
 /// Independently recompute the exact count for every returned value and assert
@@ -180,7 +203,7 @@ fn assert_counts_exact(
 fn full_unfiltered_counts_every_value() {
     let (_dir, segment) = build_segment();
 
-    let hits = run_facet(&segment, COLOUR_KEY, None);
+    let hits = run_facet(&segment, COLOUR_KEY, None, FacetPlan::FullCounts);
 
     // Full strategy enumerates every value exactly.
     assert_eq!(hits.len(), COLOURS.len());
@@ -195,7 +218,12 @@ fn full_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 5 / 100);
 
-    let hits = run_facet(&segment, COLOUR_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        COLOUR_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFilterIter,
+    );
 
     assert!(!hits.is_empty());
     assert_counts_exact(&segment, COLOUR_KEY, Some(&filter), &hits);
@@ -208,7 +236,12 @@ fn full_broad_filter_walks_facet_index() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 90 / 100);
 
-    let hits = run_facet(&segment, COLOUR_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        COLOUR_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFacetIter,
+    );
 
     assert_eq!(hits.len(), COLOURS.len());
     assert_counts_exact(&segment, COLOUR_KEY, Some(&filter), &hits);
@@ -220,7 +253,7 @@ fn full_broad_filter_walks_facet_index() {
 fn sampling_unfiltered_samples_then_counts() {
     let (_dir, segment) = build_segment();
 
-    let hits = run_facet(&segment, TAG_KEY, None);
+    let hits = run_facet(&segment, TAG_KEY, None, FacetPlan::SamplingCounts);
 
     // Sampling returns a strict subset; the full strategy would return all
     // `N_POINTS` values.
@@ -240,7 +273,12 @@ fn sampling_broad_filter_walks_facet_index() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 95 / 100);
 
-    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FacetPlan::SamplingFacetIter,
+    );
 
     assert!(!hits.is_empty());
     assert!(hits.len() < N_POINTS);
@@ -273,6 +311,7 @@ fn sampling_selective_filter_iterates_filter() {
         TAG_KEY,
         Some(filter.clone()),
         FILTER_ITER_SAMPLE_TARGET,
+        FacetPlan::SamplingFilterIter,
     );
 
     assert!(!hits.is_empty());

@@ -41,6 +41,12 @@ const MIN_SAMPLE_TARGET: usize = 1000;
 /// any new candidate value before we give up.
 const MAX_NO_NEW_POINTS: usize = 4096;
 
+/// Per-segment sampling budget used in production: how many distinct candidate
+/// values the sampling phase tries to collect.
+pub(crate) fn default_sample_target(request: &FacetParams) -> usize {
+    MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR))
+}
+
 /// Build a `field MATCH ANY [candidates]` filter.
 fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> Filter {
     let mut strings: Vec<String> = Vec::new();
@@ -68,6 +74,31 @@ fn candidate_match_filter(key: &JsonPath, candidates: &HashSet<FacetValue>) -> F
         key.clone(),
         any_match,
     )))
+}
+
+/// Which strategy [`SegmentReadView::approximate_facet`] executed.
+///
+/// Returned by [`SegmentReadView::approximate_facet_planned`] so tests can
+/// assert the plan a fixture actually reaches, instead of only checking counts
+/// (which every plan produces identically).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FacetPlan {
+    /// The segment has no available points.
+    EmptySegment,
+    /// Full, no filter: read every value's count from the index.
+    FullCounts,
+    /// Full, selective filter: iterate filtered points, hash their values.
+    FullFilterIter,
+    /// Full, broad filter: walk every value's posting against a filter bitmap.
+    FullFacetIter,
+    /// Sampling, no filter: sample candidates, read their counts from the index.
+    SamplingCounts,
+    /// Sampling with a filter, but no sampled point matched it.
+    SamplingNoCandidates,
+    /// Sampling, selective filter: iterate `candidates AND filter`, hash values.
+    SamplingFilterIter,
+    /// Sampling, broad filter: walk candidates' postings against a lazy probe.
+    SamplingFacetIter,
 }
 
 /// How the user filter is use to check individual points.
@@ -104,25 +135,27 @@ where
         request: &FacetParams,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let sample_target = MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR));
-        self.approximate_facet_with_sample_target(request, sample_target, is_stopped)
+        let (hits, _plan) =
+            self.approximate_facet_planned(request, default_sample_target(request), is_stopped)?;
+        Ok(hits)
     }
 
-    /// [`Self::approximate_facet`] with an explicit sampling budget.
+    /// [`Self::approximate_facet`] with an explicit sampling budget, also
+    /// reporting which [`FacetPlan`] was executed.
     ///
     /// The sampling→full veto depends only on `sample_target / available_points`
     /// and the phase-2 choice only on filter selectivity, so tests can reach
     /// the same plans as production on a proportionally smaller fixture.
-    pub(crate) fn approximate_facet_with_sample_target(
+    pub(crate) fn approximate_facet_planned(
         &self,
         request: &FacetParams,
         sample_target: usize,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<HashMap<FacetValue, usize>> {
+    ) -> OperationResult<(HashMap<FacetValue, usize>, FacetPlan)> {
         // Shortcut if this segment has no points.
         let available_points = self.id_tracker.available_point_count();
         if available_points == 0 {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), FacetPlan::EmptySegment));
         }
 
         let facet_index = self.facet_index_for(&request.key)?;
@@ -166,10 +199,11 @@ where
         facet_index: &impl FacetIndex,
         filter_cardinality: Option<(&Filter, CardinalityEstimation)>,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<HashMap<FacetValue, usize>> {
+    ) -> OperationResult<(HashMap<FacetValue, usize>, FacetPlan)> {
         let Some((filter, cardinality)) = filter_cardinality else {
             // No filter: count how many visible points each value has.
-            return self.get_facet_counts(facet_index, None);
+            let hits = self.get_facet_counts(facet_index, None)?;
+            return Ok((hits, FacetPlan::FullCounts));
         };
 
         let available_points = self.id_tracker.available_point_count();
@@ -181,7 +215,8 @@ where
 
         if prefer_filter_iter {
             // Iterate the filter, then hash each value to get counts
-            self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped)
+            let hits = self.visit_filter_iter(facet_index, filter, &cardinality, is_stopped)?;
+            Ok((hits, FacetPlan::FullFilterIter))
         } else {
             // Every posting element will be checked, so materializing the entire filter
             // is cheaper than that many per-point evaluations.
@@ -197,7 +232,8 @@ where
             let probe = FilterProbe::Precomputed(bitmap);
 
             // Check each values' points against the filter, count total per value.
-            self.visit_facet_iter(facet_index, &probe, None, is_stopped)
+            let hits = self.visit_facet_iter(facet_index, &probe, None, is_stopped)?;
+            Ok((hits, FacetPlan::FullFacetIter))
         }
     }
 
@@ -210,13 +246,14 @@ where
         request: &FacetParams,
         sample_target: usize,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<HashMap<FacetValue, usize>> {
+    ) -> OperationResult<(HashMap<FacetValue, usize>, FacetPlan)> {
         let Some(filter) = &request.filter else {
             // No filter: extract each values' count from the index, but sample candidates first
             let candidates =
                 self.collect_candidate_values(sample_target, facet_index, None, is_stopped)?;
 
-            return self.get_facet_counts(facet_index, Some(candidates));
+            let hits = self.get_facet_counts(facet_index, Some(candidates))?;
+            return Ok((hits, FacetPlan::SamplingCounts));
         };
 
         let probe = FilterProbe::Lazy {
@@ -227,7 +264,7 @@ where
         let candidates =
             self.collect_candidate_values(sample_target, facet_index, Some(&probe), is_stopped)?;
         if candidates.is_empty() {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), FacetPlan::SamplingNoCandidates));
         }
 
         let candidate_filter = candidate_match_filter(&request.key, &candidates);
@@ -246,10 +283,13 @@ where
             < ITER_FILTER_INDEX_SELECTIVITY * candidate_cardinality.exp as f64;
         if prefer_filter_iter {
             // Visit the filtered points once, and hash candidate values out of the yielded points.
-            self.visit_filter_iter(facet_index, &new_filter, &new_cardinality, is_stopped)
+            let hits =
+                self.visit_filter_iter(facet_index, &new_filter, &new_cardinality, is_stopped)?;
+            Ok((hits, FacetPlan::SamplingFilterIter))
         } else {
             // Walk each values' posting and check the probe.
-            self.visit_facet_iter(facet_index, &probe, Some(candidates), is_stopped)
+            let hits = self.visit_facet_iter(facet_index, &probe, Some(candidates), is_stopped)?;
+            Ok((hits, FacetPlan::SamplingFacetIter))
         }
     }
 
