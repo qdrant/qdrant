@@ -236,11 +236,13 @@ impl ShardHolder {
             .cloned()
             .unwrap_or_default();
 
-        self.remove_shard_key_mapping(shard_key)?;
-
+        // Drop the shards before forgetting the key: the mapping removal is persisted, so a
+        // failure here would leave nothing behind for a retry to clean up.
         for shard_id in remove_shard_ids {
             self.drop_and_remove_shard(shard_id).await?;
         }
+
+        self.remove_shard_key_mapping(shard_key)?;
 
         Ok(())
     }
