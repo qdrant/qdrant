@@ -5,8 +5,9 @@ The update path writes an operation to the leader's local WAL before it sends th
 the other replicas. If the leader dies in between, the operation exists only on the leader's
 replica, and that replica's clock is one tick ahead of all other replicas.
 
-- If the transfer source has not seen a newer tick of that clock, it can't resolve a WAL delta,
-  and the transfer falls back to a snapshot transfer.
+- If the transfer source has not seen a newer tick of that clock, it asks the receiver which
+  points the orphan operations changed, and resolves the WAL delta from before them. If the orphan
+  operations changed no points, the WAL delta transfer succeeds.
 - After a restart the leader's clocks start from scratch. Its next update through the same clock
   reuses the orphan operation's tick with a new token. The ticks are equal again, but the tokens
   differ, so the source rejects the WAL delta and the transfer falls back to a snapshot transfer.
@@ -26,8 +27,11 @@ from .utils import *
 COLLECTION_NAME = "test_collection"
 SHARD_ID = 0
 
-# Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::HigherThanCurrent`
-HIGHER_THAN_CURRENT_ERROR = "recovery point requests higher clocks this WAL has"
+# Logged by the transfer source when the receiver is ahead on its own clocks
+AHEAD_ON_OWN_CLOCKS_LOG = "Remote shard is ahead on its own clocks"
+
+# Logged by the transfer source when a WAL delta transfer fails and falls back to another method
+FALLBACK_LOG = "Failed to do shard diff transfer"
 
 # Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::Diverged`
 DIVERGED_ERROR = "recovery point has an operation this WAL does not have"
@@ -133,7 +137,7 @@ def scroll_all_points(peer_api_uris: list) -> list:
     return data
 
 
-def test_wal_delta_transfer_rejects_operation_only_on_receiver(tmp_path: pathlib.Path):
+def test_wal_delta_transfer_past_orphan_operation_without_points(tmp_path: pathlib.Path):
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, extra_env=TRANSFER_LIMITS_ENV)
@@ -183,11 +187,13 @@ def test_wal_delta_transfer_rejects_operation_only_on_receiver(tmp_path: pathlib
     wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
     wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
 
-    # A rejected R's recovery point and fell back to another transfer method
+    # A found R ahead on its own clock, and resolved the WAL delta from before the delay operation.
+    # The delay operation changed no points, so there was nothing to overwrite, and no fallback
     a_log = pathlib.Path(init_pytest_log_folder()) / "peer_0_0.log"
-    assert HIGHER_THAN_CURRENT_ERROR in a_log.read_text()
+    a_log_text = a_log.read_text()
+    assert AHEAD_ON_OWN_CLOCKS_LOG in a_log_text
+    assert FALLBACK_LOG not in a_log_text
 
-    # The fallback transfer replaced R's shard, so all replicas are consistent
     check_data_consistency(scroll_all_points(peer_api_uris))
 
 

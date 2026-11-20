@@ -1,13 +1,17 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use common::defaults;
 use parking_lot::Mutex;
+use segment::types::PointIdType;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
+use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::SharedShardHolder;
@@ -35,7 +39,9 @@ use crate::shards::shard_holder::SharedShardHolder;
 /// - Resolve WAL delta locally
 ///   Find a point in our current WAL to transfer all operations from to the remote. If we cannot
 ///   resolve a WAL delta, the transfer is aborted. If the resolved delta is empty, we start from
-///   our last WAL entry to ensure the remote does not miss any new updates.
+///   our last WAL entry to ensure the remote does not miss any new updates. If the remote is ahead
+///   of us on its own clocks because of orphan operations, we resolve the delta from before them.
+///   See [`resolve_wal_delta`].
 /// - Queue proxy local shard
 ///   We queue all operations from the WAL delta point for the remote.
 /// - Transfer queued updates to remote, transform into forward proxy
@@ -102,18 +108,35 @@ pub(super) async fn transfer_wal_delta(
 
     // Resolve WAL delta, get the version to start the diff from
     let next_wal_version = replica_set.wal_version().await?.map(|n| n + 1);
-    let wal_delta_version = replica_set
-        .resolve_wal_delta(recovery_point)
-        .await
-        .map_err(|err| {
-            CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
-        })?
-        // If diff is empty, queue and forward from our version to prevent losing new updates
-        // See: <https://github.com/qdrant/qdrant/pull/5271>
-        .or_else(|| {
-            log::trace!("Remote shard is up-to-date and WAL diff is empty, queueing newly incoming updates (version: {next_wal_version:?})");
-            next_wal_version
-        });
+    let ResolvedWalDelta {
+        version,
+        orphan_point_ids,
+    } = resolve_wal_delta(
+        &replica_set,
+        &remote_shard,
+        collection_id,
+        shard_id,
+        recovery_point,
+    )
+    .await
+    .map_err(|err| {
+        CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
+    })?;
+
+    // We can't overwrite points changed by orphan operations yet, fall back to another method
+    if !orphan_point_ids.is_empty() {
+        return Err(CollectionError::service_error(format!(
+            "Remote shard has {} points changed by orphan operations",
+            orphan_point_ids.len(),
+        )));
+    }
+
+    // If diff is empty, queue and forward from our version to prevent losing new updates
+    // See: <https://github.com/qdrant/qdrant/pull/5271>
+    let wal_delta_version = version.or_else(|| {
+        log::trace!("Remote shard is up-to-date and WAL diff is empty, queueing newly incoming updates (version: {next_wal_version:?})");
+        next_wal_version
+    });
 
     // Queue proxy local shard, start flushing updates to remote
     progress.lock().set_stage(TransferStage::Proxifying);
@@ -168,4 +191,77 @@ pub(super) async fn transfer_wal_delta(
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
 
     Ok(())
+}
+
+/// WAL delta resolved for a remote shard
+struct ResolvedWalDelta {
+    /// WAL record to transfer from, `None` if the remote shard has all our records
+    version: Option<u64>,
+    /// Points changed by orphan operations on the remote shard, to overwrite with our versions
+    orphan_point_ids: HashSet<PointIdType>,
+}
+
+/// Resolve the WAL delta for the recovery point of the remote shard
+///
+/// The remote shard may be ahead of us on its own clocks, because it has orphan operations: its
+/// peer wrote them to its local WAL as update leader, and died before sending them to the other
+/// replicas. Then we ask the remote shard which points its orphan operations changed, lower its
+/// recovery point to before them, and resolve the delta for that.
+///
+/// If the remote shard is ahead of us on clocks of other peers, we can't tell why, and fail.
+async fn resolve_wal_delta(
+    replica_set: &ShardReplicaSet,
+    remote_shard: &RemoteShard,
+    collection_id: &CollectionId,
+    shard_id: ShardId,
+    mut recovery_point: RecoveryPoint,
+) -> CollectionResult<ResolvedWalDelta> {
+    let newest_clocks = replica_set.shard_recovery_point().await?;
+    let ahead_clocks = recovery_point.clocks_newer_than(&newest_clocks);
+
+    let orphan_point_ids = if ahead_clocks.is_empty() {
+        HashSet::new()
+    } else {
+        if ahead_clocks.has_clocks_of_other_peers(remote_shard.peer_id) {
+            return Err(CollectionError::service_error(format!(
+                "Remote shard is ahead on clocks of other peers: {ahead_clocks}",
+            )));
+        }
+
+        // Our tick for each clock the remote shard is ahead on, tick 0 if we don't know the clock
+        let source_clocks = ahead_clocks.same_clocks_in(&newest_clocks);
+
+        let orphan_points = remote_shard
+            .shard_orphan_points(collection_id, shard_id, &source_clocks)
+            .await?;
+
+        // Lower the recovery point to before the orphan operations: drop clocks we don't know, and
+        // use the remote shard's last record at or below our tick, or our own tick if it has none
+        for clock_tag in source_clocks.iter_as_clock_tags() {
+            if clock_tag.clock_tick == 0 {
+                recovery_point.remove_clock(clock_tag);
+            } else {
+                recovery_point.set_clock(clock_tag);
+            }
+        }
+
+        for clock_tag in orphan_points.clocks {
+            recovery_point.set_clock(clock_tag);
+        }
+
+        log::debug!(
+            "Remote shard is ahead on its own clocks {ahead_clocks}, \
+             orphan operations changed {} points",
+            orphan_points.point_ids.len(),
+        );
+
+        orphan_points.point_ids
+    };
+
+    let version = replica_set.resolve_wal_delta(recovery_point).await?;
+
+    Ok(ResolvedWalDelta {
+        version,
+        orphan_point_ids,
+    })
 }
