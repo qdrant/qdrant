@@ -102,6 +102,8 @@ zerocopy = { workspace = true }
 zstd = { workspace = true }
 vaporetto = { version = "0.7.0" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "~1.2.3" }
+# Pin to keep Unicode 17.0.0 (UAX #29) word boundaries stable for persisted text indexes.
+unicode-segmentation = "=1.13.3"
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
 # (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
 sysinfo = { workspace = true }

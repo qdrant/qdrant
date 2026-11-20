@@ -3,6 +3,9 @@
 #![allow(deprecated)]
 
 use std::borrow::Cow;
+
+use unicode_segmentation::UnicodeSegmentation;
+
 mod ascii_folding;
 mod code;
 mod japanese;
@@ -47,6 +50,26 @@ impl WordTokenizer {
         mut callback: C,
     ) {
         for token in text.split(|c| !char::is_alphanumeric(c)) {
+            let Some(token_cow) = tokens_processor.process_token(token, true) else {
+                continue;
+            };
+
+            callback(token_cow);
+        }
+    }
+}
+
+/// Splits text along Unicode 17.0.0 (UAX #29 revision 47) word boundaries, keeping segments
+/// that contain at least one alphabetic or numeric character.
+struct UnicodeTokenizer;
+
+impl UnicodeTokenizer {
+    fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        text: &'a str,
+        tokens_processor: &TokensProcessor,
+        mut callback: C,
+    ) {
+        for token in text.unicode_words() {
             let Some(token_cow) = tokens_processor.process_token(token, true) else {
                 continue;
             };
@@ -253,6 +276,7 @@ impl Tokenizer {
         match tokenizer_type {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, tp, callback),
             TokenizerType::Word => WordTokenizer::tokenize(text, tp, callback),
+            TokenizerType::Unicode => UnicodeTokenizer::tokenize(text, tp, callback),
             TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, tp, callback),
             TokenizerType::Prefix => match kind {
                 TokenizerTextKind::Document | TokenizerTextKind::Phrase => {
@@ -296,6 +320,7 @@ impl Tokenizer {
             TokenizerType::Prefix
             | TokenizerType::Whitespace
             | TokenizerType::Word
+            | TokenizerType::Unicode
             | TokenizerType::Multilingual => {
                 self.tokenize_doc(text, |token| callback(token, false))
             }
@@ -371,6 +396,80 @@ mod tests {
         assert_eq!(tokens.get(1), Some(&Cow::Borrowed("world")));
         assert_eq!(tokens.get(2), Some(&Cow::Borrowed("привет")));
         assert_eq!(tokens.get(3), Some(&Cow::Borrowed("мир")));
+    }
+
+    #[test]
+    fn test_unicode_tokenizer() {
+        assert_eq!(unicode_segmentation::UNICODE_VERSION, (17, 0, 0));
+        let tokenizer = Tokenizer::new_from_text_index_params(&TextIndexParams {
+            tokenizer: TokenizerType::Unicode,
+            ..Default::default()
+        });
+        let text = "We can't refund $19.99; meet at 10:30 a.m. in O'Connor's office ($1,250.50) for v1.20.2 on docs.qdrant.tech (max_connections).";
+        let expected = [
+            "we",
+            "can't",
+            "refund",
+            "19.99",
+            "meet",
+            "at",
+            "10",
+            "30",
+            "a.m",
+            "in",
+            "o'connor's",
+            "office",
+            "1,250.50",
+            "for",
+            "v1.20.2",
+            "on",
+            "docs.qdrant.tech",
+            "max_connections",
+        ];
+
+        for kind in [
+            TokenizerTextKind::Document,
+            TokenizerTextKind::Query,
+            TokenizerTextKind::RankingQuery,
+            TokenizerTextKind::Phrase,
+        ] {
+            let mut tokens = Vec::new();
+            tokenizer.tokenize(kind, text, |token| tokens.push(token));
+            assert_eq!(tokens, expected);
+        }
+    }
+
+    #[test]
+    fn test_unicode_tokenizer_processing() {
+        let params: TextIndexParams = serde_json::from_value(serde_json::json!({
+            "type": "text",
+            "tokenizer": "unicode",
+            "ascii_folding": true,
+            "min_token_len": 3,
+            "max_token_len": 7,
+            "stopwords": "english"
+        }))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&params).unwrap()["tokenizer"],
+            "unicode"
+        );
+        let params = TextIndexParams {
+            stemmer: Some(StemmingAlgorithm::Snowball(SnowballParams {
+                r#type: Snowball::Snowball,
+                language: SnowballLanguage::English,
+            })),
+            ..params
+        };
+        let tokenizer = Tokenizer::new_from_text_index_params(&params);
+        let mut tokens = Vec::new();
+        // Curly apostrophe `’` folds to `'`, so `"isn’t"` matches `ENGLISH_STOPWORDS` and
+        // `"company’s"` stems to `"compani"` without emitting a stray `"s"` token.
+        tokenizer.tokenize_doc(
+            "THE RUNNING company’s servers isn’t ox extraordinary",
+            |token| tokens.push(token),
+        );
+        assert_eq!(tokens, ["run", "compani", "server"]);
     }
 
     #[test]

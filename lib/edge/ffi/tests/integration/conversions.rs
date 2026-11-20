@@ -1217,6 +1217,15 @@ fn text_index_params_full_fidelity_round_trip() {
         })
     ));
     assert_eq!(config.enable_hnsw, Some(false));
+
+    assert_eq!(
+        segment_index::TokenizerType::from(TokenizerType::Unicode),
+        segment_index::TokenizerType::Unicode
+    );
+    assert!(matches!(
+        TokenizerType::from(segment_index::TokenizerType::Unicode),
+        TokenizerType::Unicode
+    ));
 }
 
 #[test]

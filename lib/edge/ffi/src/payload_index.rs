@@ -372,6 +372,8 @@ pub enum TokenizerType {
     Multilingual,
     /// Split source code identifiers into subwords (camelCase, snake_case, acronyms).
     Code,
+    /// Unicode 17.0.0 word boundaries (UAX #29 revision 47).
+    Unicode,
 }
 
 impl From<TokenizerType> for segment_index::TokenizerType {
@@ -382,6 +384,7 @@ impl From<TokenizerType> for segment_index::TokenizerType {
             TokenizerType::Word => segment_index::TokenizerType::Word,
             TokenizerType::Multilingual => segment_index::TokenizerType::Multilingual,
             TokenizerType::Code => segment_index::TokenizerType::Code,
+            TokenizerType::Unicode => segment_index::TokenizerType::Unicode,
         }
     }
 }
@@ -394,6 +397,7 @@ impl From<segment_index::TokenizerType> for TokenizerType {
             segment_index::TokenizerType::Word => TokenizerType::Word,
             segment_index::TokenizerType::Multilingual => TokenizerType::Multilingual,
             segment_index::TokenizerType::Code => TokenizerType::Code,
+            segment_index::TokenizerType::Unicode => TokenizerType::Unicode,
         }
     }
 }

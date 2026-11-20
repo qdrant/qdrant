@@ -195,6 +195,7 @@ impl From<segment::data_types::index::TokenizerType> for TokenizerType {
             segment::data_types::index::TokenizerType::Multilingual => TokenizerType::Multilingual,
             segment::data_types::index::TokenizerType::Word => TokenizerType::Word,
             segment::data_types::index::TokenizerType::Code => TokenizerType::Code,
+            segment::data_types::index::TokenizerType::Unicode => TokenizerType::Unicode,
         }
     }
 }
@@ -580,6 +581,7 @@ impl TryFrom<TokenizerType> for segment::data_types::index::TokenizerType {
             TokenizerType::Whitespace => Ok(segment::data_types::index::TokenizerType::Whitespace),
             TokenizerType::Word => Ok(segment::data_types::index::TokenizerType::Word),
             TokenizerType::Code => Ok(segment::data_types::index::TokenizerType::Code),
+            TokenizerType::Unicode => Ok(segment::data_types::index::TokenizerType::Unicode),
         }
     }
 }
@@ -4018,6 +4020,15 @@ mod text_scoring_tests {
         assert_eq!(round_trip(scoring.clone()), scoring);
         let plain = SegmentTextIndexParams::default();
         assert_eq!(round_trip(plain.clone()), plain);
+    }
+
+    #[test]
+    fn unicode_tokenizer_survives_grpc_round_trip() {
+        let params = SegmentTextIndexParams {
+            tokenizer: segment::data_types::index::TokenizerType::Unicode,
+            ..SegmentTextIndexParams::default()
+        };
+        assert_eq!(round_trip(params.clone()), params);
     }
 
     #[test]
