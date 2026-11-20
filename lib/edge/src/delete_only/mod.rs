@@ -151,6 +151,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 &segment.segment_path,
                 &segment.segment_config,
                 segment.writer_state(),
+                None,
             )?
             .tombstone_points(&points, version, self.delete_versioning)?;
             deleted += points.len();

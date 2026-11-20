@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use common::ambient::{self, Handoff};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
+use common::universal_io::{CachedFs, CachedReadFs, ListedFile, UniversalAppendFs};
 use rayon::ThreadPool;
 use rayon::iter::{
     IntoParallelRefIterator, IntoParallelRefMutIterator as _, ParallelIterator as _,
@@ -33,6 +33,11 @@ pub struct AppendableSegment<Fs: UniversalAppendFs> {
     /// What the id tracker appends through and
     /// [`store_components`](Self::store_components) opens with.
     fs: CachedFs<Fs>,
+    /// Whether `fs` holds a listing snapshot taken after this writer's last
+    /// write, handed over by [`seed_file_info`](Self::seed_file_info): the
+    /// next [`store_points`](Self::store_points) uses it instead of taking
+    /// its own LIST.
+    seeded: bool,
     segment_path: PathBuf,
     config: SegmentConfig,
     /// The components a stored point's data goes into, opened on the first
@@ -197,17 +202,26 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// Opening is not free of side effects: points left on slots whose
     /// versions were never committed are retired here, since which components
     /// got to write their data is unknowable.
+    ///
+    /// `listing`, when given, is a LIST covering the segment directory taken
+    /// after the last write to it — typically the one the read phase opened
+    /// over — and seeds the snapshot the first
+    /// [`store_points`](Self::store_points) runs on (see
+    /// [`seed_file_info`](Self::seed_file_info)). It is ignored when the open
+    /// itself writes, by retiring pending inserts.
     pub fn open(
         fs: Fs,
         segment_path: &Path,
         config: &SegmentConfig,
         state: AppendableIdTrackerState,
+        listing: Option<&[ListedFile]>,
     ) -> OperationResult<Self> {
         let AppendableIdTrackerState {
             max_claimed_internal_id,
             pending_inserts,
             mappings_end,
         } = state;
+        let listing = listing.filter(|_| pending_inserts.is_empty());
 
         let id_tracker = UpdateOnlyAppendableIdTracker::new(
             &fs,
@@ -217,15 +231,33 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             mappings_end,
         )?;
 
-        let fs = CachedFs::new(fs, segment_path)?;
+        let mut fs = CachedFs::new(fs, segment_path)?;
+        if let Some(listing) = listing {
+            fs.cache_file_info_from(listing);
+        }
 
         Ok(Self {
             id_tracker,
             fs,
+            seeded: listing.is_some(),
             segment_path: segment_path.to_path_buf(),
             config: config.clone(),
             store: None,
         })
+    }
+
+    /// Hand the writer a LIST covering its segment directory, so the next
+    /// [`store_points`](Self::store_points) runs on it instead of taking its
+    /// own: the shard lists once for every segment after a batch, and the
+    /// write target's next batch starts from that listing.
+    ///
+    /// `listing` must be taken after the last write to the segment — by this
+    /// writer or anyone else — or a store would trust stale sizes and miss
+    /// files created since. The writer is assumed to be the directory's only
+    /// writer, as it already is for its slot claims.
+    pub fn seed_file_info(&mut self, listing: &[ListedFile]) {
+        self.fs.cache_file_info_from(listing);
+        self.seeded = true;
     }
 
     /// Lends the fs alongside the components, so a caller holding the mutable
@@ -272,8 +304,11 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         }
         let points = &*points;
 
-        // Ensure fresh new view of the files
-        self.fs.cache_file_info()?;
+        // Ensure fresh new view of the files: a seeded snapshot is one, until
+        // this store writes.
+        if !std::mem::take(&mut self.seeded) {
+            self.fs.cache_file_info()?;
+        }
 
         let operations: Vec<MappingOperation> = points
             .iter()
@@ -354,6 +389,8 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         version: SeqNumberType,
         versioning: DeleteVersioning,
     ) -> OperationResult<()> {
+        // A write: whatever listing seeded the fs predates it.
+        self.seeded = false;
         self.id_tracker.delete_points(
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),

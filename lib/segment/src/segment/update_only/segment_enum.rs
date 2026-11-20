@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use common::types::PointOffsetType;
-use common::universal_io::UniversalAppendFs;
+use common::universal_io::{ListedFile, UniversalAppendFs};
 
 use super::{AppendableSegment, DeleteOnlySegment, WriterIdTrackerState};
 use crate::common::operation_error::OperationResult;
@@ -20,15 +20,20 @@ pub enum UpdateOnlySegmentEnum<Fs: UniversalAppendFs> {
 impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
     /// Open a writer over the segment directory at `segment_path`, of the
     /// kind the read phase's `id_tracker_state` dictates.
+    ///
+    /// `listing` is the LIST the read phase opened over, if the caller has it:
+    /// an appendable writer starts from it rather than listing again, see
+    /// [`AppendableSegment::open`]. A delete-only writer has no use for it.
     pub fn open(
         fs: Fs,
         segment_path: &Path,
         config: &SegmentConfig,
         id_tracker_state: WriterIdTrackerState,
+        listing: Option<&[ListedFile]>,
     ) -> OperationResult<Self> {
         Ok(match id_tracker_state {
             WriterIdTrackerState::Appendable(state) => Self::Appendable(Box::new(
-                AppendableSegment::open(fs, segment_path, config, state)?,
+                AppendableSegment::open(fs, segment_path, config, state, listing)?,
             )),
             WriterIdTrackerState::DeleteOnly(state) => {
                 Self::DeleteOnly(DeleteOnlySegment::open(fs, segment_path, state)?)
