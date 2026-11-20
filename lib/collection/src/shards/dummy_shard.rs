@@ -18,6 +18,7 @@ use shard::snapshots::snapshot_manifest::SnapshotManifest;
 
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::OperationWithClockTag;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
     PointRequestInternal, ShardStatus, UpdateResult, UpdateStatus,
@@ -42,7 +43,10 @@ impl DummyShard {
         Ok(SnapshotManifest::default())
     }
 
-    pub fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub fn on_optimizer_config_update(
+        &self,
+        _optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         let error = self.dummy_error("Update optimizer config");
         log::error!("{error}");
         // We can't fail this operation because this operation is part of consensus loop

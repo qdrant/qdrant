@@ -392,12 +392,15 @@ impl Collection {
         let shards_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
         let recreate_state = self.recreate_optimizers_state.clone();
+        let optimizers_overwrite = self.optimizers_overwrite.clone();
         tokio::task::spawn(async move {
             loop {
                 // Run the recreation as a child task, so a panic is contained (surfaced as a
                 // `JoinError`) and never unwinds the coordinator loop below - which would otherwise
                 // leave `running` stuck and wedge all future recreations.
-                match tokio::task::spawn(Self::recreate_optimizers(shards_holder.clone())).await {
+                let recreate =
+                    Self::recreate_optimizers(shards_holder.clone(), optimizers_overwrite.clone());
+                match tokio::task::spawn(recreate).await {
                     Ok(Ok(())) => {}
                     Ok(Err(err)) => log::error!(
                         "Failed to recreate optimizers for collection {collection_id} in background: {err}",
@@ -423,14 +426,20 @@ impl Collection {
     /// Implementation behind [`Collection::recreate_optimizers_background`]. Takes an owned
     /// [`SharedShardHolder`] so the returned future is `'static` and can be spawned as a task.
     ///
+    /// `optimizers_overwrite` is the node-local `optimizers_overwrite` from the storage config. It
+    /// is applied on top of the collection's saved optimizer config when rebuilding optimizers.
+    ///
     /// # Cancel safety
     ///
     /// This method is not cancel safe and must be run to completion. Early cancellation may result in dead workers.
-    async fn recreate_optimizers(shards_holder: SharedShardHolder) -> CollectionResult<()> {
+    async fn recreate_optimizers(
+        shards_holder: SharedShardHolder,
+        optimizers_overwrite: Option<OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         let shard_holder = shards_holder.read().await;
-        let updates = shard_holder
-            .all_shards()
-            .map(|replica_set| replica_set.on_optimizer_config_update());
+        let updates = shard_holder.all_shards().map(|replica_set| {
+            replica_set.on_optimizer_config_update(optimizers_overwrite.as_ref())
+        });
 
         // `on_optimizer_config_update` is *not* cancel safe: once a shard has stopped its update
         // workers it must reach `run_workers` before the future is dropped. `try_join_all` cancels
