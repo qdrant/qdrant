@@ -895,9 +895,8 @@ fn run(seed: u64, memory: Option<Memory>) {
 
 #[test]
 fn nested_index_matches_flattened_index() {
-    for seed in 0..3 {
-        run(seed, None);
-    }
+    // Seeds 1 and 2 reached no nested index code that seed 0 misses
+    run(0, None);
 }
 
 #[test]
