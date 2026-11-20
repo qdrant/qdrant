@@ -46,7 +46,7 @@ jobs:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
         # Each OS runs its tests on two runners; each builds the tests and runs half of them
-        partition: [ 1, 2 ]
+        partition: [ 1 ]
 
     steps:
     # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
@@ -104,7 +104,8 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
-      run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
+      # TEMP: only the segment lib tests
+      run: cargo test -p segment --lib --no-run --locked
     # Test temp files go on tmpfs: the `model_testing` harness gates preallocate 32 MB gridstore
     # pages per storage per segment and are dominated by IO on a disk-backed temp dir. On
     # ubuntu-26.04 `/dev/shm` carries a per-user quota that the gates exceed (os error 122), so
@@ -121,7 +122,13 @@ jobs:
       shell: bash
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.
-      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked --partition count:${{ matrix.partition }}/2 --no-tests=warn
+      # TEMP: nested_index tests one at a time, with their timing output
+      run: cargo nextest run -p segment --lib --profile ci --locked --test-threads 1 --success-output immediate -E 'test(/nested_index|append_only_storages/)'
+    - name: Run tests with temp files on disk
+      # TEMP: the same tests on ubuntu without tmpfs, to compare with macOS and Windows
+      if: matrix.os == 'ubuntu-latest'
+      run: TMPDIR="$RUNNER_TEMP" cargo nextest run -p segment --lib --profile ci --locked --test-threads 1 --success-output immediate -E 'test(/nested_index|append_only_storages/)'
+      shell: bash
     - name: Upload test report
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:

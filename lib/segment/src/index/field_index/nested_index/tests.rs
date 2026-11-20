@@ -50,6 +50,12 @@ mod update_only;
 
 const NUM_POINTS: u64 = 200;
 
+/// TEMP: prints the time since the previous lap.
+fn lap(t: &mut std::time::Instant, label: &str) {
+    eprintln!("TIMING {label}: {:.3}s", t.elapsed().as_secs_f64());
+    *t = std::time::Instant::now();
+}
+
 /// Indexed fields inside the `offers` array, with their type.
 const FIELDS: &[(&str, PayloadSchemaType)] = &[
     ("offers[].price", PayloadSchemaType::Integer),
@@ -818,12 +824,17 @@ fn run(seed: u64, memory: Option<Memory>) {
     let mut rng = StdRng::seed_from_u64(seed);
     let _scope = ambient::test_guard();
 
+    let t = &mut std::time::Instant::now();
     let mut pair = Pair::new(dir.path());
+    lap(t, "run: new pair");
 
     // Indexes built from existing payloads, then updated with new points
     pair.upsert(&mut rng, 0..NUM_POINTS / 2);
+    lap(t, "run: upsert 1st half");
     pair.create_indexes(memory);
+    lap(t, "run: create indexes");
     pair.upsert(&mut rng, NUM_POINTS / 2..NUM_POINTS);
+    lap(t, "run: upsert 2nd half");
     for &(field, _) in FIELDS {
         let field = JsonPath::from_str(field).unwrap();
         let is_nested = |segment: &Segment| {
@@ -839,9 +850,12 @@ fn run(seed: u64, memory: Option<Memory>) {
         );
     }
     assert_equal(&pair.flat, &pair.nested);
+    lap(t, "run: assert_equal 1");
 
     pair.mutate(&mut rng, NUM_POINTS as usize);
+    lap(t, "run: mutate 1");
     assert_equal(&pair.flat, &pair.nested);
+    lap(t, "run: assert_equal 2");
 
     // Rebuild one per-element index over the element map, which has moved ranges by now
     let (field, field_type) = FIELDS[1];
@@ -856,7 +870,9 @@ fn run(seed: u64, memory: Option<Memory>) {
     pair.nested
         .create_field_index(pair.op_num, &key, Some(&schema(field_type, true, memory)))
         .unwrap();
+    lap(t, "run: recreate index");
     assert_equal(&pair.flat, &pair.nested);
+    lap(t, "run: assert_equal 3");
 
     let Pair {
         flat,
@@ -868,13 +884,19 @@ fn run(seed: u64, memory: Option<Memory>) {
         nested: reload(nested),
         op_num,
     };
+    lap(t, "run: reload");
     assert_equal(&pair.flat, &pair.nested);
+    lap(t, "run: assert_equal 4");
 
     pair.mutate(&mut rng, NUM_POINTS as usize / 2);
+    lap(t, "run: mutate 2");
     assert_equal(&pair.flat, &pair.nested);
+    lap(t, "run: assert_equal 5");
 
     let mut flat = optimize(&pair.flat, &dir.path().join("flat_optimized"));
+    lap(t, "run: optimize flat");
     let mut nested = optimize(&pair.nested, &dir.path().join("nested_optimized"));
+    lap(t, "run: optimize nested");
     assert!(
         nested.payload_index.borrow().field_indexes[&JsonPath::from_str(FIELDS[0].0).unwrap()]
             .iter()
@@ -882,6 +904,7 @@ fn run(seed: u64, memory: Option<Memory>) {
         "optimized segment must keep per-element indexes",
     );
     assert_equal(&flat, &nested);
+    lap(t, "run: assert_equal 6");
 
     // Deletions are the only updates of a non-appendable segment
     for id in (0..NUM_POINTS).step_by(7) {
@@ -889,8 +912,17 @@ fn run(seed: u64, memory: Option<Memory>) {
         flat.delete_point(pair.op_num, id.into()).unwrap();
         nested.delete_point(pair.op_num, id.into()).unwrap();
     }
+    lap(t, "run: deletions");
     assert_equal(&flat, &nested);
-    assert_equal(&reload(flat), &reload(nested));
+    lap(t, "run: assert_equal 7");
+    let (flat, nested) = (reload(flat), reload(nested));
+    lap(t, "run: final reload");
+    assert_equal(&flat, &nested);
+    lap(t, "run: assert_equal 8");
+    drop((flat, nested, pair));
+    lap(t, "run: drop segments");
+    drop(dir);
+    lap(t, "run: remove temp dir");
 }
 
 #[test]
@@ -1130,17 +1162,21 @@ fn indexes_follow_input_paths(
 ) {
     let dir = Builder::new().prefix("index_input_path").tempdir().unwrap();
     let _scope = ambient::test_guard();
+    let t = &mut std::time::Instant::now();
     let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    lap(t, "paths: build segment");
     let field = JsonPath::from_str("offers[].price").unwrap();
     let schema = schema(PayloadSchemaType::Integer, nested, None);
     if build_before_points {
         segment
             .create_field_index(1, &field, Some(&schema))
             .unwrap();
+        lap(t, "paths: create index (empty)");
     }
     segment
         .upsert_point(2, 1.into(), only_default_vector(&[1.0, 1.0]))
         .unwrap();
+    lap(t, "paths: upsert point");
     segment
         .set_full_payload(
             2,
@@ -1150,10 +1186,12 @@ fn indexes_follow_input_paths(
             },
         )
         .unwrap();
+    lap(t, "paths: set payload");
     if !build_before_points {
         segment
             .create_field_index(3, &field, Some(&schema))
             .unwrap();
+        lap(t, "paths: create index (with point)");
     }
 
     let check = |segment: &Segment, elements: usize, prices: &[i64], is_null: bool| {
@@ -1214,7 +1252,9 @@ fn indexes_follow_input_paths(
         .delete_payload(6, 1.into(), &"offers[4].price".parse().unwrap())
         .unwrap();
     check(&segment, 5, &[20], false);
+    lap(t, "paths: 3 payload updates");
     segment = reload(segment);
+    lap(t, "paths: reload");
     check(&segment, 5, &[20], false);
 
     segment
@@ -1238,6 +1278,11 @@ fn indexes_follow_input_paths(
         .delete_payload(10, 1.into(), &"offers".parse().unwrap())
         .unwrap();
     check(&segment, 0, &[], false);
+    lap(t, "paths: 4 payload updates");
+    drop(segment);
+    lap(t, "paths: drop segment");
+    drop(dir);
+    lap(t, "paths: remove temp dir");
 }
 
 /// Words of the per-element text tests, skewed so queries mix common and rare ones.
