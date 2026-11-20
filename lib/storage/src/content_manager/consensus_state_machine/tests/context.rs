@@ -31,6 +31,7 @@ fn from_storage_config() {
     assert_eq!(context, expected);
 }
 
+/// Build distinct sentinel values to verify the storage-to-node configuration projection.
 fn storage_config() -> StorageConfig {
     // Give copied and ignored fields of the same type different values,
     // so the test catches mapping the wrong field into `NodeContext`
@@ -51,6 +52,7 @@ fn storage_config() -> StorageConfig {
         temp_path: None,
         optimizers_overwrite: Some(optimizers_overwrite()),
         performance: PerformanceConfig {
+            dynamic_search_batch_max: 0,
             max_search_threads: 1,
             max_optimization_runtime_threads: 1,
             update_rate_limit: None,

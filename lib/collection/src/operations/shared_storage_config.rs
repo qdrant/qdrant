@@ -27,6 +27,8 @@ pub const DEFAULT_SNAPSHOTS_PATH: &str = "./snapshots";
 /// Vales of this struct are not persisted.
 #[derive(Clone, Debug)]
 pub struct SharedStorageConfig {
+    /// Maximum compatible cross-request search batch; zero disables coalescing.
+    pub dynamic_search_batch_max: usize,
     pub update_queue_size: usize,
     pub node_type: NodeType,
     pub handle_collection_load_errors: bool,
@@ -47,6 +49,7 @@ pub struct SharedStorageConfig {
 impl Default for SharedStorageConfig {
     fn default() -> Self {
         Self {
+            dynamic_search_batch_max: 0,
             update_queue_size: DEFAULT_UPDATE_QUEUE_SIZE,
             node_type: Default::default(),
             handle_collection_load_errors: false,
@@ -90,6 +93,7 @@ impl SharedStorageConfig {
             NodeType::Listener => DEFAULT_UPDATE_QUEUE_SIZE_LISTENER,
         });
         Self {
+            dynamic_search_batch_max: 0,
             update_queue_size,
             node_type,
             handle_collection_load_errors,
