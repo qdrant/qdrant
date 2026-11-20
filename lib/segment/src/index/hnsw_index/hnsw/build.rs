@@ -19,7 +19,6 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph::HnswGraph;
-use crate::index::hnsw_index::graph_algorithm::MainGraphAlgorithm;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::{GraphLinksFormatParam, StorageGraphLinksVectors};
@@ -196,7 +195,7 @@ impl HNSWIndex {
                 gpu_device,
                 has_payload_blocks: progress_payload_blocks.is_some(),
                 remote,
-                main_graph: MainGraphAlgorithm::from_feature_flags(),
+                main_graph: pipnn_builder::main_graph_algorithm(),
             },
         )?;
 

@@ -21,7 +21,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry};
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
+use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs, with_pipnn_min_points};
 use segment::index::hnsw_index::remote::executor::RunOutcome;
 use segment::index::hnsw_index::remote::loopback::{LoopbackBehavior, LoopbackIndexer};
 use segment::index::hnsw_index::remote::{
@@ -334,7 +334,9 @@ fn remote_pipnn_graph_is_accepted() {
         )
         .with_pipnn_min_points(1000),
     );
-    let (_remote_dir, remote) = build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
+    // PiPNN is off by default: core asks the indexer for it only where it is enabled
+    let (_remote_dir, remote) =
+        with_pipnn_min_points(1000, || build_with(&indexer, &segment, &stopped, &mut rng)).unwrap();
     assert_eq!(
         indexer.wait_outcomes(1, Duration::from_secs(5)),
         vec![RunOutcome::Uploaded],

@@ -12,7 +12,7 @@ use super::healing_builder::HealingBuilder;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
 use super::payload_blocks::{FieldBlocks, PayloadBlock};
-use super::pipnn_builder::{self, PipnnBuilder};
+use super::pipnn_builder::PipnnBuilder;
 #[cfg(feature = "remote-indexing")]
 use super::remote_builder::RemoteBuilder;
 use super::remote_steps::{self, RemoteBuildArgs};
