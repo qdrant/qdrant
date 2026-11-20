@@ -377,6 +377,10 @@ impl Consensus {
         // This might happen if Qdrant was stopped or crashed before or while applying an operation.
         // Applying during startup allows us to catch service errors early,
         // before starting consensus thread.
+        let unapplied = state_ref.persistent.read().unapplied_entities_count();
+        if unapplied > 0 {
+            log::info!("Applying {unapplied} committed consensus entries left unapplied");
+        }
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
         // Node was created with older `applied` index, and `apply_entries` does *not* update it.
@@ -763,7 +767,7 @@ impl Consensus {
             let is_raft_message = matches!(message, Message::FromPeer(_));
 
             if let Err(err) = self.advance_node_impl(message) {
-                log::warn!("{err}");
+                log::warn!("{err:#}");
                 continue;
             }
 
@@ -816,11 +820,8 @@ impl Consensus {
                     existing_uris.get(&uri.parse::<Uri>().context("peer URI is not a valid URI")?)
                     && registered_peer_id != &peer_id
                 {
-                    log::warn!(
-                        "Rejected peer {peer_id} to join consensus, URI is already registered by peer {registered_peer_id} ({uri})",
-                    );
                     return Err(anyhow!(
-                        "peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
+                        "Rejected peer {peer_id} to join consensus: peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
                     ));
                 }
 
@@ -833,8 +834,8 @@ impl Consensus {
 
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
-                    .propose_conf_change(uri.into_bytes(), change)
-                    .context("failed to propose conf change")?;
+                    .propose_conf_change(uri.clone().into_bytes(), change)
+                    .with_context(|| format!("Failed to propose adding peer {peer_id} ({uri})"))?;
             }
 
             Message::FromClient(ConsensusOperations::RemovePeer(peer_id)) => {
@@ -848,7 +849,7 @@ impl Consensus {
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
                     .propose_conf_change(vec![], change)
-                    .context("failed to propose conf change")?;
+                    .with_context(|| format!("Failed to propose removing peer {peer_id}"))?;
             }
 
             Message::FromClient(ConsensusOperations::RequestSnapshot) => {
@@ -868,7 +869,7 @@ impl Consensus {
                 log::trace!("Proposing entry from client with length: {}", data.len());
                 self.node
                     .propose(vec![], data)
-                    .context("failed to propose entry")?;
+                    .with_context(|| format!("Failed to propose {operation:?}"))?;
             }
 
             Message::FromPeer(message) => {
@@ -1101,7 +1102,12 @@ impl Consensus {
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             let snapshot = ready.snapshot().clone();
-            log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
+            let meta = snapshot.get_metadata();
+            log::info!(
+                "Applying Raft snapshot index={} term={}",
+                meta.index,
+                meta.term,
+            );
             is_idle = false;
 
             if let Err(err) = store.apply_snapshot(&snapshot)? {
@@ -1111,7 +1117,7 @@ impl Consensus {
 
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
-            log::debug!("Appending {} entries to raft log", ready.entries().len());
+            log::trace!("Appending {} entries to raft log", ready.entries().len());
             is_idle = false;
 
             store
@@ -1121,7 +1127,7 @@ impl Consensus {
 
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
-            log::debug!("Changing hard state. New hard state: {hs:?}");
+            log::trace!("Changing hard state. New hard state: {hs:?}");
             is_idle = false;
 
             store
@@ -1184,7 +1190,7 @@ impl Consensus {
 
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
-            log::debug!("Updating commit index to {commit}");
+            log::trace!("Updating commit index to {commit}");
             is_idle = false;
 
             store
@@ -1315,18 +1321,12 @@ impl RaftMessageBroker {
             };
 
             let failed_to_forward = |message: &RaftMessage, description: &str| {
-                let peer_id = message.to;
-
-                if log::max_level() >= log::Level::Debug {
-                    log::error!(
-                        "Failed to forward message {message:?} to message sender task {peer_id}: \
-                         {description}"
-                    );
-                } else {
-                    log::error!(
-                        "Failed to forward message to message sender task {peer_id}: {description}"
-                    );
-                }
+                log::error!(
+                    "Failed to forward {:?} message to message sender task {}: {description}",
+                    message.get_msg_type(),
+                    message.to,
+                );
+                log::trace!("Message not forwarded: {message:?}");
             };
 
             // Resolve the peer address *now*, on the consensus thread, rather than later in the
@@ -1536,11 +1536,11 @@ impl RaftMessageSender {
         if let Err(err) = self.try_send(message, queued_uri).await {
             let peer_id = message.to;
 
-            if log::max_level() >= log::Level::Debug {
-                log::error!("Failed to send Raft message {message:?} to peer {peer_id}: {err}");
-            } else {
-                log::error!("Failed to send Raft message to peer {peer_id}: {err}");
-            }
+            log::error!(
+                "Failed to send {:?} Raft message to peer {peer_id}: {err}",
+                message.get_msg_type(),
+            );
+            log::trace!("Raft message not sent: {message:?}");
         }
     }
 

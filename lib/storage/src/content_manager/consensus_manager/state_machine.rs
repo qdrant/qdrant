@@ -1,38 +1,93 @@
 #[cfg(test)]
 mod tests;
 
+use std::fmt;
+
 use collection::shards::CollectionId;
 use parking_lot::MutexGuard;
-use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
+use raft::eraftpb::{ConfChangeTransition, ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{RawNode, Storage};
 use tonic::transport::Uri;
 
 use super::{validation, *};
-use crate::content_manager::consensus_state_machine::{ClusterState, ConsensusStateMachine, Plan};
+use crate::content_manager::consensus_state_machine::{
+    Action, ClusterState, ConsensusStateMachine, Plan,
+};
 
 impl<C: CollectionContainer> ConsensusManager<C> {
     pub(super) fn apply_with_state_machine(
         &self,
+        index: u64,
         operation: &ConsensusOperations,
     ) -> StorageResult<bool> {
-        let plan = self.plan_operation(operation)?;
+        let started = Instant::now();
 
-        for action in &plan.actions {
-            if let Err(error) = self.apply_action(action.clone()) {
-                // An action may have persisted only part of its work. Retry from applied state.
-                self.invalidate_state_machine();
+        let plan = match self.plan_operation(operation) {
+            Ok(plan) => plan,
+            Err(error @ StorageError::ServiceError { .. }) => return Err(error),
+            Err(error) => {
+                log::warn!(
+                    "Rejected consensus entry index={index} operation={operation:?}: {error}"
+                );
                 return Err(error);
             }
+        };
+
+        log::debug!(
+            "Applying consensus entry index={index} result={} actions={} operation={operation:?}",
+            plan.result,
+            ActionList(&plan.actions),
+        );
+
+        if let Err(error) = self.execute_actions(plan.actions.iter()) {
+            // An action may have persisted only part of its work. Retry from applied state.
+            self.invalidate_state_machine(Invalidation::EntryFailed);
+            return Err(error);
         }
 
-        self.finish_state_machine(std::slice::from_ref(operation), std::slice::from_ref(&plan));
+        let check = self.finish_state_machine(
+            index,
+            std::slice::from_ref(operation),
+            std::slice::from_ref(&plan),
+        );
+        log::debug!(
+            "Applied consensus entry index={index} in {:?}, state check: {check}",
+            started.elapsed(),
+        );
+
         Ok(plan.result)
     }
 
     fn plan_operation(&self, operation: &ConsensusOperations) -> StorageResult<Plan> {
-        let plan = self.prepare_state_machine().machine.plan(operation);
-        log::debug!("Consensus state machine operation {operation:?}: {plan:?}");
-        plan
+        self.prepare_state_machine().machine.plan(operation)
+    }
+
+    /// Execute planned actions in order, naming the failed action and its position in the error
+    fn execute_actions<'a>(
+        &self,
+        actions: impl Iterator<Item = &'a Action> + Clone,
+    ) -> StorageResult<()> {
+        let count = actions.clone().count();
+
+        for (position, action) in actions.enumerate() {
+            self.apply_action(action.clone()).map_err(|error| {
+                let context = format!("Failed to apply action {}/{count} {action}", position + 1);
+                if let StorageError::ServiceError {
+                    description,
+                    backtrace,
+                } = error
+                {
+                    StorageError::ServiceError {
+                        description: format!("{context}: {description}"),
+                        backtrace,
+                    }
+                } else {
+                    StorageError::service_error(format!("{context}: {error}"))
+                }
+            })?;
+        }
+
+        Ok(())
     }
 
     /// Validate the entire batch against temporary state before any membership or storage writes
@@ -56,8 +111,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut cached = self.state_machine.lock();
         let dirty = self.toc.take_dirty_collections();
 
-        if cached.needs_reload {
+        if let Some(reason) = cached.invalidated {
             *cached = CachedStateMachine::new(self.toc.as_ref(), &persistent);
+            log::debug!(
+                "Consensus state machine reloaded from applied state after {reason}: {}",
+                cached.summary(),
+            );
         } else {
             resync_collections(&mut cached.machine, self.toc.as_ref(), dirty);
         }
@@ -66,12 +125,17 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     /// Advance after successful execution and refresh external changes independently of validation
-    fn finish_state_machine(&self, operations: &[ConsensusOperations], plans: &[Plan]) {
+    fn finish_state_machine(
+        &self,
+        index: u64,
+        operations: &[ConsensusOperations],
+        plans: &[Plan],
+    ) -> StateCheck {
         let report = {
             let persistent = self.persistent.read();
             let mut cached = self.state_machine.lock();
-            if cached.needs_reload {
-                return;
+            if cached.invalidated.is_some() {
+                return StateCheck::Invalidated;
             }
 
             for plan in plans {
@@ -85,48 +149,54 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 self.toc.take_dirty_collections(),
             );
 
-            if Self::should_check_state_machine() {
-                let report = validation::compare(
-                    cached.machine.state(),
-                    self.toc.as_ref(),
-                    &persistent,
-                    operations,
-                );
-                if report.is_some() {
-                    cached.needs_reload = true;
-                }
-                report
-            } else {
-                None
+            if !Self::should_check_state_machine() {
+                return StateCheck::NotSampled;
             }
+
+            let report = validation::compare(
+                cached.machine.state(),
+                self.toc.as_ref(),
+                &persistent,
+                operations,
+            );
+            if report.is_some() {
+                cached.invalidated = Some(Invalidation::Diverged);
+            }
+            report
         };
 
-        if let Some(report) = report {
-            if cfg!(any(test, debug_assertions)) {
-                panic!(
-                    "Consensus state machine diverged from applied state: {report}; \
-                     operations={operations:?}",
-                );
-            }
+        let Some(report) = report else {
+            return StateCheck::Matched;
+        };
 
-            log::error!(
-                "Consensus state machine diverged from applied state: {report}; \
-                 operations={operations:?}",
+        if cfg!(any(test, debug_assertions)) {
+            panic!(
+                "Consensus state machine diverged from applied state after entry index={index}: \
+                 {report}; operations={operations:?}",
             );
         }
+
+        log::error!(
+            "Consensus state machine diverged from applied state after entry index={index}, \
+             reloading it from applied state: {report}; operations={operations:?}",
+        );
+
+        StateCheck::Diverged
     }
 
-    pub(super) fn invalidate_state_machine(&self) {
+    pub(super) fn invalidate_state_machine(&self, reason: Invalidation) {
         let mut cached = self.state_machine.lock();
-        if !cached.needs_reload {
-            log::debug!("Consensus state machine invalidated");
+
+        // Keep the first reason: it explains the state the reload will read
+        if cached.invalidated.is_none() {
+            log::debug!("Consensus state machine invalidated after {reason}");
+            cached.invalidated = Some(reason);
         }
-        cached.needs_reload = true;
     }
 
     #[cfg(test)]
     pub(super) fn state_machine_needs_reload(&self) -> bool {
-        self.state_machine.lock().needs_reload
+        self.state_machine.lock().invalidated.is_some()
     }
 
     fn should_check_state_machine() -> bool {
@@ -156,7 +226,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> StorageResult<bool> {
         let result = self.apply_conf_change_actions(entry, change, raw_node);
         if result.is_err() {
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::EntryFailed);
         }
 
         result
@@ -168,6 +238,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         change: &ConfChangeV2,
         raw_node: &mut RawNode<T>,
     ) -> StorageResult<bool> {
+        let started = Instant::now();
+
         let mut operations = Vec::with_capacity(change.changes.len());
         for single_change in &change.changes {
             let operation = match single_change.change_type() {
@@ -211,29 +283,45 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 for operation in &operations {
                     self.notify_operation(operation, Err(error.clone()));
                 }
-                log::warn!("Rejected consensus configuration change: {error}");
+                log::warn!(
+                    "Rejected consensus configuration entry index={} changes={}: {error}",
+                    entry.index,
+                    ConfChanges(change),
+                );
                 return Ok(false);
             }
         };
+
+        log::debug!(
+            "Applying consensus configuration entry index={} changes={} actions={}",
+            entry.index,
+            ConfChanges(change),
+            ActionList(batch.iter().flat_map(|plan| &plan.actions)),
+        );
 
         let conf_state = apply_raft_conf_change(raw_node, change)?;
         self.persistent
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
 
-        for plan in &batch {
-            for action in &plan.actions {
-                self.apply_action(action.clone())?;
-            }
-        }
+        self.execute_actions(batch.iter().flat_map(|plan| &plan.actions))?;
 
         let stop_consensus = operations.iter().any(|operation| {
             matches!(operation, ConsensusOperations::RemovePeer(peer_id) if *peer_id == self.this_peer_id())
         });
         if stop_consensus {
-            self.invalidate_state_machine();
+            log::info!(
+                "Consensus configuration entry index={} removed this peer, stopping consensus",
+                entry.index,
+            );
+            self.invalidate_state_machine(Invalidation::PeerRemoved);
         } else {
-            self.finish_state_machine(&operations, &batch);
+            let check = self.finish_state_machine(entry.index, &operations, &batch);
+            log::debug!(
+                "Applied consensus configuration entry index={} in {:?}, state check: {check}",
+                entry.index,
+                started.elapsed(),
+            );
         }
 
         for operation in &operations {
@@ -247,26 +335,64 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 /// Cached applied state. Reload only when the next operation can safely read collections.
 pub(super) struct CachedStateMachine {
     machine: ConsensusStateMachine,
-    // Discovery runs in async code and cannot synchronously read collections through ToC.
-    needs_reload: bool,
+    /// Why the cache must reload before the next operation.
+    ///
+    /// Discovery runs in async code and cannot synchronously read collections through ToC.
+    invalidated: Option<Invalidation>,
 }
 
 impl CachedStateMachine {
     pub(super) fn new(toc: &impl CollectionContainer, persistent: &Persistent) -> Self {
         let state = read_cluster_state(toc, persistent);
-        let context = toc.node_context();
-        log::info!(
-            "Consensus state machine initialized: peer_id={}, collections={}, peers={}",
-            context.peer_id,
-            state.collections.len(),
-            state.peer_address_by_id.len(),
-        );
-        let machine = ConsensusStateMachine::new(state, context);
+        let machine = ConsensusStateMachine::new(state, toc.node_context());
 
         Self {
             machine,
-            needs_reload: false,
+            invalidated: None,
         }
+    }
+
+    /// Peer ID and state sizes, for logs
+    pub(super) fn summary(&self) -> String {
+        let state = self.machine.state();
+        format!(
+            "peer_id={}, collections={}, peers={}",
+            self.machine.context().peer_id,
+            state.collections.len(),
+            state.peer_address_by_id.len(),
+        )
+    }
+}
+
+/// Why the cached state machine must reload from applied state
+#[derive(Copy, Clone, Debug)]
+pub(super) enum Invalidation {
+    /// An entry failed, possibly after persisting part of its writes
+    EntryFailed,
+    /// Comparison found the cache different from applied state
+    Diverged,
+    /// Raft snapshot replaced applied state
+    RaftSnapshot,
+    /// A local consensus state patch replaced applied state
+    LocalPatch,
+    /// A peer address changed outside of entry application, during bootstrap or discovery
+    PeerAddress,
+    /// This peer was removed from consensus and stops applying entries
+    PeerRemoved,
+}
+
+impl fmt::Display for Invalidation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = match self {
+            Invalidation::EntryFailed => "failed entry",
+            Invalidation::Diverged => "divergence from applied state",
+            Invalidation::RaftSnapshot => "Raft snapshot",
+            Invalidation::LocalPatch => "local state patch",
+            Invalidation::PeerAddress => "peer address change",
+            Invalidation::PeerRemoved => "removal of this peer",
+        };
+
+        f.write_str(reason)
     }
 }
 
@@ -343,4 +469,76 @@ fn apply_raft_conf_change<T: Storage>(
     }
 
     Ok(raw_node.apply_conf_change(change)?)
+}
+
+/// Result of comparing the cached state with applied state after an entry, for entry logs
+#[derive(Copy, Clone, Debug)]
+enum StateCheck {
+    Matched,
+    Diverged,
+    /// Release builds compare a sample of entries
+    NotSampled,
+    /// Something invalidated the cache during execution, so it reloads before the next entry
+    Invalidated,
+}
+
+impl fmt::Display for StateCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let check = match self {
+            StateCheck::Matched => "matched",
+            StateCheck::Diverged => "diverged",
+            StateCheck::NotSampled => "not sampled",
+            StateCheck::Invalidated => "skipped, cache invalidated",
+        };
+
+        f.write_str(check)
+    }
+}
+
+/// Actions in their one-line summaries, as `[first, second]`
+struct ActionList<I>(I);
+
+impl<'a, I> fmt::Display for ActionList<I>
+where
+    I: IntoIterator<Item = &'a Action> + Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+        for (index, action) in self.0.clone().into_iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{action}")?;
+        }
+        f.write_str("]")
+    }
+}
+
+/// Raft peer changes, as `[AddLearnerNode(peer=5)]`, followed by a non-default transition
+struct ConfChanges<'a>(&'a ConfChangeV2);
+
+impl fmt::Display for ConfChanges<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let change = self.0;
+
+        if change.leave_joint() {
+            return f.write_str("[LeaveJoint]");
+        }
+
+        f.write_str("[")?;
+        for (index, single) in change.changes.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{:?}(peer={})", single.change_type(), single.node_id)?;
+        }
+        f.write_str("]")?;
+
+        let transition = change.transition();
+        if transition != ConfChangeTransition::Auto {
+            write!(f, " transition={transition:?}")?;
+        }
+
+        Ok(())
+    }
 }

@@ -1,6 +1,7 @@
 pub mod diff;
 
 use self::diff::{ConsensusStateDiff, PatchReport};
+use super::state_machine::Invalidation;
 use super::{ConsensusManager, SnapshotData};
 use crate::content_manager::CollectionContainer;
 use crate::content_manager::errors::{StorageError, StorageResult};
@@ -55,7 +56,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // Patch replaces applied state without updating consensus state machine.
         // Invalidate it so it rebuilds from patched state on next entry.
-        self.invalidate_state_machine();
+        self.invalidate_state_machine(Invalidation::LocalPatch);
 
         // From here on, a failure may leave the patch partially applied
         self.toc

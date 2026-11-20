@@ -1,9 +1,13 @@
 //! Report field-level differences between consensus state machine and applied state
 
 use std::collections::{BTreeSet, HashMap};
+use std::fmt;
 
 use collection::collection_state;
 use collection::shards::CollectionId;
+use collection::shards::shard::PeerId;
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::consensus_state_machine::ClusterState;
@@ -26,8 +30,25 @@ pub struct ShallowState {
     pub quota_config: QuotaConfig,
 }
 
+/// One field that differs between the state machine and applied state
+#[derive(Clone, Debug)]
+pub struct Difference {
+    /// Field path, such as `collections[books].shards`
+    pub field: String,
+    /// Differing values inside the field, as `path: expected X, applied Y`.
+    ///
+    /// Expected values come from the state machine.
+    pub values: String,
+}
+
+impl fmt::Display for Difference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.field, self.values)
+    }
+}
+
 /// Compare collection names and cluster fields
-pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<String> {
+pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<Difference> {
     let ClusterState {
         collections,
         aliases,
@@ -46,32 +67,56 @@ pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<Stri
         quota_config: applied_quota_config,
     } = applied;
 
-    // TODO: Include values into diff!?
     let mut diff = Vec::new();
 
     let collections: BTreeSet<_> = collections.keys().cloned().collect();
     for collection in collections.symmetric_difference(applied_collections) {
-        diff.push(format!("collections[{collection}]"));
+        let values = if collections.contains(collection) {
+            "expected present, applied absent"
+        } else {
+            "expected absent, applied present"
+        };
+
+        diff.push(Difference {
+            field: format!("collections[{collection}]"),
+            values: values.into(),
+        });
     }
 
     if aliases != applied_aliases {
-        diff.push("aliases".into());
+        diff.push(json_difference("aliases", aliases, applied_aliases));
     }
 
     if peer_address_by_id != applied_peer_address_by_id {
-        diff.push("peer_address_by_id".into());
+        diff.push(json_difference(
+            "peer_address_by_id",
+            &uris_to_strings(peer_address_by_id),
+            &uris_to_strings(applied_peer_address_by_id),
+        ));
     }
 
     if peer_metadata_by_id != applied_peer_metadata_by_id {
-        diff.push("peer_metadata_by_id".into());
+        diff.push(json_difference(
+            "peer_metadata_by_id",
+            peer_metadata_by_id,
+            applied_peer_metadata_by_id,
+        ));
     }
 
     if cluster_metadata != applied_cluster_metadata {
-        diff.push("cluster_metadata".into());
+        diff.push(json_difference(
+            "cluster_metadata",
+            cluster_metadata,
+            applied_cluster_metadata,
+        ));
     }
 
     if quota_config != applied_quota_config {
-        diff.push("quota_config".into());
+        diff.push(json_difference(
+            "quota_config",
+            quota_config,
+            applied_quota_config,
+        ));
     }
 
     diff
@@ -82,7 +127,7 @@ pub fn collection(
     name: &str,
     state_machine: &collection_state::State,
     applied: &collection_state::State,
-) -> Vec<String> {
+) -> Vec<Difference> {
     let collection_state::State {
         config,
         shards,
@@ -101,37 +146,136 @@ pub fn collection(
         payload_index_schema: applied_payload_index_schema,
     } = applied;
 
-    // TODO: Include values into diff!?
-    let mut fields = Vec::new(); // TODO: `SmallVec`?
+    let field = |field: &str| format!("collections[{name}].{field}");
+    let mut diff = Vec::new();
 
     if config != applied_config {
-        fields.push("config");
+        diff.push(json_difference(&field("config"), config, applied_config));
     }
 
     if shards != applied_shards {
-        fields.push("shards");
+        diff.push(json_difference(&field("shards"), shards, applied_shards));
     }
 
     if resharding != applied_resharding {
-        fields.push("resharding");
+        diff.push(json_difference(
+            &field("resharding"),
+            resharding,
+            applied_resharding,
+        ));
     }
 
     if transfers != applied_transfers {
-        fields.push("transfers");
+        diff.push(json_difference(
+            &field("transfers"),
+            transfers,
+            applied_transfers,
+        ));
     }
 
     if shards_key_mapping != applied_shards_key_mapping {
-        fields.push("shards_key_mapping");
+        diff.push(json_difference(
+            &field("shards_key_mapping"),
+            shards_key_mapping,
+            applied_shards_key_mapping,
+        ));
     }
 
     if payload_index_schema != applied_payload_index_schema {
-        fields.push("payload_index_schema");
+        diff.push(json_difference(
+            &field("payload_index_schema"),
+            payload_index_schema,
+            applied_payload_index_schema,
+        ));
     }
 
-    fields
-        .into_iter()
-        .map(|field| format!("collections[{name}].{field}"))
+    diff
+}
+
+fn uris_to_strings(peer_address_by_id: &PeerAddressById) -> HashMap<PeerId, String> {
+    peer_address_by_id
+        .iter()
+        .map(|(&peer_id, uri)| (peer_id, uri.to_string()))
         .collect()
+}
+
+/// Describe a differing field by the JSON values that differ inside it.
+///
+/// Objects are compared key by key, so a changed replica state reports only that replica.
+/// Arrays are reported whole, with sorted elements, because sets such as transfers serialize
+/// in arbitrary order.
+fn json_difference<T>(field: &str, expected: &T, applied: &T) -> Difference
+where
+    T: Serialize + fmt::Debug,
+{
+    let values = match (
+        serde_json::to_value(expected),
+        serde_json::to_value(applied),
+    ) {
+        (Ok(expected), Ok(applied)) => {
+            let mut changes = Vec::new();
+            json_changes("", Some(&expected), Some(&applied), &mut changes);
+            changes.join("; ")
+        }
+
+        // Fall back to the whole values, e.g. when a map key does not serialize as a JSON key
+        _ => format!("expected {expected:?}, applied {applied:?}"),
+    };
+
+    Difference {
+        field: field.to_string(),
+        values,
+    }
+}
+
+fn json_changes(
+    path: &str,
+    expected: Option<&Value>,
+    applied: Option<&Value>,
+    changes: &mut Vec<String>,
+) {
+    if expected == applied {
+        return;
+    }
+
+    if let (Some(Value::Object(expected)), Some(Value::Object(applied))) = (expected, applied) {
+        let keys: BTreeSet<_> = expected.keys().chain(applied.keys()).collect();
+        for key in keys {
+            let path = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
+            json_changes(&path, expected.get(key), applied.get(key), changes);
+        }
+
+        return;
+    }
+
+    let prefix = if path.is_empty() {
+        String::new()
+    } else {
+        format!("{path}: ")
+    };
+    changes.push(format!(
+        "{prefix}expected {}, applied {}",
+        render_json(expected),
+        render_json(applied),
+    ));
+}
+
+fn render_json(value: Option<&Value>) -> String {
+    match value {
+        None => "absent".into(),
+
+        Some(Value::Array(elements)) => {
+            let mut elements: Vec<_> = elements.iter().map(Value::to_string).collect();
+            elements.sort();
+            format!("[{}]", elements.join(","))
+        }
+
+        Some(value) => value.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +286,7 @@ mod tests {
     use collection::collection_state::ShardInfo;
     use collection::operations::cluster_ops::ReshardingDirection;
     use collection::operations::types::PeerMetadata;
+    use collection::shards::replica_set::replica_set_state::ReplicaState;
     use collection::shards::resharding::ReshardState;
     use collection::shards::transfer::ShardTransfer;
     use segment::types::PayloadSchemaType;
@@ -173,10 +318,10 @@ mod tests {
         let (expected, mut actual) = cluster_states();
         actual.collections.clear();
 
-        assert_eq!(
-            cluster(&expected, &actual),
-            [format!("collections[{COLLECTION}]")],
-        );
+        let diff = cluster(&expected, &actual);
+
+        assert_eq!(fields(&diff), [format!("collections[{COLLECTION}]")]);
+        assert_eq!(diff[0].values, "expected present, applied absent");
     }
 
     #[test]
@@ -201,7 +346,11 @@ mod tests {
             let (expected, mut actual) = cluster_states();
             mutate(&mut actual);
 
-            assert_eq!(cluster(&expected, &actual), [field], "mutated {field}");
+            assert_eq!(
+                fields(&cluster(&expected, &actual)),
+                [field],
+                "mutated {field}"
+            );
         }
     }
 
@@ -290,10 +439,79 @@ mod tests {
             mutate(&mut actual);
 
             assert_eq!(
-                collection(COLLECTION, &collection_state(Vec::new()), &actual),
+                fields(&collection(
+                    COLLECTION,
+                    &collection_state(Vec::new()),
+                    &actual
+                )),
                 [format!("collections[{COLLECTION}].{field}")],
                 "mutated {field}",
             );
         }
+    }
+
+    /// Values name the differing replica or config field, not the whole collection state
+    #[test]
+    fn collection_values() {
+        let mut expected = collection_state(Vec::new());
+        let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+        expected.shards.insert(0, ShardInfo { replicas });
+
+        let mut actual = expected.clone();
+        let replicas = HashMap::from([(PEER_ID, ReplicaState::Dead)]);
+        actual.shards.insert(0, ShardInfo { replicas });
+        actual.config.params.shard_number = NonZeroU32::new(2).expect("non-zero");
+
+        let diff = collection(COLLECTION, &expected, &actual);
+
+        let values: Vec<_> = diff.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            values,
+            [
+                format!(
+                    "collections[{COLLECTION}].config \
+                     (params.shard_number: expected 1, applied 2)"
+                ),
+                format!(
+                    "collections[{COLLECTION}].shards \
+                     (0.replicas.{PEER_ID}: expected \"Active\", applied \"Dead\")"
+                ),
+            ],
+        );
+    }
+
+    /// Sets serialize in arbitrary order, so their elements are sorted before reporting
+    #[test]
+    fn collection_values_sorted() {
+        let transfer = |to| ShardTransfer {
+            shard_id: 0,
+            to_shard_id: None,
+            from: PEER_ID,
+            to,
+            sync: false,
+            method: None,
+            filter: None,
+        };
+        let expected = collection_state(Vec::new());
+        let mut actual = expected.clone();
+        actual
+            .transfers
+            .extend([transfer(PEER_ID + 2), transfer(PEER_ID + 1)]);
+
+        let diff = collection(COLLECTION, &expected, &actual);
+
+        let first = serde_json::to_string(&transfer(PEER_ID + 1)).expect("serializable");
+        let second = serde_json::to_string(&transfer(PEER_ID + 2)).expect("serializable");
+        assert_eq!(diff.len(), 1);
+        assert_eq!(
+            diff[0].values,
+            format!("expected [], applied [{first},{second}]"),
+        );
+    }
+
+    fn fields(diff: &[Difference]) -> Vec<&str> {
+        diff.iter()
+            .map(|difference| difference.field.as_str())
+            .collect()
     }
 }
