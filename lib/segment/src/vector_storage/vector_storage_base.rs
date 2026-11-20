@@ -582,6 +582,13 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
 
     /// The quantizer the vectors are encoded with.
     fn quantizer(&self) -> &TurboQuantizer;
+
+    /// The stored vector of `key` as a query that scores the others as
+    /// [`Self::score_internal_encoded`] does, so that an index is built from the codes alone.
+    fn stored_query(&self, key: PointOffsetType) -> EncodedQueryTQ {
+        self.quantizer()
+            .stored_query(&self.get_quantized_vector(key))
+    }
 }
 
 /// Scoring surface the Turbo multivector query scorers need from a multivector
@@ -591,6 +598,11 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
 pub trait TurboMultiScoring: MultiTQVectorStorageRead {
     /// Preprocess and precompute each inner query vector of a multi-query once.
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
+
+    /// The stored inner vectors of `key` as a multi-query that scores the others as
+    /// [`Self::score_internal_max_similarity`] does, so that an index is built from the codes
+    /// alone.
+    fn stored_query(&self, key: PointOffsetType) -> Vec<EncodedQueryTQ>;
 
     /// Symmetric MaxSim score between two stored points.
     fn score_internal_max_similarity(

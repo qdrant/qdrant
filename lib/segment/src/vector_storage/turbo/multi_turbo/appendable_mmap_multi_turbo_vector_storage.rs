@@ -589,6 +589,13 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         AppendableMmapMultiTurboVectorStorage::preprocess_query(self, query)
     }
 
+    fn stored_query(&self, key: PointOffsetType) -> Vec<EncodedQueryTQ> {
+        self.get_multi_tq::<Random>(key)
+            .chunks_exact(self.quantizer.quantized_size())
+            .map(|record| self.quantizer.stored_query(record))
+            .collect()
+    }
+
     fn score_internal_max_similarity(
         &self,
         point_a: PointOffsetType,

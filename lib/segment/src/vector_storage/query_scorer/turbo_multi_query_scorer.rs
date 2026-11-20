@@ -24,8 +24,17 @@ pub struct TurboMultiQueryScorer<'a, TStorage: TurboMultiScoring> {
 impl<'a, TStorage: TurboMultiScoring> TurboMultiQueryScorer<'a, TStorage> {
     pub fn new(raw_query: &MultiDenseVectorInternal, storage: &'a TStorage) -> Self {
         // Preprocess (per distance) and precompute each inner query vector once.
-        let query = storage.preprocess_query(raw_query);
+        Self::with_query(storage.preprocess_query(raw_query), storage)
+    }
 
+    /// Scores the stored inner vectors of `point` against the others as
+    /// [`TurboMultiScoring::score_internal_max_similarity`] does, for building an index from the
+    /// codes alone.
+    pub fn stored(point: PointOffsetType, storage: &'a TStorage) -> Self {
+        Self::with_query(storage.stored_query(point), storage)
+    }
+
+    fn with_query(query: Vec<EncodedQueryTQ>, storage: &'a TStorage) -> Self {
         Self {
             hw: HwScale {
                 cpu: 1,

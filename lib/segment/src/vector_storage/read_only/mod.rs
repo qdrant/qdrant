@@ -1,3 +1,4 @@
+use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
@@ -12,6 +13,9 @@ use crate::vector_storage::dense::read_only::{
 use crate::vector_storage::graph_vectors::GraphVectors;
 use crate::vector_storage::multi_dense::read_only::ReadOnlyChunkedMultiDenseVectorStorage;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
+use crate::vector_storage::raw_scorer::{
+    raw_copy_internal_scorer, raw_turbo_internal_scorer, raw_turbo_multi_internal_scorer,
+};
 use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::vector_storage::turbo::read_only::{
@@ -110,6 +114,37 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
                 raw_turbo_multi_scorer_impl(query, s.as_ref())
             }
             VectorStorageReadEnum::Sparse(s) => raw_sparse_scorer_impl(query, s.as_ref()),
+        }
+    }
+
+    fn build_raw_internal_scorer<'a>(
+        &'a self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        match self {
+            VectorStorageReadEnum::DenseTurbo(s) => raw_turbo_internal_scorer(point_id, s.as_ref()),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => {
+                raw_turbo_internal_scorer(point_id, s.as_ref())
+            }
+            VectorStorageReadEnum::DenseTurboChunked(s) => {
+                raw_turbo_internal_scorer(point_id, s.as_ref())
+            }
+            VectorStorageReadEnum::MultiDenseTurbo(s) => {
+                raw_turbo_multi_internal_scorer(point_id, s.as_ref())
+            }
+            VectorStorageReadEnum::Dense(_)
+            | VectorStorageReadEnum::DenseByte(_)
+            | VectorStorageReadEnum::DenseHalf(_)
+            | VectorStorageReadEnum::DenseGraphInline(_)
+            | VectorStorageReadEnum::DenseGraphInlineByte(_)
+            | VectorStorageReadEnum::DenseGraphInlineHalf(_)
+            | VectorStorageReadEnum::DenseChunked(_)
+            | VectorStorageReadEnum::DenseChunkedByte(_)
+            | VectorStorageReadEnum::DenseChunkedHalf(_)
+            | VectorStorageReadEnum::MultiDenseChunked(_)
+            | VectorStorageReadEnum::MultiDenseChunkedByte(_)
+            | VectorStorageReadEnum::MultiDenseChunkedHalf(_)
+            | VectorStorageReadEnum::Sparse(_) => raw_copy_internal_scorer(point_id, self),
         }
     }
 }
