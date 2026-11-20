@@ -40,7 +40,7 @@ pub(super) fn compare(
         log::debug!("Consensus state machine matches applied state");
         None
     } else {
-        Some(report.join(", "))
+        Some(report.join("; "))
     }
 }
 

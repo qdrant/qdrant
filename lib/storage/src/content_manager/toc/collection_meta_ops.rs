@@ -11,6 +11,7 @@ use collection::shards::{CollectionId, transfer};
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::fs::safe_delete_in_tmp;
 
+use super::temp_directories::DELETED_SUBDIR_NAME;
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;
 use crate::content_manager::alias_mapping::AliasMapping;
@@ -248,7 +249,7 @@ impl TableOfContent {
         let to_delete;
         let result;
         let collection_path = self.get_collection_path(collection_name);
-        let safe_delete_path = self.storage_config.storage_path.join(".deleted");
+        let safe_delete_path = self.storage_config.storage_path.join(DELETED_SUBDIR_NAME);
 
         let removed_opt = self.collections.write().await.remove(collection_name);
         if let Some(removed) = removed_opt {

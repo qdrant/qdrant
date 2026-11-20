@@ -360,11 +360,11 @@ impl CollectionConfigDiff {
                 });
             }
 
-            // Metadata is merged, not replaced, and a null value removes its key
-            CollectionConfigDiff::Metadata(metadata) => match &mut config.metadata {
-                Some(current) => current.merge(metadata),
-                None => config.metadata = Some(metadata.clone()),
-            },
+            // Metadata is merged, not replaced, and a null value removes its key.
+            // Without metadata, merge into empty metadata, so nulls are not stored.
+            CollectionConfigDiff::Metadata(metadata) => {
+                config.metadata.get_or_insert_default().merge(metadata);
+            }
         }
 
         Ok(())

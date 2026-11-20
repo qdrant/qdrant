@@ -199,11 +199,11 @@ impl Collection {
             crate::config::CollectionConfigInternal,
         > = self.collection_config.write().await;
 
-        if let Some(current_metadata) = collection_config_guard.metadata.as_mut() {
-            current_metadata.merge(&metadata);
-        } else {
-            collection_config_guard.metadata = Some(metadata);
-        }
+        // Without metadata, merge into empty metadata, so null values are not stored
+        collection_config_guard
+            .metadata
+            .get_or_insert_default()
+            .merge(&metadata);
         drop(collection_config_guard);
         self.collection_config.read().await.save(&self.path)?;
         Ok(())

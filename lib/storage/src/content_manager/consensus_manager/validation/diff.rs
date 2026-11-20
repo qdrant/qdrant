@@ -1,6 +1,7 @@
 //! Report field-level differences between consensus state machine and applied state
 
 use std::collections::{BTreeSet, HashMap};
+use std::fmt;
 
 use collection::collection_state;
 use collection::shards::CollectionId;
@@ -46,33 +47,43 @@ pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<Stri
         quota_config: applied_quota_config,
     } = applied;
 
-    // TODO: Include values into diff!?
     let mut diff = Vec::new();
 
     let collections: BTreeSet<_> = collections.keys().cloned().collect();
-    for collection in collections.symmetric_difference(applied_collections) {
-        diff.push(format!("collections[{collection}]"));
+
+    for collection in collections.difference(applied_collections) {
+        diff.push(format!("collections[{collection}]: only in state machine"));
     }
 
-    if aliases != applied_aliases {
-        diff.push("aliases".into());
+    for collection in applied_collections.difference(&collections) {
+        diff.push(format!("collections[{collection}]: only in applied state"));
     }
 
-    if peer_address_by_id != applied_peer_address_by_id {
-        diff.push("peer_address_by_id".into());
-    }
-
-    if peer_metadata_by_id != applied_peer_metadata_by_id {
-        diff.push("peer_metadata_by_id".into());
-    }
-
-    if cluster_metadata != applied_cluster_metadata {
-        diff.push("cluster_metadata".into());
-    }
-
-    if quota_config != applied_quota_config {
-        diff.push("quota_config".into());
-    }
+    push_diff(&mut diff, "aliases", aliases, applied_aliases);
+    push_diff(
+        &mut diff,
+        "peer_address_by_id",
+        peer_address_by_id,
+        applied_peer_address_by_id,
+    );
+    push_diff(
+        &mut diff,
+        "peer_metadata_by_id",
+        peer_metadata_by_id,
+        applied_peer_metadata_by_id,
+    );
+    push_diff(
+        &mut diff,
+        "cluster_metadata",
+        cluster_metadata,
+        applied_cluster_metadata,
+    );
+    push_diff(
+        &mut diff,
+        "quota_config",
+        quota_config,
+        applied_quota_config,
+    );
 
     diff
 }
@@ -101,37 +112,46 @@ pub fn collection(
         payload_index_schema: applied_payload_index_schema,
     } = applied;
 
-    // TODO: Include values into diff!?
-    let mut fields = Vec::new(); // TODO: `SmallVec`?
+    let mut diff = Vec::new();
+    let field = |field: &str| format!("collections[{name}].{field}");
 
-    if config != applied_config {
-        fields.push("config");
+    push_diff(&mut diff, field("config"), config, applied_config);
+    push_diff(&mut diff, field("shards"), shards, applied_shards);
+    push_diff(
+        &mut diff,
+        field("resharding"),
+        resharding,
+        applied_resharding,
+    );
+    push_diff(&mut diff, field("transfers"), transfers, applied_transfers);
+    push_diff(
+        &mut diff,
+        field("shards_key_mapping"),
+        shards_key_mapping,
+        applied_shards_key_mapping,
+    );
+    push_diff(
+        &mut diff,
+        field("payload_index_schema"),
+        payload_index_schema,
+        applied_payload_index_schema,
+    );
+
+    diff
+}
+
+/// Report `field` with both values if they differ
+fn push_diff<T: PartialEq + fmt::Debug>(
+    diff: &mut Vec<String>,
+    field: impl fmt::Display,
+    state_machine: &T,
+    applied: &T,
+) {
+    if state_machine != applied {
+        diff.push(format!(
+            "{field}: state machine {state_machine:?}, applied {applied:?}"
+        ));
     }
-
-    if shards != applied_shards {
-        fields.push("shards");
-    }
-
-    if resharding != applied_resharding {
-        fields.push("resharding");
-    }
-
-    if transfers != applied_transfers {
-        fields.push("transfers");
-    }
-
-    if shards_key_mapping != applied_shards_key_mapping {
-        fields.push("shards_key_mapping");
-    }
-
-    if payload_index_schema != applied_payload_index_schema {
-        fields.push("payload_index_schema");
-    }
-
-    fields
-        .into_iter()
-        .map(|field| format!("collections[{name}].{field}"))
-        .collect()
 }
 
 #[cfg(test)]
@@ -175,7 +195,27 @@ mod tests {
 
         assert_eq!(
             cluster(&expected, &actual),
-            [format!("collections[{COLLECTION}]")],
+            [format!("collections[{COLLECTION}]: only in state machine")],
+        );
+
+        let (expected, mut actual) = cluster_states();
+        actual.collections.insert("extra".to_string());
+
+        assert_eq!(
+            cluster(&expected, &actual),
+            ["collections[extra]: only in applied state"],
+        );
+    }
+
+    /// A differing field is reported with both values
+    #[test]
+    fn cluster_field_values() {
+        let (expected, mut actual) = cluster_states();
+        actual.cluster_metadata.clear();
+
+        assert_eq!(
+            cluster(&expected, &actual),
+            [r#"cluster_metadata: state machine {"owner": String("qdrant")}, applied {}"#],
         );
     }
 
@@ -201,7 +241,7 @@ mod tests {
             let (expected, mut actual) = cluster_states();
             mutate(&mut actual);
 
-            assert_eq!(cluster(&expected, &actual), [field], "mutated {field}");
+            assert_reports_field(&cluster(&expected, &actual), field);
         }
     }
 
@@ -289,11 +329,26 @@ mod tests {
             let mut actual = collection_state(Vec::new());
             mutate(&mut actual);
 
-            assert_eq!(
-                collection(COLLECTION, &collection_state(Vec::new()), &actual),
-                [format!("collections[{COLLECTION}].{field}")],
-                "mutated {field}",
+            assert_reports_field(
+                &collection(COLLECTION, &collection_state(Vec::new()), &actual),
+                &format!("collections[{COLLECTION}].{field}"),
             );
         }
+    }
+
+    /// The diff reports exactly one field, with both values
+    fn assert_reports_field(diff: &[String], field: &str) {
+        let [difference] = diff else {
+            panic!("mutated {field}, expected one difference, got {diff:?}");
+        };
+
+        assert!(
+            difference.starts_with(&format!("{field}: state machine ")),
+            "mutated {field}, got {difference}",
+        );
+        assert!(
+            difference.contains(", applied "),
+            "mutated {field}, got {difference}",
+        );
     }
 }

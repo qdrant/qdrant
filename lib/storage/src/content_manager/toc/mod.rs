@@ -43,6 +43,7 @@ use tokio::sync::{Mutex, RwLock, Semaphore};
 
 pub(crate) use self::collection_meta_ops::apply_alias_actions;
 use self::dispatcher::TocDispatcher;
+use self::temp_directories::DELETED_SUBDIR_NAME;
 use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
@@ -838,7 +839,7 @@ impl TableOfContent {
                 );
 
                 let path = path.clone();
-                let deleted_dir = self.storage_config.storage_path.join(".deleted");
+                let deleted_dir = self.storage_config.storage_path.join(DELETED_SUBDIR_NAME);
                 tokio::task::spawn_blocking(move || {
                     safe_delete_in_tmp(&path, &deleted_dir)?.close()
                 })

@@ -9,22 +9,34 @@ use crate::types::StorageConfig;
 const TEMP_SUBDIR_NAME: &str = "tmp";
 const FILE_UPLOAD_SUBDIR_NAME: &str = "upload";
 
+/// Directory inside `storage`, where deleted collections are moved before removal
+pub(crate) const DELETED_SUBDIR_NAME: &str = ".deleted";
+
 /// Remove all temporary directories based on storage configuration.
 ///
 /// Should be called early during startup, before loading collection data and
 /// applying WAL, to ensure no stale temp files (e.g. from interrupted snapshot
 /// transfers) interfere with recovery.
+///
+/// Also removes deleted collections that were left behind when a crash
+/// interrupted their removal.
 pub fn clear_tmp_directories(storage_config: &StorageConfig) -> CollectionResult<()> {
     let snapshots_temp = storage_config.snapshots_path.join(TEMP_SUBDIR_NAME);
     let storage_temp = storage_config.storage_path.join(TEMP_SUBDIR_NAME);
+    let storage_deleted = storage_config.storage_path.join(DELETED_SUBDIR_NAME);
     let optional_temp = storage_config
         .temp_path
         .as_deref()
         .map(|p| Path::new(p).join(TEMP_SUBDIR_NAME));
 
-    for path in [Some(snapshots_temp), Some(storage_temp), optional_temp]
-        .into_iter()
-        .flatten()
+    for path in [
+        Some(snapshots_temp),
+        Some(storage_temp),
+        Some(storage_deleted),
+        optional_temp,
+    ]
+    .into_iter()
+    .flatten()
     {
         if path.exists() {
             fs::remove_dir_all(&path).map_err(|e| {
