@@ -105,6 +105,12 @@ pub struct FeatureFlags {
     /// segments can only be tuned through `m`.
     pub pipnn_graph_building: bool,
 
+    /// Beta: allow the `profile` parameter on search, query, scroll, count and facet requests,
+    /// which returns a query profile (`EXPLAIN` / `EXPLAIN ANALYZE`) with the response.
+    /// When disabled, requests asking for a profile are rejected. Requests without the
+    /// parameter are not affected either way.
+    pub query_profiling: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`] and [`Self::versioned_deletes`].
@@ -132,6 +138,7 @@ impl Default for FeatureFlags {
             combined_vector_storage: true,
             versioned_deletes: false,
             pipnn_graph_building: false,
+            query_profiling: false,
             serverless_compatible: false,
         }
     }
@@ -176,6 +183,7 @@ impl FeatureFlags {
             // Deliberately not enabled by `all`: it changes the persisted storage format.
             versioned_deletes: false,
             pipnn_graph_building: true,
+            query_profiling: true,
             serverless_compatible: false,
         }
     }
@@ -210,6 +218,9 @@ impl FeatureFlags {
 /// startup or otherwise throws a warning and discards the values.
 pub fn init_feature_flags(flags: FeatureFlags) {
     let flags = flags.normalize();
+    if flags.query_profiling {
+        crate::ambient::hw::enable_score_counting();
+    }
 
     let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {

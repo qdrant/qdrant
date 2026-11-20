@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::ambient;
-use common::ambient::hw;
+use common::ambient::profile::ShardScope;
+use common::ambient::{AmbientFutureExt, hw};
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -32,6 +33,7 @@ use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
 use crate::profiling::interface::log_request_to_collector;
+use crate::profiling::workload::{self, Fingerprint, WorkloadSample};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -53,6 +55,81 @@ pub enum SubmitOutcome {
 }
 
 impl LocalShard {
+    /// Run a read `operation` in a query profile shard scope, if the request is profiled.
+    async fn profiled<F: std::future::Future>(
+        &self,
+        operation_name: &'static str,
+        operation: F,
+    ) -> F::Output {
+        if common::ambient::profile::mode().is_none() {
+            return operation.await;
+        }
+        match ShardScope::start(self.profile_shard_id(), operation_name) {
+            Some(scope) => scope.run(operation).await,
+            None => operation.await,
+        }
+    }
+
+    /// [`Self::profiled`], also counted in the workload statistics under the fingerprint
+    /// computed by `fingerprint`. `fingerprint` is `Some` only when workload statistics are
+    /// enabled (`query_profiling` beta flag), see [`workload::enabled`].
+    async fn profiled_with_workload<T, F>(
+        &self,
+        operation_name: &'static str,
+        fingerprint: Option<impl FnOnce(&str) -> Fingerprint>,
+        operation: F,
+    ) -> CollectionResult<T>
+    where
+        F: std::future::Future<Output = CollectionResult<T>>,
+    {
+        let Some(fingerprint) = fingerprint else {
+            return self.profiled(operation_name, operation).await;
+        };
+        // Explain mode does not execute the request: it is not part of the workload.
+        if common::ambient::profile::is_explain() {
+            return self.profiled(operation_name, operation).await;
+        }
+        let Some(ctx) = ambient::current().measured().cloned() else {
+            return self.profiled(operation_name, operation).await;
+        };
+        let fork = ctx.measure_fork();
+        let start = Instant::now();
+        let result = self
+            .profiled(operation_name, operation)
+            .measured(fork.clone())
+            .await;
+        let duration = start.elapsed();
+        // Rejected before doing any work: not part of the workload, and not worth fingerprinting
+        if let Err(CollectionError::RateLimitExceeded {
+            description: _,
+            retry_after: _,
+        }) = &result
+        {
+            return result;
+        }
+        let hw = fork.hw_data();
+        workload::record(
+            &self.collection_name,
+            fingerprint(&self.collection_name),
+            WorkloadSample {
+                duration,
+                ok: result.is_ok(),
+                vector_scores: hw[hw::HwMetric::VectorScores] as u64,
+                quantized_vector_scores: hw[hw::HwMetric::QuantizedVectorScores] as u64,
+            },
+        );
+        result
+    }
+
+    /// Shard id for query profiles: shard directories are named after their id.
+    fn profile_shard_id(&self) -> u32 {
+        self.path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.parse().ok())
+            .unwrap_or(u32::MAX)
+    }
+
     /// Submit an update to the worker queue without waiting for completion.
     ///
     /// Holds locks only for the brief WAL write + channel send. The returned
@@ -252,74 +329,82 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        let ScrollRequestInternal {
-            offset,
-            limit,
-            filter,
-            with_payload,
-            with_vector,
-            order_by,
-        } = request.as_ref();
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
+        let operation = async move {
+            let ScrollRequestInternal {
+                offset,
+                limit,
+                filter,
+                with_payload,
+                with_vector,
+                order_by,
+            } = request.as_ref();
 
-        let default_with_payload = ScrollRequestInternal::default_with_payload();
+            let default_with_payload = ScrollRequestInternal::default_with_payload();
 
-        // Validate user did not try to use an id offset with order_by
-        if order_by.is_some() && offset.is_some() {
-            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
+            // Validate user did not try to use an id offset with order_by
+            if order_by.is_some() && offset.is_some() {
+                return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
+            };
+
+            // Check read rate limiter before proceeding
+            self.check_read_rate_limiter("scroll_by", || {
+                let mut cost = BASE_COST;
+                if let Some(filter) = &filter {
+                    cost += filter_rate_cost(filter);
+                }
+                cost
+            })?;
+            let start_time = Instant::now();
+            let cpu_utilization = hw::cpu_utilization();
+
+            let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
+            let order_by = order_by.clone().map(OrderBy::from);
+            let timeout = self.timeout_or_default_search_timeout(timeout);
+            let result = match order_by {
+                None => {
+                    self.internal_scroll_by_id(
+                        *offset,
+                        limit,
+                        with_payload.as_ref().unwrap_or(&default_with_payload),
+                        with_vector,
+                        filter.as_ref(),
+                        search_runtime_handle,
+                        timeout,
+                        DeferredBehavior::VisibleOnly,
+                    )
+                    .await
+                }
+                Some(order_by) => {
+                    self.internal_scroll_by_field(
+                        limit,
+                        with_payload.as_ref().unwrap_or(&default_with_payload),
+                        with_vector,
+                        filter.as_ref(),
+                        search_runtime_handle,
+                        &order_by,
+                        timeout,
+                        DeferredBehavior::VisibleOnly,
+                    )
+                    .await
+                }
+            };
+
+            let elapsed = start_time.elapsed();
+            let cpu_ratio = cpu_utilization.ratio();
+            let cpu_usage_ratio = if cpu_ratio > 0.0 {
+                Some(cpu_ratio)
+            } else {
+                None
+            };
+            log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+            result
         };
-
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("scroll_by", || {
-            let mut cost = BASE_COST;
-            if let Some(filter) = &filter {
-                cost += filter_rate_cost(filter);
-            }
-            cost
-        })?;
-        let start_time = Instant::now();
-        let cpu_utilization = hw::cpu_utilization();
-
-        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
-        let order_by = order_by.clone().map(OrderBy::from);
-        let timeout = self.timeout_or_default_search_timeout(timeout);
-        let result = match order_by {
-            None => {
-                self.internal_scroll_by_id(
-                    *offset,
-                    limit,
-                    with_payload.as_ref().unwrap_or(&default_with_payload),
-                    with_vector,
-                    filter.as_ref(),
-                    search_runtime_handle,
-                    timeout,
-                    DeferredBehavior::VisibleOnly,
-                )
-                .await
-            }
-            Some(order_by) => {
-                self.internal_scroll_by_field(
-                    limit,
-                    with_payload.as_ref().unwrap_or(&default_with_payload),
-                    with_vector,
-                    filter.as_ref(),
-                    search_runtime_handle,
-                    &order_by,
-                    timeout,
-                    DeferredBehavior::VisibleOnly,
-                )
-                .await
-            }
-        };
-
-        let elapsed = start_time.elapsed();
-        let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 {
-            Some(cpu_ratio)
-        } else {
-            None
-        };
-        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        result
+        self.profiled_with_workload("scroll", fingerprint, operation)
+            .await
     }
 
     async fn local_scroll_by_id(
@@ -359,12 +444,22 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("core_search", || {
-            request.searches.iter().map(|s| s.search_rate_cost()).sum()
-        })?;
-        let timeout = self.timeout_or_default_search_timeout(timeout);
-        self.do_search(request, search_runtime_handle, timeout)
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
+        let operation = async move {
+            // Check read rate limiter before proceeding
+            self.check_read_rate_limiter_with_plan(
+                "core_search",
+                || request.searches.iter().map(|s| s.search_rate_cost()).sum(),
+                Some(request.searches.len()),
+            )?;
+            let timeout = self.timeout_or_default_search_timeout(timeout);
+            self.do_search(request, search_runtime_handle, timeout)
+                .await
+        };
+        self.profiled_with_workload("core_search", fingerprint, operation)
             .await
     }
 
@@ -376,47 +471,55 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("count", || {
-            let mut cost = BASE_COST;
-            if let Some(filter) = &request.filter {
-                cost += filter_rate_cost(filter);
-            }
-            cost
-        })?;
-        let start_time = Instant::now();
-        let cpu_utilization = hw::cpu_utilization();
-        let result: CollectionResult<usize> = if request.exact {
-            let timeout = self.timeout_or_default_search_timeout(timeout);
-            match tokio::time::timeout(
-                timeout,
-                self.read_filtered(
-                    request.filter.as_ref(),
-                    search_runtime_handle,
-                    Some(timeout),
-                    deferred_behavior,
-                ),
-            )
-            .await
-            {
-                Ok(Ok(all_points)) => Ok(all_points.len()),
-                Ok(Err(err)) => Err(err),
-                Err(_elapsed) => Err(CollectionError::timeout(timeout, "count")),
-            }
-        } else {
-            self.estimate_cardinality(request.filter.as_ref())
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
+        let operation = async move {
+            // Check read rate limiter before proceeding
+            self.check_read_rate_limiter("count", || {
+                let mut cost = BASE_COST;
+                if let Some(filter) = &request.filter {
+                    cost += filter_rate_cost(filter);
+                }
+                cost
+            })?;
+            let start_time = Instant::now();
+            let cpu_utilization = hw::cpu_utilization();
+            let result: CollectionResult<usize> = if request.exact {
+                let timeout = self.timeout_or_default_search_timeout(timeout);
+                match tokio::time::timeout(
+                    timeout,
+                    self.read_filtered(
+                        request.filter.as_ref(),
+                        search_runtime_handle,
+                        Some(timeout),
+                        deferred_behavior,
+                    ),
+                )
                 .await
-                .map(|cardinality| cardinality.exp)
+                {
+                    Ok(Ok(all_points)) => Ok(all_points.len()),
+                    Ok(Err(err)) => Err(err),
+                    Err(_elapsed) => Err(CollectionError::timeout(timeout, "count")),
+                }
+            } else {
+                self.estimate_cardinality(request.filter.as_ref())
+                    .await
+                    .map(|cardinality| cardinality.exp)
+            };
+            let elapsed = start_time.elapsed();
+            let cpu_ratio = cpu_utilization.ratio();
+            let cpu_usage_ratio = if cpu_ratio > 0.0 {
+                Some(cpu_ratio)
+            } else {
+                None
+            };
+            log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+            result.map(|total_count| CountResult { count: total_count })
         };
-        let elapsed = start_time.elapsed();
-        let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 {
-            Some(cpu_ratio)
-        } else {
-            None
-        };
-        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        result.map(|total_count| CountResult { count: total_count })
+        self.profiled_with_workload("count", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -429,49 +532,57 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("retrieve", || request.ids.len())?;
-        let timeout = self.timeout_or_default_search_timeout(timeout);
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
+        let operation = async move {
+            // Check read rate limiter before proceeding
+            self.check_read_rate_limiter("retrieve", || request.ids.len())?;
+            let timeout = self.timeout_or_default_search_timeout(timeout);
 
-        let start_time = Instant::now();
-        let cpu_utilization = hw::cpu_utilization();
-        let result = match tokio::time::timeout(
-            timeout,
-            SegmentsSearcher::retrieve(
-                self.segments.clone(),
-                &request.ids,
-                with_payload,
-                with_vector,
-                search_runtime_handle,
+            let start_time = Instant::now();
+            let cpu_utilization = hw::cpu_utilization();
+            let result = match tokio::time::timeout(
                 timeout,
-                deferred_behavior,
-            ),
-        )
-        .await
-        {
-            Ok(Ok(records_map)) => {
-                let ordered_records = request
-                    .ids
-                    .iter()
-                    .filter_map(|point| records_map.get(point).cloned())
-                    .collect();
+                SegmentsSearcher::retrieve(
+                    self.segments.clone(),
+                    &request.ids,
+                    with_payload,
+                    with_vector,
+                    search_runtime_handle,
+                    timeout,
+                    deferred_behavior,
+                ),
+            )
+            .await
+            {
+                Ok(Ok(records_map)) => {
+                    let ordered_records = request
+                        .ids
+                        .iter()
+                        .filter_map(|point| records_map.get(point).cloned())
+                        .collect();
 
-                Ok(ordered_records)
-            }
-            Ok(Err(err)) => Err(err),
-            Err(_elapsed) => Err(CollectionError::timeout(timeout, "retrieve")),
+                    Ok(ordered_records)
+                }
+                Ok(Err(err)) => Err(err),
+                Err(_elapsed) => Err(CollectionError::timeout(timeout, "retrieve")),
+            };
+
+            let elapsed = start_time.elapsed();
+            let cpu_ratio = cpu_utilization.ratio();
+            let cpu_usage_ratio = if cpu_ratio > 0.0 {
+                Some(cpu_ratio)
+            } else {
+                None
+            };
+            log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+
+            result
         };
-
-        let elapsed = start_time.elapsed();
-        let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 {
-            Some(cpu_ratio)
-        } else {
-            None
-        };
-        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-
-        result
+        self.profiled_with_workload("retrieve", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -481,37 +592,52 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        let start_time = Instant::now();
-        let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
-
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("query_batch", || {
-            planned_query
-                .searches
-                .iter()
-                .map(|s| s.search_rate_cost())
-                .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
-                .chain(planned_query.texts.iter().map(|t| t.text_rate_cost()))
-                .sum()
-        })?;
-        let timeout = self.timeout_or_default_search_timeout(timeout);
-        let cpu_utilization = hw::cpu_utilization();
-        let result = self
-            .do_planned_query(planned_query, search_runtime_handle, timeout)
-            .await;
-
-        let elapsed = start_time.elapsed();
-        let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 {
-            Some(cpu_ratio)
-        } else {
-            None
-        };
-        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
-            requests.remove_details()
+        let fingerprint = workload::enabled().then(|| {
+            let request = requests.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
         });
+        let operation = async move {
+            let start_time = Instant::now();
+            let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
-        result
+            // Check read rate limiter before proceeding
+            let planned_leaves = planned_query.searches.len()
+                + planned_query.scrolls.len()
+                + planned_query.texts.len();
+            self.check_read_rate_limiter_with_plan(
+                "query_batch",
+                || {
+                    planned_query
+                        .searches
+                        .iter()
+                        .map(|s| s.search_rate_cost())
+                        .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
+                        .chain(planned_query.texts.iter().map(|t| t.text_rate_cost()))
+                        .sum()
+                },
+                Some(planned_leaves),
+            )?;
+            let timeout = self.timeout_or_default_search_timeout(timeout);
+            let cpu_utilization = hw::cpu_utilization();
+            let result = self
+                .do_planned_query(planned_query, search_runtime_handle, timeout)
+                .await;
+
+            let elapsed = start_time.elapsed();
+            let cpu_ratio = cpu_utilization.ratio();
+            let cpu_usage_ratio = if cpu_ratio > 0.0 {
+                Some(cpu_ratio)
+            } else {
+                None
+            };
+            log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
+                requests.remove_details()
+            });
+
+            result
+        };
+        self.profiled_with_workload("query_batch", fingerprint, operation)
+            .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -521,34 +647,42 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter("facet", || {
-            let mut cost = BASE_COST;
-            if let Some(filter) = &request.filter {
-                cost += filter_rate_cost(filter);
-            }
-            cost
-        })?;
+        let fingerprint = workload::enabled().then(|| {
+            let request = request.clone();
+            move |collection: &str| Fingerprint::of(collection, request.as_ref())
+        });
+        let operation = async move {
+            // Check read rate limiter before proceeding
+            self.check_read_rate_limiter("facet", || {
+                let mut cost = BASE_COST;
+                if let Some(filter) = &request.filter {
+                    cost += filter_rate_cost(filter);
+                }
+                cost
+            })?;
 
-        let start_time = Instant::now();
-        let timeout = self.timeout_or_default_search_timeout(timeout);
-        let cpu_utilization = hw::cpu_utilization();
-        let result = if request.exact {
-            self.exact_facet(request.clone(), search_runtime_handle, timeout)
-                .await
-        } else {
-            self.approx_facet(request.clone(), search_runtime_handle, timeout)
-                .await
+            let start_time = Instant::now();
+            let timeout = self.timeout_or_default_search_timeout(timeout);
+            let cpu_utilization = hw::cpu_utilization();
+            let result = if request.exact {
+                self.exact_facet(request.clone(), search_runtime_handle, timeout)
+                    .await
+            } else {
+                self.approx_facet(request.clone(), search_runtime_handle, timeout)
+                    .await
+            };
+            let elapsed = start_time.elapsed();
+            let cpu_ratio = cpu_utilization.ratio();
+            let cpu_usage_ratio = if cpu_ratio > 0.0 {
+                Some(cpu_ratio)
+            } else {
+                None
+            };
+            log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
+            result.map(|hits| FacetResponse { hits })
         };
-        let elapsed = start_time.elapsed();
-        let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 {
-            Some(cpu_ratio)
-        } else {
-            None
-        };
-        log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
-        result.map(|hits| FacetResponse { hits })
+        self.profiled_with_workload("facet", fingerprint, operation)
+            .await
     }
 
     /// Finishes ongoing update tasks

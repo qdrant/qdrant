@@ -1,11 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::profile::{SegmentInfo, SegmentScope};
 use itertools::Itertools;
+use segment::data_types::load_profile::filter_payload_keys;
 use segment::data_types::query_context::SegmentQueryContext;
 use segment::data_types::vectors::QueryVector;
 use segment::entry::entry_point::ReadSegmentEntry;
-use segment::types::{Indexes, ScoredPoint, SegmentConfig, VectorName};
+use segment::types::{Filter, Indexes, ScoredPoint, SegmentConfig, VectorName};
 use shard::search::{
     BatchSearchParams, CoreSearchRequestBatch, SearchBatchGroup, group_search_batches,
 };
@@ -105,6 +107,23 @@ fn execute_batch_search(
         search_params.top
     };
 
+    let profile = SegmentScope::start(segment_query_context.handoff(), || SegmentInfo {
+        segment_id: read_segment.segment_uuid().to_string(),
+        appendable: read_segment.is_appendable(),
+        indexed: is_vector_indexed(segment_config, search_params.vector_name),
+        points: segment_points,
+        operation: "search",
+        vector_name: Some(search_params.vector_name.to_string()),
+        batch_size: vectors_batch.len(),
+        limit: Some(top),
+        unindexed_keys: search_params
+            .filter
+            .map(|filter| unindexed_filter_keys(read_segment, filter)),
+    });
+    let profiled_context = profile
+        .as_ref()
+        .map(|profile| segment_query_context.with_handoff(profile.handoff()));
+
     let vectors_batch = &vectors_batch.iter().collect_vec();
     let res = read_segment.search_batch(
         search_params.vector_name,
@@ -114,8 +133,12 @@ fn execute_batch_search(
         search_params.filter,
         top,
         search_params.params,
-        segment_query_context,
-    )?;
+        profiled_context.as_ref().unwrap_or(segment_query_context),
+    );
+    if let Some(profile) = profile {
+        profile.finish();
+    }
+    let res = res?;
 
     let further_results = res
         .iter()
@@ -137,4 +160,58 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
             Indexes::Hnsw(hnsw) => Some(hnsw),
         })
         .map(|hnsw| hnsw.ef_construct)
+}
+
+/// Profile facts of a filtered read (scroll, count, facet) of `segment`.
+/// `indexed` is true when every dense vector of the segment has an HNSW index (optimized).
+pub(crate) fn read_segment_info(
+    segment: &dyn ReadSegmentEntry,
+    filter: Option<&Filter>,
+    limit: Option<usize>,
+) -> SegmentInfo {
+    let config = segment.config();
+    SegmentInfo {
+        segment_id: segment.segment_uuid().to_string(),
+        appendable: segment.is_appendable(),
+        indexed: config
+            .vector_data
+            .values()
+            .all(|vector| matches!(vector.index, Indexes::Hnsw(_))),
+        points: segment.available_point_count_without_deferred(),
+        operation: "read",
+        vector_name: None,
+        batch_size: 1,
+        limit,
+        unindexed_keys: filter.map(|filter| unindexed_filter_keys(segment, filter)),
+    }
+}
+
+/// Whether `vector_name` has a vector index (HNSW or sparse inverted index) in the segment.
+fn is_vector_indexed(config: &SegmentConfig, vector_name: &VectorName) -> bool {
+    match config.vector_data.get(vector_name) {
+        Some(vector_config) => match &vector_config.index {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(_) => true,
+        },
+        // Sparse vectors are always searched with an inverted index
+        None => config.sparse_vector_data.contains_key(vector_name),
+    }
+}
+
+/// Payload keys referenced by `filter` that have no payload index in the segment.
+/// Profiling only: allocates.
+pub(super) fn unindexed_filter_keys(
+    segment: &dyn ReadSegmentEntry,
+    filter: &Filter,
+) -> Vec<String> {
+    // Full keys, including the paths inside nested conditions (`diet[].likes`), as the
+    // payload index is selected for them at query time
+    let indexed = segment.get_indexed_fields();
+    let mut keys: Vec<String> = filter_payload_keys(Some(filter))
+        .into_iter()
+        .filter(|key| !indexed.contains_key(key))
+        .map(|key| key.to_string())
+        .collect();
+    keys.sort();
+    keys
 }

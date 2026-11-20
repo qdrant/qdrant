@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -44,6 +44,7 @@ impl<
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Original,
                 cpu: query.dim * size_of::<TElement>(),
                 vector_io_read: if vector_storage.is_cold() {
                     query.dim * size_of::<TElement>()

@@ -3341,6 +3341,7 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
             timeout: _,
             shard_key_selector: _,
             sparse_indices,
+            profile: _,
         } = value;
 
         let vector_internal =
@@ -3411,6 +3412,7 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
             timeout,
             shard_key_selector,
             sparse_indices,
+            profile: None,
         };
 
         if let Some(sparse_indices) = &search_points.sparse_indices {
@@ -3650,6 +3652,8 @@ impl From<HardwareUsage> for HardwareData {
             HwMetric::VectorIoWrite => m(vector_io_write),
             HwMetric::RemoteIoCachedRead => m(remote_io_cached_read),
             HwMetric::RemoteIoNonCachedRead => m(remote_io_non_cached_read),
+            // Not reported as usage; query profiles carry their own counters
+            HwMetric::VectorScores | HwMetric::QuantizedVectorScores => 0,
         })
     }
 }

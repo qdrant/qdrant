@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use ahash::AHashMap;
 use common::ambient;
-use common::ambient::hw;
+use common::ambient::{hw, profile};
 use common::types::DeferredBehavior;
 use itertools::Itertools;
 use segment::data_types::segment_record::SegmentRecordRaw;
@@ -14,7 +14,7 @@ use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blockin
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::SegmentsSearcher;
+use super::{SegmentsSearcher, read_segment_info};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -47,15 +47,17 @@ impl SegmentsSearcher {
             // TODO create one Task per segment level retrieve
             move || {
                 let _scope = handoff.enter_guard();
-                retrieve_blocking(
-                    segments,
-                    &points,
-                    &with_payload,
-                    &with_vector,
-                    timeout,
-                    &is_stopped,
-                    deferred_behavior,
-                )
+                profile::blocking_phase("retrieve_records", || {
+                    retrieve_blocking(
+                        segments,
+                        &points,
+                        &with_payload,
+                        &with_vector,
+                        timeout,
+                        &is_stopped,
+                        deferred_behavior,
+                    )
+                })
             }
         });
         Ok(AbortOnDropHandle::new(points).await??)
@@ -126,12 +128,25 @@ impl SegmentsSearcher {
                 let all_points: BTreeSet<_> = segments
                     .into_iter()
                     .map(|segment| {
-                        segment.get().read().read_filtered(
-                            None,
-                            None,
-                            filter.as_ref(),
-                            &is_stopped,
-                            deferred_behavior,
+                        let segment = segment.get();
+                        let segment = segment.read();
+                        profile::segment_read(
+                            || read_segment_info(&*segment, filter.as_ref(), None),
+                            || {
+                                let points = segment.read_filtered(
+                                    None,
+                                    None,
+                                    filter.as_ref(),
+                                    &is_stopped,
+                                    deferred_behavior,
+                                )?;
+                                // No limit: this is the exact number of matching points,
+                                // unless explain mode skipped the read
+                                if !profile::is_explain() {
+                                    profile::note_actual_cardinality(points.len());
+                                }
+                                segment::common::operation_error::OperationResult::Ok(points)
+                            },
                         )
                     })
                     .process_results(|iter| iter.flatten().collect())?;

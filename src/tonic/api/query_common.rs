@@ -84,6 +84,7 @@ pub async fn search(
         timeout,
         shard_key_selector,
         sparse_indices,
+        profile: _, // applied to the request counter by the caller
     } = search_points;
 
     let vector_internal =
@@ -134,10 +135,12 @@ pub async fn search(
     .measured(hw_measurement_acc.get_counter())
     .await?;
 
+    let profile = hw_measurement_acc.profile_grpc();
     let response = SearchResponse {
         result: scored_points.into_iter().map(ScoredPoint::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(hw_measurement_acc.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -180,6 +183,7 @@ pub async fn core_search_batch(
     .measured(request_hw_counter.get_counter())
     .await?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = SearchBatchResponse {
         result: scored_points
             .into_iter()
@@ -189,6 +193,7 @@ pub async fn core_search_batch(
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -242,6 +247,7 @@ pub async fn core_search_list(
         .measured(request_hw_counter.get_counter())
         .await?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = SearchBatchResponse {
         result: scored_points
             .into_iter()
@@ -251,6 +257,7 @@ pub async fn core_search_list(
             .collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -606,6 +613,7 @@ pub async fn scroll(
         shard_key_selector,
         order_by,
         timeout,
+        profile: _, // applied to the request counter by the caller
     } = scroll_points;
 
     let scroll_request = ScrollRequestInternal {
@@ -658,11 +666,13 @@ pub async fn scroll(
 
     let points = points.map_err(|e| Status::internal(format!("Failed to convert points: {e}")))?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = ScrollResponse {
         next_page_offset: scrolled_points.next_page_offset.map(ExtendedPointId::into),
         result: points,
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -683,6 +693,7 @@ pub async fn count(
         read_consistency,
         shard_key_selector,
         timeout,
+        profile: _, // applied to the request counter by the caller
     } = count_points;
 
     let count_request = CountRequestInternal {
@@ -719,10 +730,12 @@ pub async fn count(
     .measured(request_hw_counter.get_counter())
     .await?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = CountResponse {
         result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -840,10 +853,12 @@ pub async fn query(
     .measured(request_hw_counter.get_counter())
     .await?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = QueryResponse {
         result: scored_points.into_iter().map(ScoredPoint::into).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -897,6 +912,7 @@ pub async fn query_batch(
     .measured(request_hw_counter.get_counter())
     .await?;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = QueryBatchResponse {
         result: scored_points
             .into_iter()
@@ -910,6 +926,7 @@ pub async fn query_batch(
             total_inference_usage.into_non_empty(),
         )
         .into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))
@@ -988,6 +1005,7 @@ pub async fn facet(
         read_consistency,
         shard_key_selector,
         timeout,
+        profile: _, // applied to the request counter by the caller
     } = facet_counts;
 
     let facet_request = FacetParams {
@@ -1031,10 +1049,12 @@ pub async fn facet(
 
     let segment::data_types::facets::FacetResponse { hits } = facet_response;
 
+    let profile = request_hw_counter.profile_grpc();
     let response = FacetResponse {
         hits: hits.into_iter().map(From::from).collect(),
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
+        profile,
     };
 
     Ok(Response::new(response))

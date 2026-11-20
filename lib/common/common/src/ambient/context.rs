@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ecow::EcoString;
 
 use super::hw::{HardwareData, HwSharedDrain};
+use super::profile::ProfileHandle;
 use super::trace::{self, Event, Sink, SpanId};
 use crate::cpu_utilization::CpuUtilization;
 
@@ -18,7 +19,7 @@ pub(super) struct Node {
     root: Arc<Root>,
     span: Option<SpanId>,
     /// Kept alive, so it ends after its children.
-    _parent: Option<AmbientContext>,
+    parent: Option<AmbientContext>,
 }
 
 /// One per request.
@@ -29,18 +30,69 @@ struct Root {
     collection: Option<Arc<HwSharedDrain>>,
     cpu_utilization: CpuUtilization,
     sink: Option<Sink>,
+    /// Present when the request is profiled, see [`super::profile`].
+    profile: Option<ProfileHandle>,
+    /// Profile forks only: measurements are _also_ added to this context, instead of
+    /// `collection`, so the fork can be read on its own and still counts for the request.
+    forward: Option<AmbientContext>,
 }
 
 impl AmbientContext {
     /// The root of a new request. `collection` also receives its hardware usage.
     pub fn root(name: &str, collection: Option<Arc<HwSharedDrain>>, sink: Option<Sink>) -> Self {
+        Self::root_profiled(name, collection, sink, None)
+    }
+
+    /// [`Self::root`], profiled into `profile` when set.
+    pub(super) fn root_profiled(
+        name: &str,
+        collection: Option<Arc<HwSharedDrain>>,
+        sink: Option<Sink>,
+        profile: Option<ProfileHandle>,
+    ) -> Self {
         let root = Arc::new(Root {
             hw: HwSharedDrain::default(),
             collection,
             cpu_utilization: CpuUtilization::new(),
             sink: sink.filter(Sink::is_started),
+            profile,
+            forward: None,
         });
         Self::node(root, None, || EcoString::from(name))
+    }
+
+    /// A profile fork of this context: its own counters and profile frame, forwarding all
+    /// measurements to `self`. Only created for profiled requests.
+    pub(super) fn fork(&self, profile: ProfileHandle) -> Self {
+        self.fork_with(Some(profile))
+    }
+
+    fn fork_with(&self, profile: Option<ProfileHandle>) -> Self {
+        let root = Arc::new(Root {
+            hw: HwSharedDrain::default(),
+            collection: None,
+            cpu_utilization: self.0.root.cpu_utilization.clone(),
+            sink: self.0.root.sink.clone(),
+            profile,
+            forward: Some(self.clone()),
+        });
+        // Keeps tracing into the span of `self`, if any; the fork owns no span.
+        Self(Arc::new(Node {
+            root,
+            span: None,
+            parent: Some(self.clone()),
+        }))
+    }
+
+    /// A measuring fork of this context, for per-operation statistics: its own counters,
+    /// forwarding all measurements to `self`, and the same profile as `self`, if any.
+    pub fn measure_fork(&self) -> Self {
+        self.fork_with(self.0.root.profile.clone())
+    }
+
+    /// The profile of this request, if profiled.
+    pub(super) fn profile(&self) -> Option<&ProfileHandle> {
+        self.0.root.profile.as_ref()
     }
 
     #[cfg(feature = "testing")]
@@ -69,6 +121,9 @@ impl AmbientContext {
         if let Some(collection) = &root.collection {
             collection.add(src);
         }
+        if let Some(forward) = &root.forward {
+            forward.accumulate(src);
+        }
     }
 
     /// Accumulate usage values for request drain only.
@@ -76,6 +131,9 @@ impl AmbientContext {
     /// So we don't want to accumulate the same usage on the current machine second time
     pub fn accumulate_request(&self, src: HardwareData) {
         self.0.root.hw.add(src);
+        if let Some(forward) = &self.0.root.forward {
+            forward.accumulate_request(src);
+        }
     }
 
     /// Get hardware usage for this request.
@@ -88,9 +146,15 @@ impl AmbientContext {
         self.traced().is_some()
     }
 
-    /// The sink and the id of this node's span.
+    /// The sink and the id of this node's span. A fork owns no span: it traces into the
+    /// span of the context it was forked from.
     pub(super) fn traced(&self) -> Option<(&Sink, SpanId)> {
-        Some((self.0.root.sink.as_ref()?, self.0.span?))
+        let sink = self.0.root.sink.as_ref()?;
+        let span = match self.0.span {
+            Some(span) => span,
+            None => self.0.parent.as_ref()?.traced()?.1,
+        };
+        Some((sink, span))
     }
 
     fn node(root: Arc<Root>, parent: Option<&Self>, name: impl FnOnce() -> EcoString) -> Self {
@@ -98,7 +162,9 @@ impl AmbientContext {
             let id = trace::next_id();
             sink.send(Event::SpanStart {
                 id,
-                parent: parent.and_then(|parent| parent.0.span).unwrap_or(0),
+                parent: parent
+                    .and_then(|parent| parent.traced())
+                    .map_or(0, |(_, span)| span),
                 timestamp: trace::now(),
                 name: name(),
             });
@@ -107,7 +173,7 @@ impl AmbientContext {
         Self(Arc::new(Node {
             root,
             span,
-            _parent: parent.cloned(),
+            parent: parent.cloned(),
         }))
     }
 

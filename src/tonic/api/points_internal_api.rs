@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::grpc::HardwareUsage;
+use api::grpc::profile_conversions::profile_mode_from_grpc;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -466,6 +467,7 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
+        profile: request_hw_data.profile_grpc(),
         hardware_usage: request_hw_data.to_grpc_api(),
         inference_usage: None, // No inference in internal API
     };
@@ -488,6 +490,7 @@ async fn facet_counts_internal(
         exact,
         shard_id,
         timeout,
+        profile: _, // already applied to `request_hw_data`
     } = request;
 
     let shard_selection = ShardSelectorInternal::ShardId(shard_id);
@@ -515,6 +518,7 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
+        profile: request_hw_data.profile_grpc(),
         usage: request_hw_data.to_grpc_api(),
     };
 
@@ -534,6 +538,23 @@ impl PointsInternalService {
         );
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting())
+    }
+
+    /// [`Self::get_request_collection_hw_usage_counter_for_internal`], profiled when the
+    /// coordinating peer asked for a profile. The feature flag was checked by that peer.
+    fn get_request_collection_hw_usage_counter_for_internal_profiled(
+        &self,
+        collection_name: String,
+        profile: Option<i32>,
+    ) -> Result<RequestHwCounter, Status> {
+        let profile = profile_mode_from_grpc(profile)?;
+        Ok(RequestHwCounter::new_profiled(
+            &collection_name,
+            self.toc.get_collection_hw_metrics(collection_name.clone()),
+            self.service_config.hardware_reporting(),
+            profile,
+            common::ambient::profile::ProfileAudience::Coordinator,
+        ))
     }
 }
 
@@ -829,6 +850,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             shard_id,
             timeout,
+            profile,
         } = request.into_inner();
 
         let timeout = timeout.map(Duration::from_secs);
@@ -839,8 +861,10 @@ impl PointsInternal for PointsInternalService {
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
 
-        let hw_data =
-            self.get_request_collection_hw_usage_counter_for_internal(collection_name.clone());
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal_profiled(
+            collection_name.clone(),
+            profile,
+        )?;
         let res = core_search_list(
             self.toc.as_ref(),
             collection_name,
@@ -909,9 +933,10 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
-        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal_profiled(
             scroll_points.collection_name.clone(),
-        );
+            scroll_points.profile,
+        )?;
 
         scroll(
             UncheckedTocProvider::new_unchecked(&self.toc),
@@ -972,9 +997,10 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal_profiled(
             count_points.collection_name.clone(),
-        );
+            count_points.profile,
+        )?;
         let res = count(
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
@@ -1014,12 +1040,15 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             query_points,
             timeout,
+            profile,
         } = request.into_inner();
 
         let timeout = timeout.map(Duration::from_secs);
 
-        let hw_data =
-            self.get_request_collection_hw_usage_counter_for_internal(collection_name.clone());
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal_profiled(
+            collection_name.clone(),
+            profile,
+        )?;
 
         query_batch_internal(
             self.toc.as_ref(),
@@ -1039,9 +1068,10 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let request_inner = request.into_inner();
-        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal_profiled(
             request_inner.collection_name.clone(),
-        );
+            request_inner.profile,
+        )?;
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
     }
 }

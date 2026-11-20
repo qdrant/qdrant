@@ -1,3 +1,4 @@
+use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use common::condition_checker::ConditionChecker;
 use common::types::ScoredPointOffset;
 use common::universal_io::UniversalRead;
@@ -59,16 +60,33 @@ where
             None
         };
 
+        profile::note_full_scan_threshold(self.config.full_scan_threshold);
+
         match filter {
             None => {
                 // Determine whether to do a plain or graph search, and pick search timer aggregator
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
-                let plain_search = exact
-                    || is_hnsw_disabled
-                    || self.vector_storage.available_vector_count()
-                        < self.config.full_scan_threshold;
+                let small_segment =
+                    self.vector_storage.available_vector_count() < self.config.full_scan_threshold;
+                let plain_search = exact || is_hnsw_disabled || small_segment;
+
+                if profile::mode().is_some() {
+                    let (strategy, reason) = if exact {
+                        (SearchStrategy::Exact, StrategyReason::ExactRequested)
+                    } else if is_hnsw_disabled {
+                        (SearchStrategy::FullScan, StrategyReason::HnswDisabled)
+                    } else if small_segment {
+                        (SearchStrategy::FullScan, StrategyReason::SmallSegment)
+                    } else {
+                        (SearchStrategy::Hnsw, StrategyReason::Unfiltered)
+                    };
+                    profile::note_strategy(strategy, reason);
+                    if profile::is_explain() {
+                        return Ok(vec![vec![]; vectors.len()]);
+                    }
+                }
 
                 // Do plain or graph search
                 if plain_search {
@@ -110,9 +128,27 @@ where
                     available_vector_count,
                     self.id_tracker.available_point_count(),
                 );
+                query_cardinality.note_to_profile();
 
                 // if exact search is requested, we should not use HNSW index
                 if exact || is_hnsw_disabled {
+                    if profile::mode().is_some() {
+                        profile::note_strategy(
+                            if exact {
+                                SearchStrategy::Exact
+                            } else {
+                                plain_filtered_strategy(&query_cardinality)
+                            },
+                            if exact {
+                                StrategyReason::ExactRequested
+                            } else {
+                                StrategyReason::HnswDisabled
+                            },
+                        );
+                        if profile::is_explain() {
+                            return Ok(vec![vec![]; vectors.len()]);
+                        }
+                    }
                     let _timer = ScopeDurationMeasurer::new(if exact {
                         &self.searches_telemetry.exact_filtered
                     } else {
@@ -132,6 +168,15 @@ where
                 }
 
                 if query_cardinality.max < self.config.full_scan_threshold {
+                    if profile::mode().is_some() {
+                        profile::note_strategy(
+                            plain_filtered_strategy(&query_cardinality),
+                            StrategyReason::CardinalityBelowThreshold,
+                        );
+                        if profile::is_explain() {
+                            return Ok(vec![vec![]; vectors.len()]);
+                        }
+                    }
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -154,6 +199,7 @@ where
                         top,
                         params,
                         query_context,
+                        StrategyReason::CardinalityAboveThreshold,
                     );
                 }
 
@@ -184,8 +230,18 @@ where
                         top,
                         params,
                         query_context,
+                        StrategyReason::SampledCardinality,
                     )
                 } else {
+                    if profile::mode().is_some() {
+                        profile::note_strategy(
+                            plain_filtered_strategy(&query_cardinality),
+                            StrategyReason::SampledCardinality,
+                        );
+                        if profile::is_explain() {
+                            return Ok(vec![vec![]; vectors.len()]);
+                        }
+                    }
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -203,6 +259,7 @@ where
     }
 
     /// Filtered graph search, timed under the counter of the algorithm it runs.
+    #[allow(clippy::too_many_arguments)]
     fn search_vectors_with_graph_filtered(
         &self,
         vectors: &[&QueryVector],
@@ -211,8 +268,22 @@ where
         top: usize,
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
+        reason: StrategyReason,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
+        if profile::mode().is_some() {
+            match algorithm {
+                SearchAlgorithm::Hnsw => {
+                    profile::note_strategy(SearchStrategy::HnswFiltered, reason)
+                }
+                SearchAlgorithm::Acorn => {
+                    profile::note_strategy(SearchStrategy::Acorn, StrategyReason::AcornSelectivity)
+                }
+            }
+            if profile::is_explain() {
+                return Ok(vec![vec![]; vectors.len()]);
+            }
+        }
         let _timer = ScopeDurationMeasurer::new(match algorithm {
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
@@ -291,5 +362,15 @@ where
         } else {
             SearchAlgorithm::Hnsw
         }
+    }
+}
+
+/// Brute force over the points matching a filter: from payload indexes when the estimation
+/// found primary clauses, otherwise over all points of the segment.
+fn plain_filtered_strategy(cardinality: &CardinalityEstimation) -> SearchStrategy {
+    if cardinality.primary_clauses.is_empty() {
+        SearchStrategy::FullScan
+    } else {
+        SearchStrategy::PayloadIndexFirst
     }
 }

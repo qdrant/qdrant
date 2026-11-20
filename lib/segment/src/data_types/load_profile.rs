@@ -240,7 +240,7 @@ impl LoadProfile {
 /// Collect the full payload keys of every field the filter's conditions read, recursing
 /// into boolean sub-filters and nested-object conditions (whose inner keys resolve against
 /// the nested array prefix, mirroring how the payload index is selected at query time).
-fn filter_payload_keys(filter: Option<&Filter>) -> HashSet<PayloadKeyType> {
+pub fn filter_payload_keys(filter: Option<&Filter>) -> HashSet<PayloadKeyType> {
     let mut keys = HashSet::new();
     if let Some(filter) = filter {
         collect_filter_keys(filter, None, &mut keys);

@@ -148,17 +148,38 @@ where
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
+        // Explain returns before reading, so before the reads look up the range index:
+        // check it here, so explain fails like the request would
+        if common::ambient::profile::is_explain()
+            && self
+                .payload_index
+                .numeric_index_for(&order_by.key)
+                .is_none()
+        {
+            return Err(OperationError::MissingRangeIndexForOrderBy {
+                key: order_by.key.to_string(),
+            });
+        }
         match filter {
-            None => self.filtered_read_by_value_stream(
-                order_by,
-                limit,
-                None,
-                is_stopped,
-                deferred_behavior,
-            ),
+            None => {
+                if super::scroll::note_unfiltered_read() {
+                    return Ok(Vec::new());
+                }
+                self.filtered_read_by_value_stream(
+                    order_by,
+                    limit,
+                    None,
+                    is_stopped,
+                    deferred_behavior,
+                )
+            }
             Some(filter) => {
                 let cardinality_estimation = self.payload_index.estimate_cardinality(filter)?;
-                if self.should_pre_filter(&cardinality_estimation, limit) {
+                let pre_filter = self.should_pre_filter(&cardinality_estimation, limit);
+                if super::scroll::note_read_plan(&cardinality_estimation, pre_filter) {
+                    return Ok(Vec::new());
+                }
+                if pre_filter {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,

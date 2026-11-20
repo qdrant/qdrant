@@ -77,6 +77,21 @@ pub struct CardinalityEstimation {
 }
 
 impl CardinalityEstimation {
+    /// Record this estimation in the query profile of the current scope, if profiled.
+    pub fn note_to_profile(&self) {
+        common::ambient::profile::note_cardinality(self.min, self.exp, self.max, || {
+            self.primary_clauses
+                .iter()
+                .map(|clause| match clause {
+                    PrimaryCondition::Condition(condition) => condition.key.to_string(),
+                    PrimaryCondition::Ids(_) => "has_id".to_string(),
+                    PrimaryCondition::HasVector(_) => "has_vector".to_string(),
+                    PrimaryCondition::Points(_) => "resolved_points".to_string(),
+                })
+                .collect()
+        });
+    }
+
     pub const fn exact(count: usize) -> Self {
         CardinalityEstimation {
             primary_clauses: vec![],

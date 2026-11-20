@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
+use common::ambient::profile;
 use common::types::DeferredBehavior;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -86,8 +87,10 @@ impl LocalShard {
         let texts_f = self.do_text_searches(request.texts, timeout);
 
         // execute searches, scrolls and BM25 queries concurrently
+        let prefetch_timer = profile::phase("prefetch");
         let (search_results, scroll_results, text_results) =
             tokio::try_join!(searches_f, scrolls_f, texts_f)?;
+        drop(prefetch_timer);
         let prefetch_holder = PrefetchResults::new(search_results, scroll_results, text_results);
 
         // decrease timeout by the time spent so far
@@ -115,6 +118,7 @@ impl LocalShard {
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
         }
+        let _timer = profile::phase("payload_retrieval");
 
         // ids to retrieve (deduplication happens in the searcher)
         let point_ids: Vec<_> = query_response
@@ -245,9 +249,11 @@ impl LocalShard {
                 } = rescore_stages;
 
                 let rescored = if let Some(rescore_params) = shard_level {
+                    let rescore_timer = profile::phase("rescore");
                     let rescored = self
                         .rescore(sources, rescore_params, search_runtime_handle, timeout)
                         .await?;
+                    drop(rescore_timer);
                     vec![rescored]
                 } else {
                     // This re-scoring method requires full knowledge of all sources across all shards,

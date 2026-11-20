@@ -48,6 +48,9 @@ pub struct ApiResponse<D> {
     pub time: f64,
     #[serde(skip_serializing_if = "is_usage_none_or_empty")]
     pub usage: Option<Usage>,
+    /// Query profile, if requested with the `profile` parameter (beta).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<common::ambient::profile::QueryProfile>,
 }
 
 /// Usage of the hardware resources, spent to process the request

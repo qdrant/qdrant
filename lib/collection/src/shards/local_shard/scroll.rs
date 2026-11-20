@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use common::ambient;
-use common::ambient::hw;
+use common::ambient::{hw, profile};
 use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
@@ -23,7 +23,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_searcher::{SegmentsSearcher, read_segment_info};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::operations::types::{
     CollectionError, CollectionResult, QueryScrollRequestInternal, ScrollOrder,
@@ -161,12 +161,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        filter.as_ref(),
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_filtered(
+                                offset,
+                                Some(limit),
+                                filter.as_ref(),
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -251,12 +258,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_filtered(
-                        offset,
-                        Some(limit),
-                        filter.as_ref(),
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_filtered(
+                                offset,
+                                Some(limit),
+                                filter.as_ref(),
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -345,12 +359,19 @@ impl LocalShard {
             let task = search_runtime_handle.spawn_blocking(move || {
                 let _scope = handoff.enter_guard();
                 let work = || {
-                    segment.get().read().read_ordered_filtered(
-                        Some(limit),
-                        filter.as_ref(),
-                        &order_by,
-                        &is_stopped,
-                        deferred_behavior,
+                    let segment = segment.get();
+                    let segment = segment.read();
+                    profile::segment_read(
+                        || read_segment_info(&*segment, filter.as_ref(), Some(limit)),
+                        || {
+                            segment.read_ordered_filtered(
+                                Some(limit),
+                                filter.as_ref(),
+                                &order_by,
+                                &is_stopped,
+                                deferred_behavior,
+                            )
+                        },
                     )
                 };
                 cpu_utilization.measure(work)
@@ -446,10 +467,19 @@ impl LocalShard {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    Ok((
-                        read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped)?,
-                    ))
+                    profile::segment_read(
+                        || read_segment_info(&*read_segment, filter.as_ref(), Some(limit)),
+                        || {
+                            Ok((
+                                read_segment.available_point_count_without_deferred(),
+                                read_segment.read_random_filtered(
+                                    limit,
+                                    filter.as_ref(),
+                                    &is_stopped,
+                                )?,
+                            ))
+                        },
+                    )
                 };
                 cpu_utilization.measure(work)
             });

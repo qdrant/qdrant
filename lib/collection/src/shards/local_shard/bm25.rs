@@ -57,6 +57,15 @@ impl LocalShard {
         texts: Vec<TextSearchRequestInternal>,
         timeout: Duration,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        if common::ambient::profile::is_explain() && !texts.is_empty() {
+            // BM25 leaves have no strategy to choose: they always score the matching documents
+            common::ambient::profile::note(|| {
+                "Explain mode: BM25 text searches always score every matching document; they \
+                 were not run and contribute no candidates."
+                    .to_string()
+            });
+            return Ok(vec![Vec::new(); texts.len()]);
+        }
         let searches = texts.into_iter().map(|text| {
             let TextSearchRequestInternal {
                 query,

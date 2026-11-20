@@ -561,6 +561,7 @@ message SearchPoints {
   // Specify in which shards to look for the points, if not specified - look in all shards
   optional ShardKeySelector shard_key_selector = 14;
   optional SparseIndices sparse_indices = 15;
+  optional ProfileMode profile = 16; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message SearchBatchPoints {
@@ -571,6 +572,7 @@ message SearchBatchPoints {
   optional ReadConsistency read_consistency = 3;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 4;
+  optional ProfileMode profile = 5; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message WithLookup {
@@ -663,6 +665,7 @@ message ScrollPoints {
   optional OrderBy order_by = 10;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 11;
+  optional ProfileMode profile = 12; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`.
@@ -859,6 +862,7 @@ message CountPoints {
   optional ShardKeySelector shard_key_selector = 5;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 6;
+  optional ProfileMode profile = 7; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message RecommendInput {
@@ -1183,6 +1187,7 @@ message QueryPoints {
   optional LookupLocation lookup_from = 14;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 15;
+  optional ProfileMode profile = 16; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message QueryBatchPoints {
@@ -1192,6 +1197,7 @@ message QueryBatchPoints {
   optional ReadConsistency read_consistency = 3;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 4;
+  optional ProfileMode profile = 5; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message QueryPointGroups {
@@ -1254,6 +1260,7 @@ message FacetCounts {
   optional ReadConsistency read_consistency = 7;
   // Specify in which shards to look for the points, if not specified - look in all shards
   optional ShardKeySelector shard_key_selector = 8;
+  optional ProfileMode profile = 9; // Return a query profile with the response (beta, needs the `query_profiling` feature flag)
 }
 
 message FacetValue {
@@ -1495,6 +1502,7 @@ message SearchResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message QueryResponse {
@@ -1502,6 +1510,7 @@ message QueryResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message QueryBatchResponse {
@@ -1509,6 +1518,7 @@ message QueryBatchResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message QueryGroupsResponse {
@@ -1527,6 +1537,7 @@ message SearchBatchResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message SearchGroupsResponse {
@@ -1541,6 +1552,7 @@ message CountResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message ScrollResponse {
@@ -1550,6 +1562,7 @@ message ScrollResponse {
   // Time spent to process
   double time = 3;
   optional Usage usage = 4;
+  optional QueryProfile profile = 5; // Query profile, if requested
 }
 
 message CountResult {
@@ -1622,6 +1635,7 @@ message FacetResponse {
   // Time spent to process
   double time = 2;
   optional Usage usage = 3;
+  optional QueryProfile profile = 4; // Query profile, if requested
 }
 
 message SearchMatrixPairsResponse {
@@ -1701,4 +1715,115 @@ message HardwareUsage {
   optional uint64 remote_io_non_cached_read = 9;
   optional uint64 updated_bytes = 10;
   optional uint64 updated_indexed_bytes = 11;
+}
+
+// ---------------------------------------------
+// ------------- Query profiling ---------------
+// ---------------------------------------------
+// Beta. Mirrors the REST `QueryProfile` schema field by field, see the "Query profiling" docs.
+
+enum ProfileMode {
+  ProfileAnalyze = 0; // Run the request and report where the time went, like `EXPLAIN ANALYZE`
+  ProfileExplain = 1; // Plan the request without scoring any vector, like `EXPLAIN`
+}
+
+message QueryProfile {
+  uint32 version = 1; // Schema version
+  ProfileMode mode = 2;
+  double total_time_ms = 3; // Wall time on the node that received the request
+  repeated PhaseProfile phases = 4; // Request-level phases on the receiving node
+  repeated ShardProfile shards = 5; // One entry per shard operation, local or remote
+  repeated string notes = 6; // Human-readable findings, e.g. a missing payload index
+}
+
+message PhaseProfile {
+  string name = 1; // e.g. `plan`, `merge`, `rescore`, `payload_retrieval`
+  double time_ms = 2; // Summed over all calls
+  uint64 calls = 3;
+  optional uint64 major_page_faults = 4; // For phases on one thread, e.g. `retrieve_records`
+  optional uint64 disk_read_bytes = 5; // For phases on one thread, e.g. `retrieve_records`
+}
+
+enum ShardLocation {
+  ShardLocal = 0;
+  ShardRemote = 1;
+}
+
+message ShardProfile {
+  uint32 shard_id = 1;
+  optional uint64 peer_id = 2; // Peer that executed the operation, absent in single-node deployments
+  ShardLocation location = 3;
+  string operation = 4; // `query_batch`, `core_search`, `scroll`, `count`, `facet`, `retrieve`
+  double time_ms = 5; // Time of the operation on the peer that executed it
+  optional double network_time_ms = 6; // Remote only: round trip minus `time_ms`
+  repeated PhaseProfile phases = 7;
+  repeated SegmentProfile segments = 8;
+}
+
+enum SearchStrategy {
+  StrategyHnsw = 0;
+  StrategyHnswFiltered = 1;
+  StrategyAcorn = 2;
+  StrategyPayloadIndexFirst = 3;
+  StrategyFullScan = 4;
+  StrategyExact = 5;
+  StrategySparseIndex = 6;
+  StrategyIndexedRead = 7;
+  StrategyFullScanRead = 8;
+  StrategyUnfilteredRead = 9; // Read without a filter (scroll, count), up to the limit
+}
+
+enum StrategyReason {
+  ReasonNotIndexed = 0;
+  ReasonHnswDisabled = 1;
+  ReasonExactRequested = 2;
+  ReasonSmallSegment = 3;
+  ReasonCardinalityBelowThreshold = 4;
+  ReasonCardinalityAboveThreshold = 5;
+  ReasonSampledCardinality = 6;
+  ReasonAcornSelectivity = 7;
+  ReasonUnfiltered = 8;
+}
+
+message CardinalityProfile {
+  uint64 min = 1;
+  uint64 exp = 2;
+  uint64 max = 3;
+}
+
+message FilterProfile {
+  optional CardinalityProfile estimated_cardinality = 1;
+  optional uint64 actual_cardinality = 2;
+  repeated string indexed_keys = 3; // Payload keys whose index selected the candidates
+  repeated string unindexed_keys = 4; // Payload keys of the filter without a payload index
+  bool full_payload_scan = 5; // No payload index narrowed the candidates down
+}
+
+message SegmentCounters {
+  uint64 vector_scores = 1;
+  uint64 quantized_vector_scores = 2;
+  uint64 vector_io_read_bytes = 3;
+  uint64 payload_io_read_bytes = 4;
+  uint64 payload_index_io_read_bytes = 5;
+  uint64 remote_io_cached_read_bytes = 6;
+  uint64 remote_io_non_cached_read_bytes = 7;
+  optional uint64 major_page_faults = 8; // Page faults that waited for a disk read
+  optional uint64 disk_read_bytes = 9; // Bytes actually read from the block device
+}
+
+message SegmentProfile {
+  string segment_id = 1;
+  bool appendable = 2;
+  bool indexed = 3; // The searched vector has an index in this segment
+  uint64 points = 4;
+  string operation = 5; // `search` or `read`
+  optional string vector_name = 6;
+  uint64 batch_size = 7;
+  optional uint64 limit = 8;
+  optional SearchStrategy strategy = 9;
+  optional StrategyReason strategy_reason = 10;
+  optional uint64 full_scan_threshold = 11;
+  optional FilterProfile filter = 12;
+  double time_ms = 13;
+  SegmentCounters counters = 14;
 }

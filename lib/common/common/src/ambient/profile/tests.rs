@@ -1,0 +1,401 @@
+use std::sync::Arc;
+
+use super::*;
+use crate::ambient::hw::{HwMetric, HwScale, HwSharedDrain, ScoreKind};
+use crate::ambient::{AmbientFutureExt, current};
+
+fn profiled(mode: ProfileMode) -> (Profiler, AmbientContext, Arc<HwSharedDrain>) {
+    let profiler = Profiler::new(mode, ProfileAudience::Client);
+    let drain = Arc::new(HwSharedDrain::default());
+    let ctx = AmbientContext::request_profiled("test", drain.clone(), Some(&profiler));
+    (profiler, ctx, drain)
+}
+
+fn segment_info(points: usize, unindexed_keys: Option<Vec<String>>) -> SegmentInfo {
+    SegmentInfo {
+        segment_id: "seg".to_string(),
+        appendable: true,
+        indexed: false,
+        points,
+        operation: "search",
+        vector_name: Some(String::new()),
+        batch_size: 1,
+        limit: Some(10),
+        unindexed_keys,
+    }
+}
+
+#[test]
+fn unprofiled_scope_is_a_noop() {
+    let ctx = AmbientContext::request("test", Arc::default());
+    ctx.measure(|| {
+        assert_eq!(mode(), None);
+        assert!(!is_explain());
+        assert!(phase("plan").is_none());
+        assert!(ShardScope::start(1, "query_batch").is_none());
+        assert!(SegmentScope::start(&current(), || unreachable!()).is_none());
+        note_strategy(SearchStrategy::Hnsw, StrategyReason::Unfiltered);
+    });
+    // Outside of any scope: no context, no panic
+    assert_eq!(mode(), None);
+}
+
+#[tokio::test]
+async fn shard_and_segment_are_collected() {
+    crate::ambient::hw::enable_score_counting();
+    let (profiler, ctx, drain) = profiled(ProfileMode::Analyze);
+
+    async {
+        assert_eq!(mode(), Some(ProfileMode::Analyze));
+        record_phase("plan", std::time::Duration::from_millis(2));
+
+        let shard = ShardScope::start(7, "query_batch").unwrap();
+        shard
+            .run(async {
+                let handoff = current();
+                std::thread::scope(|s| {
+                    s.spawn(|| {
+                        let segment = SegmentScope::start(&handoff, || {
+                            segment_info(1000, Some(vec!["city".to_string()]))
+                        })
+                        .unwrap();
+                        segment.handoff().enter(|| {
+                            note_strategy(SearchStrategy::FullScan, StrategyReason::NotIndexed);
+                            note_cardinality(0, 500, 1000, Vec::new);
+                            note_full_scan_threshold(10_000);
+                            let scale = HwScale {
+                                cpu: 4,
+                                vector_io_read: 0,
+                                kind: ScoreKind::Original,
+                            };
+                            scale.cpu(1000);
+                            HwMetric::PayloadIoRead.bump(123);
+                        });
+                        segment.finish();
+                    });
+                });
+                record_phase("merge", std::time::Duration::from_millis(1));
+            })
+            .await;
+    }
+    .measured(ctx.clone())
+    .await;
+
+    let profile = profiler.finish();
+    assert_eq!(profile.version, PROFILE_SCHEMA_VERSION);
+    assert_eq!(profile.phases.len(), 1);
+    assert_eq!(profile.phases[0].name, "plan");
+    assert_eq!(profile.shards.len(), 1);
+
+    let shard = &profile.shards[0];
+    assert_eq!(shard.shard_id, 7);
+    assert_eq!(shard.location, ShardLocation::Local);
+    assert_eq!(shard.phases[0].name, "merge");
+    assert_eq!(shard.segments.len(), 1);
+
+    let segment = &shard.segments[0];
+    assert_eq!(segment.strategy, Some(SearchStrategy::FullScan));
+    assert_eq!(segment.strategy_reason, Some(StrategyReason::NotIndexed));
+    assert_eq!(segment.full_scan_threshold, Some(10_000));
+    assert_eq!(segment.counters.vector_scores, 1000);
+    assert_eq!(segment.counters.quantized_vector_scores, 0);
+    assert_eq!(segment.counters.payload_io_read_bytes, 123);
+    let filter = segment.filter.as_ref().unwrap();
+    assert_eq!(filter.unindexed_keys, vec!["city".to_string()]);
+    assert!(filter.full_payload_scan);
+    assert_eq!(
+        filter.estimated_cardinality,
+        Some(CardinalityProfile {
+            min: 0,
+            exp: 500,
+            max: 1000
+        })
+    );
+
+    // Forks still count for the request and the collection, exactly once
+    assert_eq!(ctx.hw_data()[HwMetric::Cpu], 4000);
+    assert_eq!(drain.load()[HwMetric::Cpu], 4000);
+    assert_eq!(drain.load()[HwMetric::PayloadIoRead], 123);
+
+    assert!(profile.notes.iter().any(|note| note.contains("`city`")));
+    assert!(
+        profile
+            .notes
+            .iter()
+            .any(|note| note.contains("no vector index"))
+    );
+}
+
+#[test]
+fn remote_profile_is_grafted_with_network_time() {
+    let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
+    let remote = QueryProfile {
+        version: PROFILE_SCHEMA_VERSION,
+        mode: ProfileMode::Analyze,
+        total_time_ms: 8.0,
+        phases: vec![],
+        shards: vec![ShardProfile {
+            shard_id: 2,
+            peer_id: Some(42),
+            location: ShardLocation::Local,
+            operation: "query_batch".to_string(),
+            time_ms: 7.5,
+            network_time_ms: None,
+            phases: vec![],
+            segments: vec![],
+        }],
+        notes: vec!["remote note".to_string()],
+    };
+    ctx.measure(|| {
+        record_remote(
+            2,
+            42,
+            "query_batch",
+            std::time::Duration::from_millis(20),
+            remote,
+        )
+    });
+    let profile = profiler.finish();
+    let shard = &profile.shards[0];
+    assert_eq!(shard.location, ShardLocation::Remote);
+    assert_eq!(shard.peer_id, Some(42));
+    assert_eq!(shard.network_time_ms, Some(12.0));
+    // Remote peers send recorded notes only (see `ProfileAudience::Coordinator`): kept
+    assert!(profile.notes.iter().any(|note| note == "remote note"));
+}
+
+#[test]
+fn remote_without_profile_is_discarded_in_explain_only() {
+    let duration = std::time::Duration::from_millis(5);
+    let (profiler, ctx, _) = profiled(ProfileMode::Explain);
+    let action = ctx.measure(|| {
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults,
+        )
+    });
+    assert_eq!(action, RemoteResults::Discard);
+    let profile = profiler.finish();
+    assert_eq!(profile.shards.len(), 1);
+    assert!(
+        profile
+            .notes
+            .iter()
+            .any(|note| note.contains("does not support explain"))
+    );
+
+    let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
+    let action = ctx.measure(|| {
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults,
+        )
+    });
+    assert_eq!(action, RemoteResults::Keep);
+    assert!(
+        profiler
+            .finish()
+            .notes
+            .iter()
+            .any(|note| note.contains("no profile"))
+    );
+
+    // Approximate count from an older peer: kept, and the note says so
+    let (profiler, ctx, _) = profiled(ProfileMode::Explain);
+    let action = ctx.measure(|| {
+        record_remote_without_profile(1, 9, "count", duration, ExplainFallback::KeepEstimate)
+    });
+    assert_eq!(action, RemoteResults::Keep);
+    let notes = profiler.finish().notes;
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("approximate count is included")),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|note| note.contains("discarded")),
+        "{notes:?}"
+    );
+
+    // Not profiled: always keep
+    assert_eq!(
+        record_remote_without_profile(
+            1,
+            9,
+            "query_batch",
+            duration,
+            ExplainFallback::DiscardResults
+        ),
+        RemoteResults::Keep
+    );
+}
+
+#[test]
+fn coordinator_audience_gets_recorded_notes_only() {
+    let profiler = Profiler::new(ProfileMode::Explain, ProfileAudience::Coordinator);
+    let drain = Arc::new(HwSharedDrain::default());
+    let ctx = AmbientContext::request_profiled("test", drain, Some(&profiler));
+    ctx.measure(|| note(|| "recorded".to_string()));
+    // No derived "Explain mode: ..." note: the coordinator derives notes once
+    assert_eq!(profiler.finish().notes, vec!["recorded".to_string()]);
+}
+
+#[test]
+fn notes_of_a_shard_reach_the_request() {
+    let (profiler, ctx, _) = profiled(ProfileMode::Analyze);
+    ctx.measure(|| {
+        let scope = ShardScope::start(3, "query_batch").unwrap();
+        futures::executor::block_on(scope.run(async { note(|| "from shard".to_string()) }));
+    });
+    assert!(profiler.finish().notes.iter().any(|n| n == "from shard"));
+}
+
+#[test]
+fn quantized_scores_are_counted_when_enabled() {
+    crate::ambient::hw::enable_score_counting();
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
+        let hw = HwScale {
+            cpu: 1,
+            vector_io_read: 0,
+            kind: ScoreKind::Quantized,
+        };
+        hw.count_scores(10);
+        crate::ambient::hw::count_scores(ScoreKind::Original, 3);
+    });
+    let data = ctx.hw_data();
+    assert_eq!(data[HwMetric::QuantizedVectorScores], 10);
+    assert_eq!(data[HwMetric::VectorScores], 3);
+    // Counting scores costs no CPU on its own
+    assert_eq!(data[HwMetric::Cpu], 0);
+}
+
+#[test]
+fn explain_mode_is_visible_in_scope_and_notes() {
+    let (profiler, ctx, _) = profiled(ProfileMode::Explain);
+    ctx.measure(|| assert!(is_explain()));
+    assert!(handoff_mode(&Handoff::Measured(ctx)) == Some(ProfileMode::Explain));
+    let profile = profiler.finish();
+    assert!(
+        profile
+            .notes
+            .iter()
+            .any(|note| note.starts_with("Explain mode"))
+    );
+}
+
+#[test]
+fn schema_roundtrips_through_json() {
+    let (profiler, _ctx, _) = profiled(ProfileMode::Analyze);
+    let profile = profiler.finish();
+    let json = serde_json::to_value(&profile).unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["mode"], "analyze");
+    let back: QueryProfile = serde_json::from_value(json).unwrap();
+    assert_eq!(back, profile);
+}
+
+fn io_profile(
+    segment_io: (Option<u64>, Option<u64>),
+    phase_io: (Option<u64>, Option<u64>),
+) -> QueryProfile {
+    let counters = SegmentCounters {
+        major_page_faults: segment_io.0,
+        disk_read_bytes: segment_io.1,
+        ..SegmentCounters::default()
+    };
+    QueryProfile {
+        version: PROFILE_SCHEMA_VERSION,
+        mode: ProfileMode::Analyze,
+        total_time_ms: 1.0,
+        phases: vec![],
+        shards: vec![ShardProfile {
+            shard_id: 0,
+            peer_id: None,
+            location: ShardLocation::Local,
+            operation: "scroll".to_string(),
+            time_ms: 1.0,
+            network_time_ms: None,
+            phases: vec![PhaseProfile {
+                name: "retrieve_records".to_string(),
+                time_ms: 0.5,
+                calls: 1,
+                major_page_faults: phase_io.0,
+                disk_read_bytes: phase_io.1,
+            }],
+            segments: vec![SegmentProfile {
+                segment_id: "seg".to_string(),
+                appendable: false,
+                indexed: true,
+                points: 10,
+                operation: "read".to_string(),
+                vector_name: None,
+                batch_size: 1,
+                limit: Some(10),
+                strategy: Some(SearchStrategy::UnfilteredRead),
+                strategy_reason: Some(StrategyReason::Unfiltered),
+                full_scan_threshold: None,
+                filter: None,
+                time_ms: 0.5,
+                counters,
+            }],
+        }],
+        notes: vec![],
+    }
+}
+
+fn disk_note(profile: &QueryProfile) -> Option<String> {
+    super::collector::derive_notes(profile)
+        .into_iter()
+        .find(|note| note.starts_with("Waited for the disk"))
+}
+
+#[test]
+fn disk_note_counts_all_reads_and_places() {
+    // Bytes read without a major fault (e.g. readahead by `pread`) still went to the disk
+    let note = disk_note(&io_profile((Some(0), Some(1 << 20)), (Some(0), Some(0)))).unwrap();
+    assert!(note.contains("0 major page fault(s), 1.0 MiB"), "{note}");
+    assert!(
+        note.contains("in 1 segment(s)") && !note.contains("retrieve_records"),
+        "{note}"
+    );
+
+    // Segment and phase both read: both are named, and all bytes are summed
+    let note = disk_note(&io_profile(
+        (Some(2), Some(1 << 20)),
+        (Some(3), Some(1 << 20)),
+    ))
+    .unwrap();
+    assert!(note.contains("5 major page fault(s), 2.0 MiB"), "{note}");
+    assert!(note.contains("1 segment(s), `retrieve_records`"), "{note}");
+
+    // Faults without a byte count (no task I/O accounting): the amount is unknown, not 0
+    let note = disk_note(&io_profile((Some(4), None), (None, None))).unwrap();
+    assert!(
+        note.contains("4 major page fault(s), an unknown amount read"),
+        "{note}"
+    );
+
+    // Nothing read, or not measured: no note
+    assert_eq!(
+        disk_note(&io_profile((Some(0), Some(0)), (Some(0), Some(0)))),
+        None
+    );
+    assert_eq!(disk_note(&io_profile((None, None), (None, None))), None);
+}
+
+#[test]
+fn derived_notes_are_not_duplicated() {
+    let mut profile = io_profile((Some(1), Some(4096)), (None, None));
+    // A peer that derived its notes already sent the same note
+    profile.notes = vec![disk_note(&profile).unwrap()];
+    let notes = super::collector::derive_notes(&profile);
+    assert_eq!(notes.iter().filter(|n| n.starts_with("Waited")).count(), 1);
+}

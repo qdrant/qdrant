@@ -1,3 +1,4 @@
+use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use common::types::ScoredPointOffset;
 
 use super::PlainVectorIndexReadView;
@@ -70,6 +71,26 @@ where
 
         let is_stopped = query_context.is_stopped();
 
+        if profile::mode().is_some() {
+            let strategy = match filter {
+                None => SearchStrategy::FullScan,
+                Some(filter) => {
+                    // Profiling only: the same estimation `query_points` does internally
+                    let cardinality = self.payload_index.estimate_cardinality(filter)?;
+                    cardinality.note_to_profile();
+                    if cardinality.primary_clauses.is_empty() {
+                        SearchStrategy::FullScan
+                    } else {
+                        SearchStrategy::PayloadIndexFirst
+                    }
+                }
+            };
+            profile::note_strategy(strategy, StrategyReason::NotIndexed);
+            if profile::is_explain() {
+                return Ok(vec![vec![]; query_vectors.len()]);
+            }
+        }
+
         let _timer = ScopeDurationMeasurer::new(if filter.is_some() {
             &self.filtered_searches_telemetry
         } else {
@@ -95,6 +116,7 @@ where
         let mut search_results = match filter {
             Some(filter) => {
                 let filtered_ids_vec = self.payload_index.query_points(filter, &is_stopped)?;
+                profile::note_actual_cardinality(filtered_ids_vec.len());
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => {

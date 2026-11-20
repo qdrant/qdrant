@@ -278,6 +278,7 @@ fn validation_error_handler(
         status: ApiStatus::Error(msg),
         time: 0.0,
         usage: None,
+        profile: None,
     });
     error::InternalError::from_response(err, response).into()
 }

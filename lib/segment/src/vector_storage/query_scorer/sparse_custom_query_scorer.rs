@@ -1,4 +1,4 @@
-use common::ambient::hw::HwScale;
+use common::ambient::hw::{HwScale, ScoreKind};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -34,6 +34,7 @@ impl<
 
         Self {
             hw: HwScale {
+                kind: ScoreKind::Original,
                 cpu: size_of::<DimWeight>(),
                 vector_io_read: if vector_storage.is_cold() {
                     size_of::<DimId>()
@@ -53,7 +54,7 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>>
     fn score(&self, v: &SparseVector) -> ScoreType {
         self.query.score_by(|example| {
             let cpu_units = v.indices.len() + example.indices.len();
-            self.hw.cpu(cpu_units);
+            self.hw.cpu_units(cpu_units, 1);
             example.score(v).unwrap_or(0.0)
         })
     }

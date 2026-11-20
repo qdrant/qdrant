@@ -1512,12 +1512,32 @@ impl LocalShard {
     where
         F: FnOnce() -> usize,
     {
+        self.check_read_rate_limiter_with_plan(context, cost_fn, None)
+    }
+
+    /// [`Self::check_read_rate_limiter`] for operations that explain mode only plans.
+    /// In explain mode, the cost is `planned_leaves` (one per search or read whose strategy
+    /// is planned: cardinality estimation and sampling are real work), instead of the full
+    /// cost of executing them. Operations that do the same work in explain mode, like
+    /// `retrieve`, must use [`Self::check_read_rate_limiter`].
+    fn check_read_rate_limiter_with_plan<F>(
+        &self,
+        context: &str,
+        cost_fn: F,
+        planned_leaves: Option<usize>,
+    ) -> CollectionResult<()>
+    where
+        F: FnOnce() -> usize,
+    {
         // Do not rate limit internal operation tagged with disposable measurement
         if !hw::is_measured() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.read_rate_limiter {
-            let cost = cost_fn();
+            let cost = match planned_leaves {
+                Some(leaves) if common::ambient::profile::is_explain() => leaves.max(1),
+                Some(_) | None => cost_fn(),
+            };
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)

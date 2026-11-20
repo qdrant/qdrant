@@ -128,6 +128,7 @@ pub async fn convert_query_points_from_grpc(
         shard_key_selector: _,
         lookup_from,
         timeout: _,
+        profile: _,
     } = query;
 
     let mut batch = BatchAccumGrpc::new();

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use api::grpc::profile_conversions::profile_mode_from_grpc;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
@@ -18,7 +19,9 @@ use api::grpc::qdrant::{
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
 use common::ambient::{AmbientContext, AmbientFutureExt};
-use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
+use storage::content_manager::toc::request_hw_counter::{
+    RequestHwCounter, check_facet_profile, check_profile_allowed,
+};
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -58,6 +61,25 @@ impl PointsService {
 
         let waiting = wait != Some(false);
         RequestHwCounter::new(counter, self.service_config.hardware_reporting() && waiting)
+    }
+
+    /// [`Self::get_request_collection_hw_usage_counter`] for a read request with the `profile`
+    /// field. Fails if a profile is requested while query profiling (beta) is disabled.
+    fn get_request_collection_hw_usage_counter_profiled(
+        &self,
+        collection_name: String,
+        profile: Option<i32>,
+    ) -> Result<RequestHwCounter, Status> {
+        let profile = profile_mode_from_grpc(profile)?;
+        check_profile_allowed(profile)?;
+        Ok(RequestHwCounter::new_profiled(
+            &collection_name,
+            self.dispatcher
+                .get_collection_hw_metrics(collection_name.clone()),
+            self.service_config.hardware_reporting(),
+            profile,
+            common::ambient::profile::ProfileAudience::Client,
+        ))
     }
 }
 
@@ -392,7 +414,9 @@ impl Points for PointsService {
         let routing_token = extract_routing_token(&request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let profile = request.get_ref().profile;
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter_profiled(collection_name, profile)?;
 
         let res = search(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -421,7 +445,9 @@ impl Points for PointsService {
             search_points,
             read_consistency,
             timeout,
+            profile,
         } = request.into_inner();
+        reject_item_profiles(search_points.iter().map(|item| item.profile))?;
 
         let timeout = timeout.map(Duration::from_secs);
 
@@ -436,8 +462,8 @@ impl Points for PointsService {
             requests.push((core_search_request, shard_selector));
         }
 
-        let hw_metrics =
-            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
+        let hw_metrics = self
+            .get_request_collection_hw_usage_counter_profiled(collection_name.clone(), profile)?;
 
         let res = core_search_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -488,7 +514,10 @@ impl Points for PointsService {
         let inner_request = request.into_inner();
         let collection_name = inner_request.collection_name.clone();
 
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics = self.get_request_collection_hw_usage_counter_profiled(
+            collection_name,
+            inner_request.profile,
+        )?;
 
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -638,7 +667,9 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
         let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let profile = request.get_ref().profile;
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter_profiled(collection_name, profile)?;
         let res = count(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -663,7 +694,9 @@ impl Points for PointsService {
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let profile = request.get_ref().profile;
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter_profiled(collection_name, profile)?;
 
         let res = query(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -696,10 +729,12 @@ impl Points for PointsService {
             query_points,
             read_consistency,
             timeout,
+            profile,
         } = request;
+        reject_item_profiles(query_points.iter().map(|item| item.profile))?;
         let timeout = timeout.map(Duration::from_secs);
-        let hw_metrics =
-            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
+        let hw_metrics = self
+            .get_request_collection_hw_usage_counter_profiled(collection_name.clone(), profile)?;
         let res = query_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -750,7 +785,10 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
         let routing_token = extract_routing_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let profile = request.get_ref().profile;
+        check_facet_profile(profile_mode_from_grpc(profile)?)?;
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter_profiled(collection_name, profile)?;
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -816,4 +854,16 @@ impl Points for PointsService {
 
         Ok(Response::new(offsets_response))
     }
+}
+
+/// Batch items share one profile: reject `profile` on an item, instead of silently ignoring it.
+fn reject_item_profiles(
+    mut item_profiles: impl Iterator<Item = Option<i32>>,
+) -> Result<(), Status> {
+    if item_profiles.any(|profile| profile.is_some()) {
+        return Err(Status::invalid_argument(
+            "`profile` is not supported on the items of a batch: set it on the batch request",
+        ));
+    }
+    Ok(())
 }

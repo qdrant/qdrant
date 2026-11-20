@@ -1,3 +1,4 @@
+use common::ambient::profile::{self, SearchStrategy, StrategyReason};
 use common::condition_checker::ConditionChecker;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
@@ -86,6 +87,11 @@ where
         let Some(filter) = filter else {
             return Ok(None);
         };
+        // Resolving may enumerate every matching point: explain plans with the filter as is,
+        // like the HNSW index, which returns before resolving
+        if profile::is_explain() {
+            return Ok(None);
+        }
         // Other queries score the filtered points directly, and share them already
         let all_nearest = vectors.iter().all(|vector| is_nearest(vector));
         if vectors.len() < 2 || !all_nearest || contains_resolved_points(filter) {
@@ -286,6 +292,28 @@ where
                     .config
                     .full_scan_threshold
                     .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
+                if profile::mode().is_some() {
+                    query_cardinality.note_to_profile();
+                    profile::note_full_scan_threshold(threshold);
+                    if query_cardinality.max < threshold {
+                        profile::note_strategy(
+                            if query_cardinality.primary_clauses.is_empty() {
+                                SearchStrategy::FullScan
+                            } else {
+                                SearchStrategy::PayloadIndexFirst
+                            },
+                            StrategyReason::CardinalityBelowThreshold,
+                        );
+                    } else {
+                        profile::note_strategy(
+                            SearchStrategy::SparseIndex,
+                            StrategyReason::CardinalityAboveThreshold,
+                        );
+                    }
+                    if profile::is_explain() {
+                        return Ok(vec![]);
+                    }
+                }
                 if query_cardinality.max < threshold {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -304,6 +332,12 @@ where
                 }
             }
             None => {
+                if profile::mode().is_some() {
+                    profile::note_strategy(SearchStrategy::SparseIndex, StrategyReason::Unfiltered);
+                    if profile::is_explain() {
+                        return Ok(vec![]);
+                    }
+                }
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
                 self.search_sparse(vector, filter, top, vector_query_context)
             }
@@ -335,6 +369,13 @@ where
             | QueryVector::Discover(_)
             | QueryVector::Context(_)
             | QueryVector::FeedbackNaive(_) => {
+                if profile::mode().is_some() {
+                    // Scored queries other than nearest are not supported by the inverted index
+                    profile::note_strategy(SearchStrategy::FullScan, StrategyReason::NotIndexed);
+                    if profile::is_explain() {
+                        return Ok(vec![]);
+                    }
+                }
                 let _timer = if filter.is_some() {
                     ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_plain)
                 } else {

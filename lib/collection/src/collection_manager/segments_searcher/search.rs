@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
+use common::ambient::profile;
 use common::types::ScoreType;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -149,6 +150,8 @@ impl SegmentsSearcher {
         let start = Instant::now();
         let query_context_arc = Arc::new(query_context);
 
+        // Started before dispatch: workers may finish searches while others are being spawned
+        let segments_timer = profile::phase("segment_search");
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
             let segments: Vec<_> = {
@@ -216,6 +219,8 @@ impl SegmentsSearcher {
         // the resulting Vec is in the same order as the segment searches were provided.
         let (all_search_results_per_segment, further_results) =
             Self::execute_searches(searches).await?;
+        drop(segments_timer);
+        let merge_timer = profile::phase("merge");
         debug_assert!(all_search_results_per_segment.len() == locked_segments.len());
 
         let (mut result_aggregator, searches_to_rerun) = Self::process_search_result_step1(
@@ -229,7 +234,9 @@ impl SegmentsSearcher {
         );
         // The second step of the search is to re-run the search without sampling on some segments
         // Expected that this stage will be executed rarely
+        drop(merge_timer);
         if !searches_to_rerun.is_empty() {
+            let _rerun_timer = profile::phase("rerun_without_sampling");
             // TODO notify telemetry of failing sampling
             // Ensure consistent order of segment ids
             let searches_to_rerun: Vec<(SegmentOffset, Vec<BatchOffset>)> =

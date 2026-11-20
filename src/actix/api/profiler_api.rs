@@ -1,11 +1,12 @@
 use std::time::Duration;
 
-use actix_web::{Responder, get, web};
+use actix_web::{Responder, delete, get, web};
 use actix_web_validator::Query;
 use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::profiling::interface::get_requests_profile_log;
 use collection::profiling::slow_requests_log::LogEntry;
+use collection::profiling::workload::{self, WORKLOAD_SCHEMA_VERSION, WorkloadEntry, WorkloadSort};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
@@ -45,6 +46,68 @@ async fn get_slow_requests(ActixAuth(auth): ActixAuth, params: Query<LogParams>)
         Ok(SlowRequestsResponse {
             requests: slow_requests,
         })
+    })
+    .await
+}
+
+#[derive(Deserialize, Validate)]
+struct WorkloadParams {
+    limit: Option<usize>,
+    /// Only fingerprints of this collection
+    collection: Option<String>,
+    /// Sort order, `total_time` by default
+    sort: Option<WorkloadSort>,
+}
+
+#[derive(Serialize, JsonSchema)]
+struct WorkloadResponse {
+    /// Version of the workload output schema
+    version: u32,
+    /// Whether workload statistics are collected (`query_profiling` beta feature flag)
+    enabled: bool,
+    /// Start of the statistics on this node: first request after startup or reset
+    since: Option<chrono::DateTime<chrono::Utc>>,
+    /// Fingerprints evicted because the table was full, since `since`
+    evicted: u64,
+    fingerprints: Vec<WorkloadEntry>,
+}
+
+const DEFAULT_WORKLOAD_LIMIT: usize = 20;
+
+/// Per-fingerprint statistics of shard-level reads on this node, like `pg_stat_statements`.
+#[get("/profiler/workload")]
+async fn get_workload(ActixAuth(auth): ActixAuth, params: Query<WorkloadParams>) -> impl Responder {
+    crate::actix::helpers::time(async move {
+        // Fingerprints of all collections: same access as the slow request log.
+        auth.check_global_access(AccessRequirements::new().manage(), "get_workload")?;
+        let WorkloadParams {
+            limit,
+            collection,
+            sort,
+        } = params.into_inner();
+        let stats = workload::global().lock();
+        Ok::<_, StorageError>(WorkloadResponse {
+            version: WORKLOAD_SCHEMA_VERSION,
+            enabled: workload::enabled(),
+            since: stats.since(),
+            evicted: stats.evicted(),
+            fingerprints: stats.entries(
+                limit.unwrap_or(DEFAULT_WORKLOAD_LIMIT),
+                collection.as_deref(),
+                sort.unwrap_or_default(),
+            ),
+        })
+    })
+    .await
+}
+
+/// Reset the workload statistics of this node, like `pg_stat_statements_reset()`.
+#[delete("/profiler/workload")]
+async fn reset_workload(ActixAuth(auth): ActixAuth) -> impl Responder {
+    crate::actix::helpers::time(async move {
+        auth.check_global_access(AccessRequirements::new().manage(), "reset_workload")?;
+        workload::global().lock().reset();
+        Ok::<_, StorageError>(true)
     })
     .await
 }
@@ -90,4 +153,6 @@ async fn get_consensus_lag(
 pub fn config_profiler_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_slow_requests);
     cfg.service(get_consensus_lag);
+    cfg.service(get_workload);
+    cfg.service(reset_workload);
 }
