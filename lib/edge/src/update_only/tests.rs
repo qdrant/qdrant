@@ -18,7 +18,8 @@ use crate::read_only::tests::{
     scrolled_ids, test_config, upsert,
 };
 use crate::{
-    EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointAction, PointApplyKind, UpdateOnlyEdgeShard,
+    CheckedApplyError, EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointAction, PointApplyKind,
+    UpdateOnlyEdgeShard,
 };
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
@@ -575,11 +576,12 @@ mod store {
                 | PointAction::Missing => panic!("expected the merge to be stored"),
             })
             .unwrap();
-        assert_eq!(
-            refused.unwrap_err(),
-            merged,
-            "the check sees the merged payload"
-        );
+        match refused.unwrap_err() {
+            CheckedApplyError::Refused(payload) => {
+                assert_eq!(payload, merged, "the check sees the merged payload");
+            }
+            CheckedApplyError::NotWritten(error) => panic!("expected a refusal, got {error}"),
+        }
         assert_ne!(retrieve_payload(), Some(merged.clone()));
 
         let mut checked = 0;
@@ -594,6 +596,47 @@ mod store {
         assert_eq!(outcome.stored, 1);
         assert_eq!(outcome.points[0].kind, PointApplyKind::Stored);
         assert_eq!(retrieve_payload(), Some(merged));
+    }
+
+    /// An error before the first write hands back a usable writer.
+    #[test]
+    fn checked_apply_error_before_writing_keeps_the_writer() {
+        let dir = leader_with_ten_points("edge-update-checked-unwritten");
+        recreate_payload_storages_append_only(dir.path());
+        let update_missing = shard::operations::CollectionUpdateOperations::VectorOperation(
+            crate::VectorOperations::UpdateVectors(crate::UpdateVectorsOp {
+                points: vec![shard::operations::vector_ops::PointVectorsPersisted {
+                    id: ExtendedPointId::NumId(42),
+                    vector: point(42).vector,
+                }],
+                update_filter: None,
+            }),
+        );
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let mut checked = 0;
+        let (writer, unwritten) = writer
+            .apply_batch_checked([(100, update_missing)], None, |_| {
+                checked += 1;
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        match unwritten.unwrap_err() {
+            CheckedApplyError::NotWritten(
+                segment::common::operation_error::OperationError::PointIdError { missed_point_id },
+            ) => {
+                assert_eq!(missed_point_id, ExtendedPointId::NumId(42));
+            }
+            CheckedApplyError::NotWritten(error) => panic!("expected a missing point, got {error}"),
+            CheckedApplyError::Refused(()) => panic!("the check never runs on a failed resolve"),
+        }
+        assert_eq!(checked, 0);
+
+        let (_writer, outcome) = writer
+            .apply_batch_checked(store_batch(101, vec![point(42)]), None, |_| Ok::<_, ()>(()))
+            .unwrap();
+        assert_eq!(outcome.unwrap().stored, 1);
+        assert!(scrolled_ids(&open_follower(dir.path())).contains(&ExtendedPointId::NumId(42)));
     }
 
     /// A retried store batch is a no-op — through the same writer and through

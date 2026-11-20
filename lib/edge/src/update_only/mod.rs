@@ -29,6 +29,7 @@
 
 mod apply;
 mod batch;
+mod checked_apply_error;
 mod holder;
 mod lifecycle;
 pub(crate) mod locate;
@@ -54,6 +55,7 @@ use uuid::Uuid;
 
 pub use self::apply::{PointApplyKind, PointApplyRecord, PointUsage, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
+pub use self::checked_apply_error::CheckedApplyError;
 use self::holder::LookupSegmentHolder;
 pub use self::metering::{UpdateBytes, UpdateMetering};
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
