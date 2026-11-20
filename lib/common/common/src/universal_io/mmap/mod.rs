@@ -483,16 +483,17 @@ impl MmapFile {
                 // documented on `MmapFile` they must `reopen()` before reading after
                 // any growth, so no live reference into the old location exists.
                 let remap_options = memmap2::RemapOptions::new().may_move(true);
-                unsafe {
-                    mmap.remap(new_len, remap_options)?;
-                    mmap_seq
-                        .as_mut()
-                        .map(|m| m.remap(new_len, remap_options))
-                        .transpose()?;
-                };
+                unsafe { mmap.remap(new_len, remap_options)? };
 
-                // Whether or not `remap` moved the memory region let's update the pointers
+                // `remap` may have moved the primary mapping. Update its pointer before
+                // remapping the sequential one, so a failure there can't leave it dangling.
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
+                self.ptr = ptr;
+
+                if let Some(mmap_seq) = mmap_seq.as_mut() {
+                    unsafe { mmap_seq.remap(new_len, remap_options)? };
+                }
+
                 let ptr_seq = mmap_seq
                     .as_ref()
                     .map(|m| SendSyncPtr(m.as_mut_ptr()))
