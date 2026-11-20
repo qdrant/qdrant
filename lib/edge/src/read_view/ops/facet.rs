@@ -79,7 +79,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 filter: Filter::merge_opts(filter.clone(), Some(match_value)),
                 exact: true,
             })?;
-            counts.insert(value, count);
+            if count > 0 {
+                counts.insert(value, count);
+            }
         }
 
         Ok(FacetResponse::top_hits(counts, limit))
@@ -144,5 +146,42 @@ mod tests {
             facet(10, Some(only_ids(&[1, 4, 5, 6]))),
             vec![hit("b", 2), hit("a", 1), hit("c", 1)],
         );
+    }
+
+    #[test]
+    fn exact_facet_after_move() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = EdgeShard::new(dir.path(), test_config()).unwrap();
+        shard
+            .update(FieldIndexOperation(FieldIndexOperations::CreateIndex(
+                CreateIndex {
+                    field_name: "group".parse().unwrap(),
+                    field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                },
+            )))
+            .unwrap();
+        upsert(
+            &shard,
+            vec![point_with_group(1, "a"), point_with_group(2, "b")],
+        );
+        upsert(
+            &shard,
+            vec![point_with_group(1, "c"), point_with_group(2, "c")],
+        );
+        let mut request = FacetRequest::new("group".parse().unwrap());
+        request.exact = true;
+        let exact = shard.facet(request).unwrap().hits;
+        let approx = shard
+            .facet(FacetRequest::new("group".parse().unwrap()))
+            .unwrap()
+            .hits;
+        assert_eq!(
+            exact,
+            vec![FacetValueHit {
+                value: FacetValue::Keyword("c".to_string()),
+                count: 2,
+            }]
+        );
+        assert_eq!(exact, approx);
     }
 }
