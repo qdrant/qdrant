@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::universal_io::{ListedFile, ReadRange};
+use common::universal_io::ListedFile;
 use tokio::net::TcpListener;
 use tonic::{Request, Response, Status};
 
@@ -84,22 +84,6 @@ impl StorageReadTrait for MockServer {
         }))
     }
 
-    async fn read_bytes(
-        &self,
-        request: Request<ReadBytesRequest>,
-    ) -> std::result::Result<Response<ReadBytesResponse>, Status> {
-        let req = request.into_inner();
-        let data = self
-            .files
-            .get(&(req.collection_name, req.path))
-            .ok_or_else(|| Status::not_found("file not found"))?;
-        let start = req.byte_offset as usize;
-        let end = start + req.length as usize;
-        Ok(Response::new(ReadBytesResponse {
-            data: data[start..end].to_vec(),
-        }))
-    }
-
     type ReadBytesStreamStream = BoxStream<ReadBytesStreamResponse>;
 
     async fn read_bytes_stream(
@@ -122,39 +106,6 @@ impl StorageReadTrait for MockServer {
             .collect();
 
         Ok(Response::new(Box::pin(futures::stream::iter(chunks))))
-    }
-
-    async fn read_whole(
-        &self,
-        request: Request<ReadWholeRequest>,
-    ) -> std::result::Result<Response<ReadWholeResponse>, Status> {
-        let req = request.into_inner();
-        let data = self
-            .files
-            .get(&(req.collection_name, req.path))
-            .ok_or_else(|| Status::not_found("file not found"))?;
-        Ok(Response::new(ReadWholeResponse { data: data.clone() }))
-    }
-
-    async fn read_batch(
-        &self,
-        request: Request<ReadBatchRequest>,
-    ) -> std::result::Result<Response<ReadBatchResponse>, Status> {
-        let req = request.into_inner();
-        let file_data = self
-            .files
-            .get(&(req.collection_name, req.path))
-            .ok_or_else(|| Status::not_found("file not found"))?;
-        let data: Vec<Vec<u8>> = req
-            .ranges
-            .iter()
-            .map(|r| {
-                let start = r.byte_offset as usize;
-                let end = start + r.length as usize;
-                file_data[start..end].to_vec()
-            })
-            .collect();
-        Ok(Response::new(ReadBatchResponse { data }))
     }
 }
 
@@ -255,17 +206,6 @@ async fn file_length() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_bytes() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    let data = client
-        .read_bytes("test-col", 0, "data/a.bin", 3, 4)
-        .await
-        .unwrap();
-    assert_eq!(&data, b"defg");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_bytes_stream() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url, None).await.unwrap();
@@ -289,56 +229,10 @@ async fn read_bytes_stream_reassembles_chunks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_whole() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    let data = client
-        .read_whole("test-col", 0, "data/a.bin")
-        .await
-        .unwrap();
-    assert_eq!(&data, b"abcdefghij");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_batch() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    let ranges = [
-        ReadRange {
-            byte_offset: 0,
-            length: 3,
-        },
-        ReadRange {
-            byte_offset: 7,
-            length: 3,
-        },
-    ];
-    let data = client
-        .read_batch("test-col", 0, "data/a.bin", &ranges)
-        .await
-        .unwrap();
-    assert_eq!(data.len(), 2);
-    assert_eq!(&data[0], b"abc");
-    assert_eq!(&data[1], b"hij");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_length_not_found() {
     let url = start_mock(test_files()).await;
     let client = Client::connect(url, None).await.unwrap();
     assert!(client.file_length("test-col", 0, "nope.bin").await.is_err());
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_bytes_not_found() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    assert!(
-        client
-            .read_bytes("test-col", 0, "nope.bin", 0, 1)
-            .await
-            .is_err()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -348,29 +242,6 @@ async fn read_bytes_stream_not_found() {
     assert!(
         client
             .read_bytes_stream("test-col", 0, "nope.bin", 0, 1)
-            .await
-            .is_err()
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_whole_not_found() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    assert!(client.read_whole("test-col", 0, "nope.bin").await.is_err());
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_batch_not_found() {
-    let url = start_mock(test_files()).await;
-    let client = Client::connect(url, None).await.unwrap();
-    let ranges = [ReadRange {
-        byte_offset: 0,
-        length: 1,
-    }];
-    assert!(
-        client
-            .read_batch("test-col", 0, "nope.bin", &ranges)
             .await
             .is_err()
     );

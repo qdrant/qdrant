@@ -6,7 +6,6 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use api::grpc::qdrant::ReadBatchRange;
 use collection::common::snapshots_manager::SnapshotsConfig;
 use collection::config::WalConfig;
 use collection::optimizers_builder::OptimizersConfig;
@@ -331,49 +330,6 @@ async fn file_length_not_found_returns_error() {
 }
 
 #[tokio::test]
-async fn read_bytes_returns_requested_range() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    write_shard_file(&shard_dir, "bytes/data.bin", b"abcdefghij");
-
-    let response = service
-        .read_bytes(Request::new(ReadBytesRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            path: "bytes/data.bin".to_string(),
-            byte_offset: 3,
-            length: 4,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    assert_eq!(response.data, b"defg".to_vec());
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_bytes_out_of_bounds_returns_error() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    write_shard_file(&shard_dir, "oob/data.bin", b"tiny");
-
-    let err = service
-        .read_bytes(Request::new(ReadBytesRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            path: "oob/data.bin".to_string(),
-            byte_offset: 0,
-            length: 9999,
-        }))
-        .await
-        .unwrap_err();
-
-    assert_eq!(err.code(), Code::OutOfRange);
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
 async fn read_bytes_stream_splits_large_reads_into_chunks() {
     let (service, storage_dir, shard_dir) = create_service_async().await;
     let total_len = STREAM_CHUNK_SIZE as usize + 17;
@@ -478,64 +434,6 @@ async fn read_bytes_stream_out_of_bounds_returns_error() {
     };
 
     assert_eq!(err.code(), Code::OutOfRange);
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_whole_returns_entire_file() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    let payload = b"whole file contents";
-    write_shard_file(&shard_dir, "whole/data.bin", payload);
-
-    let response = service
-        .read_whole(Request::new(ReadWholeRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            path: "whole/data.bin".to_string(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    assert_eq!(response.data, payload.to_vec());
-
-    drop_service(service, storage_dir).await;
-}
-
-#[tokio::test]
-async fn read_batch_returns_each_requested_slice() {
-    let (service, storage_dir, shard_dir) = create_service_async().await;
-    write_shard_file(&shard_dir, "batch/data.bin", b"0123456789");
-
-    let response = service
-        .read_batch(Request::new(ReadBatchRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: TEST_SHARD_ID,
-            path: "batch/data.bin".to_string(),
-            ranges: vec![
-                ReadBatchRange {
-                    byte_offset: 0,
-                    length: 2,
-                },
-                ReadBatchRange {
-                    byte_offset: 4,
-                    length: 3,
-                },
-                ReadBatchRange {
-                    byte_offset: 9,
-                    length: 1,
-                },
-            ],
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-
-    assert_eq!(
-        response.data,
-        vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
-    );
 
     drop_service(service, storage_dir).await;
 }
@@ -649,36 +547,23 @@ async fn shard_id_scopes_file_access_to_that_shard() {
     fs_err::create_dir_all(&other_shard_dir).unwrap();
     fs_err::write(other_shard_dir.join("data.bin"), b"shard-one").unwrap();
 
-    let zero = service
-        .read_whole(Request::new(ReadWholeRequest {
+    let read = |shard_id, length| {
+        service.read_bytes_stream(Request::new(ReadBytesStreamRequest {
             collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: 0,
+            shard_id,
             path: "data.bin".to_string(),
+            byte_offset: 0,
+            length,
         }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(zero.data, b"shard-zero".to_vec());
+    };
 
-    let one = service
-        .read_whole(Request::new(ReadWholeRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: 1,
-            path: "data.bin".to_string(),
-        }))
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(one.data, b"shard-one".to_vec());
+    let mut zero = read(0, 10).await.unwrap().into_inner();
+    assert_eq!(zero.next().await.unwrap().unwrap().data, b"shard-zero");
 
-    let err = service
-        .read_whole(Request::new(ReadWholeRequest {
-            collection_name: TEST_COLLECTION_NAME.to_string(),
-            shard_id: 99,
-            path: "data.bin".to_string(),
-        }))
-        .await
-        .unwrap_err();
+    let mut one = read(1, 9).await.unwrap().into_inner();
+    assert_eq!(one.next().await.unwrap().unwrap().data, b"shard-one");
+
+    let err = read(99, 1).await.err().unwrap();
     assert_eq!(err.code(), Code::NotFound);
 
     drop_service(service, storage_dir).await;

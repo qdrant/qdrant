@@ -5,9 +5,7 @@ use api::grpc::conversions::system_time_to_proto;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesEntry,
-    ListFilesRequest, ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest,
-    ReadBytesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest,
-    ReadWholeResponse,
+    ListFilesRequest, ListFilesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse,
 };
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting};
@@ -158,48 +156,6 @@ where
         Ok(Response::new(FileLengthResponse { length }))
     }
 
-    // Maps to UniversalRead::read() — single range from a single file.
-    async fn read_bytes(
-        &self,
-        mut request: Request<ReadBytesRequest>,
-    ) -> Result<Response<ReadBytesResponse>, Status> {
-        validate(request.get_ref())?;
-        let auth = extract_auth(&mut request);
-        let ReadBytesRequest {
-            collection_name,
-            shard_id,
-            path,
-            byte_offset,
-            length,
-        } = request.into_inner();
-
-        let (base, collections_root) = self
-            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes")
-            .await?;
-        let path = Self::resolve_path(&base, &collections_root, &path)?;
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
-
-        let fs = Arc::clone(&self.fs);
-        let data = tokio::task::spawn_blocking(move || {
-            let storage = fs
-                .open(&path, open_options, Default::default())
-                .map_err(io_error_to_status)?;
-            let cow = storage
-                .read(ReadRange::new(byte_offset, length), Random)
-                .map_err(io_error_to_status)?;
-            Ok::<_, Status>(cow.into_owned())
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
-
-        Ok(Response::new(ReadBytesResponse { data }))
-    }
-
     type ReadBytesStreamStream =
         Pin<Box<dyn Stream<Item = Result<ReadBytesStreamResponse, Status>> + Send>>;
 
@@ -271,92 +227,5 @@ where
         );
 
         Ok(Response::new(Box::pin(stream)))
-    }
-
-    // Maps to UniversalRead::read_whole() — read an entire file.
-    async fn read_whole(
-        &self,
-        mut request: Request<ReadWholeRequest>,
-    ) -> Result<Response<ReadWholeResponse>, Status> {
-        validate(request.get_ref())?;
-        let auth = extract_auth(&mut request);
-        let ReadWholeRequest {
-            collection_name,
-            shard_id,
-            path,
-        } = request.into_inner();
-        let (base, collections_root) = self
-            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_whole")
-            .await?;
-        let path = Self::resolve_path(&base, &collections_root, &path)?;
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Sequential),
-        };
-
-        let fs = Arc::clone(&self.fs);
-        let data = tokio::task::spawn_blocking(move || {
-            let storage = fs
-                .open(&path, open_options, Default::default())
-                .map_err(io_error_to_status)?;
-            let cow = storage.read_whole::<u8>().map_err(io_error_to_status)?;
-            Ok::<_, Status>(cow.into_owned())
-        })
-        .await
-        .map_err(|e| Status::internal(format!("read_whole error: {e}")))??;
-
-        Ok(Response::new(ReadWholeResponse { data }))
-    }
-
-    // Maps to UniversalRead::read_batch() — multiple ranges from a single file.
-    async fn read_batch(
-        &self,
-        mut request: Request<ReadBatchRequest>,
-    ) -> Result<Response<ReadBatchResponse>, Status> {
-        validate(request.get_ref())?;
-        let auth = extract_auth(&mut request);
-        let ReadBatchRequest {
-            collection_name,
-            shard_id,
-            path,
-            ranges,
-        } = request.into_inner();
-        let (base, collections_root) = self
-            .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_batch")
-            .await?;
-        let path = Self::resolve_path(&base, &collections_root, &path)?;
-
-        let open_options = OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate: Populate::No,
-            advice: AdviceSetting::Advice(Advice::Normal),
-        };
-        let ranges = ranges
-            .iter()
-            .map(|r| ReadRange::new(r.byte_offset, r.length))
-            .collect::<Vec<_>>();
-
-        let fs = Arc::clone(&self.fs);
-        let data = tokio::task::spawn_blocking(move || {
-            let storage = fs
-                .open(&path, open_options, Default::default())
-                .map_err(io_error_to_status)?;
-            let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
-            storage
-                .read_batch(ranges.into_iter().enumerate(), Random, |idx, chunk| {
-                    results[idx].extend_from_slice(chunk);
-                    Ok(())
-                })
-                .map_err(io_error_to_status)?;
-
-            Ok::<_, Status>(results)
-        })
-        .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
-
-        Ok(Response::new(ReadBatchResponse { data }))
     }
 }

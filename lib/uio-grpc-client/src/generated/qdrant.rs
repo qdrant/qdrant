@@ -61,26 +61,6 @@ pub struct FileLengthResponse {
 }
 #[allow(clippy::all)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadBytesRequest {
-    #[prost(string, tag = "1")]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    pub path: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub byte_offset: u64,
-    #[prost(uint64, tag = "5")]
-    pub length: u64,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadBytesResponse {
-    #[prost(bytes = "vec", tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReadBytesStreamRequest {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -98,49 +78,6 @@ pub struct ReadBytesStreamRequest {
 pub struct ReadBytesStreamResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadWholeRequest {
-    #[prost(string, tag = "1")]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    pub path: ::prost::alloc::string::String,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadWholeResponse {
-    #[prost(bytes = "vec", tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
-}
-/// ReadBatch: multiple ranges from a single file (maps to UniversalRead::read_batch).
-#[allow(clippy::all)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadBatchRange {
-    #[prost(uint64, tag = "1")]
-    pub byte_offset: u64,
-    #[prost(uint64, tag = "2")]
-    pub length: u64,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ReadBatchRequest {
-    #[prost(string, tag = "1")]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub shard_id: u32,
-    #[prost(string, tag = "3")]
-    pub path: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "4")]
-    pub ranges: ::prost::alloc::vec::Vec<ReadBatchRange>,
-}
-#[allow(clippy::all)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReadBatchResponse {
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 /// Generated client implementations.
 pub mod storage_read_client {
@@ -320,32 +257,7 @@ pub mod storage_read_client {
                 .insert(GrpcMethod::new("qdrant.StorageRead", "FileLength"));
             self.inner.unary(req, path, codec).await
         }
-        /// Maps to UniversalRead::read() — single range from a single file.
-        pub async fn read_bytes(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadBytesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBytesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.StorageRead/ReadBytes",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.StorageRead", "ReadBytes"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// Streaming variant of ReadBytes for large files, sends ~1MB chunks.
+        /// Read a range of a file in the shard, streamed in ~1MB chunks.
         pub async fn read_bytes_stream(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadBytesStreamRequest>,
@@ -369,56 +281,6 @@ pub mod storage_read_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.StorageRead", "ReadBytesStream"));
             self.inner.server_streaming(req, path, codec).await
-        }
-        /// Maps to UniversalRead::read_whole() — read an entire file.
-        pub async fn read_whole(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadWholeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadWholeResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.StorageRead/ReadWhole",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.StorageRead", "ReadWhole"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// Maps to UniversalRead::read_batch() — multiple ranges from a single file.
-        pub async fn read_batch(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ReadBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBatchResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.StorageRead/ReadBatch",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.StorageRead", "ReadBatch"));
-            self.inner.unary(req, path, codec).await
         }
     }
 }
@@ -459,42 +321,18 @@ pub mod storage_read_server {
             tonic::Response<super::FileLengthResponse>,
             tonic::Status,
         >;
-        /// Maps to UniversalRead::read() — single range from a single file.
-        async fn read_bytes(
-            &self,
-            request: tonic::Request<super::ReadBytesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBytesResponse>,
-            tonic::Status,
-        >;
         /// Server streaming response type for the ReadBytesStream method.
         type ReadBytesStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::ReadBytesStreamResponse, tonic::Status>,
             >
             + std::marker::Send
             + 'static;
-        /// Streaming variant of ReadBytes for large files, sends ~1MB chunks.
+        /// Read a range of a file in the shard, streamed in ~1MB chunks.
         async fn read_bytes_stream(
             &self,
             request: tonic::Request<super::ReadBytesStreamRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::ReadBytesStreamStream>,
-            tonic::Status,
-        >;
-        /// Maps to UniversalRead::read_whole() — read an entire file.
-        async fn read_whole(
-            &self,
-            request: tonic::Request<super::ReadWholeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadWholeResponse>,
-            tonic::Status,
-        >;
-        /// Maps to UniversalRead::read_batch() — multiple ranges from a single file.
-        async fn read_batch(
-            &self,
-            request: tonic::Request<super::ReadBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReadBatchResponse>,
             tonic::Status,
         >;
     }
@@ -721,51 +559,6 @@ pub mod storage_read_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.StorageRead/ReadBytes" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadBytesSvc<T: StorageRead>(pub Arc<T>);
-                    impl<
-                        T: StorageRead,
-                    > tonic::server::UnaryService<super::ReadBytesRequest>
-                    for ReadBytesSvc<T> {
-                        type Response = super::ReadBytesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadBytesRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as StorageRead>::read_bytes(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadBytesSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/qdrant.StorageRead/ReadBytesStream" => {
                     #[allow(non_camel_case_types)]
                     struct ReadBytesStreamSvc<T: StorageRead>(pub Arc<T>);
@@ -809,96 +602,6 @@ pub mod storage_read_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.StorageRead/ReadWhole" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadWholeSvc<T: StorageRead>(pub Arc<T>);
-                    impl<
-                        T: StorageRead,
-                    > tonic::server::UnaryService<super::ReadWholeRequest>
-                    for ReadWholeSvc<T> {
-                        type Response = super::ReadWholeResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadWholeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as StorageRead>::read_whole(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadWholeSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.StorageRead/ReadBatch" => {
-                    #[allow(non_camel_case_types)]
-                    struct ReadBatchSvc<T: StorageRead>(pub Arc<T>);
-                    impl<
-                        T: StorageRead,
-                    > tonic::server::UnaryService<super::ReadBatchRequest>
-                    for ReadBatchSvc<T> {
-                        type Response = super::ReadBatchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ReadBatchRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as StorageRead>::read_batch(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ReadBatchSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

@@ -635,17 +635,8 @@ ACTION_ACCESS = {
     "storage_read_file_length": EndpointAccess(
         True, True, True, None, "qdrant.StorageRead/FileLength", coll_prw=False
     ),
-    "storage_read_read_bytes": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBytes", coll_prw=False
-    ),
     "storage_read_read_bytes_stream": EndpointAccess(
         True, True, True, None, "qdrant.StorageRead/ReadBytesStream", coll_prw=False
-    ),
-    "storage_read_read_whole": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadWhole", coll_prw=False
-    ),
-    "storage_read_read_batch": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBatch", coll_prw=False
     ),
 }
 
@@ -2098,19 +2089,6 @@ def test_storage_read_file_length():
     )
 
 
-def test_storage_read_read_bytes():
-    check_access(
-        "storage_read_read_bytes",
-        grpc_request={
-            "collection_name": COLL_NAME,
-            "shard_id": STORAGE_READ_SHARD_ID,
-            "path": STORAGE_READ_TEST_PATH,
-            "byteOffset": 0,
-            "length": 1,
-        },
-    )
-
-
 def test_storage_read_read_bytes_stream():
     check_access(
         "storage_read_read_bytes_stream",
@@ -2120,28 +2098,5 @@ def test_storage_read_read_bytes_stream():
             "path": STORAGE_READ_TEST_PATH,
             "byteOffset": 0,
             "length": 1,
-        },
-    )
-
-
-def test_storage_read_read_whole():
-    check_access(
-        "storage_read_read_whole",
-        grpc_request={
-            "collection_name": COLL_NAME,
-            "shard_id": STORAGE_READ_SHARD_ID,
-            "path": STORAGE_READ_TEST_PATH,
-        },
-    )
-
-
-def test_storage_read_read_batch():
-    check_access(
-        "storage_read_read_batch",
-        grpc_request={
-            "collection_name": COLL_NAME,
-            "shard_id": STORAGE_READ_SHARD_ID,
-            "path": STORAGE_READ_TEST_PATH,
-            "ranges": [{"byteOffset": 0, "length": 1}],
         },
     )
