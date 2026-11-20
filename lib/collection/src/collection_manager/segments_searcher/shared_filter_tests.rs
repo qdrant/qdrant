@@ -399,6 +399,7 @@ fn requests(
                 indexed_only: false,
                 acorn: None,
                 idf: None,
+                max_sparse_dims: None,
             }),
             limit,
             offset: 0,

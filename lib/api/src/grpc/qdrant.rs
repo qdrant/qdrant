@@ -6212,6 +6212,7 @@ pub struct IdfParams {
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[validate(schema(function = "crate::grpc::validate::validate_search_params"))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchParams {
     /// Params relevant to HNSW index. Size of the beam in a beam-search.
@@ -6240,6 +6241,13 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub idf: ::core::option::Option<IdfParams>,
+    /// Only applicable to sparse vectors.
+    /// Keep only the provided number of dimensions from the query. Dimensions are selected by
+    /// largest absolute weight. This parameter enables approximate sparse search (Qdrant's
+    /// default is exact): use with caution. Cannot be used together with `exact`.
+    #[prost(uint64, optional, tag = "7")]
+    #[validate(range(min = 1))]
+    pub max_sparse_dims: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]

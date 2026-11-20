@@ -4,7 +4,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
-use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint};
+use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint, validate_search_params};
 use shard::query::query_context::init_query_context_with_stopping_flag;
 use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
@@ -46,6 +46,24 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         self.check_stopped()?;
         if searches.is_empty() {
             return Ok(Vec::new());
+        }
+
+        // The server rejects this when it parses the request. Without the check, `0` would trip a
+        // debug assertion in debug builds and silently empty the query in release builds.
+        for search in searches {
+            let max_sparse_dims = search
+                .params
+                .as_ref()
+                .and_then(|params| params.max_sparse_dims);
+            if max_sparse_dims == Some(0) {
+                return Err(OperationError::validation_error(
+                    "`max_sparse_dims` must be at least 1",
+                ));
+            }
+            if let Some(params) = &search.params {
+                validate_search_params(params)
+                    .map_err(|error| OperationError::validation_error(error.to_string()))?;
+            }
         }
 
         let query_context = init_query_context_with_stopping_flag(
