@@ -4804,9 +4804,9 @@ dependencies = [
 
 [[package]]
 name = "ndarray-npy"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58e8a348bca0075000d999d750420d74434fd0d3e0993b456554f885e7657a11"
+checksum = "84837594eaa52f524d213d41130e52afe5a3896ea5a57468205a359f252f3e09"
 dependencies = [
  "byteorder",
  "ndarray",
