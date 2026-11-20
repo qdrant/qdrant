@@ -40,7 +40,7 @@ def test_triple_replication(tmp_path: pathlib.Path):
     time.sleep(0.3)
 
     # Kill leader peer
-    killed_id = 0
+    killed_id = get_leader_index(peer_api_uris)
     p = processes.pop(killed_id)
     restart_port = p.p2p_port
     p.kill()
