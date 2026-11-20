@@ -97,7 +97,7 @@ impl UniversalReadExt for ReadOnly<MmapFile> {
 }
 
 #[rustfmt::skip]
-impl<A: io_bridge_object_store::AsyncRead + Clone> UniversalReadExt for io_bridge_object_store::BlobFile<A> {
+impl<A: io_bridge::AsyncRead + Clone> UniversalReadExt for io_bridge::BlobFile<A> {
     fn condition_checker_bool            <'a>(i: BoolCC<'a, Self>)                    -> EnumCC<'a> { EnumCC::Dyn(Box::new(i)) }
     fn condition_checker_full_text       <'a>(i: FullTextCC<'a, Self>)                -> EnumCC<'a> { EnumCC::Dyn(Box::new(i)) }
     fn condition_checker_geo_bounding_box<'a>(i: GeoCC<'a, Self, GeoBoundingBox>)     -> EnumCC<'a> { EnumCC::Dyn(Box::new(i)) }
