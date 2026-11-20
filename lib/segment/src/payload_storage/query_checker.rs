@@ -219,6 +219,15 @@ where
         return Ok(field_condition.check_empty());
     }
 
+    // `is_empty: true` has all-values semantics everywhere else: the NullIndex
+    // uses `values_is_empty`, and the `Condition::IsEmpty` form uses
+    // `check_is_empty` over all resolved values. The generic fallback below
+    // would match as soon as a single value at a multi-valued key is empty, so
+    // handle it explicitly here.
+    if field_condition.is_empty == Some(true) && field_condition.values_count.is_none() {
+        return Ok(check_is_empty(field_values.iter().copied()));
+    }
+
     // This covers a case, when a field index affects the result of the condition.
     if let Some(field_indexes) = field_indexes {
         for p in field_values {
@@ -653,6 +662,119 @@ mod tests {
 
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));
+    }
+
+    /// Regression test for <https://github.com/qdrant/qdrant/issues/10621>
+    ///
+    /// On an unindexed multi-valued key, `{"key": ..., "is_empty": true}` must
+    /// agree with the `{"is_empty": {"key": ...}}` form: both match only when
+    /// *all* resolved values are empty. The old payload fallback used `any()`,
+    /// so a point with values `[1, []]` incorrectly matched.
+    #[test]
+    fn test_field_is_empty_uses_all_values_on_unindexed_multi_value_key() {
+        let key = JsonPath::new("a[].b");
+
+        // Mixed: one non-empty value and one empty value at the same key.
+        let mixed = payload_json! { "a": [{ "b": 1 }, { "b": [] }] };
+        // Both resolved values are empty.
+        let all_empty = payload_json! { "a": [{ "b": [] }, { "b": [] }] };
+        // Neither resolved value is empty.
+        let none_empty = payload_json! { "a": [{ "b": 1 }, { "b": 2 }] };
+
+        let mut payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        payload_storage.overwrite(0, &mixed).unwrap();
+        payload_storage.overwrite(1, &all_empty).unwrap();
+        payload_storage.overwrite(2, &none_empty).unwrap();
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                InMemoryIdTracker::new(),
+            ))),
+            HashMap::new(),
+        );
+
+        let field_is_empty = |is_empty| {
+            Filter::new_must(Condition::Field(FieldCondition::new_is_empty(
+                key.clone(),
+                is_empty,
+            )))
+        };
+        let bare_is_empty = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+            is_empty: PayloadField { key: key.clone() },
+        }));
+
+        // The two filter forms must agree for every point.
+        for point_id in 0..3 {
+            assert_eq!(
+                payload_checker.check(point_id, &field_is_empty(true)),
+                payload_checker.check(point_id, &bare_is_empty),
+                "forms disagree for point {point_id}",
+            );
+        }
+
+        assert!(!payload_checker.check(0, &field_is_empty(true)));
+        assert!(payload_checker.check(1, &field_is_empty(true)));
+        assert!(!payload_checker.check(2, &field_is_empty(true)));
+
+        // `is_empty: false` keeps its existing any-non-empty semantics.
+        assert!(payload_checker.check(0, &field_is_empty(false)));
+        assert!(!payload_checker.check(1, &field_is_empty(false)));
+        assert!(payload_checker.check(2, &field_is_empty(false)));
+    }
+
+    #[test]
+    fn test_combined_is_empty_values_count_preserves_values_count_precedence() {
+        // A legal FieldCondition may carry both `is_empty` and `values_count`.
+        // `FieldCondition::check` gives `values_count` precedence, so the new
+        // `is_empty: true` early return must not fire in that case.
+        let key = JsonPath::new("a[].b");
+
+        // Values at key a[].b: [1, []]  (one scalar, one empty array).
+        let mixed = payload_json! { "a": [{ "b": 1 }, { "b": [] }] };
+
+        let mut payload_storage: PayloadStorageEnum =
+            PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
+        payload_storage.overwrite(0, &mixed).unwrap();
+
+        let payload_checker = SimpleConditionChecker::new(
+            Arc::new(AtomicRefCell::new(payload_storage)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                InMemoryIdTracker::new(),
+            ))),
+            HashMap::new(),
+        );
+
+        let make = |values_count: Option<ValuesCount>, is_empty: Option<bool>| FieldCondition {
+            key: key.clone(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count,
+            is_empty,
+            is_null: None,
+        };
+        let vc = ValuesCount {
+            lt: None,
+            gt: None,
+            gte: Some(1),
+            lte: None,
+        };
+
+        let values_count_only = Filter::new_must(Condition::Field(make(Some(vc.clone()), None)));
+        let combined = Filter::new_must(Condition::Field(make(Some(vc), Some(true))));
+        let is_empty_only = Filter::new_must(Condition::Field(make(None, Some(true))));
+
+        // On unindexed [1, []] the values_count filter matches (count >= 1).
+        assert!(payload_checker.check(0, &values_count_only));
+        // Combined must follow values_count precedence, not is_empty alone:
+        // this would be false with the buggy early return.
+        assert!(payload_checker.check(0, &combined));
+        // is_empty alone still uses all-values semantics (one value is non-empty).
+        assert!(!payload_checker.check(0, &is_empty_only));
     }
 
     #[test]
