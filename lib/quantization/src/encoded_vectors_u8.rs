@@ -1,8 +1,10 @@
+mod batch;
 use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub use batch::EncodedQueryBatchU8;
 use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::typelevel::True;

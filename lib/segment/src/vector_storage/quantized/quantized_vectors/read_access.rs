@@ -4,6 +4,7 @@ use super::QuantizedVectorsConfig;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::vector_storage::RawScorer;
+use crate::vector_storage::quantized::quantized_batch_query_scorer::RawBatchScorer;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 
 /// Shared read/scoring interface over quantized vectors.
@@ -19,6 +20,14 @@ pub trait QuantizedVectorsRead {
     fn default_rescoring(&self) -> bool;
 
     fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>>;
+
+    /// Optional shared SQ8 scorer. Unsupported query/storage combinations retain individual scorers.
+    fn raw_batch_scorer<'a>(
+        &'a self,
+        _queries: &[&QueryVector],
+    ) -> Option<Box<dyn RawBatchScorer + 'a>> {
+        None
+    }
 
     /// Build a raw scorer for the specified `point_id`.
     /// If not supported, return [`InternalScorerUnsupported`] with the original `hardware_counter`.
