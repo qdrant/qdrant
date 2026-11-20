@@ -11,6 +11,7 @@ use segment::data_types::vectors::*;
 use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
 
+use super::ndarray::{DenseArray, Ndarray};
 use super::vector::PySparseVector;
 use crate::repr::*;
 
@@ -35,6 +36,15 @@ impl FromPyObject<'_, '_> for PyVectorInternal {
                 VectorStructInternal::MultiDense(_) => {}
                 VectorStructInternal::Named(_) => {}
             }
+        }
+
+        if let Some(array) = Ndarray::extract(&vector)? {
+            return Ok(Self(match array.into_dense()? {
+                DenseArray::Vector(dense) => VectorStructInternal::Single(dense),
+                DenseArray::Matrix(multi) => VectorStructInternal::MultiDense(
+                    MultiDenseVectorInternal::from(multi_dense_from_matrix(multi)?),
+                ),
+            }));
         }
 
         let vector = match vector.extract()? {
@@ -118,6 +128,15 @@ impl FromPyObject<'_, '_> for PyNamedVectorInternal {
             MultiDense(#[pyo3(from_py_with = multi_dense_from_py)] MultiDenseVector),
         }
 
+        if let Some(array) = Ndarray::extract(&vector)? {
+            return Ok(Self(match array.into_dense()? {
+                DenseArray::Vector(dense) => VectorInternal::Dense(dense),
+                DenseArray::Matrix(multi) => VectorInternal::MultiDense(
+                    MultiDenseVectorInternal::from(multi_dense_from_matrix(multi)?),
+                ),
+            }));
+        }
+
         let vector = match vector.extract()? {
             Helper::Dense(dense) => VectorInternal::Dense(dense),
             Helper::Sparse(sparse) => VectorInternal::Sparse(SparseVector::from(sparse)),
@@ -167,8 +186,11 @@ impl Repr for PyNamedVectorInternal {
 type MultiDenseVector = TypedMultiDenseVector<f32>;
 
 fn multi_dense_from_py(matrix: &Bound<'_, PyAny>) -> PyResult<MultiDenseVector> {
-    MultiDenseVector::try_from_matrix(matrix.extract()?)
-        .map_err(|err| PyValueError::new_err(err.to_string()))
+    multi_dense_from_matrix(matrix.extract()?)
+}
+
+fn multi_dense_from_matrix(matrix: Vec<Vec<f32>>) -> PyResult<MultiDenseVector> {
+    MultiDenseVector::try_from_matrix(matrix).map_err(|err| PyValueError::new_err(err.to_string()))
 }
 
 fn multi_dense_into_py<'py>(

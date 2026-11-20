@@ -1,6 +1,8 @@
+pub mod batch_vectors;
 pub mod filter;
 pub mod formula;
 pub mod json_path;
+pub mod ndarray;
 pub mod order_value;
 pub mod payload;
 pub mod payload_schema;
@@ -14,9 +16,11 @@ pub mod value;
 pub mod vector;
 pub mod vector_internal;
 
+pub use self::batch_vectors::*;
 pub use self::filter::*;
 pub use self::formula::*;
 pub use self::json_path::*;
+pub use self::ndarray::*;
 pub use self::order_value::*;
 pub use self::payload::*;
 pub use self::payload_schema::*;
