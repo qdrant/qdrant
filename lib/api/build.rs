@@ -479,15 +479,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ListFilesRequest.prefix_path", "length(min = 1)"),
             ("FileLengthRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("FileLengthRequest.path", "length(min = 1)"),
-            ("ReadBytesRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ReadBytesRequest.path", "length(min = 1)"),
             ("ReadBytesStreamRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("ReadBytesStreamRequest.path", "length(min = 1)"),
-            ("ReadWholeRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ReadWholeRequest.path", "length(min = 1)"),
-            ("ReadBatchRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ReadBatchRequest.path", "length(min = 1)"),
-            ("ReadBatchRequest.ranges", "length(min = 1)"),
         ], &[])
         // Cross-field validation: `exact` cannot be combined with `max_sparse_dims`
         .type_attribute("SearchParams", "#[validate(schema(function = \"crate::grpc::validate::validate_search_params\"))]")

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError};
+use common::universal_io::{ListedFile, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 use futures::stream::BoxStream;
 use tonic::codegen::InterceptedService;
@@ -198,31 +198,6 @@ impl Client {
         Ok(response.into_inner().length)
     }
 
-    /// `ReadBytes` RPC — single range from a single file.
-    pub async fn read_bytes(
-        &self,
-        collection_name: &str,
-        shard_id: u32,
-        path: &str,
-        byte_offset: u64,
-        length: u64,
-    ) -> UioResult<Vec<u8>> {
-        let response = self
-            .inner
-            .clone()
-            .read_bytes(qdrant::ReadBytesRequest {
-                collection_name: collection_name.to_string(),
-                shard_id,
-                path: path.to_string(),
-                byte_offset,
-                length,
-            })
-            .await
-            .map_err(|e| status_to_universal(e, path))?;
-
-        Ok(response.into_inner().data)
-    }
-
     /// `ReadBytesStream` RPC — streaming variant for large ranges (~1 MB chunks).
     pub async fn read_bytes_stream(
         &self,
@@ -290,57 +265,5 @@ impl Client {
                 Err(status) => Err(status_to_universal(status, &path)),
             })
             .boxed())
-    }
-
-    /// `ReadWhole` RPC — read an entire file.
-    pub async fn read_whole(
-        &self,
-        collection_name: &str,
-        shard_id: u32,
-        path: &str,
-    ) -> UioResult<Vec<u8>> {
-        let response = self
-            .inner
-            .clone()
-            .read_whole(qdrant::ReadWholeRequest {
-                collection_name: collection_name.to_string(),
-                shard_id,
-                path: path.to_string(),
-            })
-            .await
-            .map_err(|e| status_to_universal(e, path))?;
-
-        Ok(response.into_inner().data)
-    }
-
-    /// `ReadBatch` RPC — multiple ranges from a single file.
-    pub async fn read_batch(
-        &self,
-        collection_name: &str,
-        shard_id: u32,
-        path: &str,
-        ranges: &[ReadRange],
-    ) -> UioResult<Vec<Vec<u8>>> {
-        let proto_ranges: Vec<_> = ranges
-            .iter()
-            .map(|r| qdrant::ReadBatchRange {
-                byte_offset: r.byte_offset,
-                length: r.length,
-            })
-            .collect();
-
-        let response = self
-            .inner
-            .clone()
-            .read_batch(qdrant::ReadBatchRequest {
-                collection_name: collection_name.to_string(),
-                shard_id,
-                path: path.to_string(),
-                ranges: proto_ranges,
-            })
-            .await
-            .map_err(|e| status_to_universal(e, path))?;
-
-        Ok(response.into_inner().data)
     }
 }
