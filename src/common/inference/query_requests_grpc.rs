@@ -64,9 +64,7 @@ pub async fn convert_query_point_groups_from_grpc(
     let BatchAccumGrpc { objects } = batch;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params)
-            .await
-            .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params).await?;
 
     let query = if let Some(q) = query {
         Some(convert_query_with_inferred(q, &inferred)?)
@@ -143,9 +141,7 @@ pub async fn convert_query_points_from_grpc(
     let BatchAccumGrpc { objects } = batch;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params)
-            .await
-            .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params).await?;
 
     let prefetch = prefetch
         .into_iter()
@@ -389,9 +385,7 @@ fn convert_vector_input_with_inferred(
             VectorInternal::MultiDense(MultiDenseVectorInternal::from(multi_dense)),
         )),
         Variant::Document(doc) => {
-            let doc: rest::Document = doc
-                .try_into()
-                .map_err(|e| Status::internal(format!("Document conversion error: {e}")))?;
+            let doc: rest::Document = doc.try_into()?;
             let data = InferenceData::Document(doc);
             let vector = inferred
                 .get_vector(&data)
@@ -402,9 +396,7 @@ fn convert_vector_input_with_inferred(
             )))
         }
         Variant::Image(img) => {
-            let img: rest::Image = img
-                .try_into()
-                .map_err(|e| Status::internal(format!("Image conversion error: {e}",)))?;
+            let img: rest::Image = img.try_into()?;
             let data = InferenceData::Image(img);
 
             let vector = inferred
@@ -416,9 +408,7 @@ fn convert_vector_input_with_inferred(
             )))
         }
         Variant::Object(obj) => {
-            let obj: rest::InferenceObject = obj
-                .try_into()
-                .map_err(|e| Status::internal(format!("Object conversion error: {e}")))?;
+            let obj: rest::InferenceObject = obj.try_into()?;
             let data = InferenceData::Object(obj);
             let vector = inferred
                 .get_vector(&data)
