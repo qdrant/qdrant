@@ -15,6 +15,8 @@ use std::collections::HashMap;
 
 use ahash::{AHashMap, AHashSet};
 use common::types::DeferredBehavior;
+#[cfg(test)]
+pub(crate) use facet::{FacetPlan, default_sample_target};
 use uuid::Uuid;
 
 use crate::common::operation_error::OperationResult;
