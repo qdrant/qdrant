@@ -7,7 +7,6 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::bitvec::{BitSlice, DeletedBitVec};
 use common::mmap::{Advice, AdviceSetting};
-use common::persisted_hashmap::UniversalHashMap;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{Populate, TypedStorage, UniversalRead, UniversalReadFs, UserData};
 use itertools::Either;
@@ -19,7 +18,7 @@ use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::on_disk_inverted_index::{
-    OnDiskInvertedIndex, Storage, clear_files_cache, index_files, open_options,
+    OnDiskInvertedIndex, Storage, Vocab, clear_files_cache, index_files, open_options,
     open_point_to_tokens_count, open_postings, open_term_frequencies, open_vocab,
     read_deleted_points, read_doc_len_codes,
 };
@@ -589,30 +588,31 @@ fn optimized_postings_and_vocab(
     HashMap<String, u32>,
     AHashMap<u32, u32>,
 ) {
-    // Keep only tokens that have non-empty postings
-    let (postings, orig_to_new_token): (Vec<_>, AHashMap<_, _>) = postings
-        .into_iter()
-        .enumerate()
-        .filter_map(|(orig_token, posting)| (!posting.is_empty()).then_some((orig_token, posting)))
-        .enumerate()
-        .map(|(new_token, (orig_token, posting))| {
-            (posting, (orig_token as TokenId, new_token as TokenId))
-        })
-        .unzip();
+    let mut postings = postings;
 
-    // Update vocab entries
-    let mut vocab: HashMap<String, TokenId> = vocab
+    // Keep only tokens that have non-empty postings, and number them in token
+    // order: the compact on-disk vocabulary stores no ids, a token's id is its
+    // rank there.
+    let mut kept: Vec<(String, TokenId)> = vocab
         .into_iter()
-        .filter_map(|(key, orig_token)| {
-            orig_to_new_token
-                .get(&orig_token)
-                .map(|new_token| (key, *new_token))
+        .filter(|(_, orig_token)| {
+            postings
+                .get(*orig_token as usize)
+                .is_some_and(|posting| !posting.is_empty())
         })
         .collect();
+    kept.sort_unstable();
 
-    vocab.shrink_to_fit();
+    let mut new_postings = Vec::with_capacity(kept.len());
+    let mut orig_to_new_token = AHashMap::with_capacity(kept.len());
+    let mut new_vocab = HashMap::with_capacity(kept.len());
+    for (new_token, (key, orig_token)) in (0..).zip(kept) {
+        new_postings.push(std::mem::take(&mut postings[orig_token as usize]));
+        orig_to_new_token.insert(orig_token, new_token);
+        new_vocab.insert(key, new_token);
+    }
 
-    (postings, vocab, orig_to_new_token)
+    (new_postings, new_vocab, orig_to_new_token)
 }
 
 fn create_compressed_postings(
@@ -759,6 +759,7 @@ impl ImmutableInvertedIndex {
         let files = index_files(
             path,
             compact_deleted_mask,
+            vocab.format(),
             index.point_to_doc_len.is_some(),
             index.term_frequencies.is_some(),
         );
@@ -771,7 +772,7 @@ impl ImmutableInvertedIndex {
     /// marker, so the mask is applied here.
     fn from_parts<S: UniversalRead>(
         postings: &OnDiskPostingsEnum<S>,
-        vocab: &UniversalHashMap<str, TokenId, S>,
+        vocab: &Vocab<S>,
         point_to_tokens_count: &TypedStorage<S, usize>,
         point_to_doc_len: Option<Vec<u16>>,
         term_frequencies: Option<Vec<u8>>,
@@ -787,8 +788,8 @@ impl ImmutableInvertedIndex {
 
         let mut token_ids = HashMap::with_capacity(vocab.keys_count());
         vocab.for_each_entry(|token_str, token_id| {
-            token_ids.insert(token_str.to_owned(), token_id[0]);
-            OperationResult::Ok(())
+            token_ids.insert(token_str.to_owned(), token_id);
+            Ok(())
         })?;
 
         debug_assert!(
