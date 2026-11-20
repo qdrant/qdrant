@@ -6,6 +6,7 @@ use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::operations::{ClockTag, OperationWithClockTag};
+use crate::orphan_points::{OrphanPoints, OrphanPointsError, find_orphan_points};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 
 pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
@@ -156,6 +157,21 @@ impl RecoverableWal {
             recovery_point,
             newest_clocks,
             oldest_clocks,
+        )
+    }
+
+    /// Find the points changed by orphan operations in this WAL
+    ///
+    /// See [`find_orphan_points`] for `source_clocks` and `max_points`.
+    pub async fn find_orphan_points(
+        &self,
+        source_clocks: &RecoveryPoint,
+        max_points: usize,
+    ) -> Result<OrphanPoints, OrphanPointsError> {
+        find_orphan_points(
+            self.wal.lock().await.read_all(true),
+            source_clocks,
+            max_points,
         )
     }
 
@@ -1793,6 +1809,28 @@ mod tests {
         recovery_point.insert_with_token(1, 0, 2, 20);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, Some(2));
+    }
+
+    /// Find the points changed by records above the source's tick, in a WAL on disk.
+    #[tokio::test]
+    async fn test_find_orphan_points_in_wal() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+
+        let mut source_clocks = RecoveryPoint::default();
+        source_clocks.insert_with_token(1, 0, 1, 1);
+
+        let orphan_points = wal.find_orphan_points(&source_clocks, 100).await.unwrap();
+
+        let expected_point_ids = HashSet::from([2.into(), 3.into()]);
+        assert_eq!(orphan_points.point_ids, expected_point_ids);
+        assert_eq!(
+            orphan_points.clocks,
+            vec![ClockTag::new_with_token(1, 0, 1, 1)],
+        );
     }
 
     async fn write_operation(wal: &RecoverableWal, id: u64, clock_tag: Option<ClockTag>) {
