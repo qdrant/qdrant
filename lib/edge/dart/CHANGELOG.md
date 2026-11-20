@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+
+The first stable release on the Qdrant Edge 0.9.0 engine: 0.9.0-dev.2 as is,
+with the same native prebuilts (`edge-dart-native-v0.9.0-dev.2`).
+
 ## 0.9.0-dev.2
 
 The whole Rust edge API, on the same Qdrant Edge 0.9.0 engine (native
