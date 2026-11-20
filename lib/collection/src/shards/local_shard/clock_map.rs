@@ -456,6 +456,18 @@ impl RecoveryPoint {
         is_same_operation
     }
 
+    /// Set the clock referenced by the clock tag to the tick and token in the tag, whether the
+    /// clock is newer, older or missing.
+    pub fn set_clock(&mut self, tag: ClockTag) {
+        self.clocks
+            .insert(Key::from_tag(tag), (tag.clock_tick, tag.token));
+    }
+
+    /// Remove the clock referenced by the clock tag, whatever its tick.
+    pub fn remove_clock(&mut self, tag: ClockTag) {
+        self.clocks.remove(&Key::from_tag(tag));
+    }
+
     #[cfg(test)]
     pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
         let random_token = rand::random::<ClockToken>();
@@ -804,6 +816,24 @@ mod test {
         expected.insert_with_token(2, 0, 0, 0);
 
         assert_eq!(same_clocks.clocks, expected.clocks);
+    }
+
+    #[test]
+    fn recovery_point_set_and_remove_clock() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 10, 100);
+        recovery_point.insert_with_token(1, 1, 5, 101);
+
+        // Lower an existing clock, add a missing one, remove another
+        recovery_point.set_clock(ClockTag::new_with_token(1, 0, 8, 80));
+        recovery_point.set_clock(ClockTag::new_with_token(2, 0, 3, 30));
+        recovery_point.remove_clock(ClockTag::new_with_token(1, 1, 0, 0));
+
+        let mut expected = RecoveryPoint::default();
+        expected.insert_with_token(1, 0, 8, 80);
+        expected.insert_with_token(2, 0, 3, 30);
+
+        assert_eq!(recovery_point.clocks, expected.clocks);
     }
 
     #[test]
