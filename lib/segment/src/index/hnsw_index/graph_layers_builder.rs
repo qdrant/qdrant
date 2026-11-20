@@ -113,11 +113,9 @@ impl GraphLayersBuilder {
         points: &[PointOffsetType],
         q: f32,
     ) -> f32 {
-        if points.is_empty() {
+        let Some(&max_point_id) = points.iter().max() else {
             return 1.0;
-        }
-
-        let max_point_id = *points.iter().max().unwrap();
+        };
 
         let mut visited: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
         let mut point_selection: BitVec = BitVec::repeat(false, max_point_id as usize + 1);

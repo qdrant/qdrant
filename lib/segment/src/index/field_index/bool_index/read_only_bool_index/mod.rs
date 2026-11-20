@@ -96,15 +96,11 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// When they *are* set the bitmaps are materialized too (deriving the
     /// counts is what materialized them), so this rereads them for free.
     pub(super) fn refresh_counts(&mut self) -> OperationResult<()> {
-        if self.counts.get().is_none() {
+        let Some(counts) = self.counts.get_mut() else {
             return Ok(());
-        }
+        };
 
-        let counts = Self::derive_counts(&self.storage)?;
-        *self
-            .counts
-            .get_mut()
-            .expect("counts are set, just checked above") = counts;
+        *counts = Self::derive_counts(&self.storage)?;
 
         Ok(())
     }
