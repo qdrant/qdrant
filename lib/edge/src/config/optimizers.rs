@@ -2,6 +2,7 @@
 
 use std::num::NonZeroUsize;
 
+use segment::common::BYTES_IN_KB;
 use serde::{Deserialize, Serialize};
 use shard::optimizers::config::{
     get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
@@ -57,5 +58,11 @@ impl EdgeOptimizersConfig {
             self.get_indexing_threshold_kb(),
             self.max_segment_size,
         )
+    }
+
+    /// [`Self::get_deferred_threshold_bytes`] in KB.
+    pub fn get_deferred_threshold_kb(&self) -> Option<usize> {
+        self.get_deferred_threshold_bytes()
+            .map(|bytes| bytes.get() / BYTES_IN_KB)
     }
 }

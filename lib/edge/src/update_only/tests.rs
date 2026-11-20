@@ -360,7 +360,7 @@ mod store {
     /// hiding deferred points still serves the old one.
     #[test]
     fn store_past_deferred_threshold_keeps_the_old_copy() {
-        use crate::{LoadProfile, LocalSegmentEnumerator};
+        use crate::{EdgeConfig, EdgeOptimizersConfig, LocalSegmentEnumerator};
 
         let dir = vacuumed_leader("edge-update-store-deferred");
         recreate_payload_storages_append_only(dir.path());
@@ -431,11 +431,16 @@ mod store {
             dir.path(),
             LocalSegmentEnumerator::new(dir.path()),
             ReadOnlyOpenOptions {
-                config: None,
-                load_profile: Some(
-                    LoadProfile::for_retrieve()
-                        .with_deferred_points_threshold_kb(Some(threshold_kb)),
+                config: Some(
+                    EdgeConfig::builder()
+                        .optimizers(EdgeOptimizersConfig {
+                            prevent_unoptimized: Some(true),
+                            indexing_threshold: Some(threshold_kb),
+                            ..Default::default()
+                        })
+                        .build(),
                 ),
+                load_profile: None,
                 pools: Default::default(),
                 waterline: None,
             },

@@ -111,7 +111,10 @@ use clap::Parser as _;
 use common::ambient::{self, AmbientContext, trace};
 use common::reason::Reason;
 use common::universal_io::DiskCache;
-use edge::{EdgeConfig, EdgeScope, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, ReadOnlyOpenOptions};
+use edge::{
+    EdgeConfig, EdgeOptimizersConfig, EdgeScope, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools,
+    ReadOnlyOpenOptions,
+};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
 use io_bridge_uio_grpc::UioGrpcSource;
 use object_store::aws::AmazonS3;
@@ -143,20 +146,32 @@ where
     // with `--no-load-profile`). An omitted `--vector` stays a placeholder until the open
     // reveals the dimension (the profile only needs the vector name).
     let mut request = PreparedRequest::build(&cli.command)?;
-    let load_profile = (!cli.connection.no_load_profile).then(|| {
-        request
-            .load_profile()
-            .with_deferred_points_threshold_kb(cli.connection.deferred_threshold_kb)
-    });
+    let load_profile = (!cli.connection.no_load_profile).then(|| request.load_profile());
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
     // them via the manifest. `prefix` is passed only as the shard's (logical) path label. A
     // caller-provided `--search-threads` overrides the derived search-pool size (segments never
-    // carry `max_search_threads`, so this is the only way to set it here).
-    let config = cli
-        .connection
-        .search_threads
-        .map(|n| EdgeConfig::builder().max_search_threads(n).build());
+    // carry `max_search_threads`, so this is the only way to set it here). Same for the leader's
+    // optimizer settings, which decide the deferred points to hide.
+    let connection = &cli.connection;
+    let config =
+        (connection.search_threads.is_some() || connection.prevent_unoptimized).then(|| {
+            let mut builder = EdgeConfig::builder();
+            if let Some(threads) = connection.search_threads {
+                builder = builder.max_search_threads(threads);
+            }
+            if connection.prevent_unoptimized {
+                builder = builder.optimizers(EdgeOptimizersConfig {
+                    deleted_threshold: None,
+                    vacuum_min_vector_number: None,
+                    default_segment_number: None,
+                    max_segment_size: None,
+                    indexing_threshold: connection.indexing_threshold_kb,
+                    prevent_unoptimized: Some(true),
+                });
+            }
+            builder.build()
+        });
 
     log::info!("Load profile: {load_profile:?}");
 
