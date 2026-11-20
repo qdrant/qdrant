@@ -37,7 +37,8 @@ use crate::types::{
 };
 
 const DIM: usize = 16;
-const POINTS: usize = 10_000;
+/// Enough for several PiPNN leaves of 256–1024 points.
+const POINTS: usize = 3_000;
 const M: usize = 16;
 
 /// PiPNN counts each point of level 0 once per phase, of which there are 3, HNSW once.
@@ -233,10 +234,11 @@ fn builds_and_searches(
 fn small_segments_stay_on_hnsw() {
     let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let segment = make_segment(dir.path(), Distance::Cosine, 42);
+    let points = 500;
+    let segment = make_segment_of(dir.path(), Distance::Cosine, 42, points);
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
-    let (_, main_graph) = build_index(&segment, hnsw_dir.path(), POINTS + 1, 4, 1);
-    assert_eq!(method_of(&main_graph, POINTS), Method::Hnsw);
+    let (_, main_graph) = build_index(&segment, hnsw_dir.path(), points + 1, 4, 1);
+    assert_eq!(method_of(&main_graph, points), Method::Hnsw);
 }
 
 /// The same seed builds the same graph on any number of threads, entry points included.

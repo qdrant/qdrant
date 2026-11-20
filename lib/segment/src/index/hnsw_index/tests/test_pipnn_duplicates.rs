@@ -33,7 +33,7 @@ use crate::types::{Distance, HnswConfig, HnswGlobalConfig, SearchParams, SeqNumb
 
 const DIM: usize = 16;
 /// Distinct random points besides the groups.
-const RANDOM_POINTS: usize = 10_000;
+const RANDOM_POINTS: usize = 3_000;
 /// Copies per group of identical vectors: up to far more than HNSW's lists hold.
 const GROUPS: &[usize] = &[2, 5, 21, 33, 64, 200, 1000];
 
