@@ -224,7 +224,7 @@ to publish unless the working tree is clean, the binding generator is the
 commit CI pins, the pins match the release, and the release was built from the
 same Rust sources as the commit being published. A release is never re-cut: the workflow
 refuses to overwrite an existing tag, because published versions pin its
-archives. A new native build gets a new `lib/edge/VERSION`.
+archives. A new native build gets a new SDK version.
 
 ### Unsupported targets
 
@@ -257,7 +257,7 @@ The Linux libraries are built on Ubuntu 22.04 and need glibc 2.34 or newer
 (Ubuntu 22.04, Debian 12, Fedora 35 and later).
 
 A version is publishable to pub.dev as `qdrant_edge` once the native-prebuilt
-release named by `_releaseTag` (`edge-dart-native-v<lib/edge/VERSION>`) is cut and
+release named by `_releaseTag` (`edge-dart-native-v<SDK version>`) is cut and
 its checksums are pinned. Publishing
 regenerates the binding first (`make publish` runs `tool/check_publish.sh`,
 then `./build.sh`, then `dart pub publish`) so the generated glue lands in the archive even though it is
@@ -276,6 +276,10 @@ matches them on major.minor, but its patch floats independently: a Dart-only fix
 regenerated binding, a `hook/build.dart` change, docs) can ship as a new patch without
 cutting a fresh native release — it keeps downloading the prebuilt pinned by
 `_releaseTag`. So `qdrant_edge 0.9.1` may wrap native `0.9.0`, exactly as Rust `-sys`
-crates decouple their own version from the C library they bundle. `edge-dart.yml`
+crates decouple their own version from the C library they bundle. A new native
+build, on the other hand, is released per SDK version (`edge-dart-native-v<SDK
+version>`): the archives are the Dart build of the engine (with the crate's default
+features), so they get a new tag without bumping the engine version the other SDKs
+share. `edge-dart.yml`
 enforces this: `VERSION == crate` exactly, and both the `pubspec` version and the
 hook's native pin must match `VERSION` on major.minor.

@@ -2,7 +2,7 @@ name: Qdrant Edge Dart SDK — native prebuilts
 
 # Cross-builds the qdrant-edge-ffi cdylib for every platform the Dart SDK ships,
 # packages each as a checksum-pinned tar.gz, and publishes them to a GitHub
-# Release (tag edge-dart-native-v<lib/edge/VERSION>). The SDK's prebuilt-download
+# Release (tag edge-dart-native-v<the Dart SDK version>). The SDK's prebuilt-download
 # hook fetches + SHA256-verifies these, so consumers need no Rust toolchain.
 #
 # Built with the crate's default features, so the Dart surface matches the Rust
@@ -172,8 +172,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: { persist-credentials: false }
 
-      - name: Read VERSION
-        run: echo "VERSION=$(tr -d '[:space:]' < lib/edge/VERSION)" >> "$GITHUB_ENV"
+      # One native release per Dart SDK version: the engine version
+      # (lib/edge/VERSION, the crates) is shared with the other SDKs, while
+      # these archives are the Dart build of it.
+      - name: Read the Dart SDK version
+        run: echo "VERSION=$(sed -nE 's/^version: *([^ ]+).*/\1/p' lib/edge/dart/pubspec.yaml)" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -192,7 +195,7 @@ jobs:
 
       # A published release is immutable: SDK versions pin these archives by
       # SHA256, so replacing them under the same tag breaks every version
-      # already on pub.dev. Bump lib/edge/VERSION for a new native build.
+      # already on pub.dev. Bump the Dart SDK version for a new native build.
       - name: Refuse to overwrite an existing release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -205,7 +208,7 @@ jobs:
           rc=0
           git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}" >/dev/null || rc=$?
           if [ "$rc" -eq 0 ]; then
-            echo "::error::${tag} already exists; its archives are pinned by published SDK versions. Bump lib/edge/VERSION instead of re-cutting."
+            echo "::error::${tag} already exists; its archives are pinned by published SDK versions. Bump the Dart SDK version instead of re-cutting."
             exit 1
           elif [ "$rc" -ne 2 ]; then
             echo "::error::cannot check for tag ${tag} (git ls-remote exit $rc)"

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.0-dev.2
+
+The whole Rust edge API, on the same Qdrant Edge 0.9.0 engine (native
+`edge-dart-native-v0.9.0-dev.2`):
+
+- `Bm25` and `Bm25Config`: BM25 sparse embeddings computed on the device
+  (`embedDocument`, `embedQuery`), with the server's tokenizer pipeline.
+- `ResourceBudget` and `EdgeShard.optimizeWithBudget`: several shards share
+  one CPU/IO budget for optimization.
+- `EdgeShard.searchMatrix`: the SDK is now built with the crate's default
+  features.
+
+Native prebuilts are released per SDK version (`edge-dart-native-v<version>`).
+
 ## 0.9.0-dev.1
 
 Moves the SDK to Qdrant Edge 0.9.0 (native `edge-dart-native-v0.9.0`).

@@ -31,7 +31,7 @@ import 'package:hooks/hooks.dart';
 /// base moves to `github.com/qdrant/qdrant` once the SDK lands upstream and the
 /// release is cut there. Pointing at qdrant/qdrant before that release exists
 /// would 404 every download, so the fork URL here is deliberate for now.
-const _releaseTag = 'edge-dart-native-v0.9.0';
+const _releaseTag = 'edge-dart-native-v0.9.0-dev.2';
 const _releaseBase =
     'https://github.com/DenisovAV/qdrant/releases/download/$_releaseTag';
 
