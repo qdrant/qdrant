@@ -36,7 +36,8 @@
 //!
 //! A `SetFlushInterval` op line changes the flush cadence from that point on, so the `Header`'s
 //! `flush_interval_sec` is the run's *initial* value, not necessarily the one in effect at the
-//! failing op.
+//! failing op. Likewise a `SetOptimizer` op line turns the optimizer on or off from that point on,
+//! so the `Header`'s `disable_optimizer` is only the run's initial state.
 //!
 //! `extra` = ids the engine has that the model doesn't.
 //! `missing` = ids the model has that the engine doesn't.
@@ -74,7 +75,7 @@ use fs_err::File;
 use segment::types::PointIdType;
 use serde_json::{Value, json};
 
-use super::op::{NamedVectors, Op};
+use super::op::{NamedVectors, Op, OptimizerState};
 
 pub(super) struct Trace {
     writer: BufWriter<File>,
@@ -400,6 +401,12 @@ fn op_payload(op: &Op) -> Value {
         // The flush cadence in effect for the op events that follow, until the next
         // `SetFlushInterval` (the value is persisted, so restarts don't reset it).
         Op::SetFlushInterval(sec) => json!({ "flush_interval_sec": sec }),
+        // The optimizer state in effect for the op events that follow, until the next
+        // `SetOptimizer` (persisted, so restarts don't reset it).
+        Op::SetOptimizer(state) => json!({ "optimizer": match state {
+            OptimizerState::Enabled => "enabled",
+            OptimizerState::Disabled => "disabled",
+        } }),
         Op::QueryText {
             text,
             limit,
