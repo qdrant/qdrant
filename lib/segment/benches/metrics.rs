@@ -453,11 +453,13 @@ fn f32_batch_bench(c: &mut Criterion) {
         b.iter_batched(
             || batches.next().unwrap(),
             |ids| {
+                let mut scores = [0.0; BATCH];
                 let (groups, _) = ids.as_chunks::<4>();
-                groups
-                    .iter()
-                    .map(|group| CosineMetric::similarity_4(&query, group.map(vector)))
-                    .collect::<Vec<_>>()
+                let (outs, _) = scores.as_chunks_mut::<4>();
+                for (group, out) in groups.iter().zip(outs) {
+                    *out = CosineMetric::similarity_4(&query, group.map(vector));
+                }
+                scores
             },
             criterion::BatchSize::SmallInput,
         )
