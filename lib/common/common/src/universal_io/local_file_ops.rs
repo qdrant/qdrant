@@ -2,7 +2,7 @@ use std::io::{self, Write as _};
 use std::path::Path;
 
 use crate::fs::atomic_save;
-use crate::mmap::create_and_ensure_length;
+use crate::mmap::create_and_ensure_length_allocated;
 use crate::universal_io::{ListedFile, UioResult, UniversalIoError};
 
 /// `writev(2)`-family syscalls accept at most this many iovecs per call
@@ -59,7 +59,7 @@ pub(super) fn write_all_vectored(
 }
 
 pub fn local_create(path: &Path, expected_length: usize) -> UioResult<()> {
-    create_and_ensure_length(path, expected_length)
+    create_and_ensure_length_allocated(path, expected_length)
         .map(drop)
         .map_err(|err| UniversalIoError::extract_not_found(err, path))
 }

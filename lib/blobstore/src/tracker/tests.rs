@@ -229,6 +229,22 @@ fn test_page_tracker_resize(
 
     assert_eq!(tracker.mapping_len().unwrap(), 100_000);
     assert!(tracker.mmap_file_size().unwrap() > actual_tracker_size);
+
+    // The grown tracker file must also be fully allocated on disk: a resize
+    // through the mmap tracker reserves the blocks of the new range, so a
+    // full disk surfaces as ENOSPC at resize time instead of SIGBUS during a
+    // later write through the mapping.
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = fs_err::metadata(path.join(TestTracker::FILE_NAME)).unwrap();
+        assert!(
+            metadata.blocks() * 512 >= metadata.len(),
+            "tracker file is not fully allocated after growth: only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
 }
 
 #[test]

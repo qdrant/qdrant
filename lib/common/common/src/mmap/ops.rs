@@ -5,6 +5,7 @@ use std::{io, mem, ptr};
 
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
+use fs4::FileExt;
 use memmap2::{Mmap, MmapMut};
 
 use super::advice::{AdviceSetting, Madviseable, madvise};
@@ -51,7 +52,32 @@ pub static MULTI_MMAP_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
 /// If multi-mmap support is checked at Qdrant startup, the result is stored in this cell.
 pub static MULTI_MMAP_SUPPORT_CHECK_RESULT: OnceLock<bool> = OnceLock::new();
 
+/// Creates the file at `path` if needed and ensures it has exactly `length`
+/// bytes, without reserving any blocks.
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
+    let no_reservation = |_file: &File, _length: usize| Ok(());
+    create_and_ensure_length_inner(path, length, &no_reservation)
+}
+
+/// Shared implementation of [`create_and_ensure_length`] and
+/// [`create_and_ensure_length_allocated`], with the block reservation step
+/// passed in as a function: [`create_and_ensure_length`] hands it a no-op,
+/// [`create_and_ensure_length_allocated`] hands in [`reserve_blocks`], and
+/// the tests inject failures through it.
+///
+/// A failed reservation leaves the file in its previous state: an existing
+/// file is shrunk back to the length it had before the growth attempt, an
+/// existing file that the call would shrink is not truncated until its
+/// target range is reserved, so a failed reservation cannot drop its tail,
+/// and a new file is only renamed to `path` after its blocks are reserved,
+/// so it is never published at all on failure. Either way, no file is left
+/// behind that is longer than the range with reserved blocks, which a later
+/// open would otherwise map and write through.
+fn create_and_ensure_length_inner(
+    path: &Path,
+    length: usize,
+    reserve: &dyn Fn(&File, usize) -> io::Result<()>,
+) -> io::Result<File> {
     if path.exists() {
         let file = OpenOptions::new()
             .read(true)
@@ -59,7 +85,33 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
             // Don't truncate because we explicitly set the length later
             .truncate(false)
             .open(path)?;
-        file.set_len(length as u64)?;
+        // Length before this call grows the file; needed to undo the growth
+        // if the block reservation below fails.
+        let previous_len = file.metadata().ok().map(|metadata| metadata.len());
+        if previous_len.is_some_and(|len| len > length as u64) {
+            // The file shrinks: reserve the target range *before* the
+            // truncation, because `set_len` drops the tail permanently. A
+            // failed reservation must hit while the file is still intact;
+            // the truncation afterwards cannot newly fail from allocating
+            // blocks, since shrinking only frees them.
+            reserve(&file, length)?;
+            file.set_len(length as u64)?;
+        } else {
+            file.set_len(length as u64)?;
+            if let Err(err) = reserve(&file, length) {
+                if let Some(previous_len) = previous_len.filter(|&len| len < length as u64) {
+                    // Undo the growth, so the next open does not map an
+                    // enlarged but unreserved tail, which would reintroduce
+                    // the SIGBUS window the reservation exists to close.
+                    // Only an actual growth is undone: the file may have
+                    // been recreated smaller, and padding it back with
+                    // zeros would fabricate data. Best effort only: the
+                    // reservation error is the failure that gets reported.
+                    let _ = file.set_len(previous_len);
+                }
+                return Err(err);
+            }
+        }
 
         Ok(file)
     } else {
@@ -75,11 +127,66 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
                 .truncate(false)
                 .open(&temp_path)?;
             temp_file.set_len(length as u64)?;
+            // Reserve before the rename publishes the file, so a failed
+            // reservation cannot leave a full-length sparse file at `path`
+            // that a later open would map and write through.
+            reserve(&temp_file, length)?;
         }
 
         fs::rename(&temp_path, path)?;
 
         OpenOptions::new().read(true).write(true).open(path)
+    }
+}
+
+/// Like [`create_and_ensure_length`], but also reserves the file's blocks on
+/// the filesystem.
+///
+/// Files created this way are written through a `MAP_SHARED` memory map by
+/// their callers, for example the gridstore page and tracker files. Without
+/// the reservation those files stay sparse, and when the filesystem runs out
+/// of free blocks mid-write the kernel raises `SIGBUS` and kills the process,
+/// which no error handling can catch. With the reservation, a full disk
+/// surfaces here as a regular `ENOSPC` error, before anything is written
+/// through the mapping.
+///
+/// On filesystems that do not support `fallocate` this degrades to the
+/// previous sparse behavior (with a warning), so that creating a store keeps
+/// working everywhere.
+/// If the reservation fails, most importantly with `ENOSPC` on a full
+/// filesystem, the caller gets the error and the file keeps its previous
+/// state; see [`create_and_ensure_length_inner`].
+pub fn create_and_ensure_length_allocated(path: &Path, length: usize) -> io::Result<File> {
+    create_and_ensure_length_inner(path, length, &reserve_blocks)
+}
+
+/// Reserves physical blocks for the first `length` bytes of `file`.
+fn reserve_blocks(file: &File, length: usize) -> io::Result<()> {
+    if length == 0 {
+        return Ok(());
+    }
+
+    match file.file().allocate(length as u64) {
+        Ok(()) => Ok(()),
+        // Filesystems without fallocate support, like some network or FUSE
+        // mounts, keep the previous sparse behavior.
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput
+            ) || err.raw_os_error() == Some(38 /* ENOSYS on Linux */) =>
+        {
+            static WARNED: OnceLock<()> = OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                log::warn!(
+                    "Filesystem does not support reserving file blocks with fallocate; files will stay sparse, which can crash Qdrant with SIGBUS if the disk fills up while writing through a memory map: {err}"
+                );
+            }
+            Ok(())
+        }
+        // Any other error, most importantly `ENOSPC`, fails the creation
+        // here where callers can handle it.
+        Err(err) => Err(err),
     }
 }
 
@@ -175,4 +282,186 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 #[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::cell::RefCell;
+    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::os::unix::fs::MetadataExt;
+
+    use super::*;
+
+    /// [`create_and_ensure_length`] leaves the file sparse: no blocks are
+    /// allocated for regions that were never written.
+    #[test]
+    fn test_create_and_ensure_length_is_sparse() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sparse.dat");
+
+        create_and_ensure_length(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 < 64 * 1024,
+            "expected a sparse file, but {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
+
+    /// [`create_and_ensure_length_allocated`] allocates blocks for the whole
+    /// file, so mapped writes cannot run past the end of the free space.
+    #[test]
+    fn test_create_and_ensure_length_allocated_reserves_all_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reserved.dat");
+
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 64 * 1024,
+            "expected a fully allocated file, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
+
+    /// Growing a reserved file through [`create_and_ensure_length_allocated`]
+    /// also reserves the added range.
+    #[test]
+    fn test_create_and_ensure_length_allocated_reserves_grown_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grown.dat");
+
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 64 * 1024,
+            "expected the grown file to be fully allocated, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
+
+    /// When the block reservation fails while growing an existing file, the
+    /// growth is undone so the next open cannot map an unreserved tail.
+    #[test]
+    fn test_failed_reservation_restores_previous_length() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grow-fail.dat");
+
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+
+        let err = create_and_ensure_length_inner(&path, 64 * 1024, &|_: &File, _: usize| {
+            Err(io::Error::other("injected reservation failure"))
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("injected reservation failure"));
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(
+            metadata.len(),
+            8 * 1024,
+            "a failed growth must be undone, but the file is {} bytes long",
+            metadata.len(),
+        );
+    }
+
+    /// A failed block reservation must not publish a new full-length sparse
+    /// file: the rename only happens after the blocks are reserved.
+    #[test]
+    fn test_failed_reservation_does_not_publish_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new-fail.dat");
+
+        let err = create_and_ensure_length_inner(&path, 64 * 1024, &|_: &File, _: usize| {
+            Err(io::Error::other("injected reservation failure"))
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("injected reservation failure"));
+
+        assert!(!path.exists(), "a failed creation must not publish a file");
+    }
+
+    /// A failed block reservation must leave a shortening call a no-op: the
+    /// target range is reserved before the tail is dropped, so the file
+    /// keeps its original length and content when the reservation fails,
+    /// and the caller still sees the reservation error.
+    #[test]
+    fn test_failed_reservation_leaves_shrink_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shrink-fail.dat");
+
+        let mut file = create_and_ensure_length(&path, 64 * 1024).unwrap();
+        file.seek(SeekFrom::Start(63 * 1024)).unwrap();
+        file.write_all(&[42]).unwrap();
+        drop(file);
+
+        let seen_lengths = RefCell::new(Vec::new());
+        let err = create_and_ensure_length_inner(&path, 8 * 1024, &|file: &File, _: usize| {
+            seen_lengths
+                .borrow_mut()
+                .push(file.metadata().unwrap().len());
+            Err(io::Error::from_raw_os_error(28 /* ENOSPC */))
+        })
+        .unwrap_err();
+        assert_eq!(
+            err.raw_os_error(),
+            Some(28),
+            "the caller must see the reservation error, got {err:?}"
+        );
+
+        let seen_lengths = seen_lengths.into_inner();
+        assert_eq!(
+            seen_lengths,
+            vec![64 * 1024u64],
+            "reserve must run before shortening, saw lengths {seen_lengths:?}"
+        );
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(
+            metadata.len(),
+            64 * 1024,
+            "a failed shortening must keep the original length, but the file is {} bytes long",
+            metadata.len()
+        );
+
+        let mut file = OpenOptions::new().read(true).open(&path).unwrap();
+        file.seek(SeekFrom::Start(63 * 1024)).unwrap();
+        let mut tail = Vec::new();
+        file.read_to_end(&mut tail).unwrap();
+        let mut expected_tail = vec![0u8; 64 * 1024 - 63 * 1024];
+        expected_tail[0] = 42;
+        assert_eq!(
+            tail, expected_tail,
+            "the tail a failed shortening would have dropped must survive"
+        );
+    }
+
+    /// Shortening a reserved file through the allocated variant still ends at
+    /// the target length, with the kept range fully allocated.
+    #[test]
+    fn test_create_and_ensure_length_allocated_shrinks_and_reserves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shrink-ok.dat");
+
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 8 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 8 * 1024,
+            "expected the kept range to stay reserved, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
 }
