@@ -6221,7 +6221,6 @@ pub struct SearchParams {
     #[validate(range(min = 1))]
     pub hnsw_ef: ::core::option::Option<u64>,
     /// Search without approximation. If set to true, search may run long but with exact results.
-    /// Cannot be used together with `max_sparse_dims`.
     #[prost(bool, optional, tag = "2")]
     pub exact: ::core::option::Option<bool>,
     /// If set to true, search will ignore quantized vector data
