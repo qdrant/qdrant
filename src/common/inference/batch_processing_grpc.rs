@@ -313,4 +313,20 @@ mod tests {
 
         assert_eq!(batch.objects.len(), 2);
     }
+
+    #[test]
+    fn an_image_input_without_its_image_is_an_invalid_argument() {
+        let query = Query {
+            variant: Some(query::Variant::Nearest(VectorInput {
+                variant: Some(Variant::Image(api::grpc::qdrant::Image {
+                    image: None,
+                    model: "test-model".to_string(),
+                    options: Default::default(),
+                })),
+            })),
+        };
+
+        let err = collect_query(&query, &mut BatchAccumGrpc::new()).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    }
 }
