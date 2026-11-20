@@ -1177,8 +1177,9 @@ const HARNESS_UUID_ID_FRACTION: f64 = 0.5;
 const HARNESS_MAX_SEGMENT_SIZE_KB: usize = 10;
 #[cfg(test)]
 const HARNESS_INDEXING_THRESHOLD_KB: usize = 5;
+/// Gives a 4,000-op run 4 swarm configs, so few runs disable an op in all of them.
 #[cfg(test)]
-const HARNESS_SWARM_INTERVAL: usize = 2500;
+const HARNESS_SWARM_INTERVAL: usize = 1250;
 
 /// Resolve the seed override from the process environment, distinguishing "not set" from
 /// "set but unusable".
@@ -1436,8 +1437,8 @@ mod tests {
     /// path that [`harness`] also exercises: a failure here points at the optimizer or the final
     /// reload, not at mid-run restart recovery.
     ///
-    /// Runs half the op count of [`harness_no_optimizer_snapshots`]: optimizer churn makes it
-    /// slow, so it's trimmed to stay under the CI slow-test
+    /// Runs half of `OP_NUM`: optimizer churn makes it slow, so it's trimmed to stay under the
+    /// CI slow-test
     /// threshold. The fresh seed each run plus many CI runs recover the per-run coverage lost
     /// to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
@@ -1464,7 +1465,7 @@ mod tests {
     /// Single shard keeps this clear of the known-unfixed multi-shard reload bug class, so
     /// it stays green as a regression gate for the optimizer-on restart path.
     ///
-    /// Runs a quarter of the op count of the other variants: optimizer churn plus mid-run
+    /// Runs a quarter of `OP_NUM`: optimizer churn plus mid-run
     /// restarts make this the slowest combination, so it's trimmed to keep its wall-clock under
     /// the others rather than dominate the suite. The fresh seed each run plus many CI runs
     /// recover the per-run coverage lost to the shorter run.
@@ -1496,7 +1497,8 @@ mod tests {
             true,
             0.001,
             SNAPSHOTS_ON,
-            OP_NUM,
+            // Halved like `harness_no_restarts`: background snapshots make this variant slow
+            OP_NUM / 2,
             false,
         )
         .await;
@@ -1650,7 +1652,7 @@ mod seed_support_tests {
                 "--restart-probability",
                 "0.002",
                 "--swarm-interval",
-                "2500",
+                "1250",
                 "--storage-path",
                 "./storage-model",
                 "--disable-snapshots",
