@@ -13,7 +13,7 @@ use common::universal_io::{Populate, TypedStorage, UniversalRead, UniversalReadF
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, score};
 use super::doc_len::{decode_doc_len, encode_doc_len};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
@@ -391,7 +391,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         }
         let accept = accept.with_visible(&visible);
         match &self.postings {
-            ImmutablePostings::Ids(postings) => score_top_k::<_, 1>(
+            ImmutablePostings::Ids(postings) => score::<_, 1>(
                 query,
                 &mut cursors(postings, &frequencies, query)?,
                 self.point_to_tokens_count.len(),
@@ -400,7 +400,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 limit,
                 is_stopped,
             ),
-            ImmutablePostings::WithPositions(postings) => score_top_k::<_, 1>(
+            ImmutablePostings::WithPositions(postings) => score::<_, 1>(
                 query,
                 &mut cursors(postings, &frequencies, query)?,
                 self.point_to_tokens_count.len(),

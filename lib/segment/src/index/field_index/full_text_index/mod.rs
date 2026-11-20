@@ -9,7 +9,7 @@ use crate::data_types::index::TextIndexParams;
 
 pub mod bm25_embedder;
 pub mod full_text_index_read;
-pub use inverted_index::bm25::{Bm25Accept, Bm25Params, Bm25Query, Bm25Term};
+pub use inverted_index::bm25::{Bm25Accept, Bm25Params, Bm25Query, Bm25Term, ListFilteredPoints};
 mod immutable_text_index;
 mod inverted_index;
 mod lifecycle;

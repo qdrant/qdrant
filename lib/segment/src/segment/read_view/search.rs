@@ -498,7 +498,26 @@ where
                 && !deleted.get_bit(bit).unwrap_or(false)
                 && !shadowed.get_bit(bit).unwrap_or(false)
         };
-        let accept = Bm25Accept::new(&visible, filter_context.as_ref());
+        let mut accept = Bm25Accept::new(&visible, filter_context.as_ref());
+
+        let list;
+        if let Some(filter) = filter {
+            list = |budget: usize| -> OperationResult<Option<Vec<PointOffsetType>>> {
+                let cardinality = self.payload_index.estimate_cardinality(filter)?;
+                let cost = self.payload_index.materialization_cost(&cardinality)?;
+                if cardinality.max.max(cost) > budget {
+                    return Ok(None);
+                }
+                let points = self.payload_index.iter_filtered_points(
+                    filter,
+                    &cardinality,
+                    context.is_stopped(),
+                    DeferredBehavior::VisibleOnly,
+                )?;
+                Ok(Some(points.collect()))
+            };
+            accept = accept.with_filtered_points(&list);
+        }
 
         let internal_result = self
             .payload_index

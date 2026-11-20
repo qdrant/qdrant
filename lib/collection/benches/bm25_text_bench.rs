@@ -18,8 +18,8 @@
 //! payloads only would never leave the appendable segment.
 //!
 //! Every state is also timed under a payload filter on an integer `bucket`
-//! (point id modulo 100), letting 1% and 50% of the points through: the
-//! scorer checks it on every document it walks.
+//! (point id modulo 100), letting 1% and 50% of the points through, and under
+//! an id filter letting 0.01% through, the shape of a rescore of a prefetch.
 //!
 //! `BM25_TEXT_DOCS` overrides the document count, 200k by default like the
 //! sparse baseline, so the two report the same corpus.
@@ -52,9 +52,9 @@ use segment::index::field_index::full_text_index::Bm25Params;
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{
-    Condition, Distance, ExtendedPointId, FieldCondition, Filter, Memory, PayloadFieldSchema,
-    PayloadSchemaParams, PayloadSchemaType, Range, ScoredPoint, SegmentType, WithPayload,
-    WithVector,
+    Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Memory,
+    PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, Range, ScoredPoint, SegmentType,
+    WithPayload, WithVector,
 };
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::query::text::TextScoringQuery;
@@ -416,7 +416,15 @@ fn bm25_text_bench(c: &mut Criterion) {
     }
 
     let bucket: JsonPath = BUCKET_FIELD.parse().unwrap();
+    let few_ids = (0..point_count as u64)
+        .step_by(10_000)
+        .map(ExtendedPointId::from)
+        .collect::<ahash::AHashSet<_>>();
     let filters = [
+        (
+            "filter-0.01pct",
+            Filter::new_must(Condition::HasId(HasIdCondition::from(few_ids))),
+        ),
         (
             "filter-1pct",
             Filter::new_must(Condition::Field(FieldCondition::new_match(

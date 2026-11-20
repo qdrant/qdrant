@@ -18,7 +18,7 @@ use posting_list::{CHUNK_LEN, PostingListView, PostingValue};
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
-use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, score};
 use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
@@ -1177,7 +1177,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         frequencies.with_terms(&token_ids, |frequencies| match &self.storage.postings {
             OnDiskPostingsEnum::Ids(postings) => {
                 postings.with_existing_postings(&token_ids, |views| {
-                    score_top_k::<_, ON_DISK_BLOCK>(
+                    score::<_, ON_DISK_BLOCK>(
                         query,
                         &mut cursors(&token_ids, views, frequencies),
                         doc_count,
@@ -1190,7 +1190,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             }
             OnDiskPostingsEnum::WithPositions(postings) => {
                 postings.with_existing_postings(&token_ids, |views| {
-                    score_top_k::<_, ON_DISK_BLOCK>(
+                    score::<_, ON_DISK_BLOCK>(
                         query,
                         &mut cursors(&token_ids, views, frequencies),
                         doc_count,
