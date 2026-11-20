@@ -3,6 +3,7 @@
 //! points it touches, not the operations in it.
 
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::ops::RangeInclusive;
 
 use ahash::AHashMap;
@@ -157,7 +158,10 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        self.apply_batch_inner(operations, None)
+        let (writer, outcome) =
+            self.apply_batch_inner(operations, None, |_| Ok::<_, Infallible>(()))?;
+        let Ok(outcome) = outcome;
+        Ok((writer, outcome))
     }
 
     pub fn apply_batch_metered(
@@ -166,20 +170,41 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         metering: &UpdateMetering,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        self.apply_batch_inner(operations, Some(metering))
+        let (writer, outcome) =
+            self.apply_batch_inner(operations, Some(metering), |_| Ok::<_, Infallible>(()))?;
+        let Ok(outcome) = outcome;
+        Ok((writer, outcome))
     }
 
-    fn apply_batch_inner(
+    /// [`apply_batch`](Self::apply_batch), with `check` run on every resolved
+    /// point before anything is written — one resolution instead of a
+    /// [`preview_batch`](Self::preview_batch) followed by an apply.
+    ///
+    /// When `check` refuses a point, the batch writes nothing and the writer
+    /// is handed back with the refusal. Any other error loses the writer, as
+    /// in [`apply_batch`](Self::apply_batch).
+    pub fn apply_batch_checked<E>(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: Option<&UpdateMetering>,
+        check: impl FnMut(&PointPreview) -> Result<(), E>,
+    ) -> OperationResult<(Self, Result<UpdateBatchOutcome, E>)> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.apply_batch_inner(operations, metering, check)
+    }
+
+    fn apply_batch_inner<E>(
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
         metering: Option<&UpdateMetering>,
-    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        mut check: impl FnMut(&PointPreview) -> Result<(), E>,
+    ) -> OperationResult<(Self, Result<UpdateBatchOutcome, E>)> {
         const LOG_TARGET: &str = "apply_batch";
 
         let start = std::time::Instant::now();
         let plan = UpdateBatchPlan::build(operations)?;
         if plan.is_empty() {
-            return Ok((self, UpdateBatchOutcome::default()));
+            return Ok((self, Ok(UpdateBatchOutcome::default())));
         }
 
         let version = plan.version();
@@ -190,6 +215,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let instant = std::time::Instant::now();
         let resolved = resolve_batch(&segments, plan, &self.pool)?;
         log::trace!(target: LOG_TARGET, "resolve_batch took {:?}", instant.elapsed());
+
+        // Nothing is written yet, so a refusal leaves the writer intact.
+        if let Err(refused) = resolved.iter().try_for_each(&mut check) {
+            drop(segments);
+            return Ok((self, Err(refused)));
+        }
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
@@ -292,7 +323,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         drop(segments);
 
         if to_store.is_empty() && to_tombstone.is_empty() {
-            return Ok((self, outcome));
+            return Ok((self, Ok(outcome)));
         }
 
         // 4. Append the resolved points, then retire the slots they replaced.
@@ -367,7 +398,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         log::trace!(target: LOG_TARGET, "reload_lookups took {:?}", instant.elapsed());
 
         log::trace!(target: LOG_TARGET, "total apply_batch took {:?}", start.elapsed());
-        Ok((self, outcome))
+        Ok((self, Ok(outcome)))
     }
 
     /// Live-reload the lookup half of every segment in `written`, so the
