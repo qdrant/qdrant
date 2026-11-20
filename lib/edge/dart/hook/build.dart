@@ -257,8 +257,8 @@ String _libFileName(OS os) => switch (os) {
   _ => 'libqdrant_edge_ffi.so',
 };
 
-/// Build the host cdylib from the Cargo workspace. `+nightly` (sysinfo needs
-/// rustc >= 1.95) + `--no-default-features` (drop search_matrix, mobile parity).
+/// Build the host cdylib from the Cargo workspace with `+nightly` (sysinfo needs
+/// rustc >= 1.95) and the crate's default features, as the prebuilts are.
 Future<Uri> _buildFromSource(Uri workspaceRoot, String libFileName) async {
   // `+nightly` is a rustup directive only the rustup cargo shim understands.
   // Under an Xcode/Gradle build environment a Homebrew `cargo` is often first on
@@ -277,7 +277,7 @@ Future<Uri> _buildFromSource(Uri workspaceRoot, String libFileName) async {
   final envPath = Platform.environment['PATH'] ?? '';
   final result = await Process.run(
     rustupCargo,
-    ['+nightly', 'build', '--locked', '--no-default-features', '-p', 'qdrant-edge-ffi'],
+    ['+nightly', 'build', '--locked', '-p', 'qdrant-edge-ffi'],
     workingDirectory: workspaceRoot.toFilePath(),
     environment: {
       ...Platform.environment,

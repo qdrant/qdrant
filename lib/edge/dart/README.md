@@ -6,8 +6,9 @@ engine running **in-process**, no server and no network.
 
 The SDK is a thin layer over the UniFFI binding generated from the shared
 `qdrant-edge-ffi` Rust crate — the **same crate** the Swift and Kotlin SDKs bind,
-so the three stay in lock-step by construction. Like the mobile SDKs, it builds
-`--no-default-features`, so the O(n²) `search_matrix` op is off the surface.
+so the three stay in lock-step by construction. It builds with the crate's
+default features, so it carries the whole Rust edge API, `searchMatrix` and the
+`Bm25` sparse embedder included.
 
 ## Quick start
 

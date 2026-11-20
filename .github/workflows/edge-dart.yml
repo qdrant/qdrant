@@ -122,14 +122,14 @@ jobs:
           fi
           echo "OK: public facade matches the regenerated binding"
 
-      # Fail-closed mobile-safety gate: --no-default-features must drop search_matrix.
-      - name: Enforce search_matrix exclusion
+      # The Dart SDK carries the whole Rust edge API, search_matrix included.
+      - name: Require search_matrix
         working-directory: lib/edge/dart
         run: |
           set -euo pipefail
           f=lib/src/qdrant_edge_ffi.dart
-          if grep -qiE 'search_?matrix|searchMatrix' "$f"; then
-            echo "::error::search_matrix present in $f (expected --no-default-features to drop it)"
+          if ! grep -q 'edgeshard_search_matrix' "$f"; then
+            echo "::error::search_matrix absent from $f (the binding was built without the matrix feature)"
             exit 1
           fi
           # Canary: the gate must see a symbol that is definitely present.
@@ -137,7 +137,7 @@ jobs:
             echo "::error::canary failed — 'edgeshard_search' absent; scanning the wrong file"
             exit 1
           fi
-          echo "OK: search_matrix absent from the surface (canary present)"
+          echo "OK: search_matrix on the surface (canary present)"
 
       # `dart test` runs hook/build.dart (builds the host cdylib) then the suite.
       - name: Dart analyze + test

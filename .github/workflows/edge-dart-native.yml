@@ -5,8 +5,8 @@ name: Qdrant Edge Dart SDK — native prebuilts
 # Release (tag edge-dart-native-v<lib/edge/VERSION>). The SDK's prebuilt-download
 # hook fetches + SHA256-verifies these, so consumers need no Rust toolchain.
 #
-# Built --no-default-features (drops the O(n^2) search_matrix op, parity with the
-# Swift/Kotlin mobile SDKs) on nightly (sysinfo needs rustc >= 1.95).
+# Built with the crate's default features, so the Dart surface matches the Rust
+# edge API including search_matrix, on nightly (sysinfo needs rustc >= 1.95).
 
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
       # a Rust panic into an error.
       - name: Build cdylib
         run: |
-          cargo +nightly build --locked --no-default-features --profile release-mobile \
+          cargo +nightly build --locked --profile release-mobile \
             --target "${{ matrix.target }}" -p "$CRATE"
 
       - name: Collect
@@ -147,7 +147,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           cargo +nightly ndk -t "${{ matrix.abi }}" build \
-            --locked --no-default-features --profile release-mobile -p "$CRATE"
+            --locked --profile release-mobile -p "$CRATE"
 
       - name: Collect
         run: |
@@ -234,7 +234,7 @@ jobs:
             per platform. The SDK's Native Assets hook downloads and
             SHA256-verifies these, so consumers need no Rust toolchain.
 
-            Built `--no-default-features` (no `search_matrix`) on nightly. Copy
+            Built with the default features on nightly. Copy
             the `sha256` lines from `checksums.txt` into the SDK hook's pin table.
           files: release/*
           fail_on_unmatched_files: false

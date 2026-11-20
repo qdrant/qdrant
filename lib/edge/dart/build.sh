@@ -12,9 +12,8 @@
 # an ancestor, where the override never fires). Matches build-xcframework.sh /
 # build-aar.sh.
 #
-# Feature parity with the mobile Swift/Kotlin SDKs: `--no-default-features` drops
-# the default `matrix` feature so `search_matrix` stays off the surface, exactly
-# as the Swift/Kotlin bindgen builds do.
+# Built with the crate's default features, `matrix` included, so the Dart surface
+# matches the Rust edge API (the Swift/Kotlin bindgen builds drop `matrix`).
 #
 # The `uniffi_bindgen_dart` CLI must be built from the FORK that carries the
 # uniffi-0.32 + library-mode-CLI + collision-fix work (upstream lacks them):
@@ -26,8 +25,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 export PATH="$HOME/.cargo/bin:$PATH"
 
-echo "==> Building qdrant-edge-ffi cdylib (host, nightly, --no-default-features)…"
-( cd "$WORKSPACE_ROOT" && cargo +nightly build --locked --no-default-features -p qdrant-edge-ffi )
+echo "==> Building qdrant-edge-ffi cdylib (host, nightly)…"
+( cd "$WORKSPACE_ROOT" && cargo +nightly build --locked -p qdrant-edge-ffi )
 
 case "$(uname -s)" in
   Darwin) DYLIB="$WORKSPACE_ROOT/target/debug/libqdrant_edge_ffi.dylib" ;;
