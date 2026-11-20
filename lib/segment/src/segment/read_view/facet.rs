@@ -175,9 +175,13 @@ where
                 // Random sampling is too expensive with a restrictive filter,
                 // check if we should abort sampling
                 Some((_, cardinality)) => {
-                    // Expected number of draws from random id stream to reach `sample_target` values
-                    let expected_draws =
-                        sample_target.saturating_mul(available_points / unique_values_count.max(1));
+                    // Expected number of draws from random id stream to reach `sample_target` values.
+                    // Multiply before dividing: `points / uniques` truncates to 0 for
+                    // multi-valued fields with more uniques than points, which would
+                    // disable this veto entirely.
+                    let expected_draws = sample_target
+                        .saturating_mul(available_points)
+                        .div_ceil(unique_values_count.max(1));
                     !self.should_pre_filter(cardinality, Some(expected_draws))
                 }
                 None => true,
