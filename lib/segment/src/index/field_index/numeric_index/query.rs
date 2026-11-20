@@ -56,20 +56,21 @@ where
         }
     };
 
-    let lbound = if let Some(lte) = range.lte {
-        Included(lte)
-    } else if let Some(lt) = range.lt {
-        Excluded(lt)
-    } else {
-        Unbounded
+    // Keep the tighter bound on each side, so a range carrying both `lt`+`lte`
+    // (or both `gt`+`gte`) estimates over the same interval the `filter` path
+    // scans. See `Range::as_index_key_bounds`.
+    let lbound = match (range.lt, range.lte) {
+        (Some(lt), Some(lte)) if lt <= lte => Excluded(lt),
+        (_, Some(lte)) => Included(lte),
+        (Some(lt), None) => Excluded(lt),
+        (None, None) => Unbounded,
     };
 
-    let gbound = if let Some(gte) = range.gte {
-        Included(gte)
-    } else if let Some(gt) = range.gt {
-        Excluded(gt)
-    } else {
-        Unbounded
+    let gbound = match (range.gt, range.gte) {
+        (Some(gt), Some(gte)) if gt >= gte => Excluded(gt),
+        (_, Some(gte)) => Included(gte),
+        (Some(gt), None) => Excluded(gt),
+        (None, None) => Unbounded,
     };
 
     let histogram_estimation = index.get_histogram().estimate(gbound, lbound);
