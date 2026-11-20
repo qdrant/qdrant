@@ -35,7 +35,7 @@ use rand::distr::Distribution;
 use rand::rngs::StdRng;
 use rand_distr::Zipf;
 use rstest::rstest;
-use segment::data_types::facets::{FacetParams, FacetResponse};
+use segment::data_types::facets::{FacetParams, FacetResponse, FacetValue, FacetValueHit};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, PayloadSchemaType, Range};
@@ -364,4 +364,128 @@ async fn approx_facet_matches_exact_across_strategies(
     );
 
     fixture.shard.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exact_facet_omits_values_without_live_points() {
+    let collection_dir = Builder::new()
+        .prefix("facet_empty_values")
+        .tempdir()
+        .unwrap();
+    let schema_dir = Builder::new()
+        .prefix("facet_empty_schema")
+        .tempdir()
+        .unwrap();
+    let config = create_collection_config();
+    let runtime = AdaptiveSearchHandle::current_for_tests();
+    let schema = Arc::new(
+        SaveOnDisk::load_or_init_default(schema_dir.path().join("payload-schema.json")).unwrap(),
+    );
+    let shard = LocalShard::build(
+        0,
+        "test".to_string(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        schema.clone(),
+        Handle::current(),
+        runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+    create_index(&shard, &schema, TAG_KEY, PayloadSchemaType::Keyword).await;
+
+    let point = |id, tags: &[&str]| PointStructPersisted {
+        id,
+        vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+        payload: Some(serde_json::from_value(serde_json::json!({ TAG_KEY: tags })).unwrap()),
+    };
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(vec![
+                point(1.into(), &["a", "b"]),
+                point(2.into(), &["a"]),
+            ]),
+        )),
+    )
+    .await;
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(vec![point(1.into(), &["c"])]),
+        )),
+    )
+    .await;
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+            ids: vec![2.into()],
+        }),
+    )
+    .await;
+
+    let request = Arc::new(FacetParams {
+        key: JsonPath::new(TAG_KEY),
+        limit: LIMIT,
+        filter: None,
+        exact: true,
+    });
+    let hits = shard
+        .exact_facet(request.clone(), &runtime, TIMEOUT)
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        hits,
+        vec![FacetValueHit {
+            value: FacetValue::Keyword("c".to_string()),
+            count: 1
+        }]
+    );
+
+    // An old value becomes visible again if a new point carries it.
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::from(vec![point(3.into(), &["a"])]),
+        )),
+    )
+    .await;
+    let hits = shard
+        .exact_facet(request.clone(), &runtime, TIMEOUT)
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        hits,
+        vec![
+            FacetValueHit {
+                value: FacetValue::Keyword("a".to_string()),
+                count: 1
+            },
+            FacetValueHit {
+                value: FacetValue::Keyword("c".to_string()),
+                count: 1
+            },
+        ]
+    );
+
+    apply(
+        &shard,
+        CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+            ids: vec![1.into(), 3.into()],
+        }),
+    )
+    .await;
+    let hits = shard
+        .exact_facet(request, &runtime, TIMEOUT)
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    assert!(hits.is_empty());
+
+    shard.stop_gracefully().await;
 }
