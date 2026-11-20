@@ -11,7 +11,7 @@ use super::context::MainGraphProgress;
 use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::index::hnsw_index::graph_algorithm::PipnnSettings;
+use crate::index::hnsw_index::graph_algorithm::{MainGraphAlgorithm, PipnnSettings};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
@@ -28,9 +28,19 @@ thread_local! {
     static MIN_POINTS_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
+/// The main graph algorithm of a build started on this thread, also sent to a remote indexer:
+/// PiPNN with its defaults if it is enabled, HNSW if not.
+pub(super) fn main_graph_algorithm() -> MainGraphAlgorithm {
+    if enabled() {
+        MainGraphAlgorithm::Pipnn(PipnnSettings::default())
+    } else {
+        MainGraphAlgorithm::Hnsw
+    }
+}
+
 /// Whether PiPNN may build on this thread: the `pipnn_graph_building` feature flag, or
 /// always within [`with_pipnn_min_points`].
-pub(super) fn enabled() -> bool {
+fn enabled() -> bool {
     #[cfg(feature = "testing")]
     if MIN_POINTS_OVERRIDE.get().is_some() {
         return true;

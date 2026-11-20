@@ -6,8 +6,6 @@
 //! sent as is to a remote indexer, so that it builds what the local build would, whatever its
 //! own version and flags.
 
-use common::flags::feature_flags;
-
 /// The algorithm of the main graph, with its parameters.
 ///
 /// A new algorithm, or a version of one with other parameters, is a new variant here and a new
@@ -39,18 +37,6 @@ impl Default for PipnnSettings {
         Self {
             leaf_k: 4,
             reservoir_factor: 2,
-        }
-    }
-}
-
-impl MainGraphAlgorithm {
-    /// What a local build uses: PiPNN with its defaults, unless the `pipnn_graph_building`
-    /// feature flag is off.
-    pub fn from_feature_flags() -> Self {
-        if feature_flags().pipnn_graph_building {
-            Self::Pipnn(PipnnSettings::default())
-        } else {
-            Self::Hnsw
         }
     }
 }
