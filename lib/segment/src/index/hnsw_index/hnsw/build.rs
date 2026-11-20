@@ -173,6 +173,8 @@ impl HNSWIndex {
                 old_index: old_index.as_ref(),
                 gpu_device,
                 has_payload_blocks: progress_payload_blocks.is_some(),
+                algorithm: hnsw_config.indexing_algorithm(),
+                effort: hnsw_config.indexing_effort(),
             },
         )?;
 

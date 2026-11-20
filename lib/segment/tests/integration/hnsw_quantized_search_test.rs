@@ -139,12 +139,14 @@ fn hnsw_quantized_search_test(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: 2 * payloads_count as usize,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     // Cells where the recall margin sits close to the 40% floor (e.g. TQ Bits2)
@@ -946,12 +948,14 @@ fn build_quantized_hnsw_for_compare(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold: 2 * payloads_count as usize,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit = Arc::new(ResourcePermit::dummy(2));
@@ -1106,12 +1110,14 @@ fn test_build_hnsw_using_quantization() {
     vector_data_config.index = Indexes::Hnsw(HnswConfig {
         memory: None,
         m: 16,
-        ef_construct: 64,
+        ef_construct: Some(64),
         full_scan_threshold: 16,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     });
 
     let mut builder = SegmentBuilder::new(

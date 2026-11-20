@@ -6882,7 +6882,7 @@
             "nullable": true
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
             "type": "integer",
             "format": "uint",
             "minimum": 4,
@@ -6930,6 +6930,28 @@
             "description": "Store copies of original and quantized vectors within the HNSW index file. Default: false. Enabling this option will trade the search speed for disk usage by reducing amount of random seeks during the search. Requires quantized vectors to be enabled. Multi-vectors are not supported.",
             "type": "boolean",
             "nullable": true
+          },
+          "indexing_algorithm": {
+            "description": "Algorithm that builds the graph. Default: `auto`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexingAlgorithm"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "indexing_effort": {
+            "description": "How much work the graph build may spend on quality. Sets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexingEffort"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6940,6 +6962,23 @@
           "cold",
           "cached",
           "pinned"
+        ]
+      },
+      "IndexingAlgorithm": {
+        "description": "Algorithm that builds the HNSW graph. Searches work the same way on graphs built by any of them.\n\n* `auto` - Pick per segment: PiPNN for the main graph of large segments with vectors it supports, HNSW otherwise. Default.\n\n* `hnsw` - Insert the points one by one into the graph. `ef_construct` controls the quality.",
+        "type": "string",
+        "enum": [
+          "auto",
+          "hnsw"
+        ]
+      },
+      "IndexingEffort": {
+        "description": "How much work the graph build may spend on quality. Higher efforts take longer to build and give more accurate searches.\n\nSets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. An `ef_construct` set explicitly takes precedence.",
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
         ]
       },
       "QuantizationConfig": {
@@ -7334,7 +7373,6 @@
         "description": "Config of HNSW index",
         "type": "object",
         "required": [
-          "ef_construct",
           "full_scan_threshold",
           "m"
         ],
@@ -7346,10 +7384,11 @@
             "minimum": 0
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
             "type": "integer",
             "format": "uint",
-            "minimum": 4
+            "minimum": 4,
+            "nullable": true
           },
           "full_scan_threshold": {
             "description": "Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search. This measures the total size of vectors being queried against. When the maximum estimated amount of points that a condition satisfies is smaller than `full_scan_threshold_kb`, the query planner will use full-scan search instead of HNSW index traversal for better performance. Note: 1Kb = 1 vector of size 256",
@@ -7392,6 +7431,28 @@
             "description": "Store copies of original and quantized vectors within the HNSW index file. Default: false. Enabling this option will trade the search speed for disk usage by reducing amount of random seeks during the search. Requires quantized vectors to be enabled. Multi-vectors are not supported.",
             "type": "boolean",
             "nullable": true
+          },
+          "indexing_algorithm": {
+            "description": "Algorithm that builds the graph. Default: `auto`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexingAlgorithm"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "indexing_effort": {
+            "description": "How much work the graph build may spend on quality. Sets the parameters of graphs built by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexingEffort"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12068,8 +12129,8 @@
             "type": "boolean"
           },
           "pipnn_graph_building": {
-            "description": "Build the main HNSW graph of large segments with PiPNN instead of inserting point by point. When disabled, PiPNN is *never* used and graphs are built with HNSW. When enabled, PiPNN is used where it applies: segments that are large enough, have no older graph to build from, and whose vectors support it. Only changes how graphs are built: the resulting graph has the same format either way.\n\nDisabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large segments can only be tuned through `m`.",
-            "default": false,
+            "description": "Build the main HNSW graph of large segments with PiPNN instead of inserting point by point. When disabled, PiPNN is *never* used and graphs are built with HNSW, whatever the `indexing_algorithm` of the HNSW config. When enabled, the `auto` algorithm uses PiPNN where it applies: segments that are large enough, have no older graph to build from, and whose vectors support it. Only changes how graphs are built: the resulting graph has the same format either way.\n\nEnabled by default.",
+            "default": true,
             "type": "boolean"
           },
           "serverless_compatible": {

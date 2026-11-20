@@ -137,12 +137,14 @@ mod tests {
         let hnsw_config = HnswConfig {
             memory: None,
             m: 16,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10,
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         let mut dense_overrides = HashMap::new();
@@ -193,7 +195,7 @@ mod tests {
         // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
         let mut changed_hnsw_config = hnsw_config;
         changed_hnsw_config.m /= 2;
-        changed_hnsw_config.ef_construct /= 5;
+        changed_hnsw_config.ef_construct = Some(changed_hnsw_config.ef_construct() / 5);
 
         dense_overrides.insert(
             VectorNameBuf::from(DEFAULT_VECTOR_NAME),
@@ -288,17 +290,19 @@ mod tests {
         let hnsw_config_collection = HnswConfig {
             memory: None,
             m: 16,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10,
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         let mut hnsw_config_vector1 = hnsw_config_collection;
         hnsw_config_vector1.m = 10;
-        hnsw_config_vector1.ef_construct = 40;
+        hnsw_config_vector1.ef_construct = Some(40);
         hnsw_config_vector1.on_disk = Some(true);
 
         let hnsw_config_vector2 = hnsw_config_collection;

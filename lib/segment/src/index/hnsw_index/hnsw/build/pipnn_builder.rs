@@ -15,6 +15,7 @@ use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
+use crate::types::{IndexingAlgorithm, IndexingEffort};
 use crate::vector_storage::matrix_scorer::{MatrixScorer, new_matrix_scorer};
 
 /// Fewest points for a PiPNN main graph. At 5,000 points PiPNN built slower than HNSW, and
@@ -28,9 +29,14 @@ thread_local! {
     static MIN_POINTS_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
-/// Whether PiPNN may build on this thread: the `pipnn_graph_building` feature flag, or
-/// always within [`with_pipnn_min_points`].
-pub(super) fn enabled() -> bool {
+/// Whether PiPNN may build with `algorithm` on this thread: only [`IndexingAlgorithm::Auto`],
+/// if the `pipnn_graph_building` feature flag is on, or within [`with_pipnn_min_points`]
+/// whatever the flag.
+pub(super) fn enabled(algorithm: IndexingAlgorithm) -> bool {
+    match algorithm {
+        IndexingAlgorithm::Auto => {}
+        IndexingAlgorithm::Hnsw => return false,
+    }
     #[cfg(feature = "testing")]
     if MIN_POINTS_OVERRIDE.get().is_some() {
         return true;
@@ -69,6 +75,8 @@ pub(super) struct PipnnBuilder<'a> {
     pub local: LocalBuilder<'a>,
     /// Scores what HNSW scores: the quantized vectors where configured.
     scorer: MatrixScorer<'a>,
+    /// From the HNSW config, sets the parameters of the build.
+    effort: IndexingEffort,
 }
 
 impl<'a> PipnnBuilder<'a> {
@@ -77,7 +85,10 @@ impl<'a> PipnnBuilder<'a> {
     /// Otherwise `local` comes back.
     ///
     /// Boxed: `LocalBuilder` is large enough to trip `clippy::result_large_err`.
-    pub fn new(local: LocalBuilder<'a>) -> Result<Self, Box<LocalBuilder<'a>>> {
+    pub fn new(
+        local: LocalBuilder<'a>,
+        effort: IndexingEffort,
+    ) -> Result<Self, Box<LocalBuilder<'a>>> {
         // No main graph (`m == 0`): blocks are HNSW either way
         if !local.ctx.has_main_graph() {
             return Err(Box::new(local));
@@ -95,7 +106,11 @@ impl<'a> PipnnBuilder<'a> {
             debug!("No PiPNN: no matrix scorer for these vectors");
             return Err(Box::new(local));
         };
-        Ok(Self { local, scorer })
+        Ok(Self {
+            local,
+            scorer,
+            effort,
+        })
     }
 }
 
@@ -116,7 +131,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         drop(migrate);
 
         // The first draw after the levels, which `LocalBuilder::new` drew from the same rng
-        let params = PipnnParams::new(self.local.rng.random());
+        let params = PipnnParams::new(self.effort, self.local.rng.random());
 
         let timer = Instant::now();
         // Parts of the builder, so that the build does not borrow the rng, which is not `Sync`

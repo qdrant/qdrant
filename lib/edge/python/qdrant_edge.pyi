@@ -64,6 +64,27 @@ class Memory(Enum):
     Cached = ...
     Pinned = ...
 
+class IndexingAlgorithm(Enum):
+    """Algorithm that builds the HNSW graph.
+
+    ``Auto`` uses PiPNN for the main graph of large segments with vectors it
+    supports, HNSW otherwise. ``Hnsw`` inserts the points one by one into the
+    graph, with the quality controlled by ``ef_construct``.
+    """
+
+    Auto = ...
+    Hnsw = ...
+
+class IndexingEffort(Enum):
+    """How much work the graph build may spend on quality. Sets the parameters
+    of graphs built by PiPNN, and the default ``ef_construct`` of graphs built by
+    HNSW: 64 for ``Low``, 100 for ``Medium``, 200 for ``High``.
+    """
+
+    Low = ...
+    Medium = ...
+    High = ...
+
 class EdgeShard:
     """
     The main class representing a Qdrant Edge shard.
@@ -577,13 +598,15 @@ class HnswIndexConfig:
     def __init__(
         self,
         m: int,
-        ef_construct: int,
+        ef_construct: int | None,
         full_scan_threshold: int,
         max_indexing_threads: int = 0,
         on_disk: Optional[bool] = None,
         payload_m: Optional[int] = None,
         inline_storage: Optional[bool] = None,
         memory: Optional["Memory"] = None,
+        indexing_algorithm: Optional["IndexingAlgorithm"] = None,
+        indexing_effort: Optional["IndexingEffort"] = None,
     ) -> None:
         """
         Create an HnswIndexConfig.
@@ -591,6 +614,7 @@ class HnswIndexConfig:
         Args:
             m: Number of edges per node.
             ef_construct: Number of candidates during index construction.
+                ``None`` derives it from ``indexing_effort``.
             full_scan_threshold: Threshold for full scan.
             max_indexing_threads: Max threads for HNSW indexing (0 = auto).
             on_disk: Deprecated, use memory instead. Whether to store on disk.
@@ -598,6 +622,8 @@ class HnswIndexConfig:
             inline_storage: Whether to use inline storage.
             memory: Memory placement of the HNSW graph. Overrides the deprecated on_disk
                     flag if both are set.
+            indexing_algorithm: Algorithm that builds the graph. Default: Auto.
+            indexing_effort: Effort of graphs built by PiPNN. Default: Medium.
         """
         ...
 
@@ -607,8 +633,8 @@ class HnswIndexConfig:
         ...
 
     @property
-    def ef_construct(self) -> int:
-        """ef_construct value."""
+    def ef_construct(self) -> int | None:
+        """ef_construct value, ``None`` if derived from ``indexing_effort``."""
         ...
 
     @property
@@ -639,6 +665,16 @@ class HnswIndexConfig:
     @property
     def memory(self) -> Optional["Memory"]:
         """Memory placement of the HNSW graph, or None if not specified."""
+        ...
+
+    @property
+    def indexing_algorithm(self) -> Optional["IndexingAlgorithm"]:
+        """Algorithm that builds the graph, or None if not specified."""
+        ...
+
+    @property
+    def indexing_effort(self) -> Optional["IndexingEffort"]:
+        """Effort of graphs built by PiPNN, or None if not specified."""
         ...
 
 class MultiVectorConfig:

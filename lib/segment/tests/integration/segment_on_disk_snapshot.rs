@@ -120,12 +120,14 @@ fn test_on_disk_segment_snapshot(
                 index: Indexes::Hnsw(HnswConfig {
                     memory: None,
                     m: 4,
-                    ef_construct: 16,
+                    ef_construct: Some(16),
                     full_scan_threshold: 8,
                     max_indexing_threads: 2,
                     on_disk: Some(true), // mmap index
                     payload_m: None,
                     inline_storage: inline_storage.then_some(true),
+                    indexing_algorithm: None,
+                    indexing_effort: None,
                 }),
                 quantization_config: inline_storage.then(|| {
                     QuantizationConfig::from(ScalarQuantizationConfig {

@@ -139,7 +139,7 @@ mod tests {
 
     const POINTS: usize = 300;
     const DIM: usize = 100;
-    const K: usize = super::super::DEFAULT_LEAF_K;
+    const K: usize = super::super::MEDIUM_EFFORT.0;
     /// Uneven leaf sizes, including leaves without pairs.
     const SIZES: &[usize] = &[150, 0, 1, 2, 3, 5, 200, 17, 64, 2, 120, 1, 90, 33];
     /// Points of a call's share, more than it has leaves.

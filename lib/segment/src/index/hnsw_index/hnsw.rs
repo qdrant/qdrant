@@ -204,7 +204,7 @@ fn derive_config(
 
     HnswGraphConfig::new(
         hnsw_config.m,
-        hnsw_config.ef_construct,
+        hnsw_config.ef_construct(),
         full_scan_threshold,
         hnsw_config.max_indexing_threads,
         hnsw_config.payload_m,

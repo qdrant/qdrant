@@ -18,6 +18,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
+use crate::types::{IndexingAlgorithm, IndexingEffort};
 #[cfg(feature = "gpu")]
 use crate::vector_storage::VectorStorageRead as _;
 
@@ -59,6 +60,10 @@ pub(super) struct GraphBuildOptions<'a> {
     /// Whether any payload block graphs will be built. Without a main graph and blocks,
     /// nothing is uploaded anywhere.
     pub has_payload_blocks: bool,
+    /// From the HNSW config: whether PiPNN may build the main graph.
+    pub algorithm: IndexingAlgorithm,
+    /// From the HNSW config: the parameters of a PiPNN build.
+    pub effort: IndexingEffort,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -71,8 +76,8 @@ impl<'a> GraphBuilder<'a> {
     ///    old graph, and what fails on the GPU is built by the method of rules 3 to 5, which
     ///    the GPU method keeps for the whole build: the old graph is healed if the GPU fails.
     /// 3. An old graph worth healing: healing.
-    /// 4. PiPNN, unless the `pipnn_graph_building` feature flag is off, if it applies, see
-    ///    [`PipnnBuilder::new`].
+    /// 4. PiPNN, if the algorithm is [`IndexingAlgorithm::Auto`], the `pipnn_graph_building`
+    ///    feature flag is on, and it applies, see [`PipnnBuilder::new`].
     /// 5. Otherwise, HNSW.
     pub fn select(
         ctx: GraphBuildContext<'a>,
@@ -84,6 +89,8 @@ impl<'a> GraphBuilder<'a> {
             old_index,
             gpu_device,
             has_payload_blocks,
+            algorithm,
+            effort,
         } = options;
 
         let local = LocalBuilder::new(ctx, pool, rng, old_index)?;
@@ -95,24 +102,29 @@ impl<'a> GraphBuilder<'a> {
             && let Some(gpu) = GpuState::new(&local.ctx, gpu_device)?
         {
             return Ok(Self::Gpu(Box::new(GpuBuilder {
-                cpu: Self::without_gpu(local, old_index),
+                cpu: Self::without_gpu(local, old_index, algorithm, effort),
                 gpu,
             })));
         }
         #[cfg(not(feature = "gpu"))]
         let _ = (gpu_device, has_payload_blocks);
 
-        Ok(Self::without_gpu(local, old_index))
+        Ok(Self::without_gpu(local, old_index, algorithm, effort))
     }
 
     /// The method `select` picks without a GPU: healing if there is an old graph worth
-    /// healing, otherwise PiPNN if it is enabled and applies, HNSW if not. `local` has the
-    /// levels of `old_index`.
-    fn without_gpu(local: LocalBuilder<'a>, old_index: Option<&'a OldIndex<'a>>) -> Self {
+    /// healing, otherwise PiPNN if `algorithm` and the feature flag allow it and it applies,
+    /// HNSW if not. `local` has the levels of `old_index`.
+    fn without_gpu(
+        local: LocalBuilder<'a>,
+        old_index: Option<&'a OldIndex<'a>>,
+        algorithm: IndexingAlgorithm,
+        effort: IndexingEffort,
+    ) -> Self {
         match old_index {
             // Healing wins, also over PiPNN, which can't build incrementally
             Some(old_index) => Self::Healing(HealingBuilder::from_local(local, old_index)),
-            None if pipnn_builder::enabled() => match PipnnBuilder::new(local) {
+            None if pipnn_builder::enabled(algorithm) => match PipnnBuilder::new(local, effort) {
                 Ok(builder) => Self::Pipnn(builder),
                 Err(local) => Self::Hnsw(HnswBuilder(*local)),
             },

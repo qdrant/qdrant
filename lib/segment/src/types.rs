@@ -35,8 +35,8 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
-mod hnsw_config_serde;
-use self::hnsw_config_serde::HnswConfigDeserialize;
+mod graph_indexing;
+pub use self::graph_indexing::{IndexingAlgorithm, IndexingEffort};
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
@@ -877,8 +877,7 @@ impl Indexes {
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Anonymize,
 )]
-// Reads a missing `ef_construct` as the default, without making it optional in the JSON schema
-#[serde(rename_all = "snake_case", from = "HnswConfigDeserialize")]
+#[serde(rename_all = "snake_case")]
 #[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
@@ -887,9 +886,10 @@ pub struct HnswConfig {
     /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-    // Read as `DEFAULT_HNSW_EF_CONSTRUCT` if missing, see `HnswConfigDeserialize`
+    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.
     #[validate(range(min = 4))]
-    pub ef_construct: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ef_construct: Option<usize>,
     /// Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
     /// This measures the total size of vectors being queried against.
     /// When the maximum estimated amount of points that a condition satisfies is smaller than
@@ -924,6 +924,13 @@ pub struct HnswConfig {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Algorithm that builds the graph. Default: `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// How much work the graph build may spend on quality. Sets the parameters of graphs built
+    /// by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 impl HnswConfig {
@@ -938,7 +945,8 @@ impl HnswConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         let HnswConfig {
             m,
-            ef_construct,
+            // Compared resolved, so that a default derived from the effort counts as set
+            ef_construct: _,
             full_scan_threshold,
             max_indexing_threads: _,
             payload_m,
@@ -947,10 +955,13 @@ impl HnswConfig {
             on_disk: _,
             memory: _,
             inline_storage,
+            // Compared resolved, so that setting the default explicitly does not trigger a rebuild
+            indexing_algorithm: _,
+            indexing_effort: _,
         } = *self;
 
         m != other.m
-            || ef_construct != other.ef_construct
+            || self.ef_construct() != other.ef_construct()
             || full_scan_threshold != other.full_scan_threshold
             || payload_m != other.payload_m
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
@@ -958,6 +969,35 @@ impl HnswConfig {
             // to flip this flag
             || self.memory_placement() != other.memory_placement()
             || inline_storage != other.inline_storage
+            || self.indexing_algorithm() != other.indexing_algorithm()
+            || self.indexing_effort() != other.indexing_effort()
+    }
+
+    /// Algorithm that builds the graph, [`IndexingAlgorithm::Auto`] if unset.
+    pub fn indexing_algorithm(&self) -> IndexingAlgorithm {
+        self.indexing_algorithm.unwrap_or_default()
+    }
+
+    /// Effort of the graph build, [`IndexingEffort::Medium`] if unset.
+    pub fn indexing_effort(&self) -> IndexingEffort {
+        self.indexing_effort.unwrap_or_default()
+    }
+
+    /// Effective `ef_construct`: the configured value, or the default of the effort if unset.
+    pub fn ef_construct(&self) -> usize {
+        self.ef_construct
+            .unwrap_or_else(|| self.indexing_effort().default_ef_construct())
+    }
+
+    /// This config with `ef_construct` set to its effective value. Configs that are persisted
+    /// with segments or returned by the API go through this, so that they always carry a value
+    /// and stay readable by versions where `ef_construct` is required.
+    #[must_use]
+    pub fn with_resolved_ef_construct(self) -> Self {
+        Self {
+            ef_construct: Some(self.ef_construct()),
+            ..self
+        }
     }
 
     /// Effective memory placement of the HNSW graph, resolving the new `memory` parameter
@@ -1734,19 +1774,22 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
     }
 }
 
+/// `ef_construct` of [`IndexingEffort::Medium`], the default effort.
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 
 impl Default for HnswConfig {
     fn default() -> Self {
         HnswConfig {
             m: 16,
-            ef_construct: DEFAULT_HNSW_EF_CONSTRUCT,
+            ef_construct: None,
             full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
             on_disk: Some(false),
             memory: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         }
     }
 }
@@ -5163,6 +5206,56 @@ mod tests {
             ..legacy
         };
         assert!(legacy.mismatch_requires_rebuild(&cached));
+    }
+
+    #[test]
+    fn test_ef_construct_follows_effort_unless_set() {
+        let with = |ef_construct, indexing_effort| HnswConfig {
+            ef_construct,
+            indexing_effort,
+            ..HnswConfig::default()
+        };
+
+        // Unset: derived from the effort
+        assert_eq!(with(None, None).ef_construct(), 100);
+        assert_eq!(with(None, Some(IndexingEffort::Low)).ef_construct(), 64);
+        assert_eq!(with(None, Some(IndexingEffort::High)).ef_construct(), 200);
+        // Set explicitly: wins over the effort
+        assert_eq!(
+            with(Some(150), Some(IndexingEffort::High)).ef_construct(),
+            150
+        );
+
+        // Segments persist the resolved value, which matches an unset config of the same effort
+        let high = with(None, Some(IndexingEffort::High));
+        assert_eq!(high.with_resolved_ef_construct().ef_construct, Some(200));
+        assert!(
+            !high
+                .with_resolved_ef_construct()
+                .mismatch_requires_rebuild(&high)
+        );
+
+        // A segment built before the effort was raised is rebuilt, unless `ef_construct` was set
+        let medium_segment = with(None, None).with_resolved_ef_construct();
+        assert!(medium_segment.mismatch_requires_rebuild(&high));
+        let explicit_segment = with(Some(100), None).with_resolved_ef_construct();
+        let explicit_high = with(Some(100), Some(IndexingEffort::High));
+        assert!(medium_segment.mismatch_requires_rebuild(&explicit_high)); // effort changed
+        let explicit_high_segment = explicit_high.with_resolved_ef_construct();
+        assert!(!explicit_high_segment.mismatch_requires_rebuild(&explicit_high));
+        assert_eq!(
+            explicit_segment.ef_construct(),
+            explicit_high.ef_construct()
+        );
+
+        // Configs persisted without `ef_construct` read as unset, and resolve from the effort
+        let read: HnswConfig = serde_json::from_str(
+            r#"{"m": 16, "full_scan_threshold_kb": 10000, "indexing_effort": "high"}"#,
+        )
+        .unwrap();
+        assert_eq!(read.ef_construct, None);
+        assert_eq!(read.ef_construct(), 200);
+        assert_eq!(read.full_scan_threshold, 10000);
     }
 
     #[test]

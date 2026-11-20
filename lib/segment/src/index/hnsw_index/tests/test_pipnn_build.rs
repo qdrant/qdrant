@@ -32,8 +32,8 @@ use crate::segment::Segment;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Match,
-    PayloadSchemaType, SearchParams, SeqNumberType, ValueVariants,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, IndexingAlgorithm,
+    IndexingEffort, Match, PayloadSchemaType, SearchParams, SeqNumberType, ValueVariants,
 };
 
 const DIM: usize = 16;
@@ -97,16 +97,42 @@ fn build_index_from(
     seed: u64,
     old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
 ) -> (HNSWIndex, ProgressTree) {
+    build_index_with(
+        segment,
+        path,
+        min_points,
+        threads,
+        seed,
+        old_indices,
+        None,
+        None,
+    )
+}
+
+/// As [`build_index_from`], with the indexing algorithm and effort of the HNSW config.
+#[expect(clippy::too_many_arguments)]
+fn build_index_with(
+    segment: &Segment,
+    path: &Path,
+    min_points: usize,
+    threads: u32,
+    seed: u64,
+    old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
+    indexing_algorithm: Option<IndexingAlgorithm>,
+    indexing_effort: Option<IndexingEffort>,
+) -> (HNSWIndex, ProgressTree) {
     let hnsw_config = HnswConfig {
         memory: None,
         m: M,
-        ef_construct: 100,
+        ef_construct: Some(100),
         // In KB: about 160 vectors of dimension 16, so that searches use the graph
         full_scan_threshold: 10,
         max_indexing_threads: threads as usize,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm,
+        indexing_effort,
     };
     let (progress_view, progress) = new_progress_tracker();
     let mut rng = StdRng::seed_from_u64(seed);
@@ -239,6 +265,71 @@ fn small_segments_stay_on_hnsw() {
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let (_, main_graph) = build_index(&segment, hnsw_dir.path(), points + 1, 4, 1);
     assert_eq!(method_of(&main_graph, points), Method::Hnsw);
+}
+
+/// The `hnsw` algorithm keeps HNSW for a main graph that PiPNN would build.
+#[test]
+fn hnsw_algorithm_keeps_hnsw() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = make_segment(dir.path(), Distance::Cosine, 42);
+    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let (_, progress) = build_index_with(
+        &segment,
+        hnsw_dir.path(),
+        ANY_SIZE,
+        4,
+        1,
+        &[],
+        Some(IndexingAlgorithm::Hnsw),
+        None,
+    );
+    let main_graph = find_progress(&progress, "main_graph").expect("main graph progress");
+    assert_eq!(method_of(main_graph, POINTS), Method::Hnsw);
+}
+
+/// Each effort reaches the PiPNN build: the same seed builds different graphs, and a higher
+/// effort doesn't lose recall.
+#[test]
+fn effort_changes_pipnn_graph() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = make_segment(dir.path(), Distance::Cosine, 42);
+
+    let builds: Vec<_> = [
+        IndexingEffort::Low,
+        IndexingEffort::Medium,
+        IndexingEffort::High,
+    ]
+    .into_iter()
+    .map(|effort| {
+        let index_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+        let (index, progress) = build_index_with(
+            &segment,
+            index_dir.path(),
+            ANY_SIZE,
+            4,
+            1,
+            &[],
+            None,
+            Some(effort),
+        );
+        let main_graph = find_progress(&progress, "main_graph").expect("main graph progress");
+        assert_eq!(method_of(main_graph, POINTS), Method::Pipnn);
+        (graph_links(&index), recall(&index, 7))
+    })
+    .collect();
+
+    for pair in builds.windows(2) {
+        let [(lower_links, lower_recall), (higher_links, higher_recall)] = pair else {
+            unreachable!()
+        };
+        assert!(lower_links != higher_links, "efforts built the same graph");
+        assert!(
+            *higher_recall >= lower_recall - 0.01,
+            "recall {higher_recall} with more effort, {lower_recall} with less",
+        );
+    }
 }
 
 /// The same seed builds the same graph on any number of threads, entry points included.

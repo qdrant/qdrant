@@ -140,12 +140,14 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     let hnsw_config = HnswConfig {
         memory: None,
         m: M,
-        ef_construct: EF_CONSTRUCT,
+        ef_construct: Some(EF_CONSTRUCT),
         full_scan_threshold: 1,
         max_indexing_threads: 0,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
@@ -348,12 +350,14 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct: EF_CONSTRUCT,
+        ef_construct: Some(EF_CONSTRUCT),
         full_scan_threshold: full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: Some(M),
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     HNSWIndex::build(

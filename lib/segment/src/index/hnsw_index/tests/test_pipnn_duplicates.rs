@@ -90,12 +90,14 @@ fn build_pipnn_index(segment: &Segment, path: &Path, seed: u64) -> HNSWIndex {
     let hnsw_config = HnswConfig {
         memory: None,
         m: 16,
-        ef_construct: 100,
+        ef_construct: Some(100),
         full_scan_threshold: 10,
         max_indexing_threads: 4,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
     let (_progress_view, progress) = new_progress_tracker();

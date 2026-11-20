@@ -32,6 +32,12 @@ use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 use uuid::Uuid;
 
+mod graph_indexing;
+
+pub use self::graph_indexing::{
+    convert_indexing_algorithm_from_proto_lossy, convert_indexing_algorithm_to_proto,
+    convert_indexing_effort_from_proto_lossy, convert_indexing_effort_to_proto,
+};
 use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
@@ -2623,16 +2629,20 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = hnsw_config;
         Self {
             m: m.unwrap_or_default() as usize,
-            ef_construct: ef_construct.unwrap_or_default() as usize,
+            ef_construct: ef_construct.map(|v| v as usize),
             full_scan_threshold: full_scan_threshold.unwrap_or_default() as usize,
             max_indexing_threads: max_indexing_threads.unwrap_or_default() as usize,
             on_disk,
             memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|x| x as usize),
             inline_storage,
+            indexing_algorithm: convert_indexing_algorithm_from_proto_lossy(indexing_algorithm),
+            indexing_effort: convert_indexing_effort_from_proto_lossy(indexing_effort),
         }
     }
 }

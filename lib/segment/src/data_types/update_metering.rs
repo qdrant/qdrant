@@ -227,6 +227,8 @@ fn is_hnsw_indexed(index: &Indexes) -> bool {
             memory: _,
             payload_m,
             inline_storage: _,
+            indexing_algorithm: _,
+            indexing_effort: _,
         }) => *m > 0 || payload_m.unwrap_or(*m) > 0,
     }
 }

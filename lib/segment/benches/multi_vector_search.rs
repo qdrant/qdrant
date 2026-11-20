@@ -109,12 +109,14 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
     let hnsw_config = HnswConfig {
         memory: None,
         m: 8,
-        ef_construct: 16,
+        ef_construct: Some(16),
         full_scan_threshold: 10, // low value to trigger index usage by default
         max_indexing_threads: 0,
         on_disk: None,
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));

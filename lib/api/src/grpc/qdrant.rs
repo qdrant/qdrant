@@ -772,6 +772,7 @@ pub struct HnswConfigDiff {
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building.
     /// Larger the value - more accurate the search, more time required to build the index.
+    /// If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
@@ -809,6 +810,13 @@ pub struct HnswConfigDiff {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "8")]
     pub memory: ::core::option::Option<i32>,
+    /// Algorithm that builds the graph. Default: `Auto`.
+    #[prost(enumeration = "IndexingAlgorithm", optional, tag = "9")]
+    pub indexing_algorithm: ::core::option::Option<i32>,
+    /// How much work the graph build may spend on quality. Sets the parameters of graphs built
+    /// by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `Medium`.
+    #[prost(enumeration = "IndexingEffort", optional, tag = "10")]
+    pub indexing_effort: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -2501,6 +2509,74 @@ impl Memory {
             "Cold" => Some(Self::Cold),
             "Cached" => Some(Self::Cached),
             "Pinned" => Some(Self::Pinned),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingAlgorithm {
+    Unknown = 0,
+    /// Pick per segment: PiPNN for the main graph of large segments with vectors it supports,
+    /// HNSW otherwise.
+    Auto = 1,
+    /// Insert the points one by one into the graph. `ef_construct` controls the quality.
+    Hnsw = 2,
+}
+impl IndexingAlgorithm {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "IndexingAlgorithmUnknown",
+            Self::Auto => "IndexingAlgorithmAuto",
+            Self::Hnsw => "IndexingAlgorithmHnsw",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingAlgorithmUnknown" => Some(Self::Unknown),
+            "IndexingAlgorithmAuto" => Some(Self::Auto),
+            "IndexingAlgorithmHnsw" => Some(Self::Hnsw),
+            _ => None,
+        }
+    }
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingEffort {
+    Unknown = 0,
+    Low = 1,
+    Medium = 2,
+    High = 3,
+}
+impl IndexingEffort {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "IndexingEffortUnknown",
+            Self::Low => "IndexingEffortLow",
+            Self::Medium => "IndexingEffortMedium",
+            Self::High => "IndexingEffortHigh",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingEffortUnknown" => Some(Self::Unknown),
+            "IndexingEffortLow" => Some(Self::Low),
+            "IndexingEffortMedium" => Some(Self::Medium),
+            "IndexingEffortHigh" => Some(Self::High),
             _ => None,
         }
     }

@@ -77,7 +77,7 @@
 //! | Backlinks, sorted | 8 per link | Backlinks, after the reservoirs are freed |
 //!
 //! That's a peak of about 0.9 GB at 1M points, during the leaf k-NN of level 0, on top of the
-//! vectors. A reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
+//! vectors. The reservoir factor of 4 of the `high` effort doubles the reservoirs, to about 1.5 GB.
 
 mod backlinks;
 mod duplicates;
@@ -107,6 +107,7 @@ use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
 use super::HnswM;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::types::IndexingEffort;
 use crate::vector_storage::matrix_scorer::MatrixScorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum, VectorStorageRead as _};
@@ -131,26 +132,37 @@ pub(super) struct PipnnParams {
     pub seed: u64,
 }
 
-/// Default [`PipnnParams::leaf_k`]. The paper's default is 2, and it finds that "3 or 4 would
-/// also suffice" (appendix A.3).
-const DEFAULT_LEAF_K: usize = 4;
+/// [`PipnnParams::leaf_k`] and [`PipnnParams::reservoir_factor`] of [`IndexingEffort::Medium`].
+/// The paper's default leaf k is 2, and it finds that "3 or 4 would also suffice" (appendix A.3).
+/// It found reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final
+/// prune (appendix A.5).
+const MEDIUM_EFFORT: (usize, usize) = (4, 2);
 
-/// Default [`PipnnParams::reservoir_factor`]: reservoirs of twice the degree limit. The paper found
-/// reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final prune
-/// (appendix A.5).
-const DEFAULT_RESERVOIR_FACTOR: usize = 2;
+/// Leaf k and reservoir factor of [`IndexingEffort::Low`]: the paper's leaf k, and reservoirs of
+/// the degree limit, the smallest that the paper found as good with a final prune.
+const LOW_EFFORT: (usize, usize) = (2, 1);
+
+/// Leaf k and reservoir factor of [`IndexingEffort::High`]: twice the candidates of
+/// [`MEDIUM_EFFORT`] per leaf, and twice the reservoirs to keep them.
+///
+/// The efforts are not calibrated against HNSW's `ef_construct` yet.
+const HIGH_EFFORT: (usize, usize) = (8, 4);
 
 impl PipnnParams {
-    /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
-    /// limit, the default partitioning, and `seed`.
+    /// The leaf k and reservoir factor of `effort`, the default partitioning, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
-    pub fn new(seed: u64) -> Self {
+    pub fn new(effort: IndexingEffort, seed: u64) -> Self {
+        let (leaf_k, reservoir_factor) = match effort {
+            IndexingEffort::Low => LOW_EFFORT,
+            IndexingEffort::Medium => MEDIUM_EFFORT,
+            IndexingEffort::High => HIGH_EFFORT,
+        };
         Self {
             partition: PartitionParams::default(),
-            leaf_k: DEFAULT_LEAF_K,
-            reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
+            leaf_k,
+            reservoir_factor,
             seed,
         }
     }
@@ -689,7 +701,7 @@ mod orchestration_tests {
                 fanout: vec![10, 3],
                 max_depth: 16,
             },
-            ..PipnnParams::new(1)
+            ..PipnnParams::new(IndexingEffort::Medium, 1)
         }
     }
 
