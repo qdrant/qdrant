@@ -23,10 +23,36 @@ use uuid::Uuid;
 
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
+use crate::update_only::checked_apply_error::CheckedApplyError;
 use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
 use crate::update_only::metering::{UpdateBytes, UpdateMetering};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
+
+const LOG_TARGET: &str = "apply_batch";
+
+/// A batch resolved, checked and metered, with every store and retirement
+/// decided: what [`UpdateOnlyEdgeShard::prepare_batch`] hands to
+/// [`UpdateOnlyEdgeShard::write_batch`]. Nothing of it is written yet.
+struct PreparedBatch {
+    /// When the batch started, for the total-time trace.
+    start: std::time::Instant,
+    /// The batch version every retirement records.
+    version: SeqNumberType,
+    /// The appendable segment, checked to hold a writer that can store;
+    /// `Some` whenever `to_store` is non-empty.
+    write_target: Option<Uuid>,
+    deferred_cutoff: Option<PointOffsetType>,
+    outcome: UpdateBatchOutcome,
+    to_store: Vec<FullyQualifiedPoint>,
+    /// Index into `outcome.points` of each point in `to_store`.
+    stored_records: Vec<usize>,
+    to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>>,
+    /// Other segments' copies of stored points, keyed by the point's index
+    /// in `to_store`: retired only once the store tells whether the new copy
+    /// is deferred.
+    stored_retirements: Vec<(usize, Uuid, PointOffsetType)>,
+}
 
 /// What a batch did, counted per point rather than per operation: a point
 /// named by ten operations counts once.
@@ -158,10 +184,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        let (writer, outcome) =
-            self.apply_batch_inner(operations, None, |_| Ok::<_, Infallible>(()))?;
-        let Ok(outcome) = outcome;
-        Ok((writer, outcome))
+        self.apply_batch_unchecked(operations, None)
     }
 
     pub fn apply_batch_metered(
@@ -170,44 +193,78 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         metering: &UpdateMetering,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        let (writer, outcome) =
-            self.apply_batch_inner(operations, Some(metering), |_| Ok::<_, Infallible>(()))?;
-        let Ok(outcome) = outcome;
-        Ok((writer, outcome))
+        self.apply_batch_unchecked(operations, Some(metering))
     }
 
     /// [`apply_batch`](Self::apply_batch), with `check` run on every resolved
     /// point before anything is written — one resolution instead of a
     /// [`preview_batch`](Self::preview_batch) followed by an apply.
     ///
-    /// When `check` refuses a point, the batch writes nothing and the writer
-    /// is handed back with the refusal. Any other error loses the writer, as
-    /// in [`apply_batch`](Self::apply_batch).
+    /// Errors split at the first write:
+    ///
+    /// * When `check` refuses a point, or the batch fails before anything is
+    ///   written — an unsupported operation, a vector update of a missing
+    ///   point, a failed read — the writer is handed back with
+    ///   [`CheckedApplyError`]. Its lookups still describe the durable state,
+    ///   so it can apply the next batch.
+    /// * An error once writing has started loses the writer, as in
+    ///   [`apply_batch`](Self::apply_batch).
     pub fn apply_batch_checked<E>(
         self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
         metering: Option<&UpdateMetering>,
         check: impl FnMut(&PointPreview) -> Result<(), E>,
-    ) -> OperationResult<(Self, Result<UpdateBatchOutcome, E>)> {
+    ) -> OperationResult<(Self, Result<UpdateBatchOutcome, CheckedApplyError<E>>)> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        self.apply_batch_inner(operations, metering, check)
+        let prepared = match self.prepare_batch(operations, metering, check) {
+            Ok(Ok(prepared)) => prepared,
+            Ok(Err(refused)) => return Ok((self, Err(CheckedApplyError::Refused(refused)))),
+            Err(error) => return Ok((self, Err(CheckedApplyError::NotWritten(error)))),
+        };
+        let (writer, outcome) = self.write_batch(prepared)?;
+        Ok((writer, Ok(outcome)))
     }
 
-    fn apply_batch_inner<E>(
-        mut self,
+    /// The unchecked apply keeps its contract: any error loses the writer,
+    /// one raised before the first write included.
+    fn apply_batch_unchecked(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: Option<&UpdateMetering>,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        match self.prepare_batch(operations, metering, |_| Ok::<_, Infallible>(()))? {
+            Ok(prepared) => self.write_batch(prepared),
+            Err(never) => match never {},
+        }
+    }
+
+    /// Everything before the first write: resolve the batch, run `check`,
+    /// meter, and decide every store and retirement. Borrows the writer
+    /// immutably, so nothing here can change the state its lookups describe,
+    /// and the writer stays usable whatever this returns.
+    fn prepare_batch<E>(
+        &self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
         metering: Option<&UpdateMetering>,
         mut check: impl FnMut(&PointPreview) -> Result<(), E>,
-    ) -> OperationResult<(Self, Result<UpdateBatchOutcome, E>)> {
-        const LOG_TARGET: &str = "apply_batch";
-
+    ) -> OperationResult<Result<PreparedBatch, E>> {
         let start = std::time::Instant::now();
         let plan = UpdateBatchPlan::build(operations)?;
+        let version = plan.version();
         if plan.is_empty() {
-            return Ok((self, Ok(UpdateBatchOutcome::default())));
+            return Ok(Ok(PreparedBatch {
+                start,
+                version,
+                write_target: None,
+                deferred_cutoff: None,
+                outcome: UpdateBatchOutcome::default(),
+                to_store: Vec::new(),
+                stored_records: Vec::new(),
+                to_tombstone: AHashMap::new(),
+                stored_retirements: Vec::new(),
+            }));
         }
 
-        let version = plan.version();
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -216,10 +273,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let resolved = resolve_batch(&segments, plan, &self.pool)?;
         log::trace!(target: LOG_TARGET, "resolve_batch took {:?}", instant.elapsed());
 
-        // Nothing is written yet, so a refusal leaves the writer intact.
         if let Err(refused) = resolved.iter().try_for_each(&mut check) {
-            drop(segments);
-            return Ok((self, Err(refused)));
+            return Ok(Err(refused));
         }
 
         let mut outcome = UpdateBatchOutcome::default();
@@ -322,18 +377,75 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         drop(segments);
 
-        if to_store.is_empty() && to_tombstone.is_empty() {
-            return Ok((self, Ok(outcome)));
+        // Every writer the batch will need, checked up front: a missing one
+        // found halfway through the writes would lose the writer.
+        let write_target = if to_store.is_empty() {
+            None
+        } else {
+            let uuid = write_target_uuid.ok_or_else(|| {
+                OperationError::service_error("No appendable segment exists, expected exactly one")
+            })?;
+            match self.writers.get(&uuid) {
+                Some(UpdateOnlySegmentEnum::Appendable(_)) => {}
+                Some(UpdateOnlySegmentEnum::DeleteOnly(_)) => {
+                    return Err(OperationError::service_error(format!(
+                        "Write target {uuid} was opened as delete-only, it cannot store points",
+                    )));
+                }
+                None => return Err(missing_writer(uuid)),
+            }
+            Some(uuid)
+        };
+        let retired_segments = to_tombstone
+            .keys()
+            .copied()
+            .chain(stored_retirements.iter().map(|&(_, segment, _)| segment));
+        for uuid in retired_segments {
+            if !self.writers.contains_key(&uuid) {
+                return Err(missing_writer(uuid));
+            }
         }
 
-        // 4. Append the resolved points, then retire the slots they replaced.
-        // There is no flush step: the append-only components behind the
-        // writers buffer nothing across calls, so a write is durable when it
-        // returns.
+        Ok(Ok(PreparedBatch {
+            start,
+            version,
+            write_target,
+            deferred_cutoff,
+            outcome,
+            to_store,
+            stored_records,
+            to_tombstone,
+            stored_retirements,
+        }))
+    }
+
+    /// Append the resolved points, then retire the slots they replaced.
+    /// There is no flush step: the append-only components behind the writers
+    /// buffer nothing across calls, so a write is durable when it returns.
+    fn write_batch(
+        mut self,
+        prepared: PreparedBatch,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        let PreparedBatch {
+            start,
+            version,
+            write_target,
+            deferred_cutoff,
+            mut outcome,
+            mut to_store,
+            stored_records,
+            mut to_tombstone,
+            mut stored_retirements,
+        } = prepared;
+
+        if to_store.is_empty() && to_tombstone.is_empty() {
+            return Ok((self, outcome));
+        }
+
         let mut written: Vec<Uuid> = Vec::new();
         let mut tombstone_start = None;
         if !to_store.is_empty() {
-            let uuid = write_target_uuid.ok_or_else(|| {
+            let uuid = write_target.ok_or_else(|| {
                 OperationError::service_error("No appendable segment exists, expected exactly one")
             })?;
             let writer = get_writer(&mut self.writers, uuid)?;
@@ -398,7 +510,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         log::trace!(target: LOG_TARGET, "reload_lookups took {:?}", instant.elapsed());
 
         log::trace!(target: LOG_TARGET, "total apply_batch took {:?}", start.elapsed());
-        Ok((self, Ok(outcome)))
+        Ok((self, outcome))
     }
 
     /// Live-reload the lookup half of every segment in `written`, so the
@@ -422,9 +534,11 @@ fn get_writer<Fs: UniversalAppendFs>(
     writers: &mut HashMap<Uuid, UpdateOnlySegmentEnum<Fs>>,
     uuid: Uuid,
 ) -> OperationResult<&mut UpdateOnlySegmentEnum<Fs>> {
-    writers
-        .get_mut(&uuid)
-        .ok_or_else(|| OperationError::service_error(format!("No writer open for segment {uuid}")))
+    writers.get_mut(&uuid).ok_or_else(|| missing_writer(uuid))
+}
+
+fn missing_writer(uuid: Uuid) -> OperationError {
+    OperationError::service_error(format!("No writer open for segment {uuid}"))
 }
 
 /// Locate every point the batch touches: every slot it occupies, with the
