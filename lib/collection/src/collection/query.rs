@@ -215,8 +215,8 @@ impl Collection {
             return Ok(empty_batch_results(requests_batch.len()));
         }
 
-        let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
-        let with_vectors = requests_batch.iter().all(|s| s.with_vector.is_enabled());
+        let is_payload_required = requests_batch.iter().any(|s| s.with_payload.is_required());
+        let with_vectors = requests_batch.iter().any(|s| s.with_vector.is_enabled());
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -240,11 +240,14 @@ impl Collection {
         let is_required_transfer_large_enough =
             require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
 
-        if metadata_required && is_required_transfer_large_enough {
-            // If there is a significant offset, we need to retrieve the whole result
-            // set without payload first and then retrieve the payload.
-            // It is required to do this because the payload might be too large to send over the
-            // network.
+        let has_root_fusion = requests_batch
+            .iter()
+            .any(|request| matches!(request.query, Some(ScoringQuery::Fusion(_))));
+
+        if metadata_required && (is_required_transfer_large_enough || has_root_fusion) {
+            // Root fusion returns unmerged prefetch candidates from shards, so the
+            // transfer estimate above does not reflect its metadata cost. Fetch
+            // metadata only for the final page, as with large offsets or shard counts.
             let mut without_payload_requests = Vec::with_capacity(requests_batch.len());
             for query in &requests_batch {
                 let mut without_payload_request = query.clone();
