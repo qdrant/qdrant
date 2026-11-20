@@ -245,3 +245,7 @@ harness = false
 [[bench]]
 name = "tokenizers"
 harness = false
+
+[[bench]]
+name = "dense_batch_scoring"
+harness = false
