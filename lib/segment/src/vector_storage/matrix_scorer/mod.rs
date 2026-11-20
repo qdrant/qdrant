@@ -19,9 +19,8 @@ use quantization::turboquant::matrix::{TurboMatrixOperands, TurboSource};
 use self::dense_operands::{DenseOperands, MatrixElement};
 use self::turbo_source::TurboStorageSource;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectorStorage, QuantizedVectors,
-};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorStorage;
+use crate::vector_storage::source_vectors::SourceVectors;
 use crate::vector_storage::turbo::shared::invert_score;
 use crate::vector_storage::{DenseVectorStorageRead, TurboScoring, VectorStorageEnum};
 
@@ -59,16 +58,13 @@ impl<'a> MatrixScorer<'a> {
     }
 }
 
-/// Pairwise scoring of stored points for index building: the quantized vectors if configured,
-/// otherwise the original ones. `None` if those have no matrix operands (Manhattan, sparse,
-/// multivectors, and quantizations without them yet), so the caller builds with HNSW.
-pub fn new_matrix_scorer<'a>(
-    vector_storage: &'a VectorStorageEnum,
-    quantized_vectors: Option<&'a QuantizedVectors>,
-) -> Option<MatrixScorer<'a>> {
-    match quantized_vectors {
-        Some(quantized_vectors) => quantized_matrix_scorer(quantized_vectors.get_storage()),
-        None => original_matrix_scorer(vector_storage),
+/// Pairwise scoring of the `source` vectors for index building. `None` if they have no matrix
+/// operands, so the caller builds with HNSW: sparse vectors, multivectors, quantizations without
+/// them yet, and Manhattan, except with binary quantization, whose XOR count scores L1 too.
+pub fn new_matrix_scorer(source: SourceVectors<'_>) -> Option<MatrixScorer<'_>> {
+    match source {
+        SourceVectors::Quantized(quantized) => quantized_matrix_scorer(quantized.get_storage()),
+        SourceVectors::Original(storage) => original_matrix_scorer(storage),
     }
 }
 

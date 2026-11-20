@@ -12,6 +12,7 @@ pub mod query;
 pub mod query_scorer;
 pub mod raw_scorer;
 pub mod read_only;
+pub mod source_vectors;
 pub mod sparse;
 pub mod turbo;
 pub mod update_only;

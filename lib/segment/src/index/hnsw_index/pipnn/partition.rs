@@ -521,6 +521,7 @@ mod tests {
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
     };
+    use crate::vector_storage::source_vectors::SourceVectors;
     use crate::vector_storage::{VectorStorage as _, VectorStorageEnum};
 
     const LEAF: usize = 64;
@@ -583,7 +584,7 @@ mod tests {
         }
 
         fn scorer(&self) -> MatrixScorer<'_> {
-            new_matrix_scorer(&self.storage, self.quantized.as_ref()).unwrap()
+            new_matrix_scorer(SourceVectors::new(&self.storage, self.quantized.as_ref())).unwrap()
         }
 
         /// [`partition`], which must add all of its progress.

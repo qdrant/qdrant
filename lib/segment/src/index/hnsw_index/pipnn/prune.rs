@@ -3,7 +3,7 @@
 //! Uses the HNSW heuristic (RobustPrune with alpha 1) as HNSW insertion runs it
 //! (`link_with_heuristic`): the candidates best first, then
 //! [`LinksContainer::fill_from_sorted_with_heuristic`], which drops a candidate that scores higher
-//! against a link already selected than against the point. The pair scores come from
+//! against a link already selected than against the point. The pair scores are those of
 //! `score_internal` of the scorer HNSW insertion uses, so quantized vectors are used where
 //! configured.
 //!
@@ -32,8 +32,8 @@
 //! ids per point.
 //!
 //! Points are pruned in jobs of [`POINTS_PER_JOB`] consecutive points on the current rayon pool,
-//! one scorer per job, each writing to its own range of the result. A point's links only depend on
-//! its reservoir and on `score_internal`, so the result doesn't depend on the number of threads.
+//! each writing to its own range of the result. A point's links only depend on its reservoir and
+//! on `score_internal`, so the result doesn't depend on the number of threads.
 //!
 //! Progress: each job adds its points to the counter of the final prune once it's done, see
 //! [`progress`](super::progress).
@@ -41,7 +41,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
-use common::bitvec::BitSlice;
+use common::condition_checker::ConditionChecker as _;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::prelude::*;
@@ -50,11 +50,10 @@ use super::hash_prune::Reservoirs;
 use super::progress::Counter;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::links_container::LinksContainer;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::NotDeletedChecker;
+use crate::vector_storage::source_vectors::SourceVectors;
 
-/// Points pruned per job, with one scorer, and between checks of the stop flag.
+/// Points pruned per job, and between checks of the stop flag.
 ///
 /// The same number HNSW insertion runs per job (`HNSW_BUILD_MAX_PAR_LEN`): about 8 ms of work on
 /// GIST (1M x 960 at level 0, 10.3 s on 12 threads, so about 124 µs per point and
@@ -65,24 +64,19 @@ const POINTS_PER_JOB: usize = 64;
 /// Links of `points` (the points of one level, sorted, distinct, non-deleted), at most `level_m`
 /// each, chosen from their reservoirs by the HNSW heuristic. In the order of `points`.
 ///
-/// Scores with [`FilteredScorer::new_internal`] over `vector_storage` and `quantized_vectors`, as
-/// HNSW insertion does, and skips candidates that `point_deleted` or the storage mark as deleted.
-/// As for HNSW, `point_deleted` must have a flag for every point: missing flags count as deleted.
+/// Scores pairs as `score_internal` of HNSW insertion's scorer does, with a
+/// [`SourceVectors::pair_scorer`] of `source`, which reads no original vector when it is quantized.
+/// Skips candidates that `not_deleted` rejects.
 ///
 /// Runs in parallel on the current rayon pool, and checks `stopped` before every
 /// [`POINTS_PER_JOB`] points. Adds all of `points` to `progress` by the time it returns, each job
-/// its own once it's done. Fails if a scorer can't be created.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the level and the inputs of HNSW's scorers"
-)]
+/// its own once it's done. Fails if a scorer over the original vectors can't be created.
 pub(super) fn prune(
     reservoirs: &Reservoirs,
     points: &[PointOffsetType],
     level_m: usize,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: Option<&QuantizedVectors>,
-    point_deleted: &BitSlice,
+    source: SourceVectors<'_>,
+    not_deleted: &NotDeletedChecker<'_>,
     stopped: &AtomicBool,
     progress: Counter<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
@@ -109,25 +103,15 @@ pub(super) fn prune(
                 return Ok(());
             };
             let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-            // One scorer serves every point of the job: `score_internal(a, b)` scores the stored
-            // vectors of `a` and `b`, whatever point the scorer was made for, as HNSW's heuristic
-            // relies on for its pairs too. Without quantization, making a scorer copies the
-            // point's vector into a query, so this is one copy per job instead of per point.
-            // Scorers aren't `Send`, so threads can't share them through a pool.
-            let scorer = FilteredScorer::new_internal(
-                first,
-                vector_storage,
-                quantized_vectors,
-                None,
-                point_deleted,
-            )?;
+            // One scorer per job: over the originals, making one copies a point's vector
+            let scorer = source.pair_scorer(first)?;
             // Reused, so each point's links are allocated once, at their size
             let mut container = LinksContainer::with_capacity(level_m);
             for (&point, links) in points.iter().zip(links) {
                 container.fill_from_sorted_with_heuristic(
-                    candidates(reservoirs, point, &scorer).into_iter(),
+                    candidates(reservoirs, point, not_deleted).into_iter(),
                     level_m,
-                    |a, b| scorer.score_internal(a, b),
+                    |a, b| scorer.score(a, b),
                 );
                 *links = container.links().to_vec();
             }
@@ -142,11 +126,11 @@ pub(super) fn prune(
 fn candidates(
     reservoirs: &Reservoirs,
     point: PointOffsetType,
-    scorer: &FilteredScorer<'_>,
+    not_deleted: &NotDeletedChecker<'_>,
 ) -> Vec<ScoredPointOffset> {
-    let filters = scorer.filters();
     let mut candidates = reservoirs.candidates(point);
-    candidates.retain(|candidate| candidate.idx != point && filters.check_vector(candidate.idx));
+    candidates
+        .retain(|candidate| candidate.idx != point && not_deleted.check_infallible(candidate.idx));
     candidates
 }
 
@@ -165,13 +149,17 @@ mod tests {
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
     use crate::index::hnsw_index::pipnn::progress::TestCounter;
+    use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
-        QuantizationConfig, ScalarQuantizationConfig,
+        QuantizationConfig, ScalarQuantizationConfig, TurboQuantBitSize,
+        TurboQuantQuantizationConfig, TurboQuantization,
     };
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
-    use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
+    use crate::vector_storage::quantized::quantized_vectors::{
+        QuantizedVectors, QuantizedVectorsStorageType,
+    };
+    use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorageRead as _};
 
     /// Points in the storage.
     const POINTS: usize = 400;
@@ -241,6 +229,14 @@ mod tests {
             }
         }
 
+        fn source(&self) -> SourceVectors<'_> {
+            SourceVectors::new(&self.storage, self.quantized.as_ref())
+        }
+
+        fn not_deleted(&self) -> NotDeletedChecker<'_> {
+            self.storage.not_deleted_checker(&self.deleted)
+        }
+
         /// The scorer of HNSW insertion for `point`, which picks quantized or original vectors.
         fn scorer(&self, point: PointOffsetType) -> FilteredScorer<'_> {
             FilteredScorer::new_internal(
@@ -273,9 +269,13 @@ mod tests {
         /// scores them:
         /// - none for every 10th point, one random other point for every 10th after it,
         /// - otherwise its [`NEAREST`] nearest points and [`RANDOM`] random others.
+        ///
+        /// Checks that the prune scores every pair bit for bit as `score_internal`, in argument
+        /// order.
         fn candidates(&self, seed: u64) -> Vec<Vec<ScoredPointOffset>> {
             let mut rng = StdRng::seed_from_u64(seed);
             let scorer = self.scorer(0);
+            let pairs = self.source().pair_scorer(0).unwrap();
             self.points
                 .iter()
                 .enumerate()
@@ -284,9 +284,10 @@ mod tests {
                         .points
                         .iter()
                         .filter(|&&other| other != point)
-                        .map(|&idx| ScoredPointOffset {
-                            idx,
-                            score: scorer.score_internal(point, idx),
+                        .map(|&idx| {
+                            let score = scorer.score_internal(point, idx);
+                            assert_eq!(pairs.score(point, idx).to_bits(), score.to_bits());
+                            ScoredPointOffset { idx, score }
                         })
                         .collect();
                     match i % 10 {
@@ -330,9 +331,8 @@ mod tests {
                 reservoirs,
                 &self.points,
                 level_m,
-                &self.storage,
-                self.quantized.as_ref(),
-                &self.deleted,
+                self.source(),
+                &self.not_deleted(),
                 stopped,
                 counter.counter(),
             );
@@ -460,6 +460,17 @@ mod tests {
         })
     }
 
+    #[expect(deprecated, reason = "always_ram")]
+    fn turbo(bits: TurboQuantBitSize) -> QuantizationConfig {
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: Some(bits),
+            },
+        })
+    }
+
     /// Equal links, reporting the first point that differs instead of all of them.
     #[track_caller]
     fn assert_same_links(
@@ -547,6 +558,20 @@ mod tests {
         let original = fixture.expected(&candidates, LEVEL_M, |p| fixture.original_scorer(p));
         let changed = differing(&original, &expected);
         assert!(changed > 0, "the originals give the same links");
+    }
+
+    /// With quantized vectors, the prune reads no original vector: it gives the same links over
+    /// a storage without any, where reading one panics.
+    #[test]
+    fn no_original_vectors() {
+        let _scope = ambient::test_guard();
+        let quantization = Some(turbo(TurboQuantBitSize::Bits4));
+        let mut fixture = Fixture::new(Data::Random, Distance::Euclid, quantization);
+        let candidates = fixture.candidates(1);
+        let expected = fixture.expected(&candidates, LEVEL_M, |p| fixture.scorer(p));
+        fixture.storage = new_volatile_dense_vector_storage(DIM, Distance::Euclid);
+        let links = fixture.pruned(&candidates, LEVEL_M);
+        assert_same_links(&fixture.points, &links, &expected);
     }
 
     /// The candidates keep their reservoir scores, even where they are unrelated to the real
@@ -719,9 +744,8 @@ mod tests {
             &reservoirs,
             &[],
             LEVEL_M,
-            &fixture.storage,
-            None,
-            &fixture.deleted,
+            fixture.source(),
+            &fixture.not_deleted(),
             &AtomicBool::new(false),
             counter.counter(),
         )
@@ -740,9 +764,8 @@ mod tests {
             &reservoirs,
             &[7],
             LEVEL_M,
-            &fixture.storage,
-            None,
-            &fixture.deleted,
+            fixture.source(),
+            &fixture.not_deleted(),
             &AtomicBool::new(false),
             counter.counter(),
         )

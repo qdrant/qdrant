@@ -28,7 +28,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::{
     new_volatile_dense_vector_storage,
 };
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectorStorage, QuantizedVectorsStorageType,
+    QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
@@ -150,7 +150,7 @@ impl Fixture {
     }
 
     fn check(&self, tolerance: Tolerance) {
-        let scorer = new_matrix_scorer(&self.storage, self.quantized.as_ref())
+        let scorer = new_matrix_scorer(SourceVectors::new(&self.storage, self.quantized.as_ref()))
             .expect("storage has a matrix operands");
         self.check_scorer(&scorer, tolerance);
     }
@@ -395,9 +395,15 @@ fn turbo16_storage(
 fn no_matrix_form() {
     let _scope = ambient::test_guard();
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, None);
-    assert!(new_matrix_scorer(&fixture.storage, None).is_none());
+    assert!(new_matrix_scorer(SourceVectors::new(&fixture.storage, None)).is_none());
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, Some(scalar()));
-    assert!(new_matrix_scorer(&fixture.storage, fixture.quantized.as_ref()).is_none());
+    assert!(
+        new_matrix_scorer(SourceVectors::new(
+            &fixture.storage,
+            fixture.quantized.as_ref()
+        ))
+        .is_none()
+    );
     let fixture = Fixture::new(Element::Turbo(TQBits::Bits16), Distance::Manhattan, None);
-    assert!(new_matrix_scorer(&fixture.storage, None).is_none());
+    assert!(new_matrix_scorer(SourceVectors::new(&fixture.storage, None)).is_none());
 }
