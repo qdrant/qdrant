@@ -41,21 +41,21 @@ const _releaseBase =
 /// checks the two agree before publishing.
 const _sha256 = <String, String>{
   'linux_x86_64':
-      'b235fa9f6e1e5a09a6c30f0c18fcc2ce524a18b7785494b341668b6dc68e798c',
+      '6e4eeb289a31169085324251a6cb3250f973cec357c691b77c87367737430b35',
   'linux_arm64':
-      '256fa088ca7be9b0e9a5a08797078577302e1dd302d246b620abcc13fa9db0b6',
+      '09cac6bf4c5d7374b473425aae85aadcd95bc8bd51e5482fe9ab14713059bbf8',
   'windows_x86_64':
-      '868b0b1e3b7ffaf517a1e225be67c1022e4ed02047f96052a10c9455e06fd9c2',
+      'f0f1de7a3ff0e4d00f7e908775d1d3c8f63b828009c7ba823ad7b8028ee3881e',
   'macos_arm64':
-      'ed761d34e5ce612da0164263a91594c67dc6a0e2119d337d652cb6d8e6828315',
+      'b50b91f29bbb37fde9a45c880e53ce6862212dcb9f1e71c2d370731f7e1577e9',
   'ios_arm64':
-      '6fbcb612d9b3ed30645eb4df7e3b4b681eaf0c2f749e8920e2b2edcede312df3',
+      '698c10ac6d56e4f13dcd8299e6588cc54016c52ff81d579207121fa5c0551ee8',
   'ios_sim_arm64':
-      'db4ec3e8da81fac489c2315f7d6def5daf4786bc4f1aa112b9b66e3c633b896c',
+      '75341c0b4b3a51185e154ed9616500d963a0fb9266edf7cc368c242483028897',
   'android_arm64':
-      'c16f1c4de895bda0124118f26a13e329cdd132c070f1ec8fcb9b6afc415dc605',
+      '911db096fb301ee365c5066030270396c47ca6f2357bfc64c963e0010be734e7',
   'android_x86_64':
-      '2eb0570e5ce1a0e6cfed8744047195291c38b7d1f09da9392f4cd72b5c3c8792',
+      '2d72383dd0aa0384220ceee96d6ce961277fca10fe37c68b3b0574137b7e3fef',
 };
 
 void main(List<String> args) async {
