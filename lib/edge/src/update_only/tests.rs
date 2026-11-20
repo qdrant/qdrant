@@ -17,7 +17,9 @@ use crate::read_only::tests::{
     delete as leader_delete, exact_count, init_serverless_feature_flags, open_follower, point,
     scrolled_ids, test_config, upsert,
 };
-use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointApplyKind, UpdateOnlyEdgeShard};
+use crate::{
+    EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointAction, PointApplyKind, UpdateOnlyEdgeShard,
+};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
 /// wrote it closed — a writer opens a directory, not a running shard.
@@ -531,6 +533,67 @@ mod store {
             );
             assert!(outcome.points.iter().all(|record| !record.deferred));
         }
+    }
+
+    /// A refused check writes nothing and hands the writer back, which then
+    /// applies the same batch, resolving it once, when the check passes.
+    #[test]
+    fn checked_apply_refusal_writes_nothing() {
+        let dir = leader_with_ten_points("edge-update-checked");
+        recreate_payload_storages_append_only(dir.path());
+        let merged = payload_json! { "kind": "merged" };
+        let batch = || {
+            [(
+                100,
+                PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                    payload: merged.clone(),
+                    points: Some(vec![ExtendedPointId::NumId(5)]),
+                    filter: None,
+                    key: None,
+                })),
+            )]
+        };
+        let retrieve_payload = || {
+            open_follower(dir.path())
+                .retrieve(
+                    RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(5)])
+                        .with_payload(WithPayloadInterface::Bool(true))
+                        .build(),
+                )
+                .unwrap()
+                .remove(0)
+                .payload
+        };
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let (writer, refused) = writer
+            .apply_batch_checked(batch(), None, |point| match &point.action {
+                PointAction::Store(stored) => Err(stored.payload.clone()),
+                PointAction::Delete
+                | PointAction::Skip
+                | PointAction::Rejected
+                | PointAction::Missing => panic!("expected the merge to be stored"),
+            })
+            .unwrap();
+        assert_eq!(
+            refused.unwrap_err(),
+            merged,
+            "the check sees the merged payload"
+        );
+        assert_ne!(retrieve_payload(), Some(merged.clone()));
+
+        let mut checked = 0;
+        let (_writer, outcome) = writer
+            .apply_batch_checked(batch(), None, |_| {
+                checked += 1;
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_eq!(checked, 1);
+        let outcome = outcome.unwrap();
+        assert_eq!(outcome.stored, 1);
+        assert_eq!(outcome.points[0].kind, PointApplyKind::Stored);
+        assert_eq!(retrieve_payload(), Some(merged));
     }
 
     /// A retried store batch is a no-op — through the same writer and through
