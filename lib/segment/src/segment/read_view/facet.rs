@@ -104,6 +104,21 @@ where
         request: &FacetParams,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
+        let sample_target = MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR));
+        self.approximate_facet_with_sample_target(request, sample_target, is_stopped)
+    }
+
+    /// [`Self::approximate_facet`] with an explicit sampling budget.
+    ///
+    /// The sampling→full veto depends only on `sample_target / available_points`
+    /// and the phase-2 choice only on filter selectivity, so tests can reach
+    /// the same plans as production on a proportionally smaller fixture.
+    pub(crate) fn approximate_facet_with_sample_target(
+        &self,
+        request: &FacetParams,
+        sample_target: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
         // Shortcut if this segment has no points.
         let available_points = self.id_tracker.available_point_count();
         if available_points == 0 {
@@ -111,7 +126,6 @@ where
         }
 
         let facet_index = self.facet_index_for(&request.key)?;
-        let sample_target = MIN_SAMPLE_TARGET.max(request.limit.saturating_mul(OVERSAMPLE_FACTOR));
 
         // Sampling pays off when there are many more unique values than requested,
         // and the filter (if any) is broad enough for random draws to be cheap.

@@ -9,13 +9,13 @@
 //! | `sampling_selective_filter_*`          | tag    | seq <  9%  | sampling → filter iter|
 //! | `sampling_broad_filter_*`              | tag    | seq < 95%  | sampling → facet iter |
 //!
-//! The sampling → filter iter plan needs more points than the others: a filter
-//! selective enough to prefer filter iter (< 10% of candidate mass) is also
-//! selective enough for the strategy veto to fall back to full, *unless* the
-//! segment is much larger than the sampling budget — the veto keeps sampling
-//! only while selectivity ≥ √(sample_target / available_points). That window
-//! opens around 150k points here (see `N_FILTER_ITER`), so that one test uses a
-//! larger fixture.
+//! The sampling → filter iter plan needs the segment to be much larger than the
+//! sampling budget: a filter selective enough to prefer filter iter (< 10% of
+//! candidate mass) is also selective enough for the strategy veto to fall back
+//! to full, unless selectivity ≥ √(sample_target / available_points). With the
+//! production budget (1000) that window opens around 150k points; that test
+//! instead shrinks the budget (see `FILTER_ITER_SAMPLE_TARGET`) so the same
+//! window opens on a 10× smaller fixture.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -110,14 +110,39 @@ fn seq_below(n: usize) -> Filter {
     )))
 }
 
-fn run_facet(segment: &Segment, key: &str, filter: Option<Filter>) -> HashMap<FacetValue, usize> {
-    let request = FacetParams {
+fn facet_request(key: &str, filter: Option<Filter>) -> FacetParams {
+    FacetParams {
         key: JsonPath::new(key),
         limit: LIMIT,
         filter,
         exact: false,
-    };
-    segment.facet(&request, &AtomicBool::new(false)).unwrap()
+    }
+}
+
+fn run_facet(segment: &Segment, key: &str, filter: Option<Filter>) -> HashMap<FacetValue, usize> {
+    segment
+        .facet(&facet_request(key, filter), &AtomicBool::new(false))
+        .unwrap()
+}
+
+/// Like [`run_facet`], but with an explicit per-segment sampling budget instead
+/// of the production `max(LIMIT * 10, 1000)`.
+fn run_facet_with_sample_target(
+    segment: &Segment,
+    key: &str,
+    filter: Option<Filter>,
+    sample_target: usize,
+) -> HashMap<FacetValue, usize> {
+    let request = facet_request(key, filter);
+    segment
+        .with_view(|view| {
+            view.approximate_facet_with_sample_target(
+                &request,
+                sample_target,
+                &AtomicBool::new(false),
+            )
+        })
+        .unwrap()
 }
 
 /// Independently recompute the exact count for every returned value and assert
@@ -222,24 +247,33 @@ fn sampling_broad_filter_walks_facet_index() {
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
 
+/// Sampling budget for the sampling → filter iter test, 10× below the
+/// production minimum (1000). Every decision on that path depends only on
+/// `sample_target / N` and on filter selectivity, so shrinking both by the
+/// same factor reaches the same plan with the same margins.
+const FILTER_ITER_SAMPLE_TARGET: usize = 100;
+
 /// Points for the sampling → filter iter test. The veto keeps sampling only
 /// while selectivity ≥ √(sample_target / N), so reaching filter iter (< 10%)
 /// needs N well above the sampling budget; an `f = 9%` filter lands in the
-/// [√(1000/N), 10%) window with margin (boundary ≈ 7.1% here). Verified
-/// empirically: the crossover first appears around N = 150k.
-#[cfg(not(windows))]
-const N_FILTER_ITER: usize = 200_000;
+/// [√(100/N), 10%) window with margin (boundary ≈ 7.1% here). Equivalent to
+/// 200k points with the production budget of 1000.
+const N_FILTER_ITER: usize = 20_000;
 
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
 /// 9%` is selective enough for phase 2 to prefer iterating the merged filter,
 /// yet broad enough to clear the sampling→full veto at this scale.
-#[cfg(not(windows))]
 #[test]
 fn sampling_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment_n(N_FILTER_ITER);
     let filter = seq_below(N_FILTER_ITER * 9 / 100);
 
-    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+    let hits = run_facet_with_sample_target(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FILTER_ITER_SAMPLE_TARGET,
+    );
 
     assert!(!hits.is_empty());
     assert!(hits.len() < N_FILTER_ITER);
