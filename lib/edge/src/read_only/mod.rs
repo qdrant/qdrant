@@ -53,6 +53,10 @@ pub struct ReadOnlyOpenOptions {
     /// Overrides tunables of the config derived from the segments (see
     /// [`EdgeConfig::from_segment_config`]); `vectors`/`sparse_vectors` are ignored.
     /// Open-only: a [`live_reload`](ReadOnlyEdgeShard::live_reload) re-derives it from segments.
+    ///
+    /// Its `optimizers` set the deferred-points threshold for the shard's lifetime: with
+    /// `prevent_unoptimized`, the points the leader defers stay hidden. Segments don't record
+    /// these settings, so pass the leader's.
     pub config: Option<EdgeConfig>,
     /// Parks segment components the request won't touch cold (see [`LoadProfile`]), cutting the
     /// cold-start cost. Also applies to segments found by later reloads.
@@ -97,6 +101,8 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a
     /// later [`live_reload`](Self::live_reload) discovers load with the same placement.
     load_profile: Option<LoadProfile>,
+    /// Deferred-points threshold, from the caller-provided config at open.
+    deferred_threshold_kb: Option<usize>,
     /// Serializes [`live_reload`](Self::live_reload)s: concurrent live_reloads would
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.

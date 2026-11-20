@@ -358,10 +358,10 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
     }
 }
 
-/// A profile's deferred-points threshold hides the tail of an appendable segment: 1 KB of
-/// `DIM` f32 vectors is 32 points, so only the first 32 inserted points stay visible.
+/// A deferred-points threshold hides the tail of an appendable segment: 1 KB of `DIM` f32
+/// vectors is 32 points, so only the first 32 inserted points stay visible.
 #[test]
-fn read_only_segment_load_profile_defers_points() {
+fn read_only_segment_defers_points_past_threshold() {
     let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
     let _scope = ambient::test_guard();
 
@@ -397,13 +397,12 @@ fn read_only_segment_load_profile_defers_points() {
     }
     mutable.flush(true).unwrap();
 
-    let profile = LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(1));
     let read_only = ReadOnlySegment::<MmapFile>::open(
         &MmapFs,
         &mutable.data_path(),
         mutable.uuid,
-        None,
-        Some(&profile),
+        Some(1),
+        Some(&LoadProfile::for_retrieve()),
     )
     .expect("read-only open with deferred threshold");
 

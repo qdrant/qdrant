@@ -299,6 +299,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             &self.fs,
             new_segments,
             self.load_profile.as_ref(),
+            self.deferred_threshold_kb,
             gating,
             is_stopped,
         )?;
@@ -345,6 +346,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             &self.fs,
             survivors,
             self.load_profile.as_ref(),
+            self.deferred_threshold_kb,
             gating,
             is_stopped,
         )?;

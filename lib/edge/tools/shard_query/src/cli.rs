@@ -174,12 +174,14 @@ pub struct ConnectionArgs {
     #[arg(long, default_value_t = false)]
     pub no_load_profile: bool,
 
-    /// Deferred-points threshold in KB, like the indexing threshold: hide the points of
-    /// appendable segments past it, as a leader with `prevent_unoptimized` does. Use the
-    /// leader's indexing threshold (capped by an explicit max segment size). Carried by the
-    /// load profile, so it can't be combined with `--no-load-profile`.
-    #[arg(long, conflicts_with = "no_load_profile")]
-    pub deferred_threshold_kb: Option<usize>,
+    /// Hide the points the leader defers under `prevent_unoptimized`. The threshold comes
+    /// from `--indexing-threshold-kb`, so pass the leader's.
+    #[arg(long, default_value_t = false)]
+    pub prevent_unoptimized: bool,
+
+    /// The leader's indexing threshold in KB. Omit for the default.
+    #[arg(long, requires = "prevent_unoptimized")]
+    pub indexing_threshold_kb: Option<usize>,
 
     /// Record every network storage request and save into this file.
     #[arg(long)]
