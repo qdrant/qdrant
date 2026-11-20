@@ -627,25 +627,25 @@ ACTION_ACCESS = {
     "update_logger_config": EndpointAccess(False, False, True, "POST /logger"),
     ### StorageRead (gRPC only, no REST equivalent) ###
     "storage_read_list_files": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ListFiles"
+        True, True, True, None, "qdrant.StorageRead/ListFiles", coll_prw=False
     ),
     "storage_read_file_exists": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/FileExists"
+        True, True, True, None, "qdrant.StorageRead/FileExists", coll_prw=False
     ),
     "storage_read_file_length": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/FileLength"
+        True, True, True, None, "qdrant.StorageRead/FileLength", coll_prw=False
     ),
     "storage_read_read_bytes": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBytes"
+        True, True, True, None, "qdrant.StorageRead/ReadBytes", coll_prw=False
     ),
     "storage_read_read_bytes_stream": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBytesStream"
+        True, True, True, None, "qdrant.StorageRead/ReadBytesStream", coll_prw=False
     ),
     "storage_read_read_whole": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadWhole"
+        True, True, True, None, "qdrant.StorageRead/ReadWhole", coll_prw=False
     ),
     "storage_read_read_batch": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBatch"
+        True, True, True, None, "qdrant.StorageRead/ReadBatch", coll_prw=False
     ),
 }
 
@@ -804,6 +804,10 @@ class GrpcClients:
             GRPC_URI,
             interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
         )
+        self.coll_prw = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_PRW}")])],
+        )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
         )
@@ -921,6 +925,8 @@ def check_access(
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
+        if allowed_for.coll_prw is not None:
+            check_grpc_access(grpc.coll_prw, service, method, grpc_request, allowed_for.coll_prw)
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
         # Check that API key is the same as manage token
