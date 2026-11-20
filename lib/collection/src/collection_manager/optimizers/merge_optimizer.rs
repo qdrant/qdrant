@@ -140,6 +140,44 @@ mod tests {
         assert_eq!(check_result.len(), 3);
     }
 
+    /// Plan merges for segments of the given sizes (KiB == vectors at dim 256).
+    fn plan_sizes(sizes: &[usize], max_segment_size_kb: usize) -> Vec<Vec<usize>> {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dim = 256;
+        let mut holder = SegmentHolder::default();
+        let mut id_to_size = HashMap::new();
+        for &size in sizes {
+            let id = holder.add_new(random_segment(dir.path(), 100, size as u64, dim));
+            id_to_size.insert(id, size);
+        }
+        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
+        merge_optimizer.set_default_segments_number_for_test(1);
+        merge_optimizer
+            .threshold_config_mut_for_test()
+            .max_segment_size_kb = max_segment_size_kb;
+        let locked_holder = LockedSegmentHolder::new(holder);
+        merge_optimizer
+            .plan_optimizations_for_test(&locked_holder)
+            .into_iter()
+            .map(|batch| batch.iter().map(|id| id_to_size[id]).sorted().collect())
+            .collect()
+    }
+
+    #[test]
+    fn test_merge_does_not_pad_small_segments_with_a_large_one() {
+        // Indexing threshold is 50 KiB: two fresh segments must not drag a
+        // 900 KiB segment into the batch (it would be rewritten to absorb 9 KiB).
+        assert_eq!(plan_sizes(&[2, 7, 900], 2000), Vec::<Vec<usize>>::new());
+        // Small segments still merge among themselves ...
+        assert_eq!(plan_sizes(&[2, 7, 30, 900], 2000), vec![vec![2, 7, 30]]);
+        // ... and similar-size large segments still merge.
+        assert_eq!(
+            plan_sizes(&[300, 400, 450], 2000),
+            vec![vec![300, 400, 450]]
+        );
+    }
+
     #[test]
     fn test_merge_optimizer() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

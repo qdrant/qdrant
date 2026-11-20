@@ -13,6 +13,13 @@ use crate::operations::optimization::OptimizerThresholds;
 
 const BYTES_IN_KB: usize = 1024;
 
+/// A candidate joins a merge batch only if it is at most this many times the
+/// size of the batch so far (below the floor of one indexing threshold the
+/// check does not apply). Without it, segments are taken smallest first and a
+/// batch of two fresh segments gets padded with a near-full one, which then is
+/// rewritten in full to absorb a few thousand points.
+const MAX_MERGE_SIZE_RATIO: usize = 2;
+
 /// Optimizer that tries to reduce number of segments until it fits configured
 /// value.
 ///
@@ -40,6 +47,12 @@ const BYTES_IN_KB: usize = 1024;
 /// - bad:   [A B]        →  ∅ X    (segment count is the same)
 /// - good:  [A B C]      →  ∅ X    (one segment less)
 /// - good:  [A B] [C D]  →  ∅ X Y  (one segment less)
+///
+/// A batch never takes a segment larger than `MAX_MERGE_SIZE_RATIO` times the
+/// batch so far (once the batch is past one indexing threshold):
+///
+/// - bad:   [2 7 971]    →  971 is rewritten to absorb 9
+/// - good:  [2 7] held until more small segments arrive, or [300 400 450]
 /// ```
 pub struct MergeOptimizer {
     default_segments_number: usize,
@@ -126,6 +139,14 @@ impl SegmentOptimizer for MergeOptimizer {
             .max_segment_size_kb
             .saturating_mul(BYTES_IN_KB);
 
+        // Below this size a batch may absorb any candidate, so fresh (about
+        // indexing-threshold sized) and empty segments still merge freely.
+        let ratio_floor = self
+            .thresholds_config
+            .indexing_threshold_kb
+            .min(self.thresholds_config.max_segment_size_kb)
+            .saturating_mul(BYTES_IN_KB);
+
         let mut first_batch = None;
         let mut taken_candidates = 0;
         let mut last_candidate =
@@ -133,9 +154,19 @@ impl SegmentOptimizer for MergeOptimizer {
         while taken_candidates < last_candidate.min(candidates.len()) {
             let batch = candidates[taken_candidates..last_candidate.min(candidates.len())]
                 .iter()
-                .scan(0, |size_sum, &(segment_id, size)| {
-                    *size_sum += size;
-                    (*size_sum < threshold).then_some(segment_id)
+                .scan(None, |size_sum: &mut Option<usize>, &(segment_id, size)| {
+                    // Size-tiered merging: don't rewrite a large segment just to
+                    // absorb a few small ones. Each merge then grows its largest
+                    // input by a meaningful fraction, which bounds how often a
+                    // point is rewritten while a segment grows to the size cap.
+                    if let Some(sum) = *size_sum
+                        && size > MAX_MERGE_SIZE_RATIO.saturating_mul(sum.max(ratio_floor))
+                    {
+                        return None;
+                    }
+                    let sum = size_sum.unwrap_or(0) + size;
+                    *size_sum = Some(sum);
+                    (sum < threshold).then_some(segment_id)
                 })
                 .collect_vec();
 
