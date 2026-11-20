@@ -93,7 +93,6 @@ use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-use common::bitvec::BitSlice;
 use common::condition_checker::ConditionChecker as _;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
@@ -106,10 +105,11 @@ pub(super) use self::partition::PartitionParams;
 use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
 use super::HnswM;
+use super::graph_algorithm::PipnnSettings;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::MatrixScorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum, VectorStorageRead as _};
+use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum};
 
 /// Parameters of a PiPNN build.
 #[derive(Clone, Debug)]
@@ -131,26 +131,20 @@ pub(super) struct PipnnParams {
     pub seed: u64,
 }
 
-/// Default [`PipnnParams::leaf_k`]. The paper's default is 2, and it finds that "3 or 4 would
-/// also suffice" (appendix A.3).
-const DEFAULT_LEAF_K: usize = 4;
-
-/// Default [`PipnnParams::reservoir_factor`]: reservoirs of twice the degree limit. The paper found
-/// reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final prune
-/// (appendix A.5).
-const DEFAULT_RESERVOIR_FACTOR: usize = 2;
-
 impl PipnnParams {
-    /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
-    /// limit, the default partitioning, and `seed`.
+    /// The leaf k and reservoir factor of `settings`, the default partitioning, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
-    pub fn new(seed: u64) -> Self {
+    pub fn new(settings: PipnnSettings, seed: u64) -> Self {
+        let PipnnSettings {
+            leaf_k,
+            reservoir_factor,
+        } = settings;
         Self {
             partition: PartitionParams::default(),
-            leaf_k: DEFAULT_LEAF_K,
-            reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
+            leaf_k,
+            reservoir_factor,
             seed,
         }
     }
@@ -180,8 +174,8 @@ impl PipnnParams {
 /// point alone on a level has no links there.
 ///
 /// - `points` must be sorted, distinct, and not deleted; `point_level` gives each one's level.
-///   `point_deleted` must have a flag for each of them: as for HNSW, a missing flag counts as
-///   deleted. HNSW takes both for granted, its points come from the id tracker in order; debug
+///   `not_deleted` tells which points may be linked, as for HNSW's scorers; its point flags
+///   must have one for each of them: as for HNSW, a missing flag counts as deleted. HNSW takes both for granted, its points come from the id tracker in order; debug
 ///   builds check them here, once for all parts.
 /// - `scorer` scores the vectors HNSW would, the quantized ones where configured, and so does
 ///   the final prune through `vector_storage` and `quantized_vectors`. The sketches project the
@@ -208,7 +202,7 @@ impl PipnnParams {
 pub(super) fn build_links(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
-    point_deleted: &BitSlice,
+    not_deleted: NotDeletedChecker<'_>,
     scorer: &MatrixScorer<'_>,
     points: &[PointOffsetType],
     point_level: impl Fn(PointOffsetType) -> usize + Sync,
@@ -224,7 +218,7 @@ pub(super) fn build_links(
     debug_assert!(
         points
             .last()
-            .is_none_or(|&last| (last as usize) < point_deleted.len()),
+            .is_none_or(|&last| (last as usize) < not_deleted.point_deleted.len()),
         "PiPNN points need a deleted flag each, a missing one counts as deleted",
     );
     params.validate()?;
@@ -291,7 +285,7 @@ pub(super) fn build_links(
         sketches: &sketches,
         vector_storage,
         quantized_vectors,
-        point_deleted,
+        not_deleted,
         params,
         stopped,
     };
@@ -348,13 +342,7 @@ pub(super) fn build_links(
     );
     debug_assert!(progress.is_done(), "PiPNN progress must end at its totals");
     debug_assert_eq!(
-        broken_invariant(
-            &links,
-            points,
-            &point_level,
-            hnsw_m,
-            &vector_storage.not_deleted_checker(point_deleted),
-        ),
+        broken_invariant(&links, points, &point_level, hnsw_m, &not_deleted,),
         None,
         "PiPNN links break an invariant of the graph",
     );
@@ -504,7 +492,7 @@ struct Build<'a, 's> {
     sketches: &'a Sketches,
     vector_storage: &'a VectorStorageEnum,
     quantized_vectors: Option<&'a QuantizedVectors>,
-    point_deleted: &'a BitSlice,
+    not_deleted: NotDeletedChecker<'a>,
     params: &'a PipnnParams,
     stopped: &'a AtomicBool,
 }
@@ -546,13 +534,13 @@ impl Build<'_, '_> {
             level_m,
             self.vector_storage,
             self.quantized_vectors,
-            self.point_deleted,
+            self.not_deleted,
             self.stopped,
             progress.start(Phase::Prune),
         )?;
         progress.end(Phase::Prune);
         drop(reservoirs);
-        let not_deleted = self.vector_storage.not_deleted_checker(self.point_deleted);
+        let not_deleted = self.not_deleted;
         // Points without candidates of their own get fallback links only, and no backlinks, nor
         // do deleted points, which `points` shouldn't hold
         let has_candidates: Vec<bool> = links.iter().map(|links| !links.is_empty()).collect();
@@ -656,12 +644,12 @@ mod orchestration_tests {
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
         MultiVectorConfig, QuantizationConfig, ScalarQuantizationConfig,
     };
-    use crate::vector_storage::VectorStorage as _;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::matrix_scorer::new_matrix_scorer;
     use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
     use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
+    use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
 
     /// Stored vectors, of which every tenth is deleted.
     const POINTS: usize = 2000;
@@ -689,7 +677,7 @@ mod orchestration_tests {
                 fanout: vec![10, 3],
                 max_depth: 16,
             },
-            ..PipnnParams::new(1)
+            ..PipnnParams::new(PipnnSettings::default(), 1)
         }
     }
 
@@ -775,7 +763,7 @@ mod orchestration_tests {
             build_links(
                 &self.storage,
                 self.quantized.as_ref(),
-                &self.deleted,
+                self.storage.not_deleted_checker(&self.deleted),
                 &self.scorer(),
                 points,
                 |point| levels[point as usize],
@@ -843,7 +831,7 @@ mod orchestration_tests {
                 sketches,
                 vector_storage: &self.storage,
                 quantized_vectors: self.quantized.as_ref(),
-                point_deleted: &self.deleted,
+                not_deleted: self.storage.not_deleted_checker(&self.deleted),
                 params: &params,
                 stopped: &stopped,
             })
@@ -1328,7 +1316,7 @@ mod orchestration_tests {
                 let links = build_links(
                     storage,
                     None,
-                    &fixture.deleted,
+                    storage.not_deleted_checker(&fixture.deleted),
                     &fixture.scorer(),
                     points,
                     |point| levels[point as usize],
@@ -1366,7 +1354,7 @@ mod orchestration_tests {
         let result = build_links(
             &fixture.storage,
             None,
-            &fixture.deleted,
+            fixture.storage.not_deleted_checker(&fixture.deleted),
             &fixture.scorer(),
             &fixture.points,
             |point| {

@@ -27,6 +27,9 @@ pub enum AuthScope {
     Internal,
 }
 
+/// gRPC path prefix of the remote indexing service, see `indexing_task_api`.
+const INDEXING_TASK_SERVICE_PATH: &str = "/qdrant.IndexingTask/";
+
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
     auth_keys: Arc<AuthKeys>,
@@ -80,6 +83,13 @@ where
         req.extensions_mut().insert(auth);
         req.extensions_mut().insert(inference_token);
 
+        return Ok(req);
+    }
+
+    // Remote indexing: the indexer has no API key. The service checks the one-time task
+    // token itself, and serves only the data of that task. No `Auth` is attached, so no other
+    // handler can be reached this way.
+    if scope == AuthScope::Internal && path.starts_with(INDEXING_TASK_SERVICE_PATH) {
         return Ok(req);
     }
 
