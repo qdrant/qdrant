@@ -509,6 +509,46 @@ mod test_mod {
         assert_eq!(search_context.posting_list_len(0), 3);
     }
 
+    /// A zero score must not be returned, also while the top is not full
+    /// (negative threshold) and with negative scores in it.
+    #[test]
+    fn search_skips_zero_score_test() {
+        let index = TestIndex::from_ram({
+            let mut builder = InvertedIndexBuilder::new();
+            builder.add(1, [(1, 1.0), (2, 1.0)].into()); // score 1 - 1 = 0
+            builder.add(2, [(1, 2.0)].into()); // score 2
+            builder.add(3, [(2, 1.0)].into()); // score -1
+            builder.build()
+        });
+
+        let _scope = ambient::test_guard();
+        let is_stopped = AtomicBool::new(false);
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1, 2],
+                values: vec![1.0, -1.0],
+            },
+            10,
+            &index.index,
+            &mut scratch,
+            &is_stopped,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            round_scores(search_context.search(&match_all)),
+            vec![
+                ScoredPointOffset { score: 2.0, idx: 2 },
+                ScoredPointOffset {
+                    score: -1.0,
+                    idx: 3
+                },
+            ]
+        );
+    }
+
     #[test]
     fn plain_search_all_test() {
         let index = TestIndex::from_ram({
