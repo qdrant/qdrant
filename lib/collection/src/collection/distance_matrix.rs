@@ -15,7 +15,7 @@ use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
     CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
@@ -40,6 +40,21 @@ pub struct CollectionSearchMatrixRequest {
 impl CollectionSearchMatrixRequest {
     pub const DEFAULT_LIMIT_PER_SAMPLE: usize = 3;
     pub const DEFAULT_SAMPLE: usize = 10;
+}
+
+/// The nearest search of each sampled point asks for one extra result, so that
+/// the sampled point itself can be dropped from the result afterwards.
+///
+/// `usize::MAX` cannot be incremented: the addition used to wrap to zero in
+/// release builds, so every inner search returned no candidates and the whole
+/// matrix came back empty without an error.
+fn limit_with_self(limit_per_sample: usize) -> CollectionResult<usize> {
+    limit_per_sample.checked_add(1).ok_or_else(|| {
+        CollectionError::bad_input(format!(
+            "limit per sample is too large: {limit_per_sample}, the maximum supported value is {}",
+            usize::MAX - 1
+        ))
+    })
 }
 
 impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
@@ -156,6 +171,8 @@ impl Collection {
             return Ok(Default::default());
         }
 
+        let search_limit = limit_with_self(limit_per_sample)?;
+
         self.collection_config
             .read()
             .await
@@ -235,7 +252,7 @@ impl Collection {
                 using: using.clone(),
                 filter: Some(filter.clone()),
                 score_threshold: None,
-                limit: limit_per_sample + 1, // +1 to exclude the point itself afterward
+                limit: search_limit,
                 offset: 0,
                 params: None,
                 with_vector: WithVector::Bool(false),
@@ -271,7 +288,7 @@ impl Collection {
                 scores.remove(sample_pos);
             } else {
                 // if not found pop lowest score
-                if scores.len() == limit_per_sample + 1 {
+                if scores.len() == search_limit {
                     // if we have enough results, remove the last one
                     scores.pop();
                 }
@@ -346,5 +363,13 @@ mod tests {
 
         let actual = SearchMatrixOffsetsResponse::from(response);
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_limit_with_self() {
+        assert_eq!(limit_with_self(0).unwrap(), 1);
+        assert_eq!(limit_with_self(3).unwrap(), 4);
+        assert_eq!(limit_with_self(usize::MAX - 1).unwrap(), usize::MAX);
+        assert!(limit_with_self(usize::MAX).is_err());
     }
 }
