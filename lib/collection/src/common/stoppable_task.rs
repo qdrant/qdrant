@@ -130,13 +130,16 @@ mod tests {
         sleep(Duration::from_secs(1)).await;
         assert!(handle.is_finished());
 
-        // Expect task counter to be between [5, 25], we cannot be exact on busy systems
+        // Expect the task counter to be around 20, we cannot be exact on busy systems:
+        // the tokio timer driving this test can drift relative to the `thread::sleep`
+        // steps of the task (observed count of 30 on windows-latest, see #11566).
+        // A task that ignores the stop signal would count ~220 steps instead.
         if let Some(handle) = handle.stop()
             && let Some(count) = handle.await.unwrap()
         {
             assert!(
-                count < 25,
-                "Stoppable task should have count should be less than 25, but it is {count}",
+                count < 60,
+                "Stoppable task count should be less than 60, but it is {count}",
             );
         }
     }
@@ -156,14 +159,16 @@ mod tests {
             handle.ask_to_stop();
         }
 
-        // Expect task counters to be between [5, 30], we cannot be exact on busy systems
+        // Expect the task counters to be around 30 (10 extra steps to stop all tasks),
+        // we cannot be exact on busy systems: the tokio timer driving this test can
+        // drift relative to the `thread::sleep` steps of the tasks (see #11566).
         for handle in handles {
             if let Some(handle) = handle.stop()
                 && let Some(count) = handle.await.unwrap()
             {
                 assert!(
-                    count < 30, // 10 extra steps to stop all tasks
-                    "Stoppable task should have count should be less than 30, but it is {count}",
+                    count < 90,
+                    "Stoppable task count should be less than 90, but it is {count}",
                 );
             }
         }
