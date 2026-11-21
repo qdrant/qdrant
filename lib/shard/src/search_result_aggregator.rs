@@ -1,15 +1,41 @@
-use std::cmp::max;
+use std::cmp::{Ordering, max};
 
 use ahash::{AHashMap, AHashSet};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::ScoreType;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::utils::scored_point_ties::ScoredPointTies;
 
 /// Avoid excessive memory allocation and allocation failures on huge limits
 const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
 
+// Use the same tie order as the collection's shard merge, including when
+// deciding which points make it into the queue.
+#[repr(transparent)]
+struct RankedPoint(ScoredPoint);
+
+impl Ord for RankedPoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        ScoredPointTies(&self.0).cmp(&ScoredPointTies(&other.0))
+    }
+}
+
+impl PartialOrd for RankedPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for RankedPoint {}
+
+impl PartialEq for RankedPoint {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
 pub struct SearchResultAggregator {
-    queue: Option<FixedLengthPriorityQueue<ScoredPoint>>,
+    queue: Option<FixedLengthPriorityQueue<RankedPoint>>,
     seen: AHashSet<PointIdType>, // Point ids seen
 }
 
@@ -32,18 +58,21 @@ impl SearchResultAggregator {
 
         // Only add unseen points
         if self.seen.insert(point.id) {
-            queue.push(point);
+            queue.push(RankedPoint(point));
         }
     }
 
     pub fn into_vec(self) -> Vec<ScoredPoint> {
         self.queue
-            .map(|queue| queue.into_sorted_vec())
+            .map(|queue| queue.into_iter_sorted().map(|point| point.0).collect())
             .unwrap_or_default()
     }
 
     pub fn lowest(&self) -> Option<&ScoredPoint> {
-        self.queue.as_ref().and_then(|queue| queue.top())
+        self.queue
+            .as_ref()
+            .and_then(|queue| queue.top())
+            .map(|point| &point.0)
     }
 }
 

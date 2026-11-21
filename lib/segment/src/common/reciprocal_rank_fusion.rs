@@ -1,6 +1,7 @@
 //! Reciprocal Rank Fusion (RRF) is a method for combining rankings from multiple sources.
 //! See <https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf>
 
+use std::cmp::Reverse;
 use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
@@ -49,8 +50,7 @@ fn position_score(position: usize, k: usize, weight: f32) -> f32 {
 ///   Higher weight = more influence on final ranking.
 ///   If None, all sources are weighted equally (weight = 1.0).
 ///
-/// The output is a single sorted list of ScoredPoint.
-/// Does not break ties.
+/// The output is sorted by descending RRF score and, for ties, descending point ID.
 pub fn rrf_scoring(
     responses: Vec<Vec<ScoredPoint>>,
     k: usize,
@@ -90,10 +90,7 @@ pub fn rrf_scoring(
     }
 
     let mut scores: Vec<_> = points_by_id.into_values().collect();
-    scores.sort_unstable_by(|a, b| {
-        // sort by score descending
-        OrderedFloat(b.score).cmp(&OrderedFloat(a.score))
-    });
+    scores.sort_unstable_by_key(|point| Reverse((OrderedFloat(point.score), point.id)));
 
     Ok(scores)
 }
