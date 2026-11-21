@@ -227,7 +227,17 @@ impl UpdateOnlyQuantizedVectors {
                             received_dim: multi.dim,
                         });
                     }
-                    multi.multi_vectors().map(Cow::Borrowed).collect()
+                    multi
+                        .multi_vectors()
+                        .map(|inner| {
+                            preprocess_decoded(
+                                self.datatype,
+                                &self.config.quantization_config,
+                                self.distance,
+                                inner,
+                            )
+                        })
+                        .collect()
                 }
                 VectorToStore::Raw(bytes) => self.decode_raw_multi(bytes)?,
                 // As in the raw storage, a point without a multivector owns no rows.

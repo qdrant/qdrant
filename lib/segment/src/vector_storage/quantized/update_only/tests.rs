@@ -32,17 +32,22 @@ use tempfile::TempDir;
 
 use super::UpdateOnlyQuantizedVectors;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf, VectorRef};
+use crate::data_types::vectors::{
+    TypedMultiDenseVectorRef, VectorElementTypeByte, VectorElementTypeHalf, VectorRef,
+};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance, Indexes,
-    QuantizationConfig, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    MultiVectorConfig, QuantizationConfig, TurboQuantBitSize, TurboQuantQuantizationConfig,
+    TurboQuantization, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::volatile_dense_vector_storage::{
     new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedStorage, QuantizedChunkedStorageBuilder,
+};
+use crate::vector_storage::quantized::quantized_multivector_storage::{
+    MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageChunkedRead,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorageBuilder;
 use crate::vector_storage::quantized::quantized_vectors::{
@@ -217,6 +222,61 @@ fn create_empty_overlay_for(
     UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config_for(datatype, distance))
         .unwrap()
         .expect("overlay was just created")
+}
+
+fn create_empty_multi_overlay_for(
+    config: &QuantizationConfig,
+    path: &std::path::Path,
+    datatype: VectorStorageDatatype,
+    distance: Distance,
+) -> UpdateOnlyQuantizedVectors {
+    let storage_type = QuantizedVectorsStorageType::Mutable;
+    let vector_parameters =
+        QuantizedVectors::construct_vector_parameters(config, distance, DIM, 0, storage_type);
+    let QuantizationConfig::Binary(BinaryQuantization { binary }) = config else {
+        panic!("multivector fixture only builds Binary overlays")
+    };
+    let encoding = QuantizedVectors::convert_binary_encoding(binary.encoding);
+    let query_encoding = QuantizedVectors::convert_binary_query_encoding(binary.query_encoding);
+    let quantized_vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+        vector_parameters.dim,
+        encoding,
+    );
+    let storage_builder = QuantizedChunkedStorageBuilder::<MmapFile>::new(
+        MmapFs,
+        &QuantizedVectors::get_data_path(path, storage_type),
+        quantized_vector_size,
+        false,
+    )
+    .unwrap();
+    EncodedVectorsBin::<u8, _>::encode(
+        std::iter::empty::<&[f32]>(),
+        std::iter::repeat_n(true, 0),
+        storage_builder,
+        &vector_parameters,
+        encoding,
+        query_encoding,
+        Some(&QuantizedVectors::get_meta_path(path)),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let overlay_config = QuantizedVectorsConfig {
+        quantization_config: config.clone(),
+        vector_parameters,
+        storage_type,
+    };
+    let bytes = serde_json::to_vec(&overlay_config).unwrap();
+    MmapFs
+        .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
+        .unwrap();
+    let vector_config = VectorDataConfig {
+        multivector_config: Some(MultiVectorConfig::default()),
+        ..dense_vector_config_for(datatype, distance)
+    };
+    UpdateOnlyQuantizedVectors::open(&MmapFs, path, &vector_config)
+        .unwrap()
+        .expect("multivector overlay was just created")
 }
 
 /// First writer: created fresh (as whatever builds a new segment would), writes half the batch,
@@ -764,4 +824,257 @@ fn update_only_dense_missing_preserves_placeholder_and_slot_count() {
             "missing row {id} changed placeholder bytes",
         );
     }
+}
+
+fn uint8_multivector_rows() -> Vec<Vec<Vec<f32>>> {
+    vec![
+        vec![
+            vec![0.0, 32.0, 64.0, 96.0, 128.0, 160.0, 224.0, 255.0],
+            vec![255.0, 128.0, 127.0, 1.0, 254.0, 126.0, 129.0, 0.0],
+        ],
+        vec![
+            vec![127.0, 128.0, 126.0, 129.0, 64.0, 192.0, 32.0, 224.0],
+            vec![255.0, 0.0, 200.0, 100.0, 150.0, 50.0, 130.0, 125.0],
+            vec![1.0, 254.0, 2.0, 253.0, 3.0, 252.0, 4.0, 251.0],
+        ],
+    ]
+}
+
+fn flatten_multivector_points(points: &[Vec<Vec<f32>>]) -> Vec<Vec<f32>> {
+    points
+        .iter()
+        .map(|point| point.iter().flatten().copied().collect())
+        .collect()
+}
+
+fn expected_multivector_offsets(points: &[Vec<Vec<f32>>]) -> Vec<MultivectorOffset> {
+    let mut next_row = 0;
+    points
+        .iter()
+        .map(|point| {
+            let offset = MultivectorOffset {
+                start: next_row,
+                count: point.len() as PointOffsetType,
+            };
+            next_row += point.len() as PointOffsetType;
+            offset
+        })
+        .collect()
+}
+
+fn assert_multi_binary_matches_build_path<T: PrimitiveVectorElement>(
+    path: &std::path::Path,
+    config: &QuantizationConfig,
+    distance: Distance,
+    typed_rows: &[Vec<T>],
+    expected_offsets: &[MultivectorOffset],
+    marker: &str,
+) {
+    let parameters = QuantizedVectors::construct_vector_parameters(
+        config,
+        distance,
+        DIM,
+        0,
+        QuantizedVectorsStorageType::Mutable,
+    );
+    let encoding = match config {
+        QuantizationConfig::Binary(BinaryQuantization { binary }) => {
+            QuantizedVectors::convert_binary_encoding(binary.encoding)
+        }
+        QuantizationConfig::Scalar(_)
+        | QuantizationConfig::Product(_)
+        | QuantizationConfig::Turbo(_) => unreachable!("binary oracle requires Binary config"),
+    };
+    let vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u8>(
+        parameters.dim,
+        encoding,
+    );
+    let data_path = QuantizedVectors::get_data_path(path, QuantizedVectorsStorageType::Mutable);
+    let storage =
+        QuantizedChunkedStorage::<MmapFile>::new(MmapFs, &data_path, vector_size, false).unwrap();
+    assert_eq!(
+        storage.vectors_count(),
+        typed_rows.len(),
+        "{marker}: persisted multivector row count",
+    );
+
+    let encoder = EncoderBin::<u8>::load(&MmapFs, &QuantizedVectors::get_meta_path(path)).unwrap();
+    for (row_id, typed_row) in typed_rows.iter().enumerate() {
+        let preprocessed = T::quantization_preprocess(
+            config,
+            distance,
+            std::borrow::Cow::Owned(typed_row.clone()),
+        );
+        let expected = encoder.encode(&preprocessed).as_bytes().to_vec();
+        assert_eq!(
+            storage.get_vector_data(row_id as PointOffsetType),
+            expected,
+            "{marker}: multivector inner row {row_id}",
+        );
+    }
+
+    let offsets_path =
+        QuantizedVectors::get_offsets_path(path, QuantizedVectorsStorageType::Mutable);
+    let offsets =
+        MultivectorOffsetsStorageChunkedRead::<MmapFile>::open(&MmapFs, &offsets_path).unwrap();
+    assert_eq!(
+        offsets.len(),
+        expected_offsets.len(),
+        "{marker}: persisted multivector point count",
+    );
+    for (point_id, expected) in expected_offsets.iter().enumerate() {
+        assert_eq!(
+            offsets.get_offset(point_id as PointOffsetType),
+            *expected,
+            "{marker}: multivector offset for point {point_id}",
+        );
+    }
+}
+
+fn assert_decoded_uint8_multi_binary_matches_build_path(encoding: BinaryQuantizationEncoding) {
+    let dir = TempDir::with_prefix("update_only_multi_uint8_decoded").unwrap();
+    let config = binary_config_with_encoding(encoding);
+    let points = uint8_multivector_rows();
+    let flattened = flatten_multivector_points(&points);
+    let mut writer = create_empty_multi_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Uint8,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            flattened.iter().map(|point| {
+                VectorToStore::Decoded(VectorRef::MultiDense(TypedMultiDenseVectorRef::new(
+                    point, DIM,
+                )))
+            }),
+        )
+        .unwrap();
+    drop(writer);
+
+    let typed_rows: Vec<Vec<u8>> = points
+        .iter()
+        .flatten()
+        .map(|row| row.iter().map(|&value| value as u8).collect())
+        .collect();
+    assert_multi_binary_matches_build_path(
+        dir.path(),
+        &config,
+        Distance::Dot,
+        &typed_rows,
+        &expected_multivector_offsets(&points),
+        "QDRANT11646_UM1_CODE_MISMATCH",
+    );
+}
+
+macro_rules! update_only_decoded_multi_binary_case {
+    ($name:ident, $encoding:expr) => {
+        #[test]
+        fn $name() {
+            let _scope = ambient::test_guard();
+            assert_decoded_uint8_multi_binary_matches_build_path($encoding);
+        }
+    };
+}
+
+update_only_decoded_multi_binary_case!(
+    update_only_multivector_decoded_uint8_one_bit_codes_match_build_path,
+    BinaryQuantizationEncoding::OneBit
+);
+update_only_decoded_multi_binary_case!(
+    update_only_multivector_decoded_uint8_two_bits_codes_match_build_path,
+    BinaryQuantizationEncoding::TwoBits
+);
+update_only_decoded_multi_binary_case!(
+    update_only_multivector_decoded_uint8_one_and_half_bits_codes_match_build_path,
+    BinaryQuantizationEncoding::OneAndHalfBits
+);
+
+#[test]
+fn update_only_multivector_decoded_float16_underflow_one_bit_codes_match_build_path() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_multi_float16_decoded").unwrap();
+    let config = binary_config_with_encoding(BinaryQuantizationEncoding::OneBit);
+    let points = vec![
+        vec![vec![1.0e-8; DIM], vec![1.0; DIM]],
+        vec![vec![1.0; DIM], vec![1.0e-8; DIM], vec![-1.0e-8; DIM]],
+    ];
+    let flattened = flatten_multivector_points(&points);
+    let mut writer = create_empty_multi_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Float16,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            flattened.iter().map(|point| {
+                VectorToStore::Decoded(VectorRef::MultiDense(TypedMultiDenseVectorRef::new(
+                    point, DIM,
+                )))
+            }),
+        )
+        .unwrap();
+    drop(writer);
+
+    let typed_rows: Vec<Vec<f16>> = points
+        .iter()
+        .flatten()
+        .map(|row| row.iter().map(|&value| f16::from_f32(value)).collect())
+        .collect();
+    assert_multi_binary_matches_build_path(
+        dir.path(),
+        &config,
+        Distance::Dot,
+        &typed_rows,
+        &expected_multivector_offsets(&points),
+        "QDRANT11646_UM1_CODE_MISMATCH",
+    );
+}
+
+#[test]
+fn update_only_multivector_raw_uint8_codes_match_build_path() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_multi_uint8_raw").unwrap();
+    let config = binary_config_with_encoding(BinaryQuantizationEncoding::OneBit);
+    let points = uint8_multivector_rows();
+    let raw_points: Vec<Vec<u8>> = points
+        .iter()
+        .map(|point| point.iter().flatten().map(|&value| value as u8).collect())
+        .collect();
+    let mut writer = create_empty_multi_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Uint8,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            raw_points
+                .iter()
+                .map(|point| VectorToStore::Raw(point.as_slice())),
+        )
+        .unwrap();
+    drop(writer);
+
+    let typed_rows: Vec<Vec<u8>> = points
+        .iter()
+        .flatten()
+        .map(|row| row.iter().map(|&value| value as u8).collect())
+        .collect();
+    assert_multi_binary_matches_build_path(
+        dir.path(),
+        &config,
+        Distance::Dot,
+        &typed_rows,
+        &expected_multivector_offsets(&points),
+        "raw uint8 multivector control mismatch",
+    );
 }
