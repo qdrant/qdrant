@@ -47,6 +47,7 @@ fn make_upsert_op(point_id: u64) -> CollectionUpdateOperations {
     ))
 }
 
+/// Build a local shard with the supplied collection config and payload index schema.
 async fn build_shard(
     config: &crate::config::CollectionConfigInternal,
     collection_dir: &std::path::Path,
@@ -72,6 +73,7 @@ async fn build_shard(
     .unwrap()
 }
 
+/// Check whether a point can be retrieved with the specified deferred-point behavior.
 async fn retrieve_point_with_behavior(
     shard: &LocalShard,
     point_id: u64,
@@ -98,6 +100,7 @@ async fn retrieve_point_with_behavior(
     !retrieved.is_empty()
 }
 
+/// Check whether a point is visible without including deferred points.
 async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
     retrieve_point_with_behavior(shard, point_id, DeferredBehavior::VisibleOnly).await
 }
