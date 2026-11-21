@@ -19,20 +19,27 @@
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
+use common::generic_consts::Sequential;
+use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
-use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
-use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
+use half::f16;
+use quantization::encoded_vectors_binary::{self, EncodedVectorsBin, EncoderBin};
+use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, EncoderTQ};
 use quantization::turboquant::TQRotation;
 use quantization::{EncodedStorage as _, EncodedVectors as _, EncodedVectorsWrite as _};
 use rstest::rstest;
 use tempfile::TempDir;
 
 use super::UpdateOnlyQuantizedVectors;
-use crate::data_types::vectors::VectorRef;
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf, VectorRef};
 use crate::types::{
-    BinaryQuantization, BinaryQuantizationConfig, Distance, Indexes, QuantizationConfig,
-    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorDataConfig,
-    VectorStorageType,
+    BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance, Indexes,
+    QuantizationConfig, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
+    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+};
+use crate::vector_storage::dense::volatile_dense_vector_storage::{
+    new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedStorage, QuantizedChunkedStorageBuilder,
@@ -42,6 +49,9 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::update_only::VectorToStore;
+use crate::vector_storage::{
+    DenseVectorStorageRead, VectorStorage, VectorStorageEnum, VectorStorageRead,
+};
 
 const DIM: usize = 8;
 
@@ -51,6 +61,17 @@ fn binary_config() -> QuantizationConfig {
             always_ram: None,
             memory: None,
             encoding: None,
+            query_encoding: None,
+        },
+    })
+}
+
+fn binary_config_with_encoding(encoding: BinaryQuantizationEncoding) -> QuantizationConfig {
+    QuantizationConfig::Binary(BinaryQuantization {
+        binary: BinaryQuantizationConfig {
+            always_ram: None,
+            memory: None,
+            encoding: Some(encoding),
             query_encoding: None,
         },
     })
@@ -68,14 +89,21 @@ fn turbo_config(bits: TurboQuantBitSize) -> QuantizationConfig {
 
 /// The raw-storage config of the dense vector every overlay in these tests shadows.
 fn dense_vector_config() -> VectorDataConfig {
+    dense_vector_config_for(VectorStorageDatatype::Float32, Distance::Dot)
+}
+
+fn dense_vector_config_for(
+    datatype: VectorStorageDatatype,
+    distance: Distance,
+) -> VectorDataConfig {
     VectorDataConfig {
         size: DIM,
-        distance: Distance::Dot,
+        distance,
         storage_type: VectorStorageType::ChunkedMmap,
         index: Indexes::Plain {},
         quantization_config: None,
         multivector_config: None,
-        datatype: None,
+        datatype: Some(datatype),
     }
 }
 
@@ -98,9 +126,18 @@ fn create_empty_overlay(
     config: &QuantizationConfig,
     path: &std::path::Path,
 ) -> UpdateOnlyQuantizedVectors {
+    create_empty_overlay_for(config, path, VectorStorageDatatype::Float32, Distance::Dot)
+}
+
+fn create_empty_overlay_for(
+    config: &QuantizationConfig,
+    path: &std::path::Path,
+    datatype: VectorStorageDatatype,
+    distance: Distance,
+) -> UpdateOnlyQuantizedVectors {
     let storage_type = QuantizedVectorsStorageType::Mutable;
     let vector_parameters =
-        QuantizedVectors::construct_vector_parameters(config, Distance::Dot, DIM, 0, storage_type);
+        QuantizedVectors::construct_vector_parameters(config, distance, DIM, 0, storage_type);
     let meta_path = QuantizedVectors::get_meta_path(path);
     let data_path = QuantizedVectors::get_data_path(path, storage_type);
     let stopped = AtomicBool::new(false);
@@ -177,7 +214,7 @@ fn create_empty_overlay(
         .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
         .unwrap();
 
-    UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config())
+    UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config_for(datatype, distance))
         .unwrap()
         .expect("overlay was just created")
 }
@@ -212,6 +249,7 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
 
 #[test]
 fn binary_bytes_match_the_standard_batch_encode_path() {
+    let _scope = ambient::test_guard();
     let dir = TempDir::with_prefix("update_only_quantized_binary").unwrap();
     let config = binary_config();
     let vectors = some_vectors(6);
@@ -289,6 +327,7 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
 #[case::bits4(TurboQuantBitSize::Bits4)]
 #[case::bits8(TurboQuantBitSize::Bits8)]
 fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitSize) {
+    let _scope = ambient::test_guard();
     let dir = TempDir::with_prefix("update_only_quantized_turbo").unwrap();
     let config = turbo_config(bits);
     let vectors = some_vectors(6);
@@ -394,4 +433,335 @@ fn reopening_a_nonempty_overlay_works() {
     let reopened =
         UpdateOnlyQuantizedVectors::open(&MmapFs, dir.path(), &dense_vector_config()).unwrap();
     assert!(reopened.is_some());
+}
+
+fn uint8_regression_vectors() -> Vec<Vec<f32>> {
+    vec![
+        vec![0.0, 32.0, 64.0, 96.0, 128.0, 160.0, 224.0, 255.0],
+        vec![255.0, 224.0, 160.0, 128.0, 96.0, 64.0, 32.0, 0.0],
+    ]
+}
+
+fn typed_uint8_build_rows(
+    vectors: &[Vec<f32>],
+    config: &QuantizationConfig,
+    distance: Distance,
+) -> Vec<Vec<f32>> {
+    let mut raw = new_volatile_dense_byte_vector_storage(DIM, distance);
+    let _scope = ambient::test_guard();
+    for (id, vector) in vectors.iter().enumerate() {
+        raw.insert_vector(id as PointOffsetType, VectorRef::from(vector.as_slice()))
+            .unwrap();
+    }
+    let VectorStorageEnum::DenseVolatileByte(raw) = raw else {
+        unreachable!("the uint8 test fixture returns byte storage")
+    };
+    (0..raw.total_vector_count() as PointOffsetType)
+        .map(|id| {
+            VectorElementTypeByte::quantization_preprocess(
+                config,
+                distance,
+                raw.get_dense::<Sequential>(id),
+            )
+            .into_owned()
+        })
+        .collect()
+}
+
+fn typed_float16_build_rows(
+    vectors: &[Vec<f32>],
+    config: &QuantizationConfig,
+    distance: Distance,
+) -> Vec<Vec<f32>> {
+    let mut raw = new_volatile_dense_half_vector_storage(DIM, distance);
+    let _scope = ambient::test_guard();
+    for (id, vector) in vectors.iter().enumerate() {
+        raw.insert_vector(id as PointOffsetType, VectorRef::from(vector.as_slice()))
+            .unwrap();
+    }
+    let VectorStorageEnum::DenseVolatileHalf(raw) = raw else {
+        unreachable!("the float16 test fixture returns half storage")
+    };
+    (0..raw.total_vector_count() as PointOffsetType)
+        .map(|id| {
+            VectorElementTypeHalf::quantization_preprocess(
+                config,
+                distance,
+                raw.get_dense::<Sequential>(id),
+            )
+            .into_owned()
+        })
+        .collect()
+}
+
+fn persisted_binary(
+    path: &std::path::Path,
+    config: &QuantizationConfig,
+) -> EncodedVectorsBin<u128, QuantizedChunkedStorage<MmapFile>> {
+    let parameters = QuantizedVectors::construct_vector_parameters(
+        config,
+        Distance::Dot,
+        DIM,
+        0,
+        QuantizedVectorsStorageType::Mutable,
+    );
+    let QuantizationConfig::Binary(binary) = config else {
+        unreachable!("binary helper requires binary quantization")
+    };
+    let encoding = QuantizedVectors::convert_binary_encoding(binary.binary.encoding);
+    let vector_size = encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
+        parameters.dim,
+        encoding,
+    );
+    let storage = QuantizedChunkedStorage::<MmapFile>::new(
+        MmapFs,
+        &QuantizedVectors::get_data_path(path, QuantizedVectorsStorageType::Mutable),
+        vector_size,
+        false,
+    )
+    .unwrap();
+    EncodedVectorsBin::load(&MmapFs, storage, &QuantizedVectors::get_meta_path(path)).unwrap()
+}
+
+fn assert_decoded_uint8_binary_matches_build_path(encoding: BinaryQuantizationEncoding) {
+    let dir = TempDir::with_prefix("update_only_uint8_decoded").unwrap();
+    let config = binary_config_with_encoding(encoding);
+    let vectors = uint8_regression_vectors();
+    let mut writer = create_empty_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Uint8,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            vectors
+                .iter()
+                .map(|vector| VectorToStore::Decoded(VectorRef::from(vector.as_slice()))),
+        )
+        .unwrap();
+    drop(writer);
+
+    let persisted = persisted_binary(dir.path(), &config);
+    let encoder =
+        EncoderBin::<u128>::load(&MmapFs, &QuantizedVectors::get_meta_path(dir.path())).unwrap();
+    for (id, row) in typed_uint8_build_rows(&vectors, &config, Distance::Dot)
+        .iter()
+        .enumerate()
+    {
+        let expected = encoder.encode(row).as_bytes().to_vec();
+        assert_eq!(
+            persisted.storage().get_vector_data(id as PointOffsetType),
+            expected,
+            "QDRANT11646_U1_CODE_MISMATCH: decoded uint8 point {id}",
+        );
+    }
+}
+
+macro_rules! update_only_decoded_binary_case {
+    ($name:ident, $encoding:expr) => {
+        #[test]
+        fn $name() {
+            let _scope = ambient::test_guard();
+            assert_decoded_uint8_binary_matches_build_path($encoding);
+        }
+    };
+}
+
+update_only_decoded_binary_case!(
+    update_only_dense_decoded_uint8_one_bit_codes_match_build_path,
+    BinaryQuantizationEncoding::OneBit
+);
+update_only_decoded_binary_case!(
+    update_only_dense_decoded_uint8_two_bits_codes_match_build_path,
+    BinaryQuantizationEncoding::TwoBits
+);
+update_only_decoded_binary_case!(
+    update_only_dense_decoded_uint8_one_and_half_bits_codes_match_build_path,
+    BinaryQuantizationEncoding::OneAndHalfBits
+);
+
+#[test]
+fn update_only_dense_decoded_uint8_turbo_codes_match_build_path() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_uint8_turbo_decoded").unwrap();
+    let config = QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: None,
+            memory: None,
+            bits: None,
+        },
+    });
+    let distance = Distance::Cosine;
+    let vectors = uint8_regression_vectors();
+    let mut writer =
+        create_empty_overlay_for(&config, dir.path(), VectorStorageDatatype::Uint8, distance);
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            vectors
+                .iter()
+                .map(|vector| VectorToStore::Decoded(VectorRef::from(vector.as_slice()))),
+        )
+        .unwrap();
+    drop(writer);
+
+    let parameters = QuantizedVectors::construct_vector_parameters(
+        &config,
+        distance,
+        DIM,
+        0,
+        QuantizedVectorsStorageType::Mutable,
+    );
+    let bits = QuantizedVectors::convert_tq_bits(TurboQuantBitSize::default());
+    let mode = QuantizedVectors::tq_mode(bits);
+    let vector_size = encoded_vectors_tq::get_quantized_vector_size(&parameters, bits, mode);
+    let storage = QuantizedChunkedStorage::<MmapFile>::new(
+        MmapFs,
+        &QuantizedVectors::get_data_path(dir.path(), QuantizedVectorsStorageType::Mutable),
+        vector_size,
+        false,
+    )
+    .unwrap();
+    let persisted: EncodedVectorsTQ<_> = EncodedVectorsTQ::load(
+        &MmapFs,
+        storage,
+        &QuantizedVectors::get_meta_path(dir.path()),
+    )
+    .unwrap();
+    let mut encoder =
+        EncoderTQ::load(&MmapFs, &QuantizedVectors::get_meta_path(dir.path())).unwrap();
+    for (id, row) in typed_uint8_build_rows(&vectors, &config, distance)
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            persisted.storage().get_vector_data(id as PointOffsetType),
+            encoder.encode(row),
+            "QDRANT11646_U1_CODE_MISMATCH: decoded uint8 TurboQuant point {id}",
+        );
+    }
+}
+
+#[test]
+fn update_only_dense_raw_uint8_codes_match_build_path() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_uint8_raw").unwrap();
+    let config = binary_config_with_encoding(BinaryQuantizationEncoding::OneBit);
+    let vectors = uint8_regression_vectors();
+    let bytes: Vec<Vec<u8>> = vectors
+        .iter()
+        .map(|vector| vector.iter().map(|&value| value as u8).collect())
+        .collect();
+    let mut writer = create_empty_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Uint8,
+        Distance::Dot,
+    );
+    writer
+        .append_many(&MmapFs, 0, bytes.iter().map(|row| VectorToStore::Raw(row)))
+        .unwrap();
+    drop(writer);
+
+    let persisted = persisted_binary(dir.path(), &config);
+    let encoder =
+        EncoderBin::<u128>::load(&MmapFs, &QuantizedVectors::get_meta_path(dir.path())).unwrap();
+    for (id, row) in typed_uint8_build_rows(&vectors, &config, Distance::Dot)
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            persisted.storage().get_vector_data(id as PointOffsetType),
+            encoder.encode(row).as_bytes(),
+            "raw uint8 control point {id}",
+        );
+    }
+}
+
+#[test]
+fn update_only_dense_raw_float16_codes_match_build_path() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_float16_raw").unwrap();
+    let config = binary_config_with_encoding(BinaryQuantizationEncoding::OneBit);
+    let vectors = vec![vec![1.0e-8; DIM], vec![1.0; DIM]];
+    let typed: Vec<Vec<f16>> = vectors
+        .iter()
+        .map(|vector| vector.iter().map(|&value| f16::from_f32(value)).collect())
+        .collect();
+    let mut writer = create_empty_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Float16,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            typed
+                .iter()
+                .map(|row| VectorToStore::Raw(bytemuck::cast_slice(row))),
+        )
+        .unwrap();
+    drop(writer);
+
+    let persisted = persisted_binary(dir.path(), &config);
+    let encoder =
+        EncoderBin::<u128>::load(&MmapFs, &QuantizedVectors::get_meta_path(dir.path())).unwrap();
+    for (id, row) in typed_float16_build_rows(&vectors, &config, Distance::Dot)
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            persisted.storage().get_vector_data(id as PointOffsetType),
+            encoder.encode(row).as_bytes(),
+            "raw float16 control point {id}",
+        );
+    }
+}
+
+#[test]
+fn update_only_dense_missing_preserves_placeholder_and_slot_count() {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::with_prefix("update_only_missing").unwrap();
+    let config = binary_config_with_encoding(BinaryQuantizationEncoding::OneBit);
+    let mut writer = create_empty_overlay_for(
+        &config,
+        dir.path(),
+        VectorStorageDatatype::Uint8,
+        Distance::Dot,
+    );
+    writer
+        .append_many(
+            &MmapFs,
+            0,
+            [
+                VectorToStore::Missing,
+                VectorToStore::Missing,
+                VectorToStore::Missing,
+            ],
+        )
+        .unwrap();
+    drop(writer);
+
+    let persisted = persisted_binary(dir.path(), &config);
+    let encoder =
+        EncoderBin::<u128>::load(&MmapFs, &QuantizedVectors::get_meta_path(dir.path())).unwrap();
+    let expected = encoder.encode(&[0.0; DIM]).as_bytes().to_vec();
+    assert_eq!(
+        persisted.vectors_count(),
+        3,
+        "missing rows must keep slot lockstep"
+    );
+    for id in 0..3 {
+        assert_eq!(
+            persisted.storage().get_vector_data(id),
+            expected,
+            "missing row {id} changed placeholder bytes",
+        );
+    }
 }
