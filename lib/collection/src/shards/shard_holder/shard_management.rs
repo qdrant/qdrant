@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
-use common::fs::sync_parent_dir_async;
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
 use futures::{StreamExt, stream};
@@ -17,8 +16,8 @@ use segment::types::ShardKey;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
-use super::ShardHolder;
 use super::shard_mapping::ShardKeyMapping;
+use super::{ShardHolder, shard_removal};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
@@ -31,10 +30,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ShardReplicaSet};
 use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_config::ShardConfig;
-use crate::shards::{
-    CollectionId, check_shard_path, remove_shard_initializing_flag, shard_initializing_flag_path,
-};
+use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
 impl ShardHolder {
     /// Set the shard key mappings
@@ -63,43 +59,7 @@ impl ShardHolder {
         // shard files behind. Those shards are not loaded after restart, so replay may
         // skip their cleanup.
         if let Some(replica_set) = self.shards.get(&shard_id) {
-            let shard_path = replica_set.shard_path.clone();
-            replica_set.stop_gracefully().await;
-
-            // Explicitly drop shard config file first
-            // If removing all shard files at once, it may be possible for the shard configuration
-            // file to be left behind if the process is killed in the middle. We must avoid this so
-            // we don't attempt to load this shard anymore on restart.
-            let shard_config_path = ShardConfig::get_config_path(&shard_path);
-            if let Err(err) = tokio_fs::remove_file(&shard_config_path).await {
-                log::error!(
-                    "Failed to remove shard config file before removing the rest of the files: {err}",
-                );
-            }
-            sync_parent_dir_async(&shard_config_path).await?;
-
-            let Some(collection_path) = shard_path.parent() else {
-                return Err(CollectionError::service_error(format!(
-                    "Failed to get collection path of shard {shard_id} at {shard_path:?}",
-                )));
-            };
-
-            let shard_flag = shard_initializing_flag_path(collection_path, shard_id);
-
-            // Remove the shard initializing flag, so if a new shard with the same ID is created
-            // later, it's not loaded as a dummy on restart.
-            //
-            // Remove the flag after the shard config, but before the rest of the shard files:
-            // - if the flag is removed before the shard config, but the process is killed before
-            //   the shard config is removed, the shard may be loaded on restart without the flag
-            // - if the flag is removed after the shard files, but the process is killed while
-            //   the shard files are removed, the flag is left behind
-            //
-            // Shard is being removed, so there is no shard data to sync.
-            remove_shard_initializing_flag(&shard_flag, None).await?;
-
-            tokio_fs::remove_dir_all(shard_path).await?;
-
+            shard_removal::remove_shard(replica_set).await?;
             self.shards.remove(&shard_id);
         }
         Ok(())
@@ -224,23 +184,6 @@ impl ShardHolder {
         self.rings.remove(&Some(shard_key.clone()));
         self.shard_id_to_key_mapping
             .retain(|_, key| key != shard_key);
-
-        Ok(())
-    }
-
-    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
-        let remove_shard_ids = self
-            .key_mapping
-            .read()
-            .get(shard_key)
-            .cloned()
-            .unwrap_or_default();
-
-        self.remove_shard_key_mapping(shard_key)?;
-
-        for shard_id in remove_shard_ids {
-            self.drop_and_remove_shard(shard_id).await?;
-        }
 
         Ok(())
     }
