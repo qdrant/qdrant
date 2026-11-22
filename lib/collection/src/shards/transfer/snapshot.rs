@@ -47,7 +47,7 @@ use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
 ///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
 ///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
 ///   `Partial` state. That is critical for the remote to accept incoming operations, that also
-///   confirms consensus has accepted accepted our proposal. If this fails it will be retried up to
+///   confirms consensus has accepted our proposal. If this fails it will be retried up to
 ///   three times.
 /// - Transfer queued updates to remote, transform into forward proxy
 ///   Once the remote is in `Partial` state we can transfer all accumulated updates in the queue
