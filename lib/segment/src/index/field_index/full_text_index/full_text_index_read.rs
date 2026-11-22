@@ -254,7 +254,7 @@ pub trait FullTextIndexRead {
     ) -> OperationResult<()>;
 
     /// Total tokens over the documents [`Self::document_count`] counts. Paired
-    /// with it it gives an average document length, but the division belongs
+    /// with it gives an average document length, but the division belongs
     /// to whoever has summed both over every segment, not here.
     ///
     /// Both are counted over the documents that carry at least one indexed
