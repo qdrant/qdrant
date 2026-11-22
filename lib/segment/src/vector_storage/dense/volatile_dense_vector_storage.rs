@@ -27,7 +27,7 @@ pub struct VolatileDenseVectorStorage<T: PrimitiveVectorElement> {
     dim: usize,
     distance: Distance,
     vectors: VolatileChunkedVectors<T>,
-    /// BitVec for deleted flags. Grows dynamically upto last set flag.
+    /// BitVec for deleted flags. Grows dynamically up to last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
