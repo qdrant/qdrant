@@ -38,7 +38,7 @@ pub struct VolatileMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     /// Keep vectors in memory
     vectors: VolatileChunkedVectors<T>,
     vectors_metadata: Vec<MultiVectorMetadata>,
-    /// BitVec for deleted flags. Grows dynamically upto last set flag.
+    /// BitVec for deleted flags. Grows dynamically up to last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
