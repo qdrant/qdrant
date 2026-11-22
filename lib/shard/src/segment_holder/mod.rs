@@ -1122,9 +1122,74 @@ impl SegmentHolder {
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
+        point_operation: F,
+        point_cow_operation: G,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> OperationResult<AHashSet<PointIdType>>
+    where
+        F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        G: FnMut(
+            PointIdType,
+            &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
+            &mut NamedVectors<'op>,
+            &mut Payload,
+        ),
+    {
+        self.apply_points_with_conditional_move_impl(
+            op_num,
+            ids,
+            point_operation,
+            point_cow_operation,
+            max_segment_size_bytes,
+            true,
+        )
+    }
+
+    /// Same as [`Self::apply_points_with_conditional_move`], for operations that
+    /// replace the whole point (upsert).
+    ///
+    /// A moved point's existing vectors and payload are not read from the source
+    /// segment: `point_cow_operation` receives empty buffers and must fill in the
+    /// complete new point. This avoids reading data that would be discarded anyway,
+    /// which on cold (evicted) storages means random disk reads per moved point.
+    pub fn apply_points_with_conditional_replace<'op, F, G>(
+        &self,
+        op_num: SeqNumberType,
+        ids: &[PointIdType],
+        point_operation: F,
+        point_cow_operation: G,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> OperationResult<AHashSet<PointIdType>>
+    where
+        F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        G: FnMut(
+            PointIdType,
+            &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
+            &mut NamedVectors<'op>,
+            &mut Payload,
+        ),
+    {
+        self.apply_points_with_conditional_move_impl(
+            op_num,
+            ids,
+            point_operation,
+            point_cow_operation,
+            max_segment_size_bytes,
+            false,
+        )
+    }
+
+    /// `read_source_point`: whether the CoW move reads the point's existing
+    /// vectors and payload from the source segment and hands them to
+    /// `point_cow_operation`. If `false`, the callback gets empty buffers.
+    fn apply_points_with_conditional_move_impl<'op, F, G>(
+        &self,
+        op_num: SeqNumberType,
+        ids: &[PointIdType],
         mut point_operation: F,
         mut point_cow_operation: G,
         max_segment_size_bytes: Option<NonZeroUsize>,
+        read_source_point: bool,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -1177,28 +1242,41 @@ impl SegmentHolder {
                         // operation does not touch travel verbatim, avoiding
                         // the lossy dequantize→requantize round-trip of
                         // TurboQuant-as-datatype storages.
-                        let mut record = write_segment
-                            .retrieve_raw(
-                                &[point_id],
-                                &WithVector::Bool(true),
+                        let (mut raw_vectors, mut payload) = if read_source_point {
+                            let mut record = write_segment
+                                .retrieve_raw(
+                                    &[point_id],
+                                    &WithVector::Bool(true),
 
-                                &stopped,
-                                DeferredBehavior::WithDeferred,
-                            )?
-                            .remove(&point_id)
-                            .ok_or(OperationError::PointIdError {
-                                missed_point_id: point_id,
-                            })?;
+                                    &stopped,
+                                    DeferredBehavior::WithDeferred,
+                                )?
+                                .remove(&point_id)
+                                .ok_or(OperationError::PointIdError {
+                                    missed_point_id: point_id,
+                                })?;
 
-                        let mut raw_vectors = record.vectors.take().unwrap_or_default();
-                        // The `SetPayload` callback below merges into the parsed
-                        // payload, so a stored blob is decoded here.
-                        let mut payload = record
-                            .payload
-                            .as_ref()
-                            .map(RawPayload::decode)
-                            .transpose()?
-                            .unwrap_or_default();
+                            let raw_vectors = record.vectors.take().unwrap_or_default();
+                            // The `SetPayload` callback below merges into the parsed
+                            // payload, so a stored blob is decoded here.
+                            let payload = record
+                                .payload
+                                .as_ref()
+                                .map(RawPayload::decode)
+                                .transpose()?
+                                .unwrap_or_default();
+                            (raw_vectors, payload)
+                        } else {
+                            // The whole point is replaced: nothing of the source
+                            // survives, so only check that the point exists here
+                            // (including a deferred head, like the read branch).
+                            if !write_segment.has_point(point_id, DeferredBehavior::WithDeferred) {
+                                return Err(OperationError::PointIdError {
+                                    missed_point_id: point_id,
+                                });
+                            }
+                            (SmallVec::new(), Payload::default())
+                        };
                         let mut updated_vectors = NamedVectors::default();
 
                         point_cow_operation(

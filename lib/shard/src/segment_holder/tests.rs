@@ -93,6 +93,78 @@ fn test_apply_to_appendable() {
     assert!(!immutable_segment.has_point(12.into(), common::types::DeferredBehavior::WithDeferred));
 }
 
+/// A whole-point replace (upsert) must not read the moved point's old data:
+/// the CoW callback gets empty buffers, while the regular move pre-fills them.
+#[test]
+fn test_conditional_replace_does_not_read_source_point() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut immutable_segment = build_segment_2(dir.path()); // has points 11 and 12
+    immutable_segment.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let appendable_id = holder.add_new(empty_segment(dir.path()));
+    let immutable_id = holder.add_new(immutable_segment);
+
+    let new_vector = vec![0.0, 0.0, 1.0, 0.0];
+    let new_payload = payload_json! {"replaced": true};
+
+    // Regular move: the callback sees the existing vector.
+    ambient::test(|| {
+        holder.apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("point is in a non-appendable segment"),
+            |_, raw_vectors, _, _| {
+                assert_eq!(raw_vectors.len(), 1, "move must hand over the old vector");
+            },
+            None,
+        )
+    })
+    .unwrap();
+
+    // Replace: the callback gets nothing of the old point and writes it whole.
+    let mut moved = Vec::new();
+    ambient::test(|| {
+        holder.apply_points_with_conditional_replace(
+            101,
+            &[12.into()],
+            |_, _| unreachable!("point is in a non-appendable segment"),
+            |point_id, raw_vectors, updated_vectors, payload| {
+                assert!(raw_vectors.is_empty(), "replace must not read old vectors");
+                assert!(payload.is_empty(), "replace must not read old payload");
+                updated_vectors.insert(
+                    DEFAULT_VECTOR_NAME.into(),
+                    VectorInternal::from(new_vector.clone()),
+                );
+                *payload = new_payload.clone();
+                moved.push(point_id);
+            },
+            None,
+        )
+    })
+    .unwrap();
+    assert_eq!(moved, vec![PointIdType::from(12)]);
+
+    let immutable_segment = holder.get(immutable_id).unwrap().get();
+    assert!(
+        !immutable_segment
+            .read()
+            .has_point(12.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+
+    let appendable_segment = holder.get(appendable_id).unwrap().get();
+    let appendable_segment = appendable_segment.read();
+    assert_eq!(
+        appendable_segment
+            .vector(DEFAULT_VECTOR_NAME, 12.into())
+            .unwrap(),
+        Some(VectorInternal::from(new_vector)),
+    );
+    assert_eq!(appendable_segment.payload(12.into()).unwrap(), new_payload);
+}
+
 /// Test applying points and conditionally moving them if operation versions are off
 ///
 /// More specifically, this tests the move is still applied correctly even if segments already
