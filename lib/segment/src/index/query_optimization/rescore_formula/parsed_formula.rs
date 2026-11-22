@@ -258,8 +258,19 @@ impl ParsedExpression {
                     (midpoint, scale)
                 } else {
                     // Very large lambda where 0.5 / lambda underflows normal f32 range:
-                    // use midpoint = 0.0 so scale = 1.0 / lambda preserves maximum precision.
-                    (0.0, (1.0 / lambda) as ScoreType)
+                    // pick the largest positive f32 scale <= 1.0 / lambda and derive midpoint = 1.0 - lambda * scale
+                    // so subnormal reciprocals keep full f32 precision.
+                    let inv_lambda = 1.0 / lambda;
+                    let mut scale = inv_lambda as ScoreType;
+                    if scale == 0.0 {
+                        return (0.0, ScoreType::from_bits(1));
+                    }
+                    if lambda * PreciseScore::from(scale) > 1.0 && scale.to_bits() > 1 {
+                        scale = ScoreType::from_bits(scale.to_bits() - 1);
+                    }
+                    let midpoint =
+                        ((1.0 - lambda * PreciseScore::from(scale)) as ScoreType).clamp(0.0, 1.0);
+                    (midpoint, scale)
                 }
             }
 
@@ -275,10 +286,22 @@ impl ParsedExpression {
                 // -1.0 / scale^2 = lambda
                 // scale^2 = -1.0 / lambda
                 // scale = sqrt(-1.0 / lambda)
-                (
-                    1.0 / std::f32::consts::E,
-                    (-1.0 / lambda).sqrt() as ScoreType,
-                )
+                let scale = (-1.0 / lambda).sqrt() as ScoreType;
+                if scale.is_finite() && scale > 0.0 {
+                    (1.0 / std::f32::consts::E, scale)
+                } else {
+                    let scale = if !scale.is_finite() {
+                        ScoreType::MAX
+                    } else {
+                        ScoreType::from_bits(1)
+                    };
+                    let midpoint =
+                        ((lambda * PreciseScore::from(scale).powi(2)).exp() as ScoreType).clamp(
+                            ScoreType::from_bits(1),
+                            ScoreType::from_bits(1.0_f32.to_bits() - 1),
+                        );
+                    (midpoint, scale)
+                }
             }
 
             DecayKind::Exp => {
@@ -292,7 +315,21 @@ impl ParsedExpression {
                 // ln(1/e) / scale = lambda
                 // -1.0 / scale = lambda
                 // scale = -1.0 / lambda
-                (1.0 / std::f32::consts::E, -1.0 / lambda as ScoreType)
+                let scale = (-1.0 / lambda) as ScoreType;
+                if scale.is_finite() && scale > 0.0 {
+                    (1.0 / std::f32::consts::E, scale)
+                } else {
+                    let scale = if !scale.is_finite() {
+                        ScoreType::MAX
+                    } else {
+                        ScoreType::from_bits(1)
+                    };
+                    let midpoint = ((lambda * PreciseScore::from(scale)).exp() as ScoreType).clamp(
+                        ScoreType::from_bits(1),
+                        ScoreType::from_bits(1.0_f32.to_bits() - 1),
+                    );
+                    (midpoint, scale)
+                }
             }
         }
     }
@@ -406,6 +443,8 @@ mod tests {
             (0.5_f32, 31_536_000.0_f32),                   // 1-year datetime scale
             (f32::from_bits(1.0_f32.to_bits() - 1), 1e35), // very small positive lambda
             (0.0_f32, f32::MIN_POSITIVE),                  // very large finite lambda
+            (0.25_f32, f32::from_bits(1)),                 // subnormal reciprocal scale
+            (0.4_f32, f32::from_bits(1)), // subnormal reciprocal scale (rounding boundary)
         ] {
             let lambda = ParsedExpression::decay_params_to_lambda(
                 Some(midpoint),
@@ -427,6 +466,34 @@ mod tests {
                 assert!(
                     is_close_tol(lambda, rt_lambda, 0.0, 1e-5),
                     "Lin roundtrip mismatch for ({midpoint}, {scale}): {lambda} -> ({rt_midpoint}, {rt_scale}) -> {rt_lambda}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_exp_and_gauss_decay_extreme_scale_roundtrip() {
+        for kind in [DecayKind::Exp, DecayKind::Gauss] {
+            for (midpoint, scale) in [
+                (0.5_f32, f32::MAX),
+                (f32::from_bits(1.0_f32.to_bits() - 1), f32::MAX),
+                (f32::from_bits(1), f32::from_bits(1)),
+            ] {
+                let lambda =
+                    ParsedExpression::decay_params_to_lambda(Some(midpoint), Some(scale), kind)
+                        .unwrap();
+                let (rt_midpoint, rt_scale) =
+                    ParsedExpression::decay_lambda_to_params(lambda, kind);
+                assert!(rt_midpoint.is_finite() && rt_scale.is_finite());
+                let rt_lambda = ParsedExpression::decay_params_to_lambda(
+                    Some(rt_midpoint),
+                    Some(rt_scale),
+                    kind,
+                )
+                .unwrap();
+                assert!(
+                    is_close_tol(lambda, rt_lambda, 0.0, 1e-5),
+                    "{kind:?} roundtrip mismatch for ({midpoint}, {scale}): {lambda} -> ({rt_midpoint}, {rt_scale}) -> {rt_lambda}",
                 );
             }
         }
