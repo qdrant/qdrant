@@ -37,9 +37,20 @@ pub fn create_field_index(
         // `SegmentHolder::with_flush_serialized`). Skipped for idempotent
         // ensure-calls (index already present with an identical schema), which must
         // stay cheap; those resolve to `AlreadyExists` in the build below.
+        //
+        // Also skipped for segments without any points, even deleted ones
+        // (`SegmentEntry::is_empty`): an empty segment observes nothing the durable
+        // config could outrun. There is no id-tracker, payload, or vector state the
+        // build could disagree with after a crash — the build itself only produces
+        // an empty index, whose files `build_field_index` persists before the config
+        // save regardless. Flushing here is pure overhead, and it made creating
+        // indexes on a fresh collection cost an fsync-bound flush per segment per
+        // index (#11617). Index creations are applied serially by the update
+        // worker, so a collection needing N indexes paid roughly
+        // N × segments × flush latency even with zero points stored.
         let already_indexed =
             write_segment.get_indexed_fields().get(field_name) == Some(field_schema);
-        if !already_indexed {
+        if !already_indexed && !write_segment.is_empty() {
             // Also flushes the destinations of pending copy-on-write moves out of this
             // segment first; see `SegmentHolder::flush_segment_with_cow_destinations`.
             segments.flush_segment_with_cow_destinations(segment_id, &**write_segment)?;
