@@ -289,12 +289,15 @@ impl ParsedExpression {
                 let scale = (-1.0 / lambda).sqrt() as ScoreType;
                 if scale.is_finite() && scale > 0.0 {
                     (1.0 / std::f32::consts::E, scale)
+                } else if !scale.is_finite() {
+                    let midpoint = ScoreType::from_bits(1.0_f32.to_bits() - 1);
+                    let scale = (PreciseScore::from(midpoint).ln() / lambda)
+                        .sqrt()
+                        .min(PreciseScore::from(ScoreType::MAX))
+                        as ScoreType;
+                    (midpoint, scale)
                 } else {
-                    let scale = if !scale.is_finite() {
-                        ScoreType::MAX
-                    } else {
-                        ScoreType::from_bits(1)
-                    };
+                    let scale = ScoreType::from_bits(1);
                     let midpoint =
                         ((lambda * PreciseScore::from(scale).powi(2)).exp() as ScoreType).clamp(
                             ScoreType::from_bits(1),
@@ -318,12 +321,14 @@ impl ParsedExpression {
                 let scale = (-1.0 / lambda) as ScoreType;
                 if scale.is_finite() && scale > 0.0 {
                     (1.0 / std::f32::consts::E, scale)
+                } else if !scale.is_finite() {
+                    let midpoint = ScoreType::from_bits(1.0_f32.to_bits() - 1);
+                    let scale = (PreciseScore::from(midpoint).ln() / lambda)
+                        .min(PreciseScore::from(ScoreType::MAX))
+                        as ScoreType;
+                    (midpoint, scale)
                 } else {
-                    let scale = if !scale.is_finite() {
-                        ScoreType::MAX
-                    } else {
-                        ScoreType::from_bits(1)
-                    };
+                    let scale = ScoreType::from_bits(1);
                     let midpoint = ((lambda * PreciseScore::from(scale)).exp() as ScoreType).clamp(
                         ScoreType::from_bits(1),
                         ScoreType::from_bits(1.0_f32.to_bits() - 1),
@@ -477,6 +482,7 @@ mod tests {
             for (midpoint, scale) in [
                 (0.5_f32, f32::MAX),
                 (f32::from_bits(1.0_f32.to_bits() - 1), f32::MAX),
+                (f32::from_bits(1.0_f32.to_bits() - 1), 0.75 * f32::MAX),
                 (f32::from_bits(1), f32::from_bits(1)),
             ] {
                 let lambda =
@@ -512,10 +518,12 @@ mod tests {
                 ParsedExpression::decay_params_to_lambda(Some(0.5), Some(f32::INFINITY), kind)
                     .is_err()
             );
-            assert!(
-                ParsedExpression::decay_params_to_lambda(Some(0.5), Some(f32::NEG_INFINITY), kind)
-                    .is_err()
-            );
+            assert!(ParsedExpression::decay_params_to_lambda(
+                Some(0.5),
+                Some(f32::NEG_INFINITY),
+                kind
+            )
+            .is_err());
         }
     }
 
