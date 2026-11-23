@@ -4,6 +4,7 @@ mod tests {
 
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
+    use quantization::encoded_vectors_pq::{self, CENTROIDS_COUNT, EncodedVectorsPQ};
     use quantization::encoded_vectors_u8;
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use tempfile::Builder;
@@ -155,6 +156,81 @@ mod tests {
                 Ok(_) => panic!(
                     "malicious snapshot with actual_dim={inflated_actual_dim} was accepted — \
                      heap OOB read is reachable (BBP-827 regression)"
+                ),
+                Err(err) => assert!(
+                    matches!(&err, common::universal_io::UniversalIoError::Io(e) if e.kind() == std::io::ErrorKind::InvalidData),
+                    "unexpected error: {err:?}",
+                ),
+            }
+        }
+    }
+
+    /// PQ scoring uses each stored byte as an unchecked index into a query LUT row of
+    /// `centroids.len()` entries. A snapshot's `quantized.meta.json` is attacker-controlled, so
+    /// metadata with fewer than `CENTROIDS_COUNT` centroids would let a stored code read past the
+    /// LUT. This patches the centroid count of an honestly encoded storage and asserts that `load`
+    /// rejects it.
+    #[test]
+    fn pq_load_rejects_wrong_centroids_count() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let vectors_count = 4;
+        let vector_dim = 8;
+        let chunk_size = 2;
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+            .map(|i| vec![i as f32; vector_dim])
+            .collect();
+
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("quantized.meta.json");
+        let quantized_vector_size =
+            encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, chunk_size);
+        EncodedVectorsPQ::encode(
+            vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
+            TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
+            &vector_parameters,
+            chunk_size,
+            1,
+            Some(meta_path.as_path()),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let load = || {
+            EncodedVectorsPQ::<TestEncodedStorage>::load(
+                &common::universal_io::MmapFs,
+                TestEncodedStorage::from_file(data_path.as_path(), quantized_vector_size).unwrap(),
+                meta_path.as_path(),
+            )
+        };
+
+        // The honest storage loads fine, and the encoder wrote the full codebook, even though
+        // there are fewer vectors than centroids.
+        load().unwrap();
+        let original = fs_err::read_to_string(&meta_path).unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&original).unwrap();
+        assert_eq!(
+            metadata["centroids"].as_array().map(Vec::len),
+            Some(CENTROIDS_COUNT),
+        );
+
+        for centroids_count in [0, 1, CENTROIDS_COUNT - 1, CENTROIDS_COUNT + 1] {
+            let mut metadata: serde_json::Value = serde_json::from_str(&original).unwrap();
+            let centroids = metadata["centroids"].as_array_mut().unwrap();
+            centroids.resize(centroids_count, centroids[0].clone());
+            fs_err::write(&meta_path, serde_json::to_string(&metadata).unwrap()).unwrap();
+
+            match load() {
+                Ok(_) => panic!(
+                    "PQ metadata with {centroids_count} centroids was accepted, \
+                     but scoring may then read past the query LUT"
                 ),
                 Err(err) => assert!(
                     matches!(&err, common::universal_io::UniversalIoError::Io(e) if e.kind() == std::io::ErrorKind::InvalidData),
