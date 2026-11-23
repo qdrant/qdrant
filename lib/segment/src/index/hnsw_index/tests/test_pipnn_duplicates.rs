@@ -29,7 +29,9 @@ use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs, with_pipnn_mi
 use crate::segment::Segment;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-use crate::types::{Distance, HnswConfig, HnswGlobalConfig, SearchParams, SeqNumberType};
+use crate::types::{
+    Distance, HnswConfig, HnswGlobalConfig, IndexingEffort, SearchParams, SeqNumberType,
+};
 
 const DIM: usize = 16;
 /// Distinct random points besides the groups.
@@ -97,7 +99,9 @@ fn build_pipnn_index(segment: &Segment, path: &Path, seed: u64) -> HNSWIndex {
         payload_m: None,
         inline_storage: None,
         indexing_algorithm: None,
-        indexing_effort: None,
+        // The fanout of `high`: with the smaller fanout of `medium`, a search on this small
+        // segment can miss a whole group of copies
+        indexing_effort: Some(IndexingEffort::High),
     };
     let vector_data = &segment.vector_data[DEFAULT_VECTOR_NAME];
     let (_progress_view, progress) = new_progress_tracker();
