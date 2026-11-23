@@ -236,18 +236,7 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let update_lock = self.update_lock.clone().read_owned().await;
 
-        // When any named vector uses a TurboQuant (`Turbo4`) storage datatype,
-        // ship storage-native (raw) vector bytes instead of decoded floats.
-        // This avoids a lossy TQ decode -> encode round-trip on the receiving
-        // node, which would drift the encoding and degrade recall. The feature flag
-        // extends that to every collection, where it is a plain saving.
-        let transfer_raw = feature_flags().transfer_raw_points
-            || self
-                .wrapped_shard
-                .collection_config
-                .read()
-                .await
-                .has_turbo_vector_storage();
+        let transfer_raw = self.is_transfer_raw().await;
 
         let read_start = Instant::now();
         let (point_operation, next_page_offset, count) = if transfer_raw {
@@ -267,14 +256,7 @@ impl ForwardProxyShard {
                 }
             };
 
-            // A raw read hands out the payload as its stored blob. Shipping it is
-            // feature-flagged for the same reason as raw points: the receiving node has
-            // to understand it first.
-            if !feature_flags().transfer_raw_payloads {
-                for point in &mut points {
-                    point.decode_payload_raw()?;
-                }
-            }
+            decode_raw_payloads_if_needed(&mut points)?;
 
             let count = points.len();
             let point_operation = if !merge_points {
@@ -330,6 +312,23 @@ impl ForwardProxyShard {
             wait,
             _update_lock: update_lock,
         })
+    }
+
+    /// Whether to transfer storage-native (raw) points instead of decoded ones
+    ///
+    /// When any named vector uses a TurboQuant (`Turbo4`) storage datatype,
+    /// ship storage-native (raw) vector bytes instead of decoded floats.
+    /// This avoids a lossy TQ decode -> encode round-trip on the receiving
+    /// node, which would drift the encoding and degrade recall. The feature flag
+    /// extends that to every collection, where it is a plain saving.
+    async fn is_transfer_raw(&self) -> bool {
+        feature_flags().transfer_raw_points
+            || self
+                .wrapped_shard
+                .collection_config
+                .read()
+                .await
+                .has_turbo_vector_storage()
     }
 
     /// Read a batch of points to transfer to the remote shard
@@ -662,6 +661,21 @@ impl ForwardProxyShard {
     pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
         self.wrapped_shard.memory_report().await
     }
+}
+
+/// Decode the payloads of raw points read for a transfer, unless raw payloads may be transferred
+///
+/// A raw read hands out the payload as its stored blob. Shipping it is
+/// feature-flagged for the same reason as raw points: the receiving node has
+/// to understand it first.
+fn decode_raw_payloads_if_needed(points: &mut [PointStructRawPersisted]) -> CollectionResult<()> {
+    if !feature_flags().transfer_raw_payloads {
+        for point in points {
+            point.decode_payload_raw()?;
+        }
+    }
+
+    Ok(())
 }
 
 #[async_trait]
