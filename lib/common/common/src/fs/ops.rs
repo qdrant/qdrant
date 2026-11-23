@@ -105,6 +105,7 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use std::io::{Error as IoError, Write as _};
+    use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
     use fs_err::os::windows::fs::OpenOptionsExt as _;
@@ -137,19 +138,26 @@ mod windows_tests {
         options.read(true).share_mode(1); // FILE_SHARE_READ
         let blocker = options.open(&path).unwrap();
 
-        // Taken before the releaser is spawned, so that the measured interval covers the
-        // whole hold whatever the scheduling: a test thread paused in between would miss
-        // the start of it, and a correct save could then measure under the 200 ms.
-        let started = Instant::now();
+        // The hold is timed from the write callback, with the save already underway, rather than
+        // from spawning the releaser: a test thread paused for the whole 200 ms right after the
+        // spawn would reach the replace with the handle already closed, and pass without a single
+        // denied attempt. The write callback is the last point of the save the test can observe.
+        let (underway_tx, underway_rx) = mpsc::channel::<Instant>();
         let releaser = std::thread::spawn(move || {
+            let started = underway_rx.recv().unwrap();
             std::thread::sleep(Duration::from_millis(200));
             drop(blocker);
+            started
         });
 
         atomic_save(&path, |writer| {
-            writer.write_all(b"new").map_err(IoError::other)
+            writer.write_all(b"new").map_err(IoError::other)?;
+            underway_tx
+                .send(Instant::now())
+                .map_err(|_| IoError::other("the releaser is gone"))
         })
         .unwrap();
+        let started = releaser.join().unwrap();
         let elapsed = started.elapsed();
 
         assert!(
@@ -158,6 +166,5 @@ mod windows_tests {
              early, took {elapsed:?}",
         );
         assert_eq!(fs_err::read(&path).unwrap(), b"new");
-        releaser.join().unwrap();
     }
 }
