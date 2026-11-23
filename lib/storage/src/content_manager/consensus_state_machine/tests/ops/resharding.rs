@@ -110,6 +110,17 @@ fn resharding_start_up_reject_target() {
         auto_resharding_state(1),
         resharding_key(ReshardingDirection::Up, 0),
     );
+
+    // Shard `u32::MAX` would derive a shard count that doesn't fit into `u32` on start
+    let mut state = auto_resharding_state(1);
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    let last_shard = collection.shards[&0].clone();
+    collection.shards.insert(u32::MAX - 1, last_shard);
+
+    resharding_start_rejects_without_change(
+        state,
+        resharding_key(ReshardingDirection::Up, u32::MAX),
+    );
 }
 
 #[test]

@@ -2058,11 +2058,18 @@ fn validate_resharding_target(
     };
 
     let expected_shard_id = match key.direction {
-        ReshardingDirection::Up => last_shard_id.checked_add(1).ok_or_else(|| {
-            StorageError::bad_request(format!(
-                "cannot add shard after shard {last_shard_id} by resharding up",
-            ))
-        })?,
+        ReshardingDirection::Up => {
+            // Scale-up must target `last_shard + 1`, and with auto sharding,
+            // Start sets the shard count to `target_shard + 1`,
+            // so `last_shard + 2` must fit into `u32`
+            if last_shard_id > u32::MAX - 2 {
+                return Err(StorageError::bad_request(format!(
+                    "cannot add shard after shard {last_shard_id} by resharding up",
+                )));
+            }
+
+            last_shard_id + 1
+        }
 
         ReshardingDirection::Down => last_shard_id,
     };
