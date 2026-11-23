@@ -156,11 +156,14 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 self.scores.as_mut_slice(),
                 #[inline(always)]
                 |scores, id, weight| {
-                    let element_score = weight * posting.query_weight;
-                    let local_id = (id - batch_start_id) as usize;
-                    // SAFETY: `id` is within `batch_start_id..=batch_last_id`
-                    // Thus, `local_id` is within `0..batch_len`.
-                    *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                    // Posting lists are sorted by id, so `id` is within the batch. A corrupt
+                    // posting list, e.g. from a crafted snapshot, may break this. Skip such ids
+                    // instead of writing out of bounds. An id below the batch start wraps to a
+                    // huge local id, so a single bounds check covers both ends.
+                    let local_id = id.wrapping_sub(batch_start_id) as usize;
+                    if let Some(score) = scores.get_mut(local_id) {
+                        *score += weight * posting.query_weight;
+                    }
                 },
             );
         }
@@ -290,10 +293,13 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             };
 
             // compute batch range of contiguous ids for the next batch
+            // A corrupt posting list may have its last id below its first, never end the batch
+            // before it starts
             let last_batch_id = min(
-                start_batch_id + ADVANCE_BATCH_SIZE as u32,
+                start_batch_id.saturating_add(ADVANCE_BATCH_SIZE as u32),
                 self.max_record_id,
-            );
+            )
+            .max(start_batch_id);
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
