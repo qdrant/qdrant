@@ -51,6 +51,27 @@ pub struct Metadata {
     pub vector_parameters: VectorParameters,
 }
 
+impl Metadata {
+    /// Validate metadata read from disk against the invariants the scoring hot path relies on.
+    ///
+    /// Every stored byte is a centroid index into a LUT row of `centroids.len()` entries, and
+    /// the scoring hot path does not bounds check it. With exactly `CENTROIDS_COUNT` (256)
+    /// centroids any `u8` index stays inside its row, so reject metadata with any other count.
+    fn validate(&self) -> std::io::Result<()> {
+        let centroids_count = self.centroids.len();
+        if centroids_count != CENTROIDS_COUNT {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "PQ metadata has {centroids_count} centroids, but {CENTROIDS_COUNT} are expected",
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -154,25 +175,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         meta_path: &Path,
     ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
+        metadata.validate()?;
         let result = Self {
             encoded_vectors,
             metadata,
             metadata_path: Some(meta_path.to_path_buf()),
         };
-
-        // Every stored byte is a centroid index into a LUT row of `centroids.len()` entries, and
-        // the scoring hot path does not bounds check it. With exactly `CENTROIDS_COUNT` (256)
-        // centroids any `u8` index stays inside its row, so reject metadata with any other count.
-        let centroids_count = result.metadata.centroids.len();
-        if centroids_count != CENTROIDS_COUNT {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "PQ metadata has {centroids_count} centroids, but {CENTROIDS_COUNT} are expected",
-                ),
-            )
-            .into());
-        }
 
         // Validate the storage's vector size against the metadata once here, so the size
         // invariant the scoring hot path relies on (it walks the query LUT one entry per stored
