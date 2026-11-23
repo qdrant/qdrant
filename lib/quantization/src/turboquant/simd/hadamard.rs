@@ -1077,4 +1077,20 @@ mod tests {
             assert_bit_equal(&reference, &fallback, &format!("scalar_wht at n={n}"));
         }
     }
+
+    /// Non-power-of-2 lengths must panic in the dispatcher, also in release
+    /// builds, instead of reaching the SIMD kernels which would write out of
+    /// bounds. The expected message is the dispatcher's own, not the kernels'
+    /// `debug_assert!`.
+    #[test]
+    #[should_panic(expected = "WHT requires power-of-2 length, got 17")]
+    fn wht_dispatch_rejects_non_power_of_two() {
+        wht_dispatch(&mut [1.0; 17]);
+    }
+
+    #[test]
+    #[should_panic(expected = "WHT requires power-of-2 length, got 24")]
+    fn wht_dispatch_scaled_rejects_non_power_of_two() {
+        wht_dispatch_scaled(&mut [1.0; 24], 0.5);
+    }
 }
