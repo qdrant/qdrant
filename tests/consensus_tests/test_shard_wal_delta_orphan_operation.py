@@ -39,8 +39,12 @@ FALLBACK_LOG = "Failed to do shard diff transfer"
 # Logged by the transfer source when `resolve_wal_delta` returns `WalDeltaError::Diverged`
 DIVERGED_ERROR = "recovery point has an operation this WAL does not have"
 
-# Point upserted through the leader that aborts before sending it to other replicas
+# Point that makes the leader abort before sending an update to other replicas, with the abort
+# failpoint, when the update touches it
 ORPHAN_POINT_ID = 1_000_000
+
+# Point the setup upserts through R, which an orphan delete removes on R only
+EXISTING_POINT_ID = 7
 
 # Prevent automatic recovery, so we start the transfer ourselves with a specific method
 TRANSFER_LIMITS_ENV = {
@@ -273,6 +277,15 @@ def upsert_orphan_point(r_uri: str):
     upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID)
 
 
+def delete_existing_point(r_uri: str):
+    # Also delete the orphan point, so the update touches it and triggers the failpoint
+    r = requests.post(
+        f"{r_uri}/collections/{COLLECTION_NAME}/points/delete?wait=true",
+        json={"points": [EXISTING_POINT_ID, ORPHAN_POINT_ID]},
+    )
+    assert_http_ok(r)
+
+
 def test_wal_delta_transfer_overwrites_orphan_upsert(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -297,6 +310,32 @@ def test_wal_delta_transfer_overwrites_orphan_upsert(tmp_path: pathlib.Path):
     # A doesn't have the orphan point, so the transfer deleted it on R. Each peer reads from its own
     # replica here, because all of them are Active
     assert not any(has_point(uri, ORPHAN_POINT_ID) for uri in peer_api_uris)
+    check_data_consistency(scroll_all_points(peer_api_uris))
+
+
+def test_wal_delta_transfer_overwrites_orphan_delete(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    cluster = start_cluster_with_orphan_operation(tmp_path, delete_existing_point)
+    peer_api_uris = cluster["peer_api_uris"]
+    a_uri, _c_uri, _r_uri = peer_api_uris
+    a_peer_id, r_peer_id = cluster["a_peer_id"], cluster["r_peer_id"]
+
+    # Recover R from A with a WAL delta transfer
+    replicate_shard(a_uri, COLLECTION_NAME, SHARD_ID, a_peer_id, r_peer_id, method="wal_delta")
+    wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
+
+    # A overwrote the points the orphan delete touched on R, without falling back to another
+    # transfer method
+    a_log = pathlib.Path(init_pytest_log_folder()) / "peer_0_0.log"
+    a_log_text = a_log.read_text()
+    assert OVERWRITING_POINTS_LOG in a_log_text
+    assert FALLBACK_LOG not in a_log_text
+
+    # A has the point the orphan delete removed on R, so the transfer restored it on R. Each peer
+    # reads from its own replica here, because all of them are Active
+    assert all(has_point(uri, EXISTING_POINT_ID) for uri in peer_api_uris)
     check_data_consistency(scroll_all_points(peer_api_uris))
 
 
