@@ -10,7 +10,7 @@ use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
 use object_store::client::{HttpClient, HttpRequestBody};
 use object_store::gcp::GoogleCloudStorage;
-use object_store::{ObjectStoreExt as _, PutPayload};
+use object_store::{ObjectStore as _, ObjectStoreExt as _, PutMode, PutOptions, PutPayload};
 use url::Url;
 
 use super::signed::build_http_client;
@@ -73,13 +73,20 @@ impl ComposeAppend {
             offset,
         };
 
-        // An empty prefix means a plain put produces the right object.
+        // An empty prefix means a plain put produces the right object, but
+        // only if there is no object yet: `ifGenerationMatch=0` never
+        // replaces one. An existing object, even an empty one, takes the
+        // compose path below, which checks its size.
         if offset == 0 {
-            store
-                .put(key, PutPayload::from(data))
+            let create = PutOptions::from(PutMode::Create);
+            match store
+                .put_opts(key, PutPayload::from(data.clone()), create)
                 .await
-                .map_err(UniversalIoError::s3)?;
-            return Ok(final_size);
+            {
+                Ok(_) => return Ok(final_size),
+                Err(object_store::Error::AlreadyExists { .. }) => {}
+                Err(other) => return Err(UniversalIoError::s3(other)),
+            }
         }
 
         // Observe the destination: its size must match the caller's view of
