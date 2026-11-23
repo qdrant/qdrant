@@ -197,9 +197,16 @@ def test_wal_delta_transfer_past_orphan_operation_without_points(tmp_path: pathl
     check_data_consistency(scroll_all_points(peer_api_uris))
 
 
-def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Path):
-    assert_project_root()
+def start_cluster_with_orphan_operation(tmp_path: pathlib.Path, orphan_operation) -> dict:
+    """Start peers A, C and R, and leave an orphan operation on R.
 
+    Creates a collection with one shard replicated on all peers, and upserts points through R,
+    so every replica knows R's clock. Then R runs `orphan_operation(r_uri)`, which must touch
+    `ORPHAN_POINT_ID`. The failpoint makes R write it to its own WAL and abort before sending it to
+    A and C. A then marks R as Dead, and R restarts without the failpoint.
+
+    Returns the peer API URIs and IDs, and what's needed to restart peers.
+    """
     env = {
         **TRANSFER_LIMITS_ENV,
         "QDRANT_STAGING_ABORT_AFTER_LOCAL_UPDATE_POINT_ID": str(ORPHAN_POINT_ID),
@@ -210,9 +217,9 @@ def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Pa
     # The abort failpoint is only available with the staging feature
     skip_if_no_feature(peer_api_uris[0], "staging")
 
-    # A is the transfer source, R receives the operation that no other replica has
     a_uri, c_uri, r_uri = peer_api_uris
     a_peer_id = get_cluster_info(a_uri)["peer_id"]
+    c_peer_id = get_cluster_info(c_uri)["peer_id"]
     r_peer_id = get_cluster_info(r_uri)["peer_id"]
 
     create_collection(a_uri, shard_number=1, replication_factor=3)
@@ -224,13 +231,13 @@ def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Pa
     # Upsert through R, so every replica knows R's clock
     upsert_random_points(r_uri, 100)
 
-    # R writes the orphan point to its own WAL, then aborts before sending it to A and C
+    # R writes the orphan operation to its own WAL, then aborts before sending it to A and C
     try:
-        upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID)
+        orphan_operation(r_uri)
     except requests.exceptions.ConnectionError:
         pass
     else:
-        pytest.fail("R must abort while upserting the orphan point")
+        pytest.fail("R must abort while running the orphan operation")
 
     r_process = processes.pop()
     r_port = r_process.p2p_port
@@ -246,8 +253,30 @@ def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Pa
     wait_for_peer_online(r_uri, "/")
     wait_for(check_replica_state, r_uri, r_peer_id, "Dead")
 
-    # WAL replay restored the orphan point's tick on R
+    # WAL replay restored the orphan operation's tick on R
     assert_receiver_one_tick_ahead(r_uri, [a_uri, c_uri], r_peer_id)
+
+    return {
+        "peer_api_uris": peer_api_uris,
+        "peer_dirs": peer_dirs,
+        "bootstrap_uri": bootstrap_uri,
+        "a_peer_id": a_peer_id,
+        "c_peer_id": c_peer_id,
+        "r_peer_id": r_peer_id,
+    }
+
+
+def upsert_orphan_point(r_uri: str):
+    upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID)
+
+
+def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    cluster = start_cluster_with_orphan_operation(tmp_path, upsert_orphan_point)
+    peer_api_uris = cluster["peer_api_uris"]
+    a_uri, c_uri, r_uri = peer_api_uris
+    a_peer_id, r_peer_id = cluster["a_peer_id"], cluster["r_peer_id"]
 
     # Upsert through R again. R's clocks started from scratch after the restart, so A and C send
     # back their current tick and R reuses the orphan point's tick with a new token. R's own replica
