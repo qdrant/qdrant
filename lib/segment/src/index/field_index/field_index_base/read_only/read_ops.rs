@@ -9,12 +9,14 @@ use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::FacetIndexEnum;
+use crate::index::field_index::field_index_base::condition_support;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::map_index::prefix_index::StrMapIndexPrefixRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
 use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
@@ -212,6 +214,109 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_cold(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_cold(index),
             ReadOnlyFieldIndex::Nested(index) => index.is_cold(),
+        }
+    }
+
+    fn supports_posting_filter(&self, condition: &FieldCondition) -> bool {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_) => {
+                condition_support::numeric_supports_posting_filter(condition)
+            }
+            ReadOnlyFieldIndex::IntMapIndex(_) => {
+                condition_support::int_map_supports_posting_filter(condition)
+            }
+            ReadOnlyFieldIndex::KeywordIndex(index) => {
+                condition_support::str_map_supports_posting_filter(
+                    condition,
+                    index.has_prefix_index(),
+                )
+            }
+            ReadOnlyFieldIndex::UuidMapIndex(_) => {
+                condition_support::uuid_map_supports_posting_filter(condition)
+            }
+            ReadOnlyFieldIndex::GeoIndex(_) => condition_support::geo_supports_condition(condition),
+            ReadOnlyFieldIndex::BoolIndex(_) => {
+                condition_support::bool_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::NullIndex(_) => {
+                condition_support::null_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::Nested(index) => index.supports_posting_filter(condition),
+        }
+    }
+
+    fn supports_condition_checker(&self, condition: &FieldCondition) -> bool {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_) => {
+                condition_support::numeric_supports_condition_checker(condition)
+            }
+            ReadOnlyFieldIndex::IntMapIndex(_) => {
+                condition_support::int_map_supports_condition_checker(condition)
+            }
+            ReadOnlyFieldIndex::KeywordIndex(_) => {
+                condition_support::str_map_supports_condition_checker(condition)
+            }
+            ReadOnlyFieldIndex::UuidMapIndex(_) => {
+                condition_support::uuid_map_supports_condition_checker(condition)
+            }
+            ReadOnlyFieldIndex::GeoIndex(_) => condition_support::geo_supports_condition(condition),
+            ReadOnlyFieldIndex::BoolIndex(_) => {
+                condition_support::bool_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::NullIndex(_) => {
+                condition_support::null_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::Nested(index) => index.supports_condition_checker(condition),
+        }
+    }
+
+    fn supports_element_condition(&self, array_key: &JsonPath, condition: &FieldCondition) -> bool {
+        match self {
+            ReadOnlyFieldIndex::Nested(index) => {
+                index.supports_element_condition(array_key, condition)
+            }
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => false,
+        }
+    }
+
+    fn supports_special_check(&self, condition: &FieldCondition) -> bool {
+        match self {
+            ReadOnlyFieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            ReadOnlyFieldIndex::Nested(index) => index.supports_special_check(condition),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => false,
         }
     }
 

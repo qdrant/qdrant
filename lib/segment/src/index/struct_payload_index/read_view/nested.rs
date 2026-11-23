@@ -232,4 +232,113 @@ where
         }
         Ok(None)
     }
+
+    /// Zero-IO counterpart of [`Self::nested_element_checker`]: whether lazy checks of
+    /// `nested` hit cold on-disk storage (either via a cold per-element index or via
+    /// payload fallback when per-element indexes do not cover the nested filter).
+    pub(super) fn nested_lazy_checks_hit_disk(&self, nested: &NestedCondition) -> bool {
+        let array_key = nested.array_key();
+        if let Some(ElementCoverage {
+            has_input_map: true,
+            cold_index,
+        }) = self.nested_element_coverage(&array_key, nested.filter())
+        {
+            // Per-element checkers never materialize postings up front, so any cold
+            // per-element index reads disk during lazy checks.
+            return cold_index;
+        }
+
+        // Falls back to `PayloadConditionChecker` over the point's payload.
+        if self.payload.borrow().is_cold() {
+            return true;
+        }
+        self.nested_payload_fallback_hits_cold_index(&array_key, nested.filter())
+    }
+
+    /// Mirror of [`Self::element_filter`] using pure metadata checks.
+    /// Returns `None` if any condition is not covered by per-element indexes.
+    fn nested_element_coverage(
+        &self,
+        array_key: &JsonPath,
+        filter: &Filter,
+    ) -> Option<ElementCoverage> {
+        let mut coverage = ElementCoverage::default();
+        for condition in filter.iter_conditions() {
+            let field_condition = match condition {
+                Condition::Field(condition) => Cow::Borrowed(condition),
+                Condition::IsEmpty(IsEmptyCondition { is_empty }) => {
+                    Cow::Owned(FieldCondition::new_is_empty(is_empty.key.clone(), true))
+                }
+                Condition::IsNull(IsNullCondition { is_null }) => {
+                    Cow::Owned(FieldCondition::new_is_null(is_null.key.clone(), true))
+                }
+                Condition::Filter(sub_filter) => {
+                    let sub = self.nested_element_coverage(array_key, sub_filter)?;
+                    coverage.has_input_map |= sub.has_input_map;
+                    coverage.cold_index |= sub.cold_index;
+                    continue;
+                }
+                Condition::HasId(_)
+                | Condition::HasVector(_)
+                | Condition::Slice(_)
+                | Condition::CustomIdChecker(_)
+                | Condition::ResolvedPoints(_) => continue,
+                Condition::Nested(_) => return None,
+            };
+
+            if field_condition.values_count.is_some() {
+                return None;
+            }
+            let full_key = array_key.extend(&field_condition.key);
+            let indexes = self.field_indexes.get(&full_key)?;
+            let matched = indexes
+                .iter()
+                .find(|index| index.supports_element_condition(array_key, &field_condition))?;
+            coverage.has_input_map = true;
+            coverage.cold_index |= matched.is_cold();
+        }
+        Some(coverage)
+    }
+
+    /// Whether a nested payload fallback invokes a cold index's `special_check_condition`
+    /// (e.g. a cold flattened full-text index whose vocabulary lives on disk).
+    fn nested_payload_fallback_hits_cold_index(
+        &self,
+        nested_path: &JsonPath,
+        filter: &Filter,
+    ) -> bool {
+        filter.iter_conditions().any(|condition| match condition {
+            Condition::Field(field_condition) => {
+                let full_key = nested_path.extend(&field_condition.key);
+                self.field_indexes
+                    .get(&full_key)
+                    .and_then(|indexes| {
+                        indexes
+                            .iter()
+                            .find(|index| index.supports_special_check(field_condition))
+                    })
+                    .is_some_and(FieldIndexRead::is_cold)
+            }
+            Condition::Filter(sub_filter) => {
+                self.nested_payload_fallback_hits_cold_index(nested_path, sub_filter)
+            }
+            Condition::Nested(inner) => {
+                let deeper_path = nested_path.extend(&inner.array_key());
+                self.nested_payload_fallback_hits_cold_index(&deeper_path, inner.filter())
+            }
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => false,
+        })
+    }
+}
+
+#[derive(Default)]
+struct ElementCoverage {
+    has_input_map: bool,
+    cold_index: bool,
 }

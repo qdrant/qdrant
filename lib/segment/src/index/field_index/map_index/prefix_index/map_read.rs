@@ -43,6 +43,9 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// structure; policy (whether that should have been possible) is decided
 /// upstream, per the payload schema.
 pub trait StrMapIndexPrefixRead {
+    /// Whether this index carries a prefix key dictionary (zero-IO metadata check).
+    fn has_prefix_index(&self) -> bool;
+
     /// Keys starting with `prefix` in ascending byte order, each with its
     /// postings count.
     ///
@@ -72,6 +75,10 @@ pub trait StrMapIndexPrefixRead {
 }
 
 impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
+    fn has_prefix_index(&self) -> bool {
+        self.sorted_keys.is_some()
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,
@@ -125,6 +132,10 @@ impl StrMapIndexPrefixRead for InMemoryMapIndex<str> {
 }
 
 impl StrMapIndexPrefixRead for MutableMapIndex<str> {
+    fn has_prefix_index(&self) -> bool {
+        self.in_memory_index.has_prefix_index()
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,
@@ -142,6 +153,10 @@ impl StrMapIndexPrefixRead for MutableMapIndex<str> {
 }
 
 impl<S: UniversalRead> StrMapIndexPrefixRead for ImmutableMapIndex<str, S> {
+    fn has_prefix_index(&self) -> bool {
+        self.sorted_keys.is_some()
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,
@@ -193,6 +208,10 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for ImmutableMapIndex<str, S> {
 }
 
 impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
+    fn has_prefix_index(&self) -> bool {
+        self.storage.prefix_index.is_some()
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,
@@ -245,6 +264,14 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for OnDiskMapIndex<str, S> {
 }
 
 impl StrMapIndexPrefixRead for MapIndex<str> {
+    fn has_prefix_index(&self) -> bool {
+        match self {
+            MapIndex::Mutable(index) => index.has_prefix_index(),
+            MapIndex::Immutable(index) => index.has_prefix_index(),
+            MapIndex::OnDisk(index) => index.has_prefix_index(),
+        }
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,
@@ -277,6 +304,14 @@ impl<S: UniversalRead> StrMapIndexPrefixRead for ReadOnlyMapIndex<str, S>
 where
     Vec<<str as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
+    fn has_prefix_index(&self) -> bool {
+        match self {
+            ReadOnlyMapIndex::Appendable(_) => false,
+            ReadOnlyMapIndex::Immutable(index) => index.has_prefix_index(),
+            ReadOnlyMapIndex::OnDisk(index) => index.has_prefix_index(),
+        }
+    }
+
     fn prefix_keys_with_counts(
         &self,
         prefix: &str,

@@ -31,7 +31,9 @@ use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
+use crate::types::{
+    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -145,6 +147,10 @@ impl PayloadIndexRead for PlainPayloadIndex {
     ) -> OperationResult<OptimizedFilter<'a>> {
         // No field indexes, so no posting lists to read up front.
         self.filter_context(filter)
+    }
+
+    fn lazy_checks_hit_disk(&self, filter: &Filter) -> bool {
+        self.condition_checker.payload_is_cold() && filter_reads_payload(filter)
     }
 
     fn for_each_payload_block(
@@ -369,4 +375,20 @@ impl ConditionChecker for PlainFilterContext<'_> {
     {
         default_check_batched(ids, select, rest, |id| self.check(id))
     }
+}
+
+/// Whether checking `filter` through `PlainPayloadIndex` reads from payload storage.
+fn filter_reads_payload(filter: &Filter) -> bool {
+    filter.iter_conditions().any(|condition| match condition {
+        Condition::Filter(sub_filter) => filter_reads_payload(sub_filter),
+        Condition::Field(_)
+        | Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::Nested(_) => true,
+        Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Slice(_)
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => false,
+    })
 }

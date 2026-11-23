@@ -2,7 +2,8 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
-use crate::index::query_optimization::filter_checks::worth_sharing;
+use crate::index::query_optimization::expected_checks::COLD_POSTING_TO_BATCHED_CHECKS_RATIO;
+use crate::index::query_optimization::filter_checks::{FilterChecks, worth_sharing};
 use crate::index::query_optimization::resolve_filter::resolve_filter;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -55,7 +56,19 @@ where
             )?;
             uses.push(checks);
         }
-        if !worth_sharing(materialization_cost, uses.iter().copied()) {
+        let lazy_weight = if uses.iter().any(|checks| {
+            matches!(checks, FilterChecks::Lazy { expected_checks } if *expected_checks > 0)
+        }) && self.payload_index.lazy_checks_hit_disk(filter)
+        {
+            COLD_POSTING_TO_BATCHED_CHECKS_RATIO
+        } else {
+            1
+        };
+        if !worth_sharing(
+            materialization_cost,
+            uses.iter()
+                .map(|checks| checks.with_lazy_weight(lazy_weight)),
+        ) {
             return Ok(None);
         }
 

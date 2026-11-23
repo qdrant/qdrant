@@ -14,6 +14,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::DeferredBehavior;
 use uuid::Uuid;
 
+use super::expected_checks::COLD_POSTING_TO_BATCHED_CHECKS_RATIO;
 use super::filter_checks::{FilterChecks, worth_sharing};
 use super::point_set::{PointSet, PointSetContext};
 use super::resolved_points::{ResolvedPoints, contains_resolved_points};
@@ -74,6 +75,13 @@ pub fn resolve_for_query_vectors(
         return Ok(None);
     }
     let materialization_cost = payload_index.materialization_cost(cardinality)?;
+    let checks = if matches!(checks, FilterChecks::Lazy { expected_checks } if expected_checks > 0)
+        && payload_index.lazy_checks_hit_disk(filter)
+    {
+        checks.with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO)
+    } else {
+        checks
+    };
     if !worth_sharing(materialization_cost, [checks]) {
         return Ok(None);
     }

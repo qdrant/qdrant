@@ -277,6 +277,10 @@ impl SimpleConditionChecker {
 
 #[cfg(feature = "testing")]
 impl SimpleConditionChecker {
+    pub fn payload_is_cold(&self) -> bool {
+        self.payload_storage.borrow().is_cold()
+    }
+
     pub fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
         let payload_storage_guard = self.payload_storage.borrow();
 
