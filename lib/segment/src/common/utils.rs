@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::marker::PhantomData;
 
 use ahash::AHashMap;
 use schemars::JsonSchema;
+use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use smallvec::SmallVec;
@@ -105,13 +109,35 @@ impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
     where
         D: serde::Deserializer<'de>,
     {
-        use serde_untagged::UntaggedEnumVisitor;
+        deserializer.deserialize_any(MaybeOneOrManyVisitor(PhantomData))
+    }
+}
 
-        UntaggedEnumVisitor::new()
-            .unit(|| Ok(None))
-            .seq(|x| x.deserialize().map(Some))
-            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))
-            .deserialize(deserializer)
+/// Visitor for [`MaybeOneOrMany`]: `null` is none, an array is many and a map is one.
+///
+/// Passes the original map or sequence access through without type erasure. Erasing it (as
+/// `serde_untagged` does) wraps it in one more layer per nesting level, and every value then
+/// goes through all layers. That makes stack use grow quadratically with nesting depth, letting
+/// a small request of deeply nested prefetches or filters overflow the stack.
+struct MaybeOneOrManyVisitor<T>(PhantomData<T>);
+
+impl<'de, T: Deserialize<'de>> Visitor<'de> for MaybeOneOrManyVisitor<T> {
+    type Value = Option<Vec<T>>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("null, an array or a map")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        Vec::deserialize(SeqAccessDeserializer::new(seq)).map(Some)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        T::deserialize(MapAccessDeserializer::new(map)).map(|value| Some(vec![value]))
     }
 }
 
