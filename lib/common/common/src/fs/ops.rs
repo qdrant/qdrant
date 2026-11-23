@@ -137,12 +137,15 @@ mod windows_tests {
         options.read(true).share_mode(1); // FILE_SHARE_READ
         let blocker = options.open(&path).unwrap();
 
+        // Taken before the releaser is spawned, so that the measured interval covers the
+        // whole hold whatever the scheduling: a test thread paused in between would miss
+        // the start of it, and a correct save could then measure under the 200 ms.
+        let started = Instant::now();
         let releaser = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
             drop(blocker);
         });
 
-        let started = Instant::now();
         atomic_save(&path, |writer| {
             writer.write_all(b"new").map_err(IoError::other)
         })
