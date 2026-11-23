@@ -130,8 +130,7 @@ fn stage_load_profile(
             LoadProfile::for_scroll(filter, Some(&order_by.key))
         }
         // A formula reads its variables and evaluates its conditions per candidate, from
-        // the payload indexes or the payload storage. Like any filter, the conditions
-        // filter keeps the payload storage warm, even when it has no conditions.
+        // the payload indexes or the payload storage.
         Some(ScoringQuery::Formula(formula)) => {
             let conditions = Filter {
                 should: Some(formula.conditions.clone()),
