@@ -198,21 +198,45 @@ impl ClusterState {
         };
         let mut planned: Actions = diffs[..split].iter().map(&config_action).collect();
 
+        // A removal skipped because its replica is already gone only proves the operation
+        // was partially applied. Whether the whole operation is already complete is decided
+        // below, once every action is planned, so a trailing configuration change still
+        // emits when the replica subplan comes back empty.
+        let mut completed_removal = None;
+
         if let Some(changes) = shard_replica_changes {
-            planned.extend(self.plan_replica_changes(context, &collection, changes)?);
+            let (removals, completed) = self.plan_replica_changes(context, &collection, changes)?;
+            completed_removal = completed;
+            planned.extend(removals);
         }
 
         planned.extend(diffs[split..].iter().map(config_action));
 
+        if planned.is_empty()
+            && let Some((shard_id, peer_id)) = completed_removal
+        {
+            // Every removal was already applied (or asks for a replica that never existed)
+            // and the operation has nothing else to emit: there is nothing to resume, so
+            // keep rejecting it.
+            return Err(StorageError::bad_request(format!(
+                "Peer {peer_id} has no replica of shard {shard_id}"
+            )));
+        }
+
         Ok(planned)
     }
 
+    /// Plans the aborts and removals for a batch of replica changes.
+    ///
+    /// The second return value is the first removal skipped because its replica was already
+    /// gone, which happens when a replay finds an earlier prefix of this same operation
+    /// applied. The caller decides whether that makes the whole operation reject.
     fn plan_replica_changes(
         &self,
         context: &NodeContext,
         collection: &str,
         changes: &[collection::shards::replica_set::Change],
-    ) -> StorageResult<Actions> {
+    ) -> StorageResult<(Actions, Option<(ShardId, PeerId)>)> {
         let fixed_cancellation =
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
 
@@ -232,7 +256,9 @@ impl ClusterState {
             );
         }
 
-        self.plan_replica_changes_legacy(context, collection, changes, fixed_cancellation)
+        let actions =
+            self.plan_replica_changes_legacy(context, collection, changes, fixed_cancellation)?;
+        Ok((actions, None))
     }
 
     fn plan_replica_changes_legacy(
@@ -330,7 +356,7 @@ impl ClusterState {
         collection: &str,
         changes: &[collection::shards::replica_set::Change],
         fixed_cancellation: bool,
-    ) -> StorageResult<Actions> {
+    ) -> StorageResult<(Actions, Option<(ShardId, PeerId)>)> {
         let mut planned = self.clone();
         let mut actions = Actions::new();
         let mut completed = None;
@@ -412,17 +438,9 @@ impl ClusterState {
             actions.push(remove);
         }
 
-        if actions.is_empty()
-            && let Some((shard_id, peer_id)) = completed
-        {
-            // Every removal was already applied (or asks for a replica that never existed):
-            // there is nothing to resume, so keep rejecting the operation.
-            return Err(StorageError::bad_request(format!(
-                "Peer {peer_id} has no replica of shard {shard_id}"
-            )));
-        }
-
-        Ok(actions)
+        // A skipped removal does not decide on its own whether the operation rejects: the
+        // caller weighs it against everything else the operation still has to emit.
+        Ok((actions, completed))
     }
 
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {

@@ -581,6 +581,77 @@ fn update_collection_replica_change_batch_removal_replays() {
     }
 }
 
+/// An update that removes a replica and changes strict mode plans the removal before the
+/// configuration action. A crash between them leaves the replica gone and strict mode
+/// unchanged. Rejecting the replay because the removal is already complete would strand the
+/// configuration change, so the completed removal is skipped and the rest of the update
+/// resumes.
+#[test]
+fn update_collection_replica_change_replay_resumes_trailing_config() {
+    let mut state = auto_resharding_state(1);
+    add_peer(&mut state, PEER_ID, Some("1.20.3-dev"));
+    add_peer(&mut state, OTHER_PEER_ID, Some("1.20.3-dev"));
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Active);
+
+    let mut update = empty_update();
+    update.strict_mode_config = Some(strict_mode_diff(true));
+
+    let mut operation =
+        UpdateCollectionOperation::new(COLLECTION.into(), update).expect("valid operation");
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+    let operation = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+
+    let mut machine = state_machine(state.clone());
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("a removal with a trailing config change should be accepted");
+    };
+    let goal = machine.state().clone();
+
+    assert!(
+        matches!(
+            actions.as_slice(),
+            [
+                Action::RemoveReplica {
+                    peer_id: OTHER_PEER_ID,
+                    ..
+                },
+                Action::UpdateCollectionConfig { .. },
+            ]
+        ),
+        "the removal must plan before the configuration action, got {actions:?}",
+    );
+
+    for crash_after in 0..=actions.len() {
+        let mut crashed = state.clone();
+        for action in &actions[..crash_after] {
+            crashed.apply_action(action);
+        }
+
+        let reached_goal = crashed == goal;
+        let mut replay = state_machine(crashed);
+        match replay.apply(&operation) {
+            Ok(_) => assert_eq!(
+                replay.state(),
+                &goal,
+                "replay after {crash_after} of {} actions reached a different state",
+                actions.len(),
+            ),
+            Err(error) => assert!(
+                reached_goal,
+                "replay after {crash_after} of {} actions rejected a partially applied \
+                 update: {error}",
+                actions.len(),
+            ),
+        }
+    }
+}
+
 /// Each removal in a batch is validated against the state the earlier removals leave
 /// behind, so a batch cannot remove the last source of truth one replica at a time.
 #[test]
