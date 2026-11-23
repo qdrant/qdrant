@@ -6,13 +6,13 @@ the other replicas. If the leader dies in between, the operation exists only on 
 replica, and that replica's clock is one tick ahead of all other replicas.
 
 - If the transfer source has not seen a newer tick of that clock, it asks the receiver which
-  points the orphan operations changed, and resolves the WAL delta from before them. If the orphan
-  operations changed no points, the WAL delta transfer succeeds.
+  points the orphan operations changed, and resolves the WAL delta from before them. After
+  transferring the delta, it overwrites those points on the receiver with its own versions of them.
 - After a restart the leader's clocks start from scratch. Its next update through the same clock
   reuses the orphan operation's tick with a new token. The ticks are equal again, but the tokens
   differ, so the source rejects the WAL delta and the transfer falls back to a snapshot transfer.
 
-Both tests use staging features and are skipped without them:
+The tests use staging features and are skipped without them:
 - the `delay` debug operation, which the leader writes to its local WAL, while remote shards skip
   it and still report success with the clock tag
 - `QDRANT_STAGING_ABORT_AFTER_LOCAL_UPDATE_POINT_ID`, which aborts the leader right after its local
@@ -29,6 +29,9 @@ SHARD_ID = 0
 
 # Logged by the transfer source when the receiver is ahead on its own clocks
 AHEAD_ON_OWN_CLOCKS_LOG = "Remote shard is ahead on its own clocks"
+
+# Logged by the transfer source when it overwrites points changed by orphan operations
+OVERWRITING_POINTS_LOG = "points changed by orphan operations on peer"
 
 # Logged by the transfer source when a WAL delta transfer fails and falls back to another method
 FALLBACK_LOG = "Failed to do shard diff transfer"
@@ -268,6 +271,33 @@ def start_cluster_with_orphan_operation(tmp_path: pathlib.Path, orphan_operation
 
 def upsert_orphan_point(r_uri: str):
     upsert_random_points(r_uri, 1, offset=ORPHAN_POINT_ID)
+
+
+def test_wal_delta_transfer_overwrites_orphan_upsert(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    cluster = start_cluster_with_orphan_operation(tmp_path, upsert_orphan_point)
+    peer_api_uris = cluster["peer_api_uris"]
+    a_uri, _c_uri, _r_uri = peer_api_uris
+    a_peer_id, r_peer_id = cluster["a_peer_id"], cluster["r_peer_id"]
+
+    # Recover R from A with a WAL delta transfer
+    replicate_shard(a_uri, COLLECTION_NAME, SHARD_ID, a_peer_id, r_peer_id, method="wal_delta")
+    wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
+
+    # A found R ahead on its own clock, resolved the WAL delta from before the orphan upsert, and
+    # overwrote the orphan point on R without falling back to another transfer method
+    a_log = pathlib.Path(init_pytest_log_folder()) / "peer_0_0.log"
+    a_log_text = a_log.read_text()
+    assert AHEAD_ON_OWN_CLOCKS_LOG in a_log_text
+    assert OVERWRITING_POINTS_LOG in a_log_text
+    assert FALLBACK_LOG not in a_log_text
+
+    # A doesn't have the orphan point, so the transfer deleted it on R. Each peer reads from its own
+    # replica here, because all of them are Active
+    assert not any(has_point(uri, ORPHAN_POINT_ID) for uri in peer_api_uris)
+    check_data_consistency(scroll_all_points(peer_api_uris))
 
 
 def test_wal_delta_transfer_rejects_reused_tick_on_receiver(tmp_path: pathlib.Path):
