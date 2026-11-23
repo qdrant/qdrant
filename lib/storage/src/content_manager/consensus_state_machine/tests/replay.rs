@@ -120,9 +120,10 @@ proptest! {
 }
 
 /// Transfer abort can invalidate the replica-removal check before the caller removes its replica.
-/// Both implementations check the initial replica set, so replay can reject after an abort
-/// removes another replica or marks it dead. Keep checking every accepted replay and every other
-/// rejection until validation is fixed in both implementations.
+/// Both implementations checked the initial replica set, so replay can reject after an abort
+/// removes another replica or marks it dead. From `REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION`
+/// on, validation runs against the map the aborts leave behind, and this stays rejected only
+/// for peers that still plan removals the old way.
 pub(super) fn replica_removal_guard_may_reject(
     state: &ClusterState,
     operation: &ConsensusOperations,

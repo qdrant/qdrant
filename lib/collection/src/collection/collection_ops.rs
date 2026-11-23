@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::{Arc, LazyLock};
 
@@ -29,6 +30,16 @@ use crate::shards::shard_holder::SharedShardHolder;
 /// See: <https://github.com/qdrant/qdrant/pull/7792>
 pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
     LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
+
+/// Validate replica removal against the replica map the transfer aborts leave behind,
+/// instead of the map from before them. Aborting a transfer whose source is removed marks
+/// its target `Dead` (sync) or removes it (a move), so the pre-abort map can vouch for a
+/// removal that leaves the shard without a source of truth, and the committed entry is
+/// rejected when replayed from a prefix that contains the abort.
+/// In order to keep consensus consistent, we can only
+/// enable new fixed logic once cluster fully switched to this version.
+pub static REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.20.3-dev").expect("valid version string"));
 
 impl Collection {
     /// Persist the shard count used to load auto shards after restart
@@ -300,15 +311,6 @@ impl Collection {
                 )));
             }
 
-            // Check that we are not removing the *last* replica or the last *active* replica
-            //
-            // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
-            if peers.len() == 1 || replica_set.is_last_source_of_truth_replica(peer_id) {
-                return Err(CollectionError::bad_request(format!(
-                    "Shard {shard_id} must have at least one active replica after removing {peer_id}",
-                )));
-            }
-
             let all_nodes_fixed_cancellation = self
                 .channel_service
                 .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
@@ -322,6 +324,42 @@ impl Collection {
                 shard_holder
                     .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id)
             };
+
+            // Consensus validates the removal against the replica map its transfer aborts
+            // leave behind. Mirror that here, so this check does not accept a removal the
+            // planner then rejects: aborting a transfer whose source is removed marks its
+            // target `Dead` (sync) or removes it (a move).
+            let peers = if self
+                .channel_service
+                .all_peers_at_version(&REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION)
+            {
+                let mut post_abort = peers;
+                for transfer in &transfers {
+                    if transfer.is_resharding() || transfer.from != peer_id {
+                        continue;
+                    }
+                    if transfer.to_shard_id.unwrap_or(transfer.shard_id) != shard_id {
+                        continue;
+                    }
+                    if transfer.sync {
+                        post_abort.insert(transfer.to, ReplicaState::Dead);
+                    } else {
+                        post_abort.remove(&transfer.to);
+                    }
+                }
+                post_abort
+            } else {
+                peers
+            };
+
+            // Check that we are not removing the *last* replica or the last *active* replica
+            //
+            // `is_last_source_of_truth` counts both `Active` and `ReshardingScaleDown` replicas!
+            if peers.len() == 1 || is_last_source_of_truth(&peers, peer_id) {
+                return Err(CollectionError::bad_request(format!(
+                    "Shard {shard_id} must have at least one active replica after removing {peer_id}",
+                )));
+            }
 
             to_remove.push((replica_set, peer_id, transfers));
         }
@@ -650,4 +688,24 @@ impl Collection {
             log::warn!("Collection {}: {}", self.name(), warning.message);
         }
     }
+}
+
+/// `true` if `peer_id` is the only replica in `peers` that can serve as a source of truth.
+///
+/// `Active` and `ReshardingScaleDown` replicas count as sources of truth. With none of them
+/// left, an `Initializing` or `Listener` replica is still the last copy, and removing it is
+/// not recoverable.
+fn is_last_source_of_truth(peers: &HashMap<PeerId, ReplicaState>, peer_id: PeerId) -> bool {
+    let active_peers: Vec<_> = peers
+        .iter()
+        .filter_map(|(&peer_id, &state)| state.is_active().then_some(peer_id))
+        .collect();
+
+    if active_peers.is_empty()
+        && let Some(state) = peers.get(&peer_id)
+    {
+        return matches!(state, ReplicaState::Initializing | ReplicaState::Listener);
+    }
+
+    active_peers.len() == 1 && active_peers.contains(&peer_id)
 }
