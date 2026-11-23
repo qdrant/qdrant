@@ -160,6 +160,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             metadata_path: Some(meta_path.to_path_buf()),
         };
 
+        // Every stored byte is a centroid index into a LUT row of `centroids.len()` entries, and
+        // the scoring hot path does not bounds check it. With exactly `CENTROIDS_COUNT` (256)
+        // centroids any `u8` index stays inside its row, so reject metadata with any other count.
+        let centroids_count = result.metadata.centroids.len();
+        if centroids_count != CENTROIDS_COUNT {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "PQ metadata has {centroids_count} centroids, but {CENTROIDS_COUNT} are expected",
+                ),
+            )
+            .into());
+        }
+
         // Validate the storage's vector size against the metadata once here, so the size
         // invariant the scoring hot path relies on (it walks the query LUT one entry per stored
         // byte) also holds in release builds without a per-score check.
