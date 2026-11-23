@@ -409,6 +409,32 @@ impl ShardReplicaSet {
             .await
     }
 
+    /// Read a transfer batch that overwrites the given points, without sending it yet.
+    ///
+    /// See [`ForwardProxyShard::read_points_transfer_batch`].
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn read_points_transfer_batch(
+        &self,
+        point_ids: &[PointIdType],
+        wait: bool,
+    ) -> CollectionResult<PreparedTransferBatch> {
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Cannot transfer points from shard {} because it is not proxified",
+                self.shard_id
+            )));
+        };
+
+        proxy
+            .read_points_transfer_batch(point_ids, wait, &self.search_runtime)
+            .await
+    }
+
     /// Custom operation for transferring indexes from one shard to another during transfer
     ///
     /// # Cancel safety

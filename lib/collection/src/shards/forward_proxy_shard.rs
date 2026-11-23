@@ -13,8 +13,8 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig,
-    WithPayload, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint, SizeStats,
+    SnapshotFormat, StrictModeConfig, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
@@ -308,6 +308,77 @@ impl ForwardProxyShard {
             operations: vec![operation],
             next_page_offset,
             count,
+            read_duration,
+            wait,
+            _update_lock: update_lock,
+        })
+    }
+
+    /// Read a batch of points by ID to transfer, without sending it yet.
+    ///
+    /// The batch overwrites these points on the remote shard with our versions of them: it
+    /// upserts the points we have, and deletes the ones we don't. Like
+    /// [`Self::read_transfer_batch`], it holds a shared guard on the update lock until it is sent.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn read_points_transfer_batch(
+        &self,
+        point_ids: &[PointIdType],
+        wait: bool,
+        runtime_handle: &AdaptiveSearchHandle,
+    ) -> CollectionResult<PreparedTransferBatch> {
+        let update_lock = self.update_lock.clone().read_owned().await;
+
+        let transfer_raw = self.is_transfer_raw().await;
+
+        let has_id = point_ids.iter().copied().collect::<HasIdCondition>();
+        let filter = Filter::new_must(Condition::HasId(has_id));
+
+        let read_start = Instant::now();
+        let (upsert, found_ids) = if transfer_raw {
+            let (mut points, _) = self
+                .read_batch_raw(None, point_ids.len(), Some(&filter), runtime_handle)
+                .await?;
+
+            decode_raw_payloads_if_needed(&mut points)?;
+
+            let found_ids: HashSet<_> = points.iter().map(|point| point.id).collect();
+            (PointOperations::UpsertPointsRaw(points), found_ids)
+        } else {
+            let (points, _) = self
+                .read_batch(None, point_ids.len(), Some(&filter), runtime_handle)
+                .await?;
+
+            let found_ids: HashSet<_> = points.iter().map(|point| point.id).collect();
+            let upsert =
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points));
+            (upsert, found_ids)
+        };
+        let read_duration = read_start.elapsed();
+
+        let missing_ids: Vec<_> = point_ids
+            .iter()
+            .copied()
+            .filter(|point_id| !found_ids.contains(point_id))
+            .collect();
+
+        let mut operations = Vec::with_capacity(2);
+
+        if !found_ids.is_empty() {
+            operations.push(CollectionUpdateOperations::PointOperation(upsert));
+        }
+
+        if !missing_ids.is_empty() {
+            let delete = PointOperations::DeletePoints { ids: missing_ids };
+            operations.push(CollectionUpdateOperations::PointOperation(delete));
+        }
+
+        Ok(PreparedTransferBatch {
+            operations,
+            next_page_offset: None,
+            count: point_ids.len(),
             read_duration,
             wait,
             _update_lock: update_lock,
