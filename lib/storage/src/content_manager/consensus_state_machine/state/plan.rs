@@ -333,6 +333,7 @@ impl ClusterState {
     ) -> StorageResult<Actions> {
         let mut planned = self.clone();
         let mut actions = Actions::new();
+        let mut completed = None;
 
         for change in changes {
             let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
@@ -386,9 +387,12 @@ impl ClusterState {
                 };
 
                 if !shard.replicas.contains_key(&peer_id) {
-                    return Err(StorageError::bad_request(format!(
-                        "Peer {peer_id} has no replica of shard {shard_id}"
-                    )));
+                    // Replaying a partially applied batch finds an earlier removal already
+                    // applied: the replica is gone from the map the prefix left behind.
+                    // Rejecting here would make that partial state permanent, so skip the
+                    // completed removal and resume the rest of the batch.
+                    completed.get_or_insert((shard_id, peer_id));
+                    continue;
                 }
 
                 if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
@@ -406,6 +410,16 @@ impl ClusterState {
             };
             planned.apply_action(&remove);
             actions.push(remove);
+        }
+
+        if actions.is_empty()
+            && let Some((shard_id, peer_id)) = completed
+        {
+            // Every removal was already applied (or asks for a replica that never existed):
+            // there is nothing to resume, so keep rejecting the operation.
+            return Err(StorageError::bad_request(format!(
+                "Peer {peer_id} has no replica of shard {shard_id}"
+            )));
         }
 
         Ok(actions)

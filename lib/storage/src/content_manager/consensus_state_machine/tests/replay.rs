@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use collection::collection::REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION;
 use collection::shards::replica_set::Change;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use proptest::prelude::*;
@@ -130,6 +131,12 @@ pub(super) fn replica_removal_guard_may_reject(
     applied_actions: &[Action],
     error: &StorageError,
 ) -> bool {
+    // Once every peer plans removals the fixed way, a replay rejection with the guard's
+    // error indicates a regression the fix removes, not the legacy behavior this exempts.
+    if state.all_peers_at_version(&REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION) {
+        return false;
+    }
+
     let ConsensusOperations::CollectionMeta(operation) = operation else {
         return false;
     };

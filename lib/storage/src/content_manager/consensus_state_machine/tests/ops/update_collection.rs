@@ -520,6 +520,67 @@ fn update_collection_replica_change_post_abort_accept_replays() {
     }
 }
 
+/// A batch that removes two replicas of a shard replays from any action prefix: a replay
+/// that finds an earlier removal already applied skips it and resumes the remaining
+/// removals, instead of rejecting the partially applied operation.
+#[test]
+fn update_collection_replica_change_batch_removal_replays() {
+    const THIRD_PEER_ID: u64 = 44;
+
+    let mut state = auto_resharding_state(1);
+    add_peer(&mut state, PEER_ID, Some("1.20.3-dev"));
+    add_peer(&mut state, OTHER_PEER_ID, Some("1.20.3-dev"));
+    add_peer(&mut state, THIRD_PEER_ID, Some("1.20.3-dev"));
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.shards.get_mut(&0).expect("shard").replicas = HashMap::from([
+        (PEER_ID, ReplicaState::Active),
+        (OTHER_PEER_ID, ReplicaState::Active),
+        (THIRD_PEER_ID, ReplicaState::Active),
+    ]);
+
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![
+        replica_set::Change::Remove(0, PEER_ID),
+        replica_set::Change::Remove(0, OTHER_PEER_ID),
+    ]);
+    let operation = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+
+    let mut machine = state_machine(state.clone());
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("batch removal that keeps a source of truth should be accepted");
+    };
+    let goal = machine.state().clone();
+
+    let replicas = &goal.collection(COLLECTION).expect("collection").shards[&0].replicas;
+    assert!(!replicas.contains_key(&PEER_ID));
+    assert!(!replicas.contains_key(&OTHER_PEER_ID));
+    assert_eq!(replicas[&THIRD_PEER_ID], ReplicaState::Active);
+
+    for crash_after in 0..=actions.len() {
+        let mut crashed = state.clone();
+        for action in &actions[..crash_after] {
+            crashed.apply_action(action);
+        }
+
+        let reached_goal = crashed == goal;
+        let mut replay = state_machine(crashed);
+        match replay.apply(&operation) {
+            Ok(_) => assert_eq!(
+                replay.state(),
+                &goal,
+                "replay after {crash_after} of {} actions reached a different state",
+                actions.len(),
+            ),
+            Err(error) => assert!(
+                reached_goal,
+                "replay after {crash_after} of {} actions rejected a partially applied \
+                 batch: {error}",
+                actions.len(),
+            ),
+        }
+    }
+}
+
 /// Each removal in a batch is validated against the state the earlier removals leave
 /// behind, so a batch cannot remove the last source of truth one replica at a time.
 #[test]
