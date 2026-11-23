@@ -5,6 +5,7 @@ use common::defaults;
 use parking_lot::Mutex;
 use segment::types::PointIdType;
 
+use super::overwrite_points::overwrite_points;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -40,8 +41,8 @@ use crate::shards::shard_holder::SharedShardHolder;
 ///   Find a point in our current WAL to transfer all operations from to the remote. If we cannot
 ///   resolve a WAL delta, the transfer is aborted. If the resolved delta is empty, we start from
 ///   our last WAL entry to ensure the remote does not miss any new updates. If the remote is ahead
-///   of us on its own clocks because of orphan operations, we resolve the delta from before them.
-///   See [`resolve_wal_delta`].
+///   of us on its own clocks because of orphan operations, we resolve the delta from before them,
+///   and overwrite the points they changed later. See [`resolve_wal_delta`].
 /// - Queue proxy local shard
 ///   We queue all operations from the WAL delta point for the remote.
 /// - Transfer queued updates to remote, transform into forward proxy
@@ -55,6 +56,10 @@ use crate::shards::shard_holder::SharedShardHolder;
 ///   After recovery, we set the shard state from `Recovery` to `Partial`. We propose an operation
 ///   to consensus for this. Our logic explicitly confirms that the remote reaches the `Partial`
 ///   state.
+/// - Overwrite points changed by orphan operations
+///   If the remote has orphan operations, we overwrite the points they changed with our versions
+///   of them, through the forward proxy. The remote is in `Partial` state by now, so it accepts
+///   these updates without clock tags. See [`overwrite_points`].
 /// - Wait for Partial state in our replica set
 ///   Wait for the remote shard to be set to `Partial` in our local replica set. That way we
 ///   confirm consensus has also propagated on this node.
@@ -123,14 +128,6 @@ pub(super) async fn transfer_wal_delta(
         CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
     })?;
 
-    // We can't overwrite points changed by orphan operations yet, fall back to another method
-    if !orphan_point_ids.is_empty() {
-        return Err(CollectionError::service_error(format!(
-            "Remote shard has {} points changed by orphan operations",
-            orphan_point_ids.len(),
-        )));
-    }
-
     // If diff is empty, queue and forward from our version to prevent losing new updates
     // See: <https://github.com/qdrant/qdrant/pull/5271>
     let wal_delta_version = version.or_else(|| {
@@ -170,6 +167,26 @@ pub(super) async fn transfer_wal_delta(
     progress.lock().set_stage(TransferStage::FlushingQueue);
     log::trace!("Transform queue proxy into forward proxy, transferring any remaining records");
     replica_set.queue_proxy_into_forward_proxy().await?;
+
+    // Overwrite points changed by orphan operations on the remote shard, now that we forward new
+    // updates to it
+    if !orphan_point_ids.is_empty() {
+        progress.lock().set_stage(TransferStage::OverwritingPoints);
+        log::debug!(
+            "Overwriting {} points changed by orphan operations on peer {remote_peer_id}",
+            orphan_point_ids.len(),
+        );
+
+        let orphan_point_ids: Vec<_> = orphan_point_ids.into_iter().collect();
+
+        overwrite_points(&replica_set, &remote_shard, &orphan_point_ids, &progress)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to overwrite points changed by orphan operations: {err}"
+                ))
+            })?;
+    }
 
     // Wait for Partial state in our replica set
     // Consensus sync is done right after this function

@@ -19,6 +19,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 
 pub mod driver;
 pub mod helpers;
+mod overwrite_points;
 pub mod resharding_stream_records;
 pub mod snapshot;
 mod stream_batches;
