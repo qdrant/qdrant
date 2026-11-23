@@ -228,6 +228,41 @@ mod tests {
         assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
     }
 
+    /// Stack use must grow linearly with nesting depth, so a small deeply nested request (such as
+    /// REST prefetches or filters) cannot overflow the stack.
+    #[test]
+    fn test_deserialize_one_or_many_deeply_nested() {
+        #[derive(Deserialize)]
+        struct Node {
+            #[serde(default, with = "MaybeOneOrMany")]
+            child: Option<Vec<Node>>,
+        }
+
+        // Just below serde_json's recursion limit of 128
+        const DEPTH: usize = 125;
+        // Takes about 200 KiB in debug builds, quadratic growth took more than 4 MiB
+        const STACK_SIZE: usize = 1024 * 1024;
+
+        let json = format!("{}null{}", r#"{"child":"#.repeat(DEPTH), "}".repeat(DEPTH),);
+
+        let depth = std::thread::Builder::new()
+            .stack_size(STACK_SIZE)
+            .spawn(move || {
+                let mut node = serde_json::from_str::<Node>(&json).unwrap();
+                let mut depth = 1;
+                while let Some(mut children) = node.child.take() {
+                    node = children.pop().unwrap();
+                    depth += 1;
+                }
+                depth
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+
+        assert_eq!(depth, DEPTH);
+    }
+
     #[test]
     fn test_schema_one_or_many() {
         #[derive(JsonSchema)]
