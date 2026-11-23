@@ -68,7 +68,8 @@ pub struct TransferBatchResult {
 ///
 /// Use [`PreparedTransferBatch::send`] to send the batch to a remote shard.
 pub struct PreparedTransferBatch {
-    pub operation: CollectionUpdateOperations,
+    /// Operations to send, in order
+    pub operations: Vec<CollectionUpdateOperations>,
     pub next_page_offset: Option<PointIdType>,
     pub count: usize,
     pub read_duration: Duration,
@@ -83,22 +84,40 @@ impl PreparedTransferBatch {
     ///
     /// The shared update lock guard is released after sending completes.
     pub async fn send(self, remote_shard: &RemoteShard) -> CollectionResult<TransferBatchResult> {
+        let Self {
+            operations,
+            next_page_offset,
+            count,
+            read_duration,
+            wait,
+            _update_lock,
+        } = self;
+
         let send_start = Instant::now();
-        remote_shard
-            .update(
-                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
-                OperationWithClockTag::from(self.operation),
-                WaitUntil::from(self.wait),
-                None,
-            )
-            .unmeasured(reason("Internal operation"))
-            .await?;
+
+        // Send operations one by one, in order. The remote applies them in order, so waiting on the
+        // last one is enough.
+        let last_index = operations.len().saturating_sub(1);
+        for (index, operation) in operations.into_iter().enumerate() {
+            let wait = wait && index == last_index;
+
+            remote_shard
+                .update(
+                    // Don't add clock tag, this transfers points out of regular order (SyncPoints)
+                    OperationWithClockTag::from(operation),
+                    WaitUntil::from(wait),
+                    None,
+                )
+                .unmeasured(reason("Internal operation"))
+                .await?;
+        }
+
         let send_duration = send_start.elapsed();
 
         Ok(TransferBatchResult {
-            next_page_offset: self.next_page_offset,
-            count: self.count,
-            read_duration: self.read_duration,
+            next_page_offset,
+            count,
+            read_duration,
             send_duration,
         })
     }
@@ -304,7 +323,7 @@ impl ForwardProxyShard {
         let operation = CollectionUpdateOperations::PointOperation(point_operation);
 
         Ok(PreparedTransferBatch {
-            operation,
+            operations: vec![operation],
             next_page_offset,
             count,
             read_duration,
