@@ -338,10 +338,10 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
         LoadProfile::for_retrieve(),
         // Scroll filtered on "kw": vector components and the "num" index are
         // demoted, the "kw" index and payload storage keep their placement.
-        LoadProfile::for_scroll(Some(&keyword_filter("red")), None, true),
+        LoadProfile::for_scroll(Some(&keyword_filter("red")), None),
         // Search on the default vector: payload storage and both payload
         // indexes are demoted, the vector components keep their placement.
-        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None, false),
+        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None),
     ];
     for profile in &profiles {
         let read_only = ReadOnlySegment::<MmapFile>::open(
@@ -797,7 +797,7 @@ fn deferred_index_reads_nothing_at_open() {
     fs_err::remove_dir_all(get_vector_index_path(&segment_path, DEFAULT_VECTOR_NAME)).unwrap();
 
     let filter = keyword_filter("red");
-    let profile = LoadProfile::for_scroll(Some(&filter), None, true);
+    let profile = LoadProfile::for_scroll(Some(&filter), None);
     let read_only = ReadOnlySegment::<MmapFile>::open(
         &MmapFs,
         &segment_path,
@@ -851,7 +851,7 @@ fn deferred_index_opens_on_first_search() {
     let eager = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
         .expect("eager open");
 
-    let profile = LoadProfile::for_scroll(None, None, true);
+    let profile = LoadProfile::for_scroll(None, None);
     let deferred = ReadOnlySegment::<MmapFile>::open(
         &MmapFs,
         &segment_path,

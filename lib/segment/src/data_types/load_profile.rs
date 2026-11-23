@@ -47,8 +47,9 @@ pub struct LoadProfile {
     /// indexes keep the configured placement; every other field index loads cold.
     warm_payload_fields: HashSet<PayloadKeyType>,
     /// Whether the payload storage keeps its configured placement. Kept warm whenever the
-    /// request returns payloads or filters (a condition on an unindexed field falls back
-    /// to reading raw payloads); parked cold otherwise.
+    /// request filters (a condition on an unindexed field falls back to reading raw
+    /// payloads); parked cold otherwise. Returning payloads doesn't warm it: like stored
+    /// vectors, the payloads of a few result points are fine off cold storage.
     warm_payload_storage: bool,
     /// Deferred-points threshold of the shard, in KB like the indexing threshold. `None`
     /// shows every point.
@@ -58,11 +59,7 @@ pub struct LoadProfile {
 impl LoadProfile {
     /// Profile of a scroll: no scoring, so every vector component loads cold; only the
     /// field indexes the filter and `order_by` read stay warm.
-    pub fn for_scroll(
-        filter: Option<&Filter>,
-        order_by_key: Option<&JsonPath>,
-        with_payload: bool,
-    ) -> Self {
+    pub fn for_scroll(filter: Option<&Filter>, order_by_key: Option<&JsonPath>) -> Self {
         let mut warm_payload_fields = filter_payload_keys(filter);
         if let Some(key) = order_by_key {
             warm_payload_fields.insert(key.clone());
@@ -71,22 +68,18 @@ impl LoadProfile {
         Self {
             warm_vectors: HashSet::new(),
             warm_payload_fields,
-            warm_payload_storage: with_payload || filter.is_some(),
+            warm_payload_storage: filter.is_some(),
             deferred_points_threshold_kb: None,
         }
     }
 
     /// Profile of a (core) search: the queried vector keeps its configured placement —
     /// storage, index and quantized vectors — and the filter's field indexes stay warm.
-    pub fn for_search(
-        vector_name: &VectorName,
-        filter: Option<&Filter>,
-        with_payload: bool,
-    ) -> Self {
+    pub fn for_search(vector_name: &VectorName, filter: Option<&Filter>) -> Self {
         Self {
             warm_vectors: HashSet::from([vector_name.to_owned()]),
             warm_payload_fields: filter_payload_keys(filter),
-            warm_payload_storage: with_payload || filter.is_some(),
+            warm_payload_storage: filter.is_some(),
             deferred_points_threshold_kb: None,
         }
     }
@@ -299,7 +292,7 @@ mod tests {
     #[test]
     fn scroll_profile_parks_vectors_and_unused_fields_cold() {
         let filter = Filter::new_must(match_condition("city", "London"));
-        let profile = LoadProfile::for_scroll(Some(&filter), Some(&path("price")), true);
+        let profile = LoadProfile::for_scroll(Some(&filter), Some(&path("price")));
 
         assert_eq!(
             profile.vector_storage_placement("dense"),
@@ -323,7 +316,7 @@ mod tests {
 
     #[test]
     fn search_profile_keeps_only_queried_vector_warm() {
-        let profile = LoadProfile::for_search("dense", None, false);
+        let profile = LoadProfile::for_search("dense", None);
 
         assert_eq!(profile.vector_storage_placement("dense"), None);
         assert_eq!(profile.vector_index_placement("dense"), None);
@@ -335,7 +328,7 @@ mod tests {
         );
         assert_eq!(profile.vector_index_placement("other"), Some(Populate::No));
 
-        // No payload returned and no filter: payload storage and indexes park cold.
+        // No filter: payload storage and indexes park cold.
         assert_eq!(profile.payload_storage_placement(), Some(Populate::No));
         assert_eq!(
             profile.payload_index_placement(&path("city")),
@@ -357,7 +350,7 @@ mod tests {
             min_should: None,
         };
 
-        let profile = LoadProfile::for_scroll(Some(&filter), None, false);
+        let profile = LoadProfile::for_scroll(Some(&filter), None);
 
         // Nested keys resolve against the array prefix, like index selection at query time.
         assert_eq!(
@@ -378,14 +371,10 @@ mod tests {
     fn merged_hybrid_profile_warms_the_union() {
         // Hybrid search: one core search per vector, each with its own filter.
         let dense_filter = Filter::new_must(match_condition("city", "London"));
-        let mut profile = LoadProfile::for_search("dense", Some(&dense_filter), false);
+        let mut profile = LoadProfile::for_search("dense", Some(&dense_filter));
 
         let sparse_filter = Filter::new_must(match_condition("country", "UK"));
-        profile.merge(LoadProfile::for_search(
-            "sparse",
-            Some(&sparse_filter),
-            true,
-        ));
+        profile.merge(LoadProfile::for_search("sparse", Some(&sparse_filter)));
 
         // Both queried vectors stay warm; a third one parks cold.
         assert_eq!(profile.vector_storage_placement("dense"), None);
@@ -405,14 +394,14 @@ mod tests {
             Some(Populate::No)
         );
 
-        // One part returns payloads, so the payload storage stays warm.
+        // The parts filter, so the payload storage stays warm.
         assert_eq!(profile.payload_storage_placement(), None);
     }
 
     #[test]
     fn merge_with_coldest_profile_is_identity() {
         let filter = Filter::new_must(match_condition("city", "London"));
-        let mut profile = LoadProfile::for_search("dense", Some(&filter), true);
+        let mut profile = LoadProfile::for_search("dense", Some(&filter));
         let reference = profile.clone();
 
         // `for_retrieve` is the coldest profile — merging it changes nothing.

@@ -25,7 +25,7 @@ impl CountRequest {
     /// this count: no vector components are warmed, and only the field indexes the filter
     /// reads keep their configured placement.
     pub fn load_profile(&self) -> LoadProfile {
-        LoadProfile::for_scroll(self.filter.as_ref(), None, false)
+        LoadProfile::for_scroll(self.filter.as_ref(), None)
     }
 }
 
