@@ -78,12 +78,14 @@ class IndexingAlgorithm(Enum):
 class IndexingEffort(Enum):
     """How much work the graph build may spend on quality. Sets the parameters
     of graphs built by PiPNN, and the default ``ef_construct`` of graphs built by
-    HNSW: 64 for ``Low``, 100 for ``Medium``, 200 for ``High``.
+    HNSW: 64 for ``Low``, 100 for ``Medium``, 200 for ``High``, 400 for
+    ``XHigh``.
     """
 
     Low = ...
     Medium = ...
     High = ...
+    XHigh = ...
 
 class EdgeShard:
     """

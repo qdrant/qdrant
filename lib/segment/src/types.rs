@@ -852,7 +852,8 @@ pub struct HnswConfig {
     /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
-    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.
+    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`,
+    /// 200 for `high`, 400 for `xhigh`.
     #[validate(range(min = 4))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
@@ -5186,6 +5187,7 @@ mod tests {
         assert_eq!(with(None, None).ef_construct(), 100);
         assert_eq!(with(None, Some(IndexingEffort::Low)).ef_construct(), 64);
         assert_eq!(with(None, Some(IndexingEffort::High)).ef_construct(), 200);
+        assert_eq!(with(None, Some(IndexingEffort::XHigh)).ef_construct(), 400);
         // Set explicitly: wins over the effort
         assert_eq!(
             with(Some(150), Some(IndexingEffort::High)).ef_construct(),
@@ -5222,6 +5224,14 @@ mod tests {
         assert_eq!(read.ef_construct, None);
         assert_eq!(read.ef_construct(), 200);
         assert_eq!(read.full_scan_threshold, 10000);
+
+        // The REST name of `XHigh` is `xhigh`
+        let read: HnswConfig = serde_json::from_str(
+            r#"{"m": 16, "full_scan_threshold_kb": 10000, "indexing_effort": "xhigh"}"#,
+        )
+        .unwrap();
+        assert_eq!(read.indexing_effort, Some(IndexingEffort::XHigh));
+        assert_eq!(read.ef_construct(), 400);
     }
 
     #[test]

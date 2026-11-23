@@ -6882,7 +6882,7 @@
             "nullable": true
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`, 400 for `xhigh`.",
             "type": "integer",
             "format": "uint",
             "minimum": 4,
@@ -6978,7 +6978,8 @@
         "enum": [
           "low",
           "medium",
-          "high"
+          "high",
+          "xhigh"
         ]
       },
       "QuantizationConfig": {
@@ -7384,7 +7385,7 @@
             "minimum": 0
           },
           "ef_construct": {
-            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.",
+            "description": "Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index. If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`, 400 for `xhigh`.",
             "type": "integer",
             "format": "uint",
             "minimum": 4,

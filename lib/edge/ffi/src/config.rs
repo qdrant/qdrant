@@ -416,6 +416,7 @@ pub enum IndexingEffort {
     Low,
     Medium,
     High,
+    XHigh,
 }
 
 impl From<IndexingEffort> for SegmentIndexingEffort {
@@ -424,6 +425,7 @@ impl From<IndexingEffort> for SegmentIndexingEffort {
             IndexingEffort::Low => SegmentIndexingEffort::Low,
             IndexingEffort::Medium => SegmentIndexingEffort::Medium,
             IndexingEffort::High => SegmentIndexingEffort::High,
+            IndexingEffort::XHigh => SegmentIndexingEffort::XHigh,
         }
     }
 }
@@ -434,6 +436,7 @@ impl From<SegmentIndexingEffort> for IndexingEffort {
             SegmentIndexingEffort::Low => IndexingEffort::Low,
             SegmentIndexingEffort::Medium => IndexingEffort::Medium,
             SegmentIndexingEffort::High => IndexingEffort::High,
+            SegmentIndexingEffort::XHigh => IndexingEffort::XHigh,
         }
     }
 }
@@ -722,7 +725,7 @@ pub struct HnswIndexConfig {
     pub m: u64,
     /// Neighbours considered while building. Higher = better index, slower build.
     /// Derived from `indexing_effort` when unset: 64 for `Low`, 100 for
-    /// `Medium`, 200 for `High`.
+    /// `Medium`, 200 for `High`, 400 for `XHigh`.
     #[uniffi(default = None)]
     pub ef_construct: Option<u64>,
     /// Below this size (KB) a full scan is preferred over HNSW traversal.

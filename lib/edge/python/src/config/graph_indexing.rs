@@ -50,13 +50,15 @@ impl From<PyIndexingAlgorithm> for IndexingAlgorithm {
     }
 }
 
-/// How much work the graph build may spend on quality, for graphs built by PiPNN.
+/// How much work the graph build may spend on quality. Sets the parameters of graphs built by
+/// PiPNN, and the default `ef_construct` of graphs built by HNSW.
 #[pyclass(name = "IndexingEffort", from_py_object, eq, eq_int)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PyIndexingEffort {
     Low,
     Medium,
     High,
+    XHigh,
 }
 
 #[pymethods]
@@ -72,6 +74,7 @@ impl Repr for PyIndexingEffort {
             Self::Low => "Low",
             Self::Medium => "Medium",
             Self::High => "High",
+            Self::XHigh => "XHigh",
         };
         f.simple_enum::<Self>(repr)
     }
@@ -83,6 +86,7 @@ impl From<IndexingEffort> for PyIndexingEffort {
             IndexingEffort::Low => PyIndexingEffort::Low,
             IndexingEffort::Medium => PyIndexingEffort::Medium,
             IndexingEffort::High => PyIndexingEffort::High,
+            IndexingEffort::XHigh => PyIndexingEffort::XHigh,
         }
     }
 }
@@ -93,6 +97,7 @@ impl From<PyIndexingEffort> for IndexingEffort {
             PyIndexingEffort::Low => IndexingEffort::Low,
             PyIndexingEffort::Medium => IndexingEffort::Medium,
             PyIndexingEffort::High => IndexingEffort::High,
+            PyIndexingEffort::XHigh => IndexingEffort::XHigh,
         }
     }
 }

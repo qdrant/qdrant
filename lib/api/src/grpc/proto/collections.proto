@@ -44,6 +44,7 @@ enum IndexingEffort {
   IndexingEffortLow = 1;
   IndexingEffortMedium = 2;
   IndexingEffortHigh = 3;
+  IndexingEffortXHigh = 4;
 }
 
 // ---------------------------------------------
@@ -251,7 +252,8 @@ message HnswConfigDiff {
   optional uint64 m = 1;
   // Number of neighbours to consider during the index building.
   // Larger the value - more accurate the search, more time required to build the index.
-  // If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`.
+  // If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`,
+  // 400 for `XHigh`.
   optional uint64 ef_construct = 2;
   // Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
   // This measures the total size of vectors being queried against.

@@ -43,7 +43,8 @@ pub struct HnswConfigDiff {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
-    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`, 200 for `high`.
+    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`,
+    /// 200 for `high`, 400 for `xhigh`.
     #[validate(range(min = 4))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,

@@ -17,6 +17,7 @@ impl From<types::IndexingEffort> for IndexingEffort {
             types::IndexingEffort::Low => IndexingEffort::Low,
             types::IndexingEffort::Medium => IndexingEffort::Medium,
             types::IndexingEffort::High => IndexingEffort::High,
+            types::IndexingEffort::XHigh => IndexingEffort::XHigh,
         }
     }
 }
@@ -43,6 +44,7 @@ pub fn convert_indexing_effort_from_proto_lossy(
         IndexingEffort::Low => Some(types::IndexingEffort::Low),
         IndexingEffort::Medium => Some(types::IndexingEffort::Medium),
         IndexingEffort::High => Some(types::IndexingEffort::High),
+        IndexingEffort::XHigh => Some(types::IndexingEffort::XHigh),
     }
 }
 

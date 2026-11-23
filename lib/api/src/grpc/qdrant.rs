@@ -772,7 +772,8 @@ pub struct HnswConfigDiff {
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building.
     /// Larger the value - more accurate the search, more time required to build the index.
-    /// If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`.
+    /// If unset, derived from `indexing_effort`: 64 for `Low`, 100 for `Medium`, 200 for `High`,
+    /// 400 for `XHigh`.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
@@ -2556,6 +2557,7 @@ pub enum IndexingEffort {
     Low = 1,
     Medium = 2,
     High = 3,
+    XHigh = 4,
 }
 impl IndexingEffort {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2568,6 +2570,7 @@ impl IndexingEffort {
             Self::Low => "IndexingEffortLow",
             Self::Medium => "IndexingEffortMedium",
             Self::High => "IndexingEffortHigh",
+            Self::XHigh => "IndexingEffortXHigh",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2577,6 +2580,7 @@ impl IndexingEffort {
             "IndexingEffortLow" => Some(Self::Low),
             "IndexingEffortMedium" => Some(Self::Medium),
             "IndexingEffortHigh" => Some(Self::High),
+            "IndexingEffortXHigh" => Some(Self::XHigh),
             _ => None,
         }
     }

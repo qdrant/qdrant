@@ -36,17 +36,22 @@ pub enum IndexingEffort {
     #[default]
     Medium,
     High,
+    #[serde(rename = "xhigh")]
+    XHigh,
 }
 
 impl IndexingEffort {
     /// `ef_construct` of graphs built by HNSW if it is not set explicitly.
     ///
-    /// `Medium` keeps the long-standing default. `Low` and `High` are not calibrated yet.
+    /// Each value gives about the graph quality of the PiPNN parameters of the same effort, so
+    /// that an effort means the same quality whichever builder runs. `Medium` keeps the
+    /// long-standing default.
     pub fn default_ef_construct(self) -> usize {
         match self {
             IndexingEffort::Low => 64,
             IndexingEffort::Medium => super::DEFAULT_HNSW_EF_CONSTRUCT,
             IndexingEffort::High => 200,
+            IndexingEffort::XHigh => 400,
         }
     }
 }

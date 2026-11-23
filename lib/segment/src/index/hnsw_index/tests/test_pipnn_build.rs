@@ -294,6 +294,7 @@ fn effort_changes_pipnn_graph() {
         IndexingEffort::Low,
         IndexingEffort::Medium,
         IndexingEffort::High,
+        IndexingEffort::XHigh,
     ]
     .into_iter()
     .map(|effort| {
