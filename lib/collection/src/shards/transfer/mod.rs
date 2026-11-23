@@ -44,6 +44,8 @@ pub enum TransferStage {
     Recovering,
     /// Transferring queued updates accumulated during transfer
     FlushingQueue,
+    /// Overwriting points changed by orphan operations on remote (WAL delta method only)
+    OverwritingPoints,
     /// Waiting for consensus state synchronization
     WaitingConsensus,
     /// Finalizing transfer (un-proxifying)
@@ -60,6 +62,7 @@ impl TransferStage {
             Self::Transferring => "transferring",
             Self::Recovering => "recovering",
             Self::FlushingQueue => "syncing queued updates",
+            Self::OverwritingPoints => "overwriting points",
             Self::WaitingConsensus => "waiting consensus",
             Self::Finalizing => "finalizing",
         }
