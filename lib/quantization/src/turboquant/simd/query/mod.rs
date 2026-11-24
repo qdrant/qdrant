@@ -328,8 +328,14 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         let Some(last) = out.len().checked_sub(1) else {
             return;
         };
+        // Checked: the SIMD kernels read through raw pointers, so a wrapped
+        // bound must not pass
+        let required_len = last
+            .checked_mul(stride)
+            .and_then(|offset| offset.checked_add(self.vector_bytes));
         assert!(
-            stride >= self.vector_bytes && data.len() >= last * stride + self.vector_bytes,
+            stride >= self.vector_bytes
+                && required_len.is_some_and(|required_len| data.len() >= required_len),
             "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_batch: {} vectors of {} bytes at stride \
              {stride} don't fit into {} data bytes",
             out.len(),
