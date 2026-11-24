@@ -52,6 +52,16 @@ impl ReshardState {
             && self.shard_key == *shard_key
     }
 
+    /// Whether this resharding is creating shard `shard_id` and can still be aborted
+    ///
+    /// Aborting such resharding drops the shard, so a replica of it must not be removed while
+    /// this holds: the removal would abort resharding and drop the very shard it removes from.
+    pub fn is_abortable_up_target(&self, shard_id: ShardId) -> bool {
+        self.direction == ReshardingDirection::Up
+            && self.shard_id == shard_id
+            && self.stage < ReshardingStage::ReadHashRingCommitted
+    }
+
     pub fn key(&self) -> ReshardKey {
         let ReshardState {
             uuid,

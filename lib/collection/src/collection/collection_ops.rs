@@ -30,6 +30,15 @@ use crate::shards::shard_holder::SharedShardHolder;
 pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
     LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
+/// Replica removal used to be accepted for the shard an ongoing resharding up is creating.
+/// Removing such replica aborts resharding, which drops the shard in the same operation, so a
+/// node that crashed half-way could not replay it. The removal is rejected now, but only once
+/// every peer rejects it, so that all peers keep deciding the same way during a rolling upgrade.
+///
+/// See: <https://github.com/qdrant/qdrant/issues/11696>
+pub static REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.20.3-dev").expect("valid version string"));
+
 impl Collection {
     /// Persist the shard count used to load auto shards after restart
     pub async fn set_shard_number(&self, shard_number: NonZeroU32) -> CollectionResult<()> {
@@ -306,6 +315,19 @@ impl Collection {
             if peers.len() == 1 || replica_set.is_last_source_of_truth_replica(peer_id) {
                 return Err(CollectionError::bad_request(format!(
                     "Shard {shard_id} must have at least one active replica after removing {peer_id}",
+                )));
+            }
+
+            if self
+                .channel_service
+                .all_peers_at_version(&REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION)
+                && shard_holder
+                    .resharding_state()
+                    .is_some_and(|resharding| resharding.is_abortable_up_target(shard_id))
+            {
+                return Err(CollectionError::bad_request(format!(
+                    "Can't remove replica of shard {shard_id} from peer {peer_id}, \
+                     because resharding is creating this shard, abort resharding first",
                 )));
             }
 

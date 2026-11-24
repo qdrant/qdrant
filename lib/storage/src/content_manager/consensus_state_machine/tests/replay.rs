@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use collection::collection::REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION;
 use collection::shards::replica_set::Change;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use proptest::prelude::*;
@@ -105,7 +106,7 @@ proptest! {
                         &operation,
                         &actions[..crash_after],
                         &err,
-                    );
+                    ) || resharding_target_removal_may_reject(&state, &operation, &err);
                     prop_assert!(
                         reached_goal || known_guard_failure,
                         "replay after {} of {} actions was rejected before reaching the goal: {}",
@@ -183,6 +184,49 @@ pub(super) fn replica_removal_guard_may_reject(
                         && *changed_peer == transfer.to)
             })
         })
+    })
+}
+
+/// Removing a replica of the shard an ongoing resharding up is creating aborts resharding,
+/// which drops that shard before the removal. A replay from after the drop is rejected because
+/// the shard is gone. From `REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION` on, such
+/// removal is rejected upfront, so this only exempts clusters with older peers.
+///
+/// See: <https://github.com/qdrant/qdrant/issues/11696>
+pub(super) fn resharding_target_removal_may_reject(
+    state: &ClusterState,
+    operation: &ConsensusOperations,
+    error: &StorageError,
+) -> bool {
+    if state.all_peers_at_version(&REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION) {
+        return false;
+    }
+    let ConsensusOperations::CollectionMeta(operation) = operation else {
+        return false;
+    };
+    let CollectionMetaOperations::UpdateCollection(operation) = operation.as_ref() else {
+        return false;
+    };
+    let Some(changes) = &operation.shard_replica_changes else {
+        return false;
+    };
+    let StorageError::BadRequest { description } = error else {
+        return false;
+    };
+    let Ok(collection) = state.resolve_collection(&operation.collection_name) else {
+        return false;
+    };
+    let Some(resharding) = &state
+        .collection(&collection)
+        .expect("collection exists")
+        .resharding
+    else {
+        return false;
+    };
+
+    changes.iter().any(|&Change::Remove(shard_id, _)| {
+        resharding.is_abortable_up_target(shard_id)
+            && *description == format!("Shard {shard_id} of {collection} not found")
     })
 }
 

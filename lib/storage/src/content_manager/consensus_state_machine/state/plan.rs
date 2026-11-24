@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use collection::collection::{ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION, vector_name_schema};
+use collection::collection::{
+    ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION,
+    REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION, vector_name_schema,
+};
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::ReshardingDirection;
@@ -213,6 +216,8 @@ impl ClusterState {
         let state = self.collection(collection).expect("collection exists");
         let fixed_cancellation =
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+        let reject_resharding_target =
+            self.all_peers_at_version(&REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION);
         let mut validated = Vec::with_capacity(changes.len());
 
         // TODO: Validate each removal against earlier removals in the same batch.
@@ -237,6 +242,20 @@ impl ClusterState {
                 return Err(StorageError::bad_request(format!(
                     "Shard {shard_id} must have at least one active replica after removing \
                      {peer_id}",
+                )));
+            }
+
+            // Removal would abort resharding, which drops this very shard part-way through
+            // the plan, and a replay from after the drop would be rejected
+            if reject_resharding_target
+                && state
+                    .resharding
+                    .as_ref()
+                    .is_some_and(|resharding| resharding.is_abortable_up_target(shard_id))
+            {
+                return Err(StorageError::bad_request(format!(
+                    "Can't remove replica of shard {shard_id} from peer {peer_id}, \
+                     because resharding is creating this shard, abort resharding first",
                 )));
             }
 
