@@ -252,13 +252,13 @@ async fn resolve_wal_delta(
             .shard_orphan_points(collection_id, shard_id, &source_clocks)
             .await?;
 
-        // Lower the recovery point to before the orphan operations: drop clocks we don't know, and
-        // use the remote shard's last record at or below our tick, or our own tick if it has none
+        // Lower the recovery point to before the orphan operations. Drop the clocks we don't know.
+        // Set the others to the remote shard's last record at or below our tick, so resolving the
+        // delta verifies that record against our WAL. A clock the remote shard returns no record
+        // for stays ahead of ours, and resolving the delta fails.
         for clock_tag in source_clocks.iter_as_clock_tags() {
             if clock_tag.clock_tick == 0 {
                 recovery_point.remove_clock(clock_tag);
-            } else {
-                recovery_point.set_clock(clock_tag);
             }
         }
 

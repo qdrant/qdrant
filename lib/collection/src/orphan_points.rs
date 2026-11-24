@@ -29,7 +29,7 @@ pub const MAX_ORPHAN_POINTS: usize = 10_000;
 pub struct OrphanPoints {
     /// Points the orphan operations can have changed
     pub point_ids: HashSet<PointIdType>,
-    /// For each clock, the tag of the last record at or below the source's tick, if any
+    /// For each clock the source knows, the tag of the last record at or below the source's tick
     pub clocks: Vec<ClockTag>,
 }
 
@@ -103,6 +103,12 @@ pub enum OrphanPointsError {
         clock_id: u32,
         tick: u64,
     },
+    #[error("WAL has no record of clock {peer_id}({clock_id}) at or below tick {tick}")]
+    MissingRecord {
+        peer_id: PeerId,
+        clock_id: u32,
+        tick: u64,
+    },
     #[error("WAL record {op_num} can change points it doesn't list")]
     UnknownPoints { op_num: u64 },
     #[error("orphan operations changed more than {max_points} points")]
@@ -118,7 +124,10 @@ pub enum OrphanPointsError {
 /// orphan operations.
 ///
 /// Fails if:
-/// - the WAL may be missing orphan records of a clock, because it is truncated
+/// - the WAL has no record at or below the source's tick of a clock the source knows, so the
+///   source can't verify that both replicas have the same operation there
+/// - the WAL may be missing orphan records of a clock the source doesn't know, because it is
+///   truncated
 /// - an orphan operation can change points it doesn't list
 /// - orphan operations changed more than `max_points` points
 pub fn find_orphan_points(
@@ -167,15 +176,25 @@ pub fn find_orphan_points(
         }
     }
 
-    // Truncation removes records from the start of the WAL. If the earliest record of a clock is
-    // at most one tick above the source's, no orphan record of that clock was truncated.
+    // Truncation removes records from the start of the WAL. If the WAL still has a record of a
+    // clock at or below the source's tick, no orphan record of that clock was truncated. The source
+    // also verifies that record against its own WAL, so it is required. A clock the source doesn't
+    // know has no such record, so its first record, at tick 1, must still be in the WAL instead.
     for (&(peer_id, clock_id), &source_tick) in &source_ticks {
-        let is_complete = earliest_ticks
-            .get(&(peer_id, clock_id))
-            .is_some_and(|&tick| tick <= source_tick + 1);
+        let key = (peer_id, clock_id);
 
-        if !is_complete {
-            return Err(OrphanPointsError::Incomplete {
+        if source_tick == 0 {
+            let has_first_record = earliest_ticks.get(&key).is_some_and(|&tick| tick <= 1);
+
+            if !has_first_record {
+                return Err(OrphanPointsError::Incomplete {
+                    peer_id,
+                    clock_id,
+                    tick: source_tick,
+                });
+            }
+        } else if !clocks.contains_key(&key) {
+            return Err(OrphanPointsError::MissingRecord {
                 peer_id,
                 clock_id,
                 tick: source_tick,
@@ -293,8 +312,14 @@ mod tests {
     }
 
     #[test]
-    fn test_find_orphan_points_truncated() {
-        // The first orphan tick is in the WAL
+    fn test_find_orphan_points_missing_record() {
+        let missing_record = OrphanPointsError::MissingRecord {
+            peer_id: PEER_ID,
+            clock_id: 0,
+            tick: 2,
+        };
+
+        // All orphan records are in the WAL, but not the record at the source's tick
         let records_from_first_orphan = records(vec![
             (upsert(3), tag(PEER_ID, 3)),
             (upsert(4), tag(PEER_ID, 4)),
@@ -306,27 +331,7 @@ mod tests {
             100,
         );
 
-        let OrphanPoints { point_ids, clocks } = orphan_points.unwrap();
-        assert_eq!(point_ids, ids(&[3, 4]));
-        assert!(clocks.is_empty());
-
-        // Tick 3 may be truncated
-        let records_from_second_orphan = records(vec![(upsert(4), tag(PEER_ID, 4))]);
-
-        let orphan_points = find_orphan_points(
-            records_from_second_orphan,
-            &source_clocks(&[(PEER_ID, 2)]),
-            100,
-        );
-
-        assert_eq!(
-            orphan_points.unwrap_err(),
-            OrphanPointsError::Incomplete {
-                peer_id: PEER_ID,
-                clock_id: 0,
-                tick: 2,
-            },
-        );
+        assert_eq!(orphan_points.unwrap_err(), missing_record);
 
         // No records of the clock at all
         let records_of_other_clock = records(vec![(upsert(10), tag(OTHER_PEER_ID, 5))]);
@@ -334,10 +339,38 @@ mod tests {
         let orphan_points =
             find_orphan_points(records_of_other_clock, &source_clocks(&[(PEER_ID, 2)]), 100);
 
-        assert!(matches!(
-            orphan_points,
-            Err(OrphanPointsError::Incomplete { .. }),
-        ));
+        assert_eq!(orphan_points.unwrap_err(), missing_record);
+    }
+
+    #[test]
+    fn test_find_orphan_points_truncated() {
+        let incomplete = OrphanPointsError::Incomplete {
+            peer_id: PEER_ID,
+            clock_id: 0,
+            tick: 0,
+        };
+
+        // Tick 1 of a clock the source doesn't know may be truncated
+        let records_from_second_tick = records(vec![
+            (upsert(2), tag(PEER_ID, 2)),
+            (upsert(3), tag(PEER_ID, 3)),
+        ]);
+
+        let orphan_points = find_orphan_points(
+            records_from_second_tick,
+            &source_clocks(&[(PEER_ID, 0)]),
+            100,
+        );
+
+        assert_eq!(orphan_points.unwrap_err(), incomplete);
+
+        // No records of the clock at all
+        let records_of_other_clock = records(vec![(upsert(10), tag(OTHER_PEER_ID, 5))]);
+
+        let orphan_points =
+            find_orphan_points(records_of_other_clock, &source_clocks(&[(PEER_ID, 0)]), 100);
+
+        assert_eq!(orphan_points.unwrap_err(), incomplete);
     }
 
     #[test]

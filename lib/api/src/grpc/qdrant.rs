@@ -4530,7 +4530,7 @@ pub struct OrphanPoints {
     /// Points the orphan operations can have changed
     #[prost(message, repeated, tag = "1")]
     pub point_ids: ::prost::alloc::vec::Vec<PointId>,
-    /// For each clock, the tag of the last record at or below the source's tick
+    /// For each clock the source knows, the tag of the last record at or below the source's tick
     #[prost(message, repeated, tag = "2")]
     pub clocks: ::prost::alloc::vec::Vec<RecoveryPointClockTag>,
 }

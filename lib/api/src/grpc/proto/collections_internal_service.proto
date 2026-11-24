@@ -112,7 +112,7 @@ message GetShardOrphanPointsResponse {
 message OrphanPoints {
   // Points the orphan operations can have changed
   repeated PointId point_ids = 1;
-  // For each clock, the tag of the last record at or below the source's tick
+  // For each clock the source knows, the tag of the last record at or below the source's tick
   repeated RecoveryPointClockTag clocks = 2;
 }
 
