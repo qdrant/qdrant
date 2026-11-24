@@ -249,6 +249,21 @@ impl ChannelService {
         Ok(url)
     }
 
+    /// Check whether `url` points at the host of the given peer, or of any known peer if `None`.
+    ///
+    /// Only compares hosts, because peers may run their REST API on different ports.
+    pub fn is_peer_host(&self, url: &Url, peer_id: Option<PeerId>) -> bool {
+        let is_host = |peer_uri: &Uri| {
+            Url::parse(&peer_uri.to_string()).is_ok_and(|peer_url| peer_url.host() == url.host())
+        };
+
+        let id_to_address = self.id_to_address.read();
+        match peer_id {
+            Some(peer_id) => id_to_address.get(&peer_id).is_some_and(is_host),
+            None => id_to_address.values().any(is_host),
+        }
+    }
+
     pub fn other_peers(&self, this_peer_id: PeerId) -> Vec<PeerId> {
         self.id_to_address
             .read()
@@ -277,3 +292,4 @@ impl Default for ChannelService {
         }
     }
 }
+

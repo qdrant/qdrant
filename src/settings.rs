@@ -103,6 +103,7 @@ pub struct ServiceConfig {
     /// If disabled, snapshot recovery will only work with local files and uploads.
     /// Disabling this can mitigate SSRF risks in environments where the Qdrant node
     /// has access to internal resources that should not be reachable by users.
+    /// Snapshot shard transfers between cluster peers keep working.
     #[serde(default = "default_snapshot_url_recovery")]
     pub enable_snapshot_url_recovery: bool,
 
