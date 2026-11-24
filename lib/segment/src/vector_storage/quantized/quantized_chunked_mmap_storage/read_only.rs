@@ -152,7 +152,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageBuilder;
+    use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
+        QuantizedChunkedStorage, QuantizedChunkedStorageBuilder,
+    };
 
     const VECTOR_SIZE: usize = 16;
     const COUNT: PointOffsetType = 32;
@@ -174,5 +176,37 @@ mod tests {
         let ids = [0, COUNT + 4];
         assert!(storage.for_each_batch(&ids, |_, _| {}).is_err());
         assert!(storage.for_each_run(&ids, |_, _, _| {}).is_err());
+    }
+
+    fn build_storage(dir: &TempDir) -> QuantizedChunkedStorage<MmapFile> {
+        let mut builder =
+            QuantizedChunkedStorageBuilder::<MmapFile>::new(MmapFs, dir.path(), VECTOR_SIZE, false)
+                .unwrap();
+        for id in 0..COUNT {
+            builder.push_vector_data(&[id as u8; VECTOR_SIZE]).unwrap();
+        }
+        builder.build().unwrap()
+    }
+
+    /// An unreadable record must not be scored as an empty vector.
+    #[test]
+    #[should_panic(expected = "vector exists")]
+    fn read_only_get_vector_data_past_the_stored_vectors_panics() {
+        let dir = TempDir::with_prefix("quantized_chunked_read").unwrap();
+        drop(build_storage(&dir));
+
+        let storage =
+            QuantizedChunkedStorageRead::<MmapFile>::open(&MmapFs, dir.path(), VECTOR_SIZE)
+                .unwrap();
+        storage.get_vector_data(COUNT + 4);
+    }
+
+    /// An unreadable record must not be scored as an empty vector.
+    #[test]
+    #[should_panic(expected = "vector exists")]
+    fn read_write_get_vector_data_past_the_stored_vectors_panics() {
+        let dir = TempDir::with_prefix("quantized_chunked_read_write").unwrap();
+        let storage = build_storage(&dir);
+        storage.get_vector_data(COUNT + 4);
     }
 }
