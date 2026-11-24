@@ -3,6 +3,8 @@ mod binary;
 mod config;
 mod create;
 mod load;
+#[cfg(test)]
+mod multivector_offsets_tests;
 mod pq;
 mod read_access;
 mod read_only;

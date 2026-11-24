@@ -577,3 +577,79 @@ fn create_offsets_file_from_iter(
     offsets_mmap_type.flusher()()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn offset(start: PointOffsetType, count: PointOffsetType) -> MultivectorOffset {
+        MultivectorOffset { start, count }
+    }
+
+    #[test]
+    fn validate_offsets_bounds() {
+        // Ending exactly at the last inner vector is valid, so is an empty multivector at the end
+        validate_offsets(&[offset(0, 2), offset(2, 3), offset(5, 0)], 0, 5).unwrap();
+        validate_offsets(&[], 0, 0).unwrap();
+        validate_offsets(&[offset(0, 0)], 0, 0).unwrap();
+
+        // One past the end, past the end, and overflowing `u32`
+        validate_offsets(&[offset(0, 2), offset(2, 4)], 0, 5).unwrap_err();
+        validate_offsets(&[offset(6, 0)], 0, 5).unwrap_err();
+        validate_offsets(&[offset(1, 0)], 0, 0).unwrap_err();
+        validate_offsets(&[offset(u32::MAX, 2)], 0, usize::MAX).unwrap_err();
+        validate_offsets(&[offset(0xFFFF_FFF0, 2)], 0, 19_520).unwrap_err();
+    }
+
+    #[test]
+    fn validate_offsets_count_bounds() {
+        validate_offsets_count(3, 3).unwrap();
+        validate_offsets_count(4, 3).unwrap();
+        validate_offsets_count(2, 3).unwrap_err();
+        validate_offsets_count(0, 0).unwrap();
+    }
+
+    /// Spans several read batches, with the invalid offset in the last one, in the RAM and mmap
+    /// storage.
+    #[test]
+    fn validate_offsets_storages() {
+        let dir = tempfile::Builder::new()
+            .prefix("multivector-offsets")
+            .tempdir()
+            .unwrap();
+        let path = dir.path().join("offsets.data");
+
+        let count = 2 * 64 * 1024 + 3;
+        let valid = (0..count as PointOffsetType).map(|id| offset(id * 2, 2));
+        let inner_vectors_count = count * 2;
+        let mut invalid: Vec<_> = valid.clone().collect();
+        invalid[count - 2] = offset(inner_vectors_count as PointOffsetType - 1, 2);
+
+        let mmap = MultivectorOffsetsStorageMmap::create(&path, valid.clone(), count).unwrap();
+        mmap.validate(count, inner_vectors_count).unwrap();
+        mmap.validate(count + 1, inner_vectors_count).unwrap_err();
+        drop(mmap);
+        let ram = MultivectorOffsetsStorageRam::load(&path).unwrap();
+        ram.validate(count, inner_vectors_count).unwrap();
+        ram.validate(count + 1, inner_vectors_count).unwrap_err();
+        drop(ram);
+
+        fs_err::write(&path, bytemuck::cast_slice(&invalid)).unwrap();
+        let err = MultivectorOffsetsStorageMmap::load(&path)
+            .unwrap()
+            .validate(count, inner_vectors_count)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("point {}", count - 2)),
+            "{err}"
+        );
+        let err = MultivectorOffsetsStorageRam::load(&path)
+            .unwrap()
+            .validate(count, inner_vectors_count)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("point {}", count - 2)),
+            "{err}"
+        );
+    }
+}
