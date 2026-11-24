@@ -117,7 +117,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
     }
 
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
-        self.get_vector_data_opt(index).unwrap_or_default()
+        self.get_vector_data_opt(index).expect("vector exists")
     }
 
     fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>> {
