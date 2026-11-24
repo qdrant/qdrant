@@ -25,21 +25,25 @@ const HEADER_LEN: usize = 8;
 /// The length of a CRC value.
 const CRC_LEN: usize = 4;
 
-pub struct Entry {
-    view: MmapViewSync,
+/// An entry read from a segment.
+///
+/// Borrows the segment, so the segment cannot be mutated (truncated or appended to) while the
+/// entry is alive.
+pub struct Entry<'a> {
+    data: &'a [u8],
 }
 
-impl Deref for Entry {
+impl Deref for Entry<'_> {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        unsafe { self.view.as_slice() }
+        self.data
     }
 }
 
-impl fmt::Debug for Entry {
+impl fmt::Debug for Entry<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let Self { view } = self;
-        f.debug_struct("Entry").field("len", &view.len()).finish()
+        let Self { data } = self;
+        f.debug_struct("Entry").field("len", &data.len()).finish()
     }
 }
 
@@ -316,15 +320,11 @@ impl Segment {
 
     /// Returns the segment entry at the specified index, or `None` if no such
     /// entry exists.
-    pub fn entry(&self, index: usize) -> Option<Entry> {
-        self.index.get(index).map(|&(offset, len)| {
-            let mut view = unsafe { self.mmap.clone() };
-            // restrict only fails on bounds errors, but an invariant of
-            // Segment is that the index always holds valid offset and
-            // length bounds.
-            view.restrict(offset, len)
-                .expect("illegal segment offset or length");
-            Entry { view }
+    pub fn entry(&self, index: usize) -> Option<Entry<'_>> {
+        self.index.get(index).map(|&(offset, len)| Entry {
+            // An invariant of Segment is that the index always holds valid offset and length
+            // bounds.
+            data: &self.as_slice()[offset..offset + len],
         })
     }
 
