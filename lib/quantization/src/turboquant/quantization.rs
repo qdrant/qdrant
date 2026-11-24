@@ -3,6 +3,11 @@ use num_traits::AsPrimitive;
 use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+use crate::turboquant::simd::folded::{BlockedFactors, FoldedBits, FoldedQuery};
 use crate::turboquant::simd::grid::{GridSimd, GridWidth, WriteBack};
 use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
@@ -23,6 +28,13 @@ pub struct TurboQuantizer {
     pub(super) distance: DistanceType,
     pub(crate) padded_dim: usize,
     pub(super) error_correction: Option<ErrorCorrection>,
+    /// TQ+ 2 and 4 bits: `ErrorCorrection::d_prime_q15` in the order of the folded kernels, for
+    /// [`Self::stored_query`] and the symmetric scores
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    folded_factors: Option<BlockedFactors>,
 }
 
 /// TQ+ per-coordinate shift+scale: pulls each rotated, length-rescaled
@@ -118,6 +130,17 @@ pub(crate) struct SymmetricCorrection {
     mm: f32,
 }
 
+/// The codes of a stored query folded once, see [`TurboQuantizer::stored_query`].
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+pub(crate) struct FoldedStoredQuery {
+    query: FoldedQuery,
+    /// [`ErrorCorrection::symmetric`] of the quantizer's bits
+    correction: SymmetricCorrection,
+}
+
 impl SymmetricCorrection {
     #[inline(always)]
     pub(crate) fn centroid_dot(
@@ -181,20 +204,37 @@ impl TurboQuantizer {
             distance: _,
             padded_dim: _,
             error_correction,
+            #[cfg(any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_feature = "neon")
+            ))]
+            folded_factors,
         } = self;
 
-        error_correction.as_ref().map_or(0, |ec| {
-            let ErrorCorrection {
-                shift,
-                scale,
-                d_prime_q15,
-                q15_scale: _,
-                mm_const: _,
-            } = ec;
-            shift.capacity() * size_of::<f32>()
-                + scale.capacity() * size_of::<f32>()
-                + d_prime_q15.capacity() * size_of::<i16>()
-        })
+        #[cfg(any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        ))]
+        let folded = folded_factors.as_ref().map_or(0, BlockedFactors::ram_usage);
+        #[cfg(not(any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        )))]
+        let folded = 0;
+
+        folded
+            + error_correction.as_ref().map_or(0, |ec| {
+                let ErrorCorrection {
+                    shift,
+                    scale,
+                    d_prime_q15,
+                    q15_scale: _,
+                    mm_const: _,
+                } = ec;
+                shift.capacity() * size_of::<f32>()
+                    + scale.capacity() * size_of::<f32>()
+                    + d_prime_q15.capacity() * size_of::<i16>()
+            })
     }
 
     /// Initialize a new TurboQuantizer.
@@ -231,8 +271,30 @@ impl TurboQuantizer {
             mode,
             distance,
             padded_dim,
+            #[cfg(any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_feature = "neon")
+            ))]
+            folded_factors: Self::folded_factors(bits, error_correction.as_ref()),
             error_correction,
         }
+    }
+
+    /// TQ+ 2 and 4 bits: the factors in the order of the folded kernels.
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    fn folded_factors(
+        bits: TQBits,
+        error_correction: Option<&ErrorCorrection>,
+    ) -> Option<BlockedFactors> {
+        let bits = match bits {
+            TQBits::Bits2 => FoldedBits::Two,
+            TQBits::Bits4 => FoldedBits::Four,
+            TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits8 | TQBits::Bits16 => return None,
+        };
+        BlockedFactors::new(bits, &error_correction?.d_prime_q15)
     }
 
     /// Pad, rotate, and length-rescale `vec` into `buf`. After this call `buf`
@@ -616,17 +678,84 @@ impl TurboQuantizer {
         EncodedQueryTQ(EncodedQueryTQForm::Stored(StoredQueryTQ {
             record: record.to_vec(),
             values,
+            #[cfg(any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_feature = "neon")
+            ))]
+            folded: self.fold_stored(record),
         }))
+    }
+
+    /// TQ+ 2 and 4 bits, not L1: the codes of `record` folded once, so that
+    /// [`Self::score_stored`] unpacks and folds only the other vector of a pair.
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    fn fold_stored(&self, record: &[u8]) -> Option<FoldedStoredQuery> {
+        let factors = self.folded_factors.as_ref()?;
+        let ec = self.error_correction.as_ref()?;
+        match self.distance {
+            DistanceType::Cosine | DistanceType::Dot | DistanceType::L2 => {}
+            DistanceType::L1 => return None,
+        }
+        let (codes, _) = self.split_vector(record);
+        Some(FoldedStoredQuery {
+            query: FoldedQuery::new(codes, factors),
+            correction: ec.symmetric(self.bits),
+        })
     }
 
     /// [`Self::score_symmetric`] of the stored vector of `query` against `vec`.
     fn score_stored(&self, query: &StoredQueryTQ, vec: &[u8]) -> f32 {
-        let StoredQueryTQ { record, values } = query;
+        let StoredQueryTQ {
+            record,
+            values,
+            #[cfg(any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_feature = "neon")
+            ))]
+            folded,
+        } = query;
+        #[cfg(any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        ))]
+        if let (Some(folded), Some(factors)) = (folded, &self.folded_factors) {
+            return self.score_stored_folded(folded, factors, values, vec);
+        }
         if self.distance == DistanceType::L1 {
             return self.score_symmetric_l1(record, vec);
         }
         let (codes, _) = self.split_vector(record);
         self.score_symmetric_split(codes, values, vec)
+    }
+
+    /// [`Self::score_stored`] of a folded query: [`Self::score_symmetric_split`] and
+    /// [`Self::score_symmetric_ec`], with the query's side of the folded dot already folded.
+    #[cfg(any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ))]
+    fn score_stored_folded(
+        &self,
+        folded: &FoldedStoredQuery,
+        factors: &BlockedFactors,
+        values: &SymmetricValues,
+        vec: &[u8],
+    ) -> f32 {
+        let l2 = match self.distance {
+            DistanceType::Cosine | DistanceType::Dot => false,
+            DistanceType::L2 => true,
+            DistanceType::L1 => unreachable!("an L1 query isn't folded"),
+        };
+        let (codes, extras) = self.split_vector(vec);
+        let values_vec = self.symmetric_values(&extras);
+        let raw_int = folded.query.score(codes, factors);
+        let raw_dot = folded
+            .correction
+            .centroid_dot(raw_int as f32, values, &values_vec);
+        symmetric_score(l2, raw_dot, values, &values_vec)
     }
 
     /// [`Self::score_symmetric`] for L1, where we need to fully dequantize both vectors.
@@ -692,6 +821,19 @@ impl TurboQuantizer {
         // Bits2 / Bits4: the kernel returns `Σ q_a · q_b` of the folded i8
         // values, which the correction divides back by `CODEBOOK_SCALE²` and
         // the square of the factors' scale to recover the f32 centroid dot.
+        #[cfg(any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_feature = "neon")
+        ))]
+        {
+            // AVX-512, AVX2 and NEON score it in the order of the folded kernels
+            if let Some(factors) = &self.folded_factors {
+                let raw_int = factors.score_symmetric(data_v1, data_v2);
+                return ec
+                    .symmetric(self.bits)
+                    .centroid_dot(raw_int as f32, values_v1, values_v2);
+            }
+        }
         let raw_int = match self.bits {
             TQBits::Bits2 => score_2bit_internal_folded(data_v1, data_v2, &ec.d_prime_q15),
             TQBits::Bits4 => score_4bit_internal_folded(data_v1, data_v2, &ec.d_prime_q15),

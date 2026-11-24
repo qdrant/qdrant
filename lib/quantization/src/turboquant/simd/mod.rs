@@ -21,6 +21,11 @@
 //!
 //! On any other target the scalar reference kernels take over.
 
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+pub(crate) mod folded;
 pub(crate) mod grid;
 pub mod hadamard;
 pub mod query;
