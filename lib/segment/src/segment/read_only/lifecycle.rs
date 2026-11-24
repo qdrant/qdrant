@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::low_memory::low_memory_mode;
 use common::storage_version::{StorageVersion, VERSION_FILE};
-use common::types::PointOffsetType;
 use common::universal_io::{
     CachedFs, CachedReadFs, FileInfo, Populate, UniversalReadFs, UniversalReadFsAsync,
     read_json_via,
@@ -14,6 +13,7 @@ use common::universal_io::{
 use uuid::Uuid;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
+use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
 use crate::id_tracker::delete_versions::DeleteGating;
@@ -150,19 +150,23 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// [`LoadProfile`]). Without one, every component loads as the persisted
     /// segment config says.
     ///
+    /// `deferred_threshold_kb` is the shard's deferred-points threshold (see
+    /// [`segment_deferred_internal_id`]): an appendable segment hides the points
+    /// stored past it. `None` shows every point.
+    ///
     /// Not cancellable; see [`schedule_open`](Self::schedule_open).
     pub fn open(
         fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
         Self::open_gated(
             fs,
             segment_path,
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             load_profile,
             DeleteGating::Immediate,
         )
@@ -173,7 +177,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
         load_profile: Option<&LoadProfile>,
         gating: DeleteGating,
     ) -> OperationResult<Self> {
@@ -182,7 +186,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             cached_fs,
             segment_path,
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             load_profile,
             gating,
             &AtomicBool::new(false),
@@ -206,7 +210,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &S::Fs,
         segment_path: &Path,
         uuid: Uuid,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
         load_profile: Option<&'a LoadProfile>,
         is_stopped: &'a AtomicBool,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
@@ -216,7 +220,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             segment_path,
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             load_profile,
             DeleteGating::Immediate,
             is_stopped,
@@ -230,7 +234,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: CachedFs<S::Fs>,
         segment_path: &Path,
         uuid: Uuid,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
         load_profile: Option<&'a LoadProfile>,
         gating: DeleteGating,
         is_stopped: &'a AtomicBool,
@@ -242,7 +246,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             segment_path: segment_path.to_path_buf(),
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             config,
             payload_config,
             load_profile,
@@ -370,7 +374,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         config: SegmentConfig,
         payload_config: PayloadConfig,
         uuid: Uuid,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
         load_profile: Option<&LoadProfile>,
         gating: DeleteGating,
         is_stopped: &AtomicBool,
@@ -389,9 +393,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         let is_appendable = config.is_appendable();
-        let deferred_internal_id = deferred_internal_id
-            .or_else(|| load_profile.and_then(|profile| profile.deferred_internal_id(&config)))
-            .filter(|_| is_appendable);
+        let deferred_internal_id = deferred_threshold_kb
+            .filter(|_| is_appendable)
+            .and_then(|threshold_kb| segment_deferred_internal_id(&config, threshold_kb));
 
         let payload_storage_populate = load_profile
             .and_then(|profile| profile.payload_storage_placement())
@@ -528,7 +532,7 @@ pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
     fs: CachedFs<S::Fs>,
     segment_path: PathBuf,
     uuid: Uuid,
-    deferred_internal_id: Option<PointOffsetType>,
+    deferred_threshold_kb: Option<usize>,
     config: SegmentConfig,
     payload_config: PayloadConfig,
     load_profile: Option<&'a LoadProfile>,
@@ -553,7 +557,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             fs,
             segment_path,
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             config,
             payload_config,
             load_profile,
@@ -567,7 +571,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             config,
             payload_config,
             uuid,
-            deferred_internal_id,
+            deferred_threshold_kb,
             load_profile,
             gating,
             is_stopped,

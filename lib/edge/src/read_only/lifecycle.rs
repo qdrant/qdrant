@@ -86,6 +86,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let _scope = scope.handoff().into_scope();
         check_process_stopped(is_stopped)?;
         let provided_config = config.unwrap_or_default();
+        let deferred_threshold_kb = provided_config.optimizers().get_deferred_threshold_kb();
 
         // Segments do not carry pool tunables. Only build missing pools from the provided config.
         let search_pool = match pools.search {
@@ -114,6 +115,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             search_pool,
             load_pool,
             load_profile,
+            deferred_threshold_kb,
             live_reload_lock: Default::default(),
             waterline: waterline.map(|highest| Mutex::new(Waterline { highest, gate: 0 })),
         };
