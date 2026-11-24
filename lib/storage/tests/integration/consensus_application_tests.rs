@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use collection::operations::cluster_ops::ReshardingDirection;
+use collection::operations::types::PeerMetadata;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::{ReshardState, ReshardingStage};
@@ -18,7 +19,9 @@ use storage::content_manager::collection_meta_ops::*;
 use storage::content_manager::consensus_manager::state_machine::read_cluster_state;
 use storage::content_manager::consensus_manager::{ConsensusManager, SnapshotData};
 use storage::content_manager::consensus_ops::ConsensusOperations;
-use storage::content_manager::consensus_state_machine::{Action, ClusterState};
+use storage::content_manager::consensus_state_machine::{
+    Action, ClusterState, ConsensusStateMachine,
+};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
@@ -118,6 +121,103 @@ fn delete_collection_replays_after_aliases_and_collection_removal() {
     assert!(!manager.apply_normal_entry(&delete).unwrap());
 
     assert!(!dir.path().join("collections/books").exists());
+}
+
+#[test]
+fn replica_removal_replays_scale_up_abort() {
+    for crash_after_state_clear in [Some(false), Some(true), None] {
+        let (dir, _handle, dispatcher) = new_dispatcher();
+        let pass = new_unchecked_verification_pass();
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        let manager = consensus_manager(&dir, toc.clone());
+        manager
+            .apply_normal_entry(&entry(&create_collection("books", false)))
+            .unwrap();
+        for peer_id in [1, 2] {
+            manager
+                .add_peer(
+                    peer_id,
+                    format!("http://127.0.0.1:{}", 6335 + peer_id)
+                        .parse()
+                        .unwrap(),
+                )
+                .unwrap();
+            manager
+                .apply_normal_entry(&entry(&ConsensusOperations::UpdatePeerMetadata {
+                    peer_id,
+                    metadata: PeerMetadata::current(),
+                }))
+                .unwrap();
+        }
+        let activate_source = ConsensusOperations::set_replica_state(
+            "books".into(),
+            0,
+            1,
+            ReplicaState::Active,
+            None,
+        );
+        manager
+            .apply_normal_entry(&entry(&activate_source))
+            .unwrap();
+        let original = toc.collection_state("books").unwrap();
+
+        let resharding = ReshardState::new(uuid::Uuid::nil(), ReshardingDirection::Up, 0, 2, None);
+        manager
+            .apply_normal_entry(&entry_from_meta(CollectionMetaOperations::Resharding(
+                "books".into(),
+                ReshardingOperation::Start(resharding.key()),
+            )))
+            .unwrap();
+        // Use remote endpoints so no task can finish the transfer during the test.
+        let transfer = ShardTransfer {
+            shard_id: 0,
+            to_shard_id: Some(2),
+            from: 1,
+            to: 2,
+            sync: true,
+            method: Some(ShardTransferMethod::ReshardingStreamRecords),
+            filter: None,
+        };
+        manager
+            .apply_normal_entry(&entry(&ConsensusOperations::start_transfer(
+                "books".into(),
+                transfer.clone(),
+            )))
+            .unwrap();
+
+        let removal = ConsensusOperations::remove_replica("books".into(), 2, 2);
+        if let Some(state_cleared) = crash_after_state_clear {
+            let machine = ConsensusStateMachine::new(state(&manager, toc), toc.node_context());
+            let plan = machine.plan(&removal).unwrap();
+            // Persist the prefix using the real action applier before rebuilding the manager.
+            for action in plan.actions {
+                let crash_here = if state_cleared {
+                    matches!(action, Action::SetReshardingState { state: None, .. })
+                } else {
+                    matches!(action, Action::DropShard { shard_id: 2, .. })
+                };
+                manager.apply_action(action).unwrap();
+                if crash_here {
+                    break;
+                }
+            }
+            let partial = toc.collection_state("books").unwrap();
+            assert!(!partial.shards.contains_key(&2));
+            assert_eq!(partial.resharding.is_none(), state_cleared);
+            assert!(partial.transfers.contains(&transfer));
+        }
+        drop(manager);
+
+        let manager = consensus_manager(&dir, toc.clone());
+        let removal = entry(&removal);
+        assert!(manager.apply_normal_entry(&removal).unwrap());
+        assert_eq!(toc.collection_state("books").unwrap(), original);
+
+        let error = manager.apply_normal_entry(&removal).unwrap_err();
+        assert!(matches!(error, StorageError::BadRequest { description }
+            if description == "Shard 2 of books not found"));
+        assert_eq!(toc.collection_state("books").unwrap(), original);
+    }
 }
 
 #[test]

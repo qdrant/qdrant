@@ -221,37 +221,45 @@ impl ClusterState {
         // the last source of truth even though every removal passes validation.
         for change in changes {
             let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
-            let Some(shard) = state.shards.get(&shard_id) else {
+            let transfers = state.transfers.iter().filter(|transfer| {
+                if fixed_cancellation {
+                    transfer.is_source_or_target(peer_id, shard_id)
+                } else {
+                    transfer.from == peer_id || transfer.to == peer_id
+                }
+            });
+
+            if let Some(shard) = state.shards.get(&shard_id) {
+                if !shard.replicas.contains_key(&peer_id) {
+                    return Err(StorageError::bad_request(format!(
+                        "Peer {peer_id} has no replica of shard {shard_id}"
+                    )));
+                }
+
+                if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {shard_id} must have at least one active replica after removing \
+                         {peer_id}",
+                    )));
+                }
+            } else if !transfers.clone().any(|transfer| {
+                // A scale-up abort drops its new shard before clearing the resharding state.
+                // The transfer that triggered the abort stays registered until after that clear.
+                transfer.is_resharding()
+                    && match &state.resharding {
+                        Some(resharding) => {
+                            resharding.direction == ReshardingDirection::Up
+                                && resharding.shard_id == shard_id
+                        }
+                        None => transfer.to_shard_id.unwrap_or(transfer.shard_id) == shard_id,
+                    }
+            }) {
                 return Err(StorageError::bad_request(format!(
                     "Shard {shard_id} of {collection} not found"
                 )));
-            };
-
-            if !shard.replicas.contains_key(&peer_id) {
-                return Err(StorageError::bad_request(format!(
-                    "Peer {peer_id} has no replica of shard {shard_id}"
-                )));
             }
 
-            if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
-                return Err(StorageError::bad_request(format!(
-                    "Shard {shard_id} must have at least one active replica after removing \
-                     {peer_id}",
-                )));
-            }
-
-            let mut transfers: Vec<_> = state
-                .transfers
-                .iter()
-                .filter(|transfer| {
-                    if fixed_cancellation {
-                        transfer.is_source_or_target(peer_id, shard_id)
-                    } else {
-                        transfer.from == peer_id || transfer.to == peer_id
-                    }
-                })
-                .map(ShardTransfer::key)
-                .collect();
+            let mut transfers: Vec<_> = transfers.map(ShardTransfer::key).collect();
             transfers.sort_by_key(|&key| transfer_sort_key(key));
             validated.push((shard_id, peer_id, transfers));
         }
@@ -280,6 +288,16 @@ impl ClusterState {
                 )?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
+            }
+
+            // A scale-up abort may already have removed the entire shard.
+            if !planned
+                .collection(collection)
+                .expect("collection exists")
+                .shards
+                .contains_key(&shard_id)
+            {
+                continue;
             }
 
             let remove = Action::RemoveReplica {
