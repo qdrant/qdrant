@@ -213,3 +213,6 @@ impl From<Error> for io::Error {
         io::Error::other(err)
     }
 }
+
+#[cfg(test)]
+mod tests;
