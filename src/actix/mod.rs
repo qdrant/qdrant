@@ -50,7 +50,7 @@ use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
 use crate::common::health;
-use crate::common::http_client::HttpClient;
+use crate::common::http_client::{HttpClient, ServerCertVerification};
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{Settings, max_web_workers};
 use crate::tracing::LoggerHandle;
@@ -83,7 +83,11 @@ pub fn init(
         let debugger_state = web::Data::new(DebuggerState::from_settings(&settings));
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let logger_handle_data = web::Data::new(logger_handle);
-        let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
+        // Users can provide snapshot URLs through the REST API, always verify server certificates
+        let http_client = web::Data::new(HttpClient::from_settings(
+            &settings,
+            ServerCertVerification::Strict,
+        )?);
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
         let service_config = web::Data::new(settings.service.clone());
