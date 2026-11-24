@@ -16,7 +16,7 @@ use crate::common::utils::{MultiValue, merge_map};
 mod nesting_depth;
 mod parse;
 
-pub use nesting_depth::MAX_PAYLOAD_NESTING_DEPTH;
+pub use nesting_depth::{MAX_NEW_PAYLOAD_NESTING_DEPTH, MAX_PAYLOAD_NESTING_DEPTH};
 
 #[derive(Debug, Clone, PartialEq, Eq, Anonymize, Ord, Hash, PartialOrd)]
 pub struct JsonPath {

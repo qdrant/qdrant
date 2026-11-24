@@ -736,11 +736,11 @@ def test_set_payload_key_too_deep(collection_name):
     assert get_payload() == payload_before
 
     # Deepest supported key
-    response = set_payload(126, 'true')
+    response = set_payload(99, 'true')
     assert response.ok, response.text
 
     payload = get_payload()
-    for _ in range(126):
+    for _ in range(99):
         payload = payload["a"]
     assert payload == {"x": 1}
 
@@ -751,3 +751,75 @@ def test_set_payload_key_too_deep(collection_name):
         body={"limit": 10, "with_payload": True},
     )
     assert response.ok, response.text
+
+
+def test_new_payload_too_deep(collection_name):
+    def nested(depth):
+        value = {}
+        for _ in range(depth - 1):
+            value = {"a": value}
+        return value
+
+    def set_payload(payload, key=None):
+        body = {"payload": payload, "points": [1]}
+        if key is not None:
+            body["key"] = key
+        return request_with_validation(
+            api='/collections/{collection_name}/points/payload',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'false'},
+            body=body,
+        )
+
+    def overwrite_payload(payload):
+        return request_with_validation(
+            api='/collections/{collection_name}/points/payload',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'false'},
+            body={"payload": payload, "points": [1]},
+        )
+
+    def upsert(payload):
+        return request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'false'},
+            body={"points": [{"id": 1, "vector": [1, 2, 3, 4], "payload": payload}]},
+        )
+
+    def upsert_batch(payload):
+        return request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'false'},
+            body={"batch": {"ids": [1], "vectors": [[1, 2, 3, 4]], "payloads": [payload]}},
+        )
+
+    # Too deep, including payloads REST accepts but the WAL couldn't read back
+    for depth in [101, 124]:
+        for response in [
+            set_payload(nested(depth)),
+            overwrite_payload(nested(depth)),
+            upsert(nested(depth)),
+            upsert_batch(nested(depth)),
+        ]:
+            assert response.status_code == 400, response.text
+            assert "nested" in response.json()['status']['error']
+    response = set_payload(nested(126))
+    assert response.status_code == 400, response.text
+    response = set_payload(nested(100), key="k")
+    assert response.status_code == 400, response.text
+
+    # Deepest supported payload
+    for response in [
+        set_payload(nested(99), key="k"),
+        set_payload(nested(100)),
+        overwrite_payload(nested(100)),
+        upsert(nested(100)),
+        upsert_batch(nested(100)),
+    ]:
+        assert response.ok, response.text
