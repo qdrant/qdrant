@@ -13,14 +13,14 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 
 use super::Collection;
 use super::shard_transfer::AbortShardTransferScope;
-use crate::config::{CollectionParams, ShardingMethod};
+use crate::config::CollectionParams;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
-use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
+use crate::shards::shard_holder::SharedShardHolder;
 
 /// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
 /// regardless of the shard id. In order to keep consensus consistent, we can only
@@ -528,7 +528,7 @@ impl Collection {
         // Single shard requests come from other peers, which check replication on their side
         if !shard_selection.is_shard_id() {
             info.warnings
-                .extend(replication_warning(&config.params, &shards_holder));
+                .extend(replication_warning(&config.params, self.peer_count()));
         }
 
         Ok(info)
@@ -638,59 +638,42 @@ impl Collection {
     }
 
     pub async fn print_warnings(&self) {
-        let shards_holder = self.shards_holder.read().await;
-        let config = self.collection_config.read().await;
-        let warnings = config
-            .get_warnings()
-            .into_iter()
-            .chain(replication_warning(&config.params, &shards_holder));
+        let warnings = self.collection_config.read().await.get_warnings();
         for warning in warnings {
             log::warn!("Collection {}: {}", self.name(), warning.message);
         }
     }
+
+    /// Number of peers in the cluster, including this one
+    fn peer_count(&self) -> usize {
+        let peers = self.channel_service.id_to_address.read();
+        // This peer is not registered there if distributed mode is disabled
+        let this_peer = usize::from(!peers.contains_key(&self.this_peer_id));
+        peers.len() + this_peer
+    }
 }
 
-/// Warn if shards have fewer replicas than `replication_factor`
+/// Warn if the cluster has fewer peers than `replication_factor`
 ///
-/// A peer holds at most one replica of a shard, so the replication factor is capped by the number
-/// of peers at the time shards are created. Missing replicas are not added when peers join later.
-fn replication_warning(
-    params: &CollectionParams,
-    shard_holder: &ShardHolder,
-) -> Option<CollectionWarning> {
-    // Custom sharding may override replication factor per shard key
-    if params.sharding_method.unwrap_or_default() != ShardingMethod::Auto {
-        return None;
-    }
-
-    // Shards and replicas are being added or removed while resharding
-    if shard_holder.resharding_state().is_some() {
-        return None;
-    }
-
+/// A peer holds at most one replica of a shard, so shards can't reach the configured replication
+/// factor until more peers join the cluster.
+fn replication_warning(params: &CollectionParams, peer_count: usize) -> Option<CollectionWarning> {
     let replication_factor = params.replication_factor.get() as usize;
 
-    let mut under_replicated = 0;
-    let mut min_replicas = replication_factor;
-    for replica_set in shard_holder.all_shards() {
-        let replicas = replica_set.peers().len();
-        if replicas < replication_factor {
-            under_replicated += 1;
-            min_replicas = min_replicas.min(replicas);
-        }
-    }
-
-    if under_replicated == 0 {
+    if peer_count >= replication_factor {
         return None;
     }
+
+    let (peers, replicas) = if peer_count == 1 {
+        ("peer", "replica")
+    } else {
+        ("peers", "replicas")
+    };
 
     Some(CollectionWarning {
         message: format!(
-            "`replication_factor` is {replication_factor}, but {under_replicated} of {} shards \
-             have fewer replicas (lowest: {min_replicas}). A peer holds at most one replica of a \
-             shard, and missing replicas are not created automatically. Add peers and replicate \
-             the shards to reach the configured replication factor.",
-            shard_holder.len(),
+            "`replication_factor` is {replication_factor}, but the cluster has only {peer_count} \
+             {peers}, so a shard can't have more than {peer_count} {replicas}.",
         ),
     })
 }
