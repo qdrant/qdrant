@@ -657,4 +657,17 @@ mod tests {
         dotprod_batch_matches_dotprod::<8, 1>();
         dotprod_batch_matches_dotprod::<8, 2>();
     }
+
+    /// A `stride` for which `(count - 1) * stride` wraps to zero must be
+    /// rejected, not let through to the SIMD kernels.
+    #[test]
+    #[should_panic(expected = "don't fit into")]
+    fn test_dotprod_batch_rejects_overflowing_stride() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let (query, _) = random_inputs::<1, 2>(&mut rng, 64);
+        let data = random_bytes(&mut rng, query.vector_bytes());
+        // `2 * stride` wraps to zero, so an unchecked bound would be satisfied
+        let stride = 1 << (usize::BITS - 1);
+        query.dotprod_batch(&data, stride, &mut [0.0; 3]);
+    }
 }
