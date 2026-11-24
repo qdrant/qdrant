@@ -222,6 +222,9 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         if std::arch::is_aarch64_feature_detected!("fp16") {
             cpu_flags.push("fp16");
         }
+        if std::arch::is_aarch64_feature_detected!("dotprod") {
+            cpu_flags.push("dotprod");
+        }
     }
 
     #[cfg(feature = "gpu")]
