@@ -612,6 +612,10 @@ pub async fn do_set_payload(
         key,
     } = operation;
 
+    // Reject before the operation is written to the WAL
+    JsonPath::check_value_set_depth(key.as_ref(), &payload.0)
+        .map_err(|err| StorageError::from(CollectionError::from(err)))?;
+
     let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
             payload,
