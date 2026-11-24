@@ -216,6 +216,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_check_new_payload_depth() {
+        const NEW_MAX: usize = MAX_NEW_PAYLOAD_NESTING_DEPTH;
+
+        for (path_len, src_depth, ok) in [
+            (0, NEW_MAX, true),
+            (0, NEW_MAX + 1, false),
+            (1, NEW_MAX - 1, true),
+            (1, NEW_MAX, false),
+            (NEW_MAX - 1, 1, true),
+            (NEW_MAX, 1, false),
+        ] {
+            let path = (path_len > 0).then(|| key_path(path_len));
+            let result =
+                JsonPath::check_new_payload_depth(path.as_ref(), &nested_object(src_depth));
+            assert_eq!(
+                result.is_ok(),
+                ok,
+                "path length {path_len}, depth {src_depth}"
+            );
+        }
+    }
+
     /// Rejects long paths without recursing once per path component
     #[test]
     fn test_check_value_set_depth_long_path() {
