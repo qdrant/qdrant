@@ -1115,3 +1115,72 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
         "every point of operation 10 must survive a restart, not just its first batch",
     );
 }
+
+/// A `set_payload` that would nest the payload too deep to read back is refused as invalid
+/// input, before it changes anything. Not a service error, so the segment stays healthy and WAL
+/// replay skips it.
+#[test]
+fn test_set_payload_refuses_too_deep_payload() {
+    use segment::common::operation_error::OperationError;
+    use segment::json_path::{JsonPath, MAX_PAYLOAD_NESTING_DEPTH};
+    use segment::types::PayloadContainer as _;
+
+    use crate::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use crate::update::process_payload_operation;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut non_appendable = build_segment_1(dir.path()); // points 1-5
+    non_appendable.appendable_flag = false;
+    let mut holder = SegmentHolder::default();
+    let sid_app = holder.add_new(build_segment_2(dir.path())); // points 4-5, 11-15
+    let sid_non_app = holder.add_new(non_appendable);
+
+    let key_path = |len: usize| -> JsonPath { vec!["a"; len].join(".").parse().unwrap() };
+    let set_payload = |op_num, point: u64, key| {
+        let operation = PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! {"x": 1},
+            points: Some(vec![point.into()]),
+            filter: None,
+            key: Some(key),
+        });
+        process_payload_operation(&holder, op_num, operation, None)
+    };
+
+    // Point 1 lives in the non-appendable segment, point 11 in the appendable one
+    for point in [1, 11] {
+        for len in [MAX_PAYLOAD_NESTING_DEPTH, 1_000_000] {
+            let err = set_payload(100, point, key_path(len)).unwrap_err();
+            assert!(
+                matches!(err, OperationError::ValidationError { .. }),
+                "point {point}, key length {len}: {err}",
+            );
+        }
+    }
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    assert!(
+        non_app
+            .read()
+            .has_point(1.into(), common::types::DeferredBehavior::WithDeferred)
+    );
+    assert_eq!(
+        stored_payload(&retrieve_raw_record(&holder, sid_non_app, 1).unwrap()),
+        Some(payload_json! {"color": ["red"]}),
+        "a refused operation must not change the payload",
+    );
+
+    // The deepest supported key still works, and the payload reads back
+    let key = key_path(MAX_PAYLOAD_NESTING_DEPTH - 1);
+    for (op_num, point) in [(101, 1), (102, 11)] {
+        set_payload(op_num, point, key.clone()).unwrap();
+        let payload = stored_payload(&retrieve_raw_record(&holder, sid_app, point).unwrap())
+            .unwrap_or_else(|| panic!("point {point} must have a payload"));
+        let path = key.extend(&"x".parse().unwrap());
+        assert_eq!(
+            payload.get_value(&path).to_vec(),
+            vec![&serde_json::json!(1)]
+        );
+    }
+}
