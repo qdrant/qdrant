@@ -293,3 +293,39 @@ impl Default for ChannelService {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_peer_host() {
+        let channel_service = ChannelService::default();
+        channel_service.id_to_address.write().extend([
+            (1, Uri::from_static("http://10.0.0.1:6335")),
+            (2, Uri::from_static("http://Node-B.example:6335")),
+            (3, Uri::from_static("http://[::1]:6335")),
+        ]);
+
+        let is_peer_host =
+            |url: &str, peer_id| channel_service.is_peer_host(&Url::parse(url).unwrap(), peer_id);
+
+        // Host of the given peer, on any port and scheme
+        assert!(is_peer_host("http://10.0.0.1:6333/collections/a", Some(1)));
+        assert!(is_peer_host("https://10.0.0.1:7000/collections/a", Some(1)));
+        assert!(is_peer_host("http://node-b.example:6333/", Some(2)));
+        assert!(is_peer_host("http://[::1]:6333/", Some(3)));
+
+        // Host of another peer, or of an unknown peer
+        assert!(!is_peer_host("http://10.0.0.1:6333/", Some(2)));
+        assert!(!is_peer_host("http://10.0.0.1:6333/", Some(4)));
+
+        // Any known peer
+        assert!(is_peer_host("http://node-b.example:6333/", None));
+        assert!(!is_peer_host("http://10.0.0.2:6333/", None));
+        assert!(!is_peer_host(
+            "http://169.254.169.254/latest/meta-data/",
+            None
+        ));
+        assert!(!is_peer_host("http://localhost:6333/", None));
+    }
+}
