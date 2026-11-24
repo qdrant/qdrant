@@ -81,7 +81,7 @@ impl Metadata {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 struct MetadataInt8 {
     actual_dim: usize,
     alpha: f32,
@@ -901,13 +901,44 @@ pub struct ScalarOperands<'a, TStorage: EncodedStorage> {
 /// Combines the codes' dot product and both offsets as `score_internal` does, through the same
 /// `MetadataInt8::postprocess_internal_score`. Holds a copy of the metadata, so the shift it
 /// computes per pair is loop-invariant for the kernels.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ScalarCombine(MetadataInt8);
 
 impl Combine for ScalarCombine {
     #[inline(always)]
     fn score(self, dot: f32, aux_a: &Aux, aux_b: &Aux) -> f32 {
         self.0.postprocess_internal_score(dot, aux_a[0], aux_b[0])
+    }
+}
+
+/// The constants of [`Combine::score`], for code that computes it elsewhere, such as a shader.
+impl ScalarCombine {
+    /// The factor of the codes' inner product in [`Combine::score`], which is
+    ///
+    /// `((multiplier() · dot) + (aux_a[0] − shift())) + aux_b[0]`
+    ///
+    /// one f32 operation at a time, in this order, each rounded to f32, without fused
+    /// multiply-adds. `dot` is the codes' inner product, exact in `i32`, converted to f32 once;
+    /// `aux_a[0]` and `aux_b[0]` are the offsets stored in the two vectors' records.
+    ///
+    /// Scales the codes' inner product to the metric's: `alpha²` for Dot and Cosine, `−2·alpha²`
+    /// for L2, negated if the storage inverts its scores.
+    pub fn multiplier(self) -> f32 {
+        self.0.multiplier
+    }
+
+    /// What [`Combine::score`] takes off the first vector's stored offset:
+    ///
+    /// `((multiplier() · dot) + (aux_a[0] − shift())) + aux_b[0]`
+    ///
+    /// one f32 operation at a time, in this order, each rounded to f32, without fused
+    /// multiply-adds (see [`Self::multiplier`]).
+    ///
+    /// For Dot and Cosine `actual_dim · q · q`, multiplied in this order, where `q` is the
+    /// quantizer's offset, the value code 0 stands for. For L2 `0.0`. Negated if the storage
+    /// inverts its scores, so `-0.0` for an inverted L2.
+    pub fn shift(self) -> f32 {
+        self.0.get_shift()
     }
 }
 
@@ -922,6 +953,42 @@ impl<'a, TStorage: EncodedStorage> ScalarOperands<'a, TStorage> {
             }),
             DistanceType::L1 => None,
         }
+    }
+
+    /// Bytes of one stored record: the vector's offset (see [`Self::offset_at`]), then its codes
+    /// (see [`Self::codes_at`]).
+    pub fn record_size(&self) -> usize {
+        self.vectors.quantized_vector_size()
+    }
+
+    /// The records the storage holds, one per point, deleted points included: every id below it
+    /// can be read by [`Self::for_each_record`].
+    pub fn record_count(&self) -> usize {
+        self.vectors.vectors_count()
+    }
+
+    /// Where a record holds the vector's offset, an f32 in native byte order: the `aux[0]` of
+    /// [`ScalarCombine`].
+    pub fn offset_at(&self) -> usize {
+        0
+    }
+
+    /// Where a record's codes start: the `depth()` codes of [`MatrixOperands::decode_batch`],
+    /// which include the padding up to a multiple of [`ALIGNMENT`] and run to the record's end.
+    pub fn codes_at(&self) -> usize {
+        ADDITIONAL_CONSTANT_SIZE
+    }
+
+    /// Calls `f(i, record)` with the stored record of `ids[i]`, undecoded,
+    /// [`Self::record_size`] bytes, read as [`MatrixOperands::decode_batch`] reads it.
+    pub fn for_each_record(
+        &self,
+        ids: &[PointOffsetType],
+        mut f: impl FnMut(usize, &[u8]),
+    ) -> std::io::Result<()> {
+        self.vectors
+            .encoded_vectors
+            .for_each_batch(ids, |i, record| f(i, &record))
     }
 }
 

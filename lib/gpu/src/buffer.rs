@@ -26,8 +26,57 @@ pub struct Buffer {
     /// Buffer size in bytes.
     size: usize,
 
+    /// Which queues may use the buffer.
+    queues: BufferQueues,
+
+    /// Sharing mode the Vulkan buffer was created with.
+    vk_sharing_mode: vk::SharingMode,
+
+    /// 64-bit device address, if the buffer was created with `DeviceAddress::Enabled`.
+    device_address: Option<vk::DeviceAddress>,
+
     /// GPU memory allocation that backs the buffer.
     allocation: Mutex<Allocation>,
+}
+
+/// Options of `Buffer::new_with_options`. `Buffer::new` uses `BufferOptions::COMPUTE`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BufferOptions {
+    /// Which queues may use the buffer.
+    pub queues: BufferQueues,
+
+    /// Whether shaders can access the buffer through its 64-bit device address.
+    pub device_address: DeviceAddress,
+}
+
+impl BufferOptions {
+    /// Used on the compute queue only, without a device address.
+    pub const COMPUTE: Self = Self {
+        queues: BufferQueues::Compute,
+        device_address: DeviceAddress::Disabled,
+    };
+}
+
+/// Which queues may use a buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BufferQueues {
+    /// Only contexts on the compute queue (`ContextQueue::Compute`).
+    Compute,
+
+    /// Contexts on the compute queue and on the transfer queue (`ContextQueue::Transfer`).
+    /// If the two queues are in different queue families, the buffer is shared by both families
+    /// (`VK_SHARING_MODE_CONCURRENT`), so either can use it without queue family ownership
+    /// transfers. A transfer context only accepts buffers created with this.
+    ComputeAndTransfer,
+}
+
+/// Whether shaders can access a buffer through its 64-bit device address
+/// (`VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT`, `GL_EXT_buffer_reference` in GLSL).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceAddress {
+    Disabled,
+    /// Needs `Device::has_buffer_device_address`.
+    Enabled,
 }
 
 /// Buffer type defines how the buffer can be used.
@@ -56,29 +105,59 @@ impl Buffer {
         buffer_type: BufferType,
         size: usize,
     ) -> GpuResult<Arc<Self>> {
+        Self::new_with_options(device, name, buffer_type, size, BufferOptions::COMPUTE)
+    }
+
+    /// Create a buffer that other queues may use too, or that shaders access through its
+    /// device address, as `options` say.
+    pub fn new_with_options(
+        device: Arc<Device>,   // Device that owns the buffer.
+        name: impl AsRef<str>, // Name of the buffer for tracking and debugging purposes.
+        buffer_type: BufferType,
+        size: usize,
+        options: BufferOptions,
+    ) -> GpuResult<Arc<Self>> {
+        let BufferOptions {
+            queues,
+            device_address,
+        } = options;
+
         if size == 0 {
             return Err(GpuError::NotSupported(
                 "Zero-sized GPU buffers are not supported".to_string(),
             ));
         }
 
-        // Vulkan API requires buffer usage flags to be specified during the buffer creation.
-        let vk_usage_flags = match buffer_type {
-            BufferType::Uniform => {
-                vk::BufferUsageFlags::UNIFORM_BUFFER // mark as uniform buffer.
-                    | vk::BufferUsageFlags::TRANSFER_DST // For uploading.
-                    | vk::BufferUsageFlags::TRANSFER_SRC // For downloading.
+        let vk_device_address_usage = match device_address {
+            DeviceAddress::Disabled => vk::BufferUsageFlags::empty(),
+            DeviceAddress::Enabled => {
+                if !device.has_buffer_device_address() {
+                    return Err(GpuError::NotSupported(
+                        "Buffer device addresses are not supported by the device".to_string(),
+                    ));
+                }
+                vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
             }
-            BufferType::Storage => {
-                vk::BufferUsageFlags::STORAGE_BUFFER // mark as storage buffer.
-                    | vk::BufferUsageFlags::TRANSFER_DST // For uploading.
-                    | vk::BufferUsageFlags::TRANSFER_SRC // For downloading.
-            }
-            // CpuToGpu buffer can be used as a source for transfer operations only.
-            BufferType::CpuToGpu => vk::BufferUsageFlags::TRANSFER_SRC,
-            // GpuToCpu buffer can be used as a destination for transfer operations only.
-            BufferType::GpuToCpu => vk::BufferUsageFlags::TRANSFER_DST,
         };
+
+        // Vulkan API requires buffer usage flags to be specified during the buffer creation.
+        let vk_usage_flags = vk_device_address_usage
+            | match buffer_type {
+                BufferType::Uniform => {
+                    vk::BufferUsageFlags::UNIFORM_BUFFER // mark as uniform buffer.
+                    | vk::BufferUsageFlags::TRANSFER_DST // For uploading.
+                    | vk::BufferUsageFlags::TRANSFER_SRC // For downloading.
+                }
+                BufferType::Storage => {
+                    vk::BufferUsageFlags::STORAGE_BUFFER // mark as storage buffer.
+                    | vk::BufferUsageFlags::TRANSFER_DST // For uploading.
+                    | vk::BufferUsageFlags::TRANSFER_SRC // For downloading.
+                }
+                // CpuToGpu buffer can be used as a source for transfer operations only.
+                BufferType::CpuToGpu => vk::BufferUsageFlags::TRANSFER_SRC,
+                // GpuToCpu buffer can be used as a destination for transfer operations only.
+                BufferType::GpuToCpu => vk::BufferUsageFlags::TRANSFER_DST,
+            };
 
         // Memory location depends on the buffer type.
         let location = match buffer_type {
@@ -90,11 +169,27 @@ impl Buffer {
             BufferType::GpuToCpu => MemoryLocation::GpuToCpu,
         };
 
+        // A buffer of one queue family is exclusive to it. A buffer of the compute and the transfer
+        // queue family is shared by both, so it needs no queue family ownership transfers.
+        let compute_queue_family = device.compute_queue().vk_queue_family_index as u32;
+        let transfer_queue_family = device.transfer_queue().vk_queue_family_index as u32;
+        let vk_queue_family_indices = [compute_queue_family, transfer_queue_family];
+        let vk_sharing_mode = match queues {
+            BufferQueues::ComputeAndTransfer if compute_queue_family != transfer_queue_family => {
+                vk::SharingMode::CONCURRENT
+            }
+            BufferQueues::Compute | BufferQueues::ComputeAndTransfer => vk::SharingMode::EXCLUSIVE,
+        };
+
         // Create a Vulkan buffer.
-        let vk_create_buffer_info = vk::BufferCreateInfo::default()
+        let mut vk_create_buffer_info = vk::BufferCreateInfo::default()
             .size(size as vk::DeviceSize)
             .usage(vk_usage_flags)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            .sharing_mode(vk_sharing_mode);
+        if vk_sharing_mode == vk::SharingMode::CONCURRENT {
+            vk_create_buffer_info =
+                vk_create_buffer_info.queue_family_indices(&vk_queue_family_indices);
+        }
         let vk_buffer = unsafe {
             device
                 .vk_device()
@@ -148,11 +243,23 @@ impl Buffer {
             return Err(GpuError::from(e));
         }
 
+        let device_address = match device_address {
+            DeviceAddress::Disabled => None,
+            DeviceAddress::Enabled => Some(unsafe {
+                device.vk_device().get_buffer_device_address(
+                    &vk::BufferDeviceAddressInfo::default().buffer(vk_buffer),
+                )
+            }),
+        };
+
         Ok(Arc::new(Self {
             device,
             vk_buffer,
             buffer_type,
             size,
+            queues,
+            vk_sharing_mode,
+            device_address,
             allocation: Mutex::new(allocation),
         }))
     }
@@ -167,6 +274,24 @@ impl Buffer {
 
     pub fn buffer_type(&self) -> BufferType {
         self.buffer_type
+    }
+
+    /// Which queues may use the buffer.
+    pub fn queues(&self) -> BufferQueues {
+        self.queues
+    }
+
+    pub(crate) fn vk_sharing_mode(&self) -> vk::SharingMode {
+        self.vk_sharing_mode
+    }
+
+    /// The buffer's 64-bit device address, for shaders to access it with `GL_EXT_buffer_reference`.
+    /// `None` if the buffer wasn't created with `DeviceAddress::Enabled`.
+    /// A `Context` keeps alive only the buffers it binds or copies, not the ones a shader reaches
+    /// through their addresses: hand those to `Context::keep_alive`, so the context holds them
+    /// until its work has finished.
+    pub fn device_address(&self) -> Option<u64> {
+        self.device_address
     }
 
     /// Download a vector of `len` elements from the buffer to the RAM.
