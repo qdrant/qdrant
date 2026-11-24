@@ -145,11 +145,14 @@ tracing-log = { version = "0.2", default-features = false, features = [
     "log-tracer",
     "std",
 ] }
+tracing-tracy = { version = "0.12.0", features = ["ondemand"], optional = true }
+actix-web-extras = "0.1.0"
+
+# Only usable with `--cfg tokio_unstable`, see `src/tracing/mod.rs`
+[target.'cfg(tokio_unstable)'.dependencies]
 console-subscriber = { version = "0.5.0", default-features = false, features = [
     "parking_lot",
 ], optional = true }
-tracing-tracy = { version = "0.12.0", features = ["ondemand"], optional = true }
-actix-web-extras = "0.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18.0", default-features = false }
