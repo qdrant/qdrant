@@ -51,6 +51,65 @@ pub struct Metadata {
     pub vector_parameters: VectorParameters,
 }
 
+impl Metadata {
+    /// Validate metadata read from disk against the invariants scoring relies on, so a corrupted
+    /// or crafted `quantized.meta.json` fails to load instead of failing at search time.
+    ///
+    /// The encoder always writes metadata that passes: `CENTROIDS_COUNT` centroids of `dim`
+    /// floats each, and divisions that split `0..dim` into consecutive non-empty chunks.
+    fn validate(&self) -> std::io::Result<()> {
+        let invalid = |message: String| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid PQ metadata: {message}"),
+            )
+        };
+
+        // Every stored byte is a centroid index into a LUT row of `centroids.len()` entries, and
+        // the scoring hot path does not bounds check it. With exactly `CENTROIDS_COUNT` (256)
+        // centroids any `u8` index stays inside its row, so reject metadata with any other count.
+        let centroids_count = self.centroids.len();
+        if centroids_count != CENTROIDS_COUNT {
+            return Err(invalid(format!(
+                "{centroids_count} centroids, but {CENTROIDS_COUNT} are expected",
+            )));
+        }
+
+        // Query encoding, `score_internal` and the GPU shader slice every centroid with the
+        // division ranges, and the shader takes the first centroid's length as the stride.
+        let dim = self.vector_parameters.dim;
+        for (index, centroid) in self.centroids.iter().enumerate() {
+            if centroid.len() != dim {
+                return Err(invalid(format!(
+                    "centroid {index} has {} components, but the vector dimension is {dim}",
+                    centroid.len(),
+                )));
+            }
+        }
+
+        // The divisions must split `0..dim` into consecutive non-empty chunks, which keeps every
+        // range inside each centroid. Queries are sliced with the same ranges, so they stay in
+        // bounds as long as the caller's dimension matches `dim`, which is not checked here.
+        let mut expected_start = 0;
+        for (index, range) in self.vector_division.iter().enumerate() {
+            if range.start != expected_start || range.end <= range.start || range.end > dim {
+                return Err(invalid(format!(
+                    "vector division {index} is {range:?}, but a non-empty range starting at \
+                     {expected_start} and ending at most at {dim} is expected",
+                )));
+            }
+            expected_start = range.end;
+        }
+        if expected_start != dim {
+            return Err(invalid(format!(
+                "vector divisions cover 0..{expected_start}, but the vector dimension is {dim}",
+            )));
+        }
+
+        Ok(())
+    }
+}
+
 impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -154,6 +213,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         meta_path: &Path,
     ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
+        metadata.validate()?;
         let result = Self {
             encoded_vectors,
             metadata,
