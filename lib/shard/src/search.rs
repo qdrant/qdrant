@@ -35,20 +35,13 @@ pub struct CoreSearchRequest {
     pub score_threshold: Option<ScoreType>,
 }
 
-/// [`LoadProfile`] for opening a read-only shard to serve exactly a search with the given query,
-/// filter and `with_payload` selector: only the queried vector's components and the filter's field
-/// indexes keep their configured placement.
+/// [`LoadProfile`] for opening a read-only shard to serve exactly a search with the given query
+/// and filter: only the queried vector's components and the filter's field indexes keep their
+/// configured placement.
 ///
 /// Used by edge's `SearchRequest`.
-pub fn search_load_profile(
-    query: &QueryEnum,
-    filter: Option<&Filter>,
-    with_payload: Option<&WithPayloadInterface>,
-) -> LoadProfile {
-    // The `with_payload` default of a search is `false`.
-    let with_payload = with_payload.is_some_and(|wp| wp.is_required());
-
-    LoadProfile::for_search(query.get_vector_name(), filter, with_payload)
+pub fn search_load_profile(query: &QueryEnum, filter: Option<&Filter>) -> LoadProfile {
+    LoadProfile::for_search(query.get_vector_name(), filter)
 }
 
 impl CoreSearchRequest {
