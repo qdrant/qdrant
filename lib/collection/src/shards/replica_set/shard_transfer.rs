@@ -555,3 +555,6 @@ impl ShardReplicaSet {
         local_shard.wal_version().await
     }
 }
+
+#[cfg(test)]
+mod tests;
