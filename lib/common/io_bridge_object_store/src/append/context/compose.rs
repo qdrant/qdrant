@@ -10,7 +10,7 @@ use bytes::Bytes;
 use common::universal_io::{UioResult, UniversalIoError};
 use object_store::client::{HttpClient, HttpRequestBody};
 use object_store::gcp::GoogleCloudStorage;
-use object_store::{ObjectStoreExt as _, PutPayload};
+use object_store::{ObjectStore as _, ObjectStoreExt as _, PutMode, PutOptions, PutPayload};
 use url::Url;
 
 use super::signed::build_http_client;
@@ -73,13 +73,20 @@ impl ComposeAppend {
             offset,
         };
 
-        // An empty prefix means a plain put produces the right object.
+        // An empty prefix means a plain put produces the right object, but
+        // only if there is no object yet: `ifGenerationMatch=0` never
+        // replaces one. An existing object, even an empty one, takes the
+        // compose path below, which checks its size.
         if offset == 0 {
-            store
-                .put(key, PutPayload::from(data))
+            let create = PutOptions::from(PutMode::Create);
+            match store
+                .put_opts(key, PutPayload::from(data.clone()), create)
                 .await
-                .map_err(UniversalIoError::s3)?;
-            return Ok(final_size);
+            {
+                Ok(_) => return Ok(final_size),
+                Err(object_store::Error::AlreadyExists { .. }) => {}
+                Err(other) => return Err(UniversalIoError::s3(other)),
+            }
         }
 
         // Observe the destination: its size must match the caller's view of
@@ -272,6 +279,107 @@ mod tests {
         assert_matches!(
             err,
             UniversalIoError::AppendOffsetConflict { offset: 5, .. }
+        );
+    }
+
+    /// Append `b"data"` to `dir/append.dat` at `offset`, with both the store
+    /// and the compose API pointed at the stub.
+    fn append_data_at(endpoint: &str, offset: u64) -> UioResult<u64> {
+        let credentials =
+            object_store::StaticCredentialProvider::new(object_store::gcp::GcpCredential {
+                bearer: "stub-token".to_string(),
+            });
+        let store = Arc::new(
+            object_store::gcp::GoogleCloudStorageBuilder::new()
+                .with_bucket_name("bucket")
+                .with_base_url(endpoint)
+                .with_credentials(Arc::new(credentials))
+                .with_client_options(object_store::ClientOptions::new().with_allow_http(true))
+                .build()
+                .unwrap(),
+        );
+        let compose =
+            ComposeAppend::with_api_base("bucket".to_string(), Url::parse(endpoint).unwrap(), true);
+        let key = object_store::path::Path::from("dir/append.dat");
+
+        io_bridge::BridgeRuntime::global().block_on(compose.append(
+            &store,
+            &key,
+            offset,
+            Bytes::from_static(b"data"),
+        ))
+    }
+
+    fn head_ok(size: u64) -> StubResponse {
+        StubResponse::new(200)
+            .header("content-length", size)
+            .header("etag", "\"dest\"")
+            .header("last-modified", "Mon, 23 Nov 2026 00:00:00 GMT")
+            .header("x-goog-generation", "1794908319617095")
+    }
+
+    fn put_ok() -> StubResponse {
+        StubResponse::new(200).header("etag", "\"put\"")
+    }
+
+    /// Offset 0 creates the object, conditional on there being none yet.
+    #[test]
+    fn append_at_zero_creates_only_a_missing_object() {
+        let (endpoint, seen) = stub_server(vec![put_ok()]);
+
+        assert_eq!(append_data_at(&endpoint, 0).unwrap(), 4);
+
+        let seen = seen.lock().unwrap();
+        let [create] = &seen[..] else {
+            panic!("expected exactly one request, got {}", seen.len());
+        };
+        assert_eq!(create.method, "PUT");
+        assert_eq!(create.path, "/bucket/dir%2Fappend%2Edat");
+        assert_eq!(create.headers["x-goog-if-generation-match"], "0");
+        assert_eq!(create.body, b"data");
+    }
+
+    /// Offset 0 on a non-empty object is an offset conflict, and the object
+    /// is left alone.
+    #[test]
+    fn append_at_zero_never_replaces_a_non_empty_object() {
+        let (endpoint, seen) = stub_server(vec![StubResponse::new(412), head_ok(10)]);
+
+        let err = append_data_at(&endpoint, 0).unwrap_err();
+        assert_matches!(
+            err,
+            UniversalIoError::AppendOffsetConflict { offset: 0, .. }
+        );
+
+        let seen = seen.lock().unwrap();
+        let methods: Vec<&str> = seen.iter().map(|request| request.method.as_str()).collect();
+        assert_eq!(methods, ["PUT", "HEAD"]);
+    }
+
+    /// Offset 0 on an existing empty object (e.g. from `create`) composes
+    /// onto it, conditional on its generation.
+    #[test]
+    fn append_at_zero_composes_onto_an_empty_object() {
+        let (endpoint, seen) = stub_server(vec![
+            StubResponse::new(412),
+            head_ok(0),
+            put_ok(),
+            StubResponse::new(200).body("{}"),
+            StubResponse::new(204),
+        ]);
+
+        assert_eq!(append_data_at(&endpoint, 0).unwrap(), 4);
+
+        let seen = seen.lock().unwrap();
+        let methods: Vec<&str> = seen.iter().map(|request| request.method.as_str()).collect();
+        assert_eq!(methods, ["PUT", "HEAD", "PUT", "POST", "DELETE"]);
+        assert_eq!(
+            seen[2].path,
+            "/bucket/dir%2Fappend%2Edat%2Ecompose%2Dappend"
+        );
+        assert_eq!(
+            seen[3].path,
+            "/storage/v1/b/bucket/o/dir%2Fappend.dat/compose?ifGenerationMatch=1794908319617095",
         );
     }
 
