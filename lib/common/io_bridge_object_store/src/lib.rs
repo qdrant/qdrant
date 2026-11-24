@@ -29,6 +29,7 @@
 mod append;
 mod backend;
 pub mod backends;
+pub mod http_stats;
 mod source;
 
 #[cfg(test)]

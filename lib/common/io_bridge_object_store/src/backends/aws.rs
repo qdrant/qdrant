@@ -2,12 +2,14 @@
 
 use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
 use object_store::aws::{AmazonS3, AmazonS3Builder, AmazonS3ConfigKey, Checksum};
+use object_store::client::ReqwestConnector;
 use url::Url;
 
 use crate::append::{
     AppendContext, NativeAppend, PartCopyAppend, SignedRequestContext, XmlComposeAppend,
 };
 use crate::backend::BlobBackend;
+use crate::http_stats::CountingConnector;
 
 /// SigV4 signing needs a region even for endpoints that ignore it.
 const DEFAULT_REGION: &str = "us-east-1";
@@ -181,7 +183,8 @@ fn store_builder(
     };
     builder = builder
         .with_bucket_name(&config.bucket)
-        .with_s3_express(config.s3_express);
+        .with_s3_express(config.s3_express)
+        .with_http_connector(CountingConnector(ReqwestConnector::default()));
     if let Some(region) = &config.region {
         builder = builder.with_region(region);
     }
