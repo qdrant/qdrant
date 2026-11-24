@@ -1,6 +1,6 @@
 //! Leaf k-NN: candidate edges from the nearest neighbors of every point within its leaf.
 //!
-//! One matrix call per leaf scores all pairs of its points (one triangle), and each point's `k`
+//! One matrix job per leaf scores all pairs of its points (one triangle), and each point's `k`
 //! best become candidate edges in both directions: the bidirected k-NN graph of the leaf. The
 //! paper's ablation (appendix A.3) found it better than the directed or the inverted k-NN graph
 //! alone and than RobustPrune within the leaf, and at least as good as a degree-limited minimum
@@ -19,15 +19,11 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
-use rayon::prelude::*;
 
 use super::progress::Share;
-use super::top_k_pool::TopKPool;
-use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK};
+use crate::common::operation_error::OperationResult;
+use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixJob, MatrixPicks, MatrixScorer};
 
 /// Calls `edge(p, q, score)` for every edge `p → q` of the bidirected k-NN graph of each leaf:
 /// from every point of the leaf to each of its `k` best neighbors in the leaf, by the matrix
@@ -39,11 +35,16 @@ use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK}
 ///   `q → p`. Matrix scores equal `score_internal` up to rounding, and the two directions differ
 ///   at most by rounding too.
 /// - A leaf must not repeat a point. Ties go to the lower position in the leaf, which is the lower
-///   id in a sorted leaf. Leaves with fewer than 2 points have no edges.
-/// - Runs in parallel over the leaves, in the current rayon pool: `edge` is called from many
-///   threads at once, in no particular order.
-/// - Adds all of `progress`, the points of the level, by the time it returns: each leaf its share
-///   once its edges are sent, by the square of its size, about the pairs its matrix call scores.
+///   id in a sorted leaf. Leaves with fewer than 2 points have no edges and no matrix job.
+/// - All leaves go to one [`MatrixPhase::for_each_top_k`] of `scorer`, one job per leaf, which
+///   schedules and scores them on the current rayon pool and checks `stopped`: `edge` is called
+///   from many threads at once, in no particular order.
+/// - Adds all of `progress`, the points of the level, by the time it returns: each leaf its share,
+///   by the square of its size, about the pairs its matrix call scores. A leaf with pairs adds it
+///   once its edges are sent, and the others add theirs once all leaves are done. Cancelled, it
+///   has added the shares of the leaves whose edges were sent only.
+///
+/// [`MatrixPhase::for_each_top_k`]: crate::vector_storage::matrix_scorer::MatrixPhase::for_each_top_k
 pub(super) fn for_each_leaf_edge(
     scorer: &MatrixScorer<'_>,
     leaves: &[Vec<PointOffsetType>],
@@ -62,50 +63,61 @@ pub(super) fn for_each_leaf_edge(
     }
 
     let shares = progress.split(leaves.iter().map(|leaf| (leaf.len() as u64).pow(2)));
-    // Buffers of the matrix calls, reused across leaves: one per leaf in progress, so about one
-    // per thread
-    let tops = TopKPool::new(k);
-    leaves
-        .par_iter()
-        .zip(shares)
-        // Every leaf its own job, stealable until the end: a leaf takes up to milliseconds, sizes
-        // differ, and rayon's splitting can leave one thread with a long run of them otherwise,
-        // see `HNSW_BUILD_MAX_PAR_LEN`
-        .with_max_len(1)
-        .try_for_each(|(leaf, progress)| {
-            check_process_stopped(stopped)?;
-            if leaf.len() < 2 {
-                progress.add();
-                return Ok(());
-            }
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-            tops.with(|top| leaf_edges(scorer, leaf, top, &edge))?;
-            progress.add();
+    let mut jobs = Vec::with_capacity(leaves.len());
+    // Shares of the leaves without pairs, which need no matrix call. Added once all leaves are
+    // done, so that a cancellation leaves them out, as it does the leaves not scored yet
+    let mut pairless = Vec::new();
+    for (leaf, share) in leaves.iter().zip(shares) {
+        if leaf.len() < 2 {
+            pairless.push(share);
+        } else {
+            let job = MatrixJob {
+                rows: leaf,
+                cols: MatrixCols::Rows,
+                // A point has at most `len - 1` neighbors in its leaf
+                k: k.min(leaf.len() - 1),
+            };
+            jobs.push((job, (leaf.as_slice(), share)));
+        }
+    }
+    // The phase, and with it the buffers of its matrix calls, ends with the statement
+    scorer.phase(k).for_each_top_k(
+        jobs,
+        stopped,
+        // A leaf's share is added with its edges, not with its rows
+        |_, _| {},
+        |(leaf, share), picks| {
+            leaf_edges(leaf, picks, &edge);
+            share.add();
             Ok(())
-        })
+        },
+    )?;
+    for share in pairless {
+        share.add();
+    }
+    Ok(())
 }
 
-/// [`for_each_leaf_edge`] for one leaf of at least 2 points, with `top` for the matrix call.
+/// [`for_each_leaf_edge`] for one leaf of at least 2 points, from `picks`, the result of its
+/// matrix job: the `k` best of each row.
 fn leaf_edges(
-    scorer: &MatrixScorer<'_>,
     leaf: &[PointOffsetType],
-    top: &mut MatrixTopK,
+    picks: &MatrixPicks,
     edge: &impl Fn(PointOffsetType, PointOffsetType, ScoreType),
-) -> OperationResult<()> {
-    scorer.top_k(leaf, MatrixCols::Rows, top)?;
+) {
+    debug_assert_eq!(picks.rows(), leaf.len());
     for (r, &point) in leaf.iter().enumerate() {
-        let (cols, scores) = top.row(r);
+        let (cols, scores) = picks.row(r);
         for (&c, &score) in std::iter::zip(cols, scores) {
             let neighbor = leaf[c as usize];
             edge(point, neighbor, score);
             // A mutual pick sends the reverse edge from the neighbor's own row, with its score
-            let mutual = top.row(c as usize).0.contains(&(r as u32));
+            let mutual = picks.row(c as usize).0.contains(&(r as u32));
             if !mutual {
                 edge(neighbor, point, score);
             }
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -113,6 +125,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use common::ambient;
     use common::bitvec::BitVec;
     use parking_lot::Mutex;
     use rand::rngs::StdRng;
