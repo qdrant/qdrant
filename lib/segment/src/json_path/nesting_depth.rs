@@ -9,6 +9,12 @@ use crate::common::operation_error::{OperationError, OperationResult};
 /// deeper payload could be written, but not read back.
 pub const MAX_PAYLOAD_NESTING_DEPTH: usize = 127;
 
+/// Maximum nesting depth of a payload in a new operation, including the key it is set at.
+///
+/// Lower than [`MAX_PAYLOAD_NESTING_DEPTH`]: the WAL stores operations in a format with the same
+/// depth limit, and its records wrap the payload in a few more levels.
+pub const MAX_NEW_PAYLOAD_NESTING_DEPTH: usize = 100;
+
 impl JsonPath {
     /// Check that [`JsonPath::value_set`] with `path` and `src` creates a payload that is not
     /// nested deeper than [`MAX_PAYLOAD_NESTING_DEPTH`].
@@ -19,16 +25,37 @@ impl JsonPath {
         path: Option<&Self>,
         src: &Map<String, Value>,
     ) -> OperationResult<()> {
-        let path_depth = path.map_or(0, |path| path.rest.len() + 1);
-        let depth = path_depth.saturating_add(nesting_depth(src));
-        if depth > MAX_PAYLOAD_NESTING_DEPTH {
-            return Err(OperationError::validation_error(format!(
-                "payload is nested {depth} levels deep including the key, \
-                 at most {MAX_PAYLOAD_NESTING_DEPTH} levels are supported",
-            )));
-        }
-        Ok(())
+        check_depth(path, src, MAX_PAYLOAD_NESTING_DEPTH)
     }
+
+    /// Check that a payload in a new operation, set at `path`, is not nested deeper than
+    /// [`MAX_NEW_PAYLOAD_NESTING_DEPTH`]. Call this before the operation is written to the WAL.
+    pub fn check_new_payload_depth(
+        path: Option<&Self>,
+        payload: &Map<String, Value>,
+    ) -> OperationResult<()> {
+        check_depth(path, payload, MAX_NEW_PAYLOAD_NESTING_DEPTH)
+    }
+}
+
+fn check_depth(
+    path: Option<&JsonPath>,
+    src: &Map<String, Value>,
+    max_depth: usize,
+) -> OperationResult<()> {
+    let path_depth = path.map_or(0, |path| path.rest.len() + 1);
+    let depth = path_depth.saturating_add(nesting_depth(src));
+    if depth > max_depth {
+        let subject = if path.is_some() {
+            "payload and key are"
+        } else {
+            "payload is"
+        };
+        return Err(OperationError::validation_error(format!(
+            "{subject} nested {depth} levels deep, at most {max_depth} levels are supported",
+        )));
+    }
+    Ok(())
 }
 
 /// Nesting depth of a JSON object, the way `serde_json` counts it: one level for the object
