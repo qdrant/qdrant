@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{IntoPyDict as _, PyList};
 use segment::data_types::vectors::*;
 use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
@@ -70,9 +70,9 @@ impl<'py> IntoPyObject<'py> for &PyVectorInternal {
         match &self.0 {
             VectorStructInternal::Single(single) => single.into_bound_py_any(py),
             VectorStructInternal::MultiDense(multi) => multi_dense_into_py(multi, py),
-            VectorStructInternal::Named(named) => {
-                PyNamedVectorInternal::wrap_map_ref(named).into_bound_py_any(py)
-            }
+            VectorStructInternal::Named(named) => Ok(PyNamedVectorInternal::wrap_map_ref(named)
+                .into_py_dict(py)?
+                .into_any()),
         }
     }
 }
@@ -82,7 +82,7 @@ impl Repr for PyVectorInternal {
         match &self.0 {
             VectorStructInternal::Single(single) => single.fmt(f),
             VectorStructInternal::MultiDense(multi) => f.list(multi.multi_vectors()),
-            VectorStructInternal::Named(named) => PyNamedVectorInternal::wrap_map_ref(named).fmt(f),
+            VectorStructInternal::Named(named) => f.map(PyNamedVectorInternal::wrap_map_ref(named)),
         }
     }
 }
@@ -92,18 +92,17 @@ impl Repr for PyVectorInternal {
 pub struct PyNamedVectorInternal(pub VectorInternal);
 
 impl PyNamedVectorInternal {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorInternal>
-    where
-        Self: TransparentWrapper<VectorInternal>,
-    {
-        unsafe { mem::transmute(map) }
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorInternal> {
+        map.into_iter()
+            .map(|(name, vector)| (name, vector.0))
+            .collect()
     }
 
-    pub fn wrap_map_ref(map: &HashMap<String, VectorInternal>) -> &HashMap<String, Self>
-    where
-        Self: TransparentWrapper<VectorInternal>,
-    {
-        unsafe { mem::transmute(map) }
+    pub fn wrap_map_ref(
+        map: &HashMap<String, VectorInternal>,
+    ) -> impl Iterator<Item = (&String, &Self)> {
+        map.iter()
+            .map(|(name, vector)| (name, Self::wrap_ref(vector)))
     }
 }
 

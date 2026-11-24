@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::mem;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -36,8 +34,8 @@ impl PyShardInfo {
     }
 
     #[getter]
-    pub fn payload_schema(&self) -> &HashMap<PyJsonPath, PyPayloadIndexInfo> {
-        PyPayloadIndexInfo::wrap_map_ref(&self.0.payload_schema)
+    pub fn payload_schema(&self) -> HashMap<PyJsonPath, PyPayloadIndexInfo> {
+        PyPayloadIndexInfo::wrap_map(&self.0.payload_schema)
     }
 
     pub fn __repr__(&self) -> String {
@@ -63,14 +61,10 @@ impl PyShardInfo {
 pub struct PyPayloadIndexInfo(PayloadIndexInfo);
 
 impl PyPayloadIndexInfo {
-    fn wrap_map_ref(
-        map: &HashMap<JsonPath, PayloadIndexInfo>,
-    ) -> &HashMap<PyJsonPath, PyPayloadIndexInfo>
-    where
-        PyJsonPath: TransparentWrapper<JsonPath> + Eq + Hash,
-        Self: TransparentWrapper<PayloadIndexInfo>,
-    {
-        unsafe { mem::transmute(map) }
+    fn wrap_map(map: &HashMap<JsonPath, PayloadIndexInfo>) -> HashMap<PyJsonPath, Self> {
+        map.iter()
+            .map(|(path, info)| (PyJsonPath(path.clone()), Self(info.clone())))
+            .collect()
     }
 }
 

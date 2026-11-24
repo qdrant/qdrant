@@ -194,8 +194,8 @@ impl PyHasIdCondition {
     }
 
     #[getter]
-    pub fn point_ids(&self) -> &ahash::HashSet<PyPointId> {
-        PyPointId::wrap_set_ref(&self.0.has_id)
+    pub fn point_ids(&self) -> ahash::HashSet<PyPointId> {
+        PyPointId::wrap_set(&self.0.has_id)
     }
 
     pub fn __repr__(&self) -> String {

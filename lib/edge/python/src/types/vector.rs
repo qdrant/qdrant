@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
+use pyo3::types::IntoPyDict as _;
 use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
@@ -64,9 +65,9 @@ impl<'py> IntoPyObject<'py> for &PyVector {
         match &self.0 {
             VectorStructPersisted::Single(single) => single.into_bound_py_any(py),
             VectorStructPersisted::MultiDense(multi) => multi.into_bound_py_any(py),
-            VectorStructPersisted::Named(named) => {
-                PyNamedVector::wrap_map_ref(named).into_bound_py_any(py)
-            }
+            VectorStructPersisted::Named(named) => Ok(PyNamedVector::wrap_map_ref(named)
+                .into_py_dict(py)?
+                .into_any()),
         }
     }
 }
@@ -76,7 +77,7 @@ impl Repr for PyVector {
         match &self.0 {
             VectorStructPersisted::Single(single) => single.fmt(f),
             VectorStructPersisted::MultiDense(multi) => multi.fmt(f),
-            VectorStructPersisted::Named(named) => PyNamedVector::wrap_map_ref(named).fmt(f),
+            VectorStructPersisted::Named(named) => f.map(PyNamedVector::wrap_map_ref(named)),
         }
     }
 }
@@ -86,18 +87,17 @@ impl Repr for PyVector {
 pub struct PyNamedVector(VectorPersisted);
 
 impl PyNamedVector {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorPersisted>
-    where
-        Self: TransparentWrapper<VectorPersisted>,
-    {
-        unsafe { mem::transmute(map) }
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorPersisted> {
+        map.into_iter()
+            .map(|(name, vector)| (name, vector.0))
+            .collect()
     }
 
-    pub fn wrap_map_ref(map: &HashMap<String, VectorPersisted>) -> &HashMap<String, Self>
-    where
-        Self: TransparentWrapper<VectorPersisted>,
-    {
-        unsafe { mem::transmute(map) }
+    pub fn wrap_map_ref(
+        map: &HashMap<String, VectorPersisted>,
+    ) -> impl Iterator<Item = (&String, &Self)> {
+        map.iter()
+            .map(|(name, vector)| (name, Self::wrap_ref(vector)))
     }
 }
 

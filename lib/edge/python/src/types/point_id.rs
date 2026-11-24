@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -15,18 +15,12 @@ use crate::repr::*;
 pub struct PyPointId(pub PointIdType);
 
 impl PyPointId {
-    pub fn peel_set(set: ahash::HashSet<Self>) -> ahash::HashSet<PointIdType>
-    where
-        Self: TransparentWrapper<PointIdType>,
-    {
-        unsafe { mem::transmute(set) }
+    pub fn peel_set(set: ahash::HashSet<Self>) -> ahash::HashSet<PointIdType> {
+        set.into_iter().map(|point_id| point_id.0).collect()
     }
 
-    pub fn wrap_set_ref(set: &ahash::HashSet<PointIdType>) -> &ahash::HashSet<Self>
-    where
-        Self: TransparentWrapper<PointIdType>,
-    {
-        unsafe { mem::transmute(set) }
+    pub fn wrap_set(set: &ahash::HashSet<PointIdType>) -> ahash::HashSet<Self> {
+        set.iter().copied().map(Self).collect()
     }
 }
 
