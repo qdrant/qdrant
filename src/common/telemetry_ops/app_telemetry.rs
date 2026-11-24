@@ -195,14 +195,23 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         if std::arch::is_x86_feature_detected!("f16c") {
             cpu_flags.push("f16c");
         }
+        if std::arch::is_x86_feature_detected!("avxvnni") {
+            cpu_flags.push("avxvnni");
+        }
         if std::arch::is_x86_feature_detected!("avx512f") {
             cpu_flags.push("avx512f");
+        }
+        if std::arch::is_x86_feature_detected!("avx512bw") {
+            cpu_flags.push("avx512bw");
         }
         if std::arch::is_x86_feature_detected!("avx512vl") {
             cpu_flags.push("avx512vl");
         }
         if std::arch::is_x86_feature_detected!("avx512vpopcntdq") {
             cpu_flags.push("avx512vpopcntdq");
+        }
+        if std::arch::is_x86_feature_detected!("avx512vnni") {
+            cpu_flags.push("avx512vnni");
         }
     }
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
