@@ -249,6 +249,21 @@ impl ChannelService {
         Ok(url)
     }
 
+    /// Check whether `url` points at the host of the given peer, or of any known peer if `None`.
+    ///
+    /// Only compares hosts, because peers may run their REST API on different ports.
+    pub fn is_peer_host(&self, url: &Url, peer_id: Option<PeerId>) -> bool {
+        let is_host = |peer_uri: &Uri| {
+            Url::parse(&peer_uri.to_string()).is_ok_and(|peer_url| peer_url.host() == url.host())
+        };
+
+        let id_to_address = self.id_to_address.read();
+        match peer_id {
+            Some(peer_id) => id_to_address.get(&peer_id).is_some_and(is_host),
+            None => id_to_address.values().any(is_host),
+        }
+    }
+
     pub fn other_peers(&self, this_peer_id: PeerId) -> Vec<PeerId> {
         self.id_to_address
             .read()
@@ -275,5 +290,42 @@ impl Default for ChannelService {
             api_key: None,
             alt_api_key: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_peer_host() {
+        let channel_service = ChannelService::default();
+        channel_service.id_to_address.write().extend([
+            (1, Uri::from_static("http://10.0.0.1:6335")),
+            (2, Uri::from_static("http://Node-B.example:6335")),
+            (3, Uri::from_static("http://[::1]:6335")),
+        ]);
+
+        let is_peer_host =
+            |url: &str, peer_id| channel_service.is_peer_host(&Url::parse(url).unwrap(), peer_id);
+
+        // Host of the given peer, on any port and scheme
+        assert!(is_peer_host("http://10.0.0.1:6333/collections/a", Some(1)));
+        assert!(is_peer_host("https://10.0.0.1:7000/collections/a", Some(1)));
+        assert!(is_peer_host("http://node-b.example:6333/", Some(2)));
+        assert!(is_peer_host("http://[::1]:6333/", Some(3)));
+
+        // Host of another peer, or of an unknown peer
+        assert!(!is_peer_host("http://10.0.0.1:6333/", Some(2)));
+        assert!(!is_peer_host("http://10.0.0.1:6333/", Some(4)));
+
+        // Any known peer
+        assert!(is_peer_host("http://node-b.example:6333/", None));
+        assert!(!is_peer_host("http://10.0.0.2:6333/", None));
+        assert!(!is_peer_host(
+            "http://169.254.169.254/latest/meta-data/",
+            None
+        ));
+        assert!(!is_peer_host("http://localhost:6333/", None));
     }
 }
