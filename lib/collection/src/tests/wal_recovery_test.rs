@@ -47,6 +47,20 @@ fn create_collection_config_with_prevent_unoptimized() -> CollectionConfigIntern
     config
 }
 
+/// Wait until the update worker has processed every signal queued before this call.
+///
+/// The worker handles signals one at a time and awaits each operation before receiving the next,
+/// so a plunger is answered only after everything queued ahead of it was applied (or skipped).
+/// Don't poll the channel length against a short wall-clock deadline instead: on a slow CI
+/// runner draining a deferred WAL tail can take longer than that, and the test flakes.
+async fn wait_for_update_queue_drained(shard: &LocalShard) {
+    let plunged = shard.plunge_async().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(120), plunged)
+        .await
+        .expect("update worker did not drain the update queue")
+        .unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
     let _scope = ambient::async_test_guard();
@@ -858,21 +872,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
 
     // The update worker must drain the queued tail past the corrupt entry (it skips it the same
     // way: log and continue).
-    let timeout = std::time::Duration::from_secs(2);
-    let start = std::time::Instant::now();
-    let poll_interval = std::time::Duration::from_millis(10);
-
-    while shard.local_update_queue_info().await.length > 0 {
-        assert!(
-            start.elapsed() <= timeout,
-            "Timeout waiting for update queue to empty"
-        );
-        tokio::time::sleep(poll_interval).await;
-    }
-
-    // Channel length reaching zero only means the last operation was received,
-    // not that it finished applying; wait for the worker to go idle.
-    shard.plunge_async().await.unwrap().await.unwrap();
+    wait_for_update_queue_drained(&shard).await;
 
     // Every readable operation around the corrupt entry is applied.
     let info = shard.info().await.unwrap();
@@ -1005,21 +1005,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     .expect("shard load must tolerate a WAL truncated past the applied_seq upper bound");
 
     // Wait for the update worker to drain the queued tail.
-    let timeout = std::time::Duration::from_secs(2);
-    let start = std::time::Instant::now();
-    let poll_interval = std::time::Duration::from_millis(10);
-
-    while shard.local_update_queue_info().await.length > 0 {
-        assert!(
-            start.elapsed() <= timeout,
-            "Timeout waiting for update queue to empty"
-        );
-        tokio::time::sleep(poll_interval).await;
-    }
-
-    // Channel length reaching zero only means the last operation was received,
-    // not that it finished applying; wait for the worker to go idle.
-    shard.plunge_async().await.unwrap().await.unwrap();
+    wait_for_update_queue_drained(&shard).await;
 
     // All points are present: everything before the truncated prefix was durably flushed.
     let info = shard.info().await.unwrap();
@@ -1150,22 +1136,8 @@ async fn test_wal_replay_with_smaller_queue_size() {
     .await
     .unwrap();
 
-    // Wait for update worker to process all queued operations with a timeout
-    let timeout = std::time::Duration::from_secs(2);
-    let start = std::time::Instant::now();
-    let poll_interval = std::time::Duration::from_millis(10);
-
-    while shard.local_update_queue_info().await.length > 0 {
-        assert!(
-            start.elapsed() <= timeout,
-            "Timeout waiting for update queue to empty"
-        );
-        tokio::time::sleep(poll_interval).await;
-    }
-
-    // Channel length reaching zero only means the last operation was received,
-    // not that it finished applying; wait for the worker to go idle.
-    shard.plunge_async().await.unwrap().await.unwrap();
+    // Wait for update worker to process all queued operations
+    wait_for_update_queue_drained(&shard).await;
 
     // Verify all points are present after processing
     let info = shard.info().await.unwrap();
