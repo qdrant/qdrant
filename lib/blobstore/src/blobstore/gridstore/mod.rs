@@ -3,6 +3,9 @@ pub(super) mod pages;
 mod reader;
 mod view;
 
+#[cfg(test)]
+mod flush_tests;
+
 use std::borrow::Cow;
 use std::cmp;
 use std::path::PathBuf;

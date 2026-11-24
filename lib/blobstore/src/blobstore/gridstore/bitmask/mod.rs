@@ -257,6 +257,19 @@ impl<S: UniversalWrite> Bitmask<S> {
         Ok(all_bits[range_of_page].trailing_zeros())
     }
 
+    /// Whether the given block is marked as used.
+    #[cfg(test)]
+    pub(crate) fn is_block_used(&self, page_id: PageId, block_offset: BlockOffset) -> Result<bool> {
+        let index = self.range_of_page(page_id).start + block_offset as usize;
+        Ok(self.bitslice.get_bit(index as u64)?.unwrap_or(false))
+    }
+
+    /// The number of blocks marked as used.
+    #[cfg(test)]
+    pub(crate) fn used_blocks(&self) -> Result<usize> {
+        Ok(self.bitslice.count_ones()?)
+    }
+
     pub(crate) fn find_available_blocks(
         &self,
         num_blocks: u32,
