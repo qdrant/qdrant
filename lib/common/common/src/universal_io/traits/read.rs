@@ -231,6 +231,12 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// For example in MMAP-based files we do `madvise` with `MADV_PAGEOUT`.
     fn clear_ram_cache(&self) -> UioResult<()>;
 
+    /// Share of this file held in RAM right now (e.g. in the page cache), from 0 to 1,
+    /// if the backend can tell. A point-in-time approximation.
+    fn resident_share(&self) -> Option<f64> {
+        None
+    }
+
     fn kind() -> UniversalKind;
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.

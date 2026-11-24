@@ -127,6 +127,11 @@ where
     }
 
     #[inline]
+    pub fn resident_share(&self) -> Option<f64> {
+        self.inner.resident_share()
+    }
+
+    #[inline]
     pub fn will_need(&self, ranges: impl Iterator<Item = ReadRange>) {
         self.inner
             .will_need(ranges.map(ReadRange::into_byte_range::<T>));
