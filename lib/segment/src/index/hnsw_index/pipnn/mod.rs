@@ -78,6 +78,13 @@
 //!
 //! That's a peak of about 0.9 GB at 1M points, during the leaf k-NN of level 0, on top of the
 //! vectors. A reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
+//!
+//! The reservoirs of a level can be built in several passes ([`PipnnParams::reservoir_passes`]),
+//! each over a part of the level's points: a pass allocates the reservoirs of its part only,
+//! scores all leaves again, and prunes its part before the next pass starts. That divides the
+//! reservoirs' line by the number of passes, and takes a leaf k-NN per pass. The leaves are then
+//! only freed before the final prune of the last pass, and the links of the earlier passes are
+//! held during the later ones.
 
 mod backlinks;
 mod duplicates;
@@ -89,6 +96,7 @@ mod prune;
 mod sketches;
 
 use std::borrow::Cow;
+use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
@@ -125,6 +133,11 @@ pub(super) struct PipnnParams {
     pub leaf_k: usize,
     /// Reservoir capacity per point, as a multiple of the level's degree limit, at least 1.
     pub reservoir_factor: usize,
+    /// Passes over the leaves of a level, at least 1, and at most one per point. Each pass fills
+    /// and prunes the reservoirs of one part of the level's points, so only that part's
+    /// reservoirs are held at a time, and every pass scores all leaves again, see the module's
+    /// memory section. The links don't depend on it.
+    pub reservoir_passes: usize,
     /// Seed of every random choice of the build, drawn by the caller from the build's rng after
     /// the levels. There's no default, see [`PipnnParams::new`].
     pub seed: u64,
@@ -139,9 +152,12 @@ const DEFAULT_LEAF_K: usize = 4;
 /// (appendix A.5).
 const DEFAULT_RESERVOIR_FACTOR: usize = 2;
 
+/// Default [`PipnnParams::reservoir_passes`]: all reservoirs of a level at once.
+const DEFAULT_RESERVOIR_PASSES: usize = 1;
+
 impl PipnnParams {
     /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
-    /// limit, the default partitioning, and `seed`.
+    /// limit, built in [`DEFAULT_RESERVOIR_PASSES`] pass, the default partitioning, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
@@ -150,12 +166,13 @@ impl PipnnParams {
             partition: PartitionParams::default(),
             leaf_k: DEFAULT_LEAF_K,
             reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
+            reservoir_passes: DEFAULT_RESERVOIR_PASSES,
             seed,
         }
     }
 
     /// Fails on parameters that leave the points without candidates: leaves without room for a
-    /// pair, no neighbors per leaf, or no reservoir slots. Partitioning copes with its other
+    /// pair, no neighbors per leaf, no reservoir slots, or no pass. Partitioning copes with its other
     /// parameters out of range.
     fn validate(&self) -> OperationResult<()> {
         let problem = if self.partition.max_leaf_size < 2 {
@@ -164,6 +181,8 @@ impl PipnnParams {
             "leaf k must be at least 1"
         } else if self.reservoir_factor == 0 {
             "the reservoir factor must be at least 1"
+        } else if self.reservoir_passes == 0 {
+            "there must be at least 1 reservoir pass"
         } else {
             return Ok(());
         };
@@ -517,8 +536,10 @@ struct LevelStats {
     /// Neighbors per point in a leaf.
     leaf_k: usize,
     partition_time: Duration,
-    /// Including the allocation of the reservoirs.
+    /// Of all passes, including the allocation of the reservoirs.
     leaf_knn_time: Duration,
+    /// Of all passes.
+    prune_time: Duration,
 }
 
 impl Build<'_, '_> {
@@ -536,27 +557,16 @@ impl Build<'_, '_> {
     ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let capacity = level_m.saturating_mul(self.params.reservoir_factor);
         let mut stats = LevelStats::default();
-        let reservoirs = self.candidates(points, capacity, seed, progress, &mut stats)?;
+        let leaves = self.leaves(points, capacity, seed, progress, &mut stats)?;
+        let mut links = self.pruned(points, leaves, capacity, level_m, progress, &mut stats)?;
 
         let timer = Instant::now();
-        let mut links = prune::prune(
-            &reservoirs,
-            points,
-            level_m,
-            self.vector_storage,
-            self.quantized_vectors,
-            self.point_deleted,
-            self.stopped,
-            progress.start(Phase::Prune),
-        )?;
-        progress.end(Phase::Prune);
-        drop(reservoirs);
         let not_deleted = self.vector_storage.not_deleted_checker(self.point_deleted);
         // Points without candidates of their own get fallback links only, and no backlinks, nor
         // do deleted points, which `points` shouldn't hold
         let has_candidates: Vec<bool> = links.iter().map(|links| !links.is_empty()).collect();
         let fallbacks = link_empty_lists(&mut links, points, &not_deleted);
-        let prune_time = timer.elapsed();
+        let prune_time = stats.prune_time + timer.elapsed();
 
         let timer = Instant::now();
         let pruned: usize = links.iter().map(Vec::len).sum();
@@ -584,18 +594,17 @@ impl Build<'_, '_> {
         Ok(links)
     }
 
-    /// The reservoirs of `points`, the points of a level (sorted, distinct, at least 2),
-    /// `capacity` each, filled with the bidirected k-NN edges of their leaves. Adds the points to
-    /// the partitioning and the leaf k-NN of `progress`, and records both in `stats`.
-    fn candidates(
+    /// The leaves of `points`, the points of a level (sorted, distinct, at least 2), whose
+    /// reservoirs will have `capacity` slots. `seed` is the level's partitioning seed. Adds the
+    /// points to the partitioning of `progress`, and records it and the leaf k in `stats`.
+    fn leaves(
         &self,
         points: &[PointOffsetType],
         capacity: usize,
         seed: u64,
         progress: &mut BuildProgress,
         stats: &mut LevelStats,
-    ) -> OperationResult<Reservoirs> {
-        let len = points.len() as u64;
+    ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let timer = Instant::now();
         let leaves = partition::partition(
             self.scorer,
@@ -603,36 +612,112 @@ impl Build<'_, '_> {
             &self.params.partition,
             seed,
             self.stopped,
-            Share::new(progress.start(Phase::Partition), len),
+            Share::new(progress.start(Phase::Partition), points.len() as u64),
         )?;
         progress.end(Phase::Partition);
         stats.partition_time = timer.elapsed();
         stats.leaves = leaves.len();
         stats.memberships = leaves.iter().map(Vec::len).sum();
-
-        let timer = Instant::now();
-        // Only now, when partitioning has freed its buffers
-        let reservoirs = Reservoirs::new(points, capacity);
         // See `PipnnParams::leaf_k`
-        let leaf_k = match leaves.as_slice() {
+        stats.leaf_k = match leaves.as_slice() {
             [leaf] => self.params.leaf_k.max(capacity).min(leaf.len() - 1),
             _ => self.params.leaf_k,
         };
-        stats.leaf_k = leaf_k;
+        Ok(leaves)
+    }
+
+    /// Links of `points`, the points of a level (sorted, distinct, at least 2), in their order,
+    /// at most `level_m` each: their candidates from `leaves`, in reservoirs of `capacity`, cut
+    /// down by the final prune.
+    ///
+    /// Runs [`PipnnParams::reservoir_passes`] passes, each over the next part of `points`, all
+    /// about the same size. A pass fills the reservoirs of its part from all leaves and prunes
+    /// them. A point's reservoir only depends on the edges that start at it, so the links are
+    /// the same for any number of passes. Adds the points to the leaf k-NN and the final prune
+    /// of `progress`, and the times of both to `stats`.
+    fn pruned(
+        &self,
+        points: &[PointOffsetType],
+        leaves: Vec<Vec<PointOffsetType>>,
+        capacity: usize,
+        level_m: usize,
+        progress: &mut BuildProgress,
+        stats: &mut LevelStats,
+    ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
+        // At least 1, as validated, and there are at least 2 points
+        let passes = self.params.reservoir_passes.min(points.len());
+        let owners_per_pass = points.len().div_ceil(passes);
+        let mut leaves = Some(leaves);
+        let mut links = Vec::with_capacity(points.len());
+        for start in (0..points.len()).step_by(owners_per_pass) {
+            let owners = start..(start + owners_per_pass).min(points.len());
+
+            let timer = Instant::now();
+            let reservoirs = self.candidates(
+                points,
+                owners.clone(),
+                leaves.as_deref().unwrap_or_default(),
+                capacity,
+                stats.leaf_k,
+                progress,
+            )?;
+            if owners.end == points.len() {
+                // The last pass doesn't need the leaves for its prune
+                leaves = None;
+            }
+            stats.leaf_knn_time += timer.elapsed();
+
+            let timer = Instant::now();
+            links.extend(prune::prune(
+                &reservoirs,
+                &points[owners],
+                level_m,
+                self.vector_storage,
+                self.quantized_vectors,
+                self.point_deleted,
+                self.stopped,
+                progress.start(Phase::Prune),
+            )?);
+            stats.prune_time += timer.elapsed();
+        }
+        progress.end(Phase::Prune);
+        Ok(links)
+    }
+
+    /// The reservoirs of the points at `owners` in `points`, the points of a level (sorted,
+    /// distinct), `capacity` each, filled with the bidirected `leaf_k`-NN edges of `leaves`
+    /// that start at one of them. `owners` must not be empty. Adds the owners to the leaf k-NN
+    /// of `progress`.
+    fn candidates(
+        &self,
+        points: &[PointOffsetType],
+        owners: Range<usize>,
+        leaves: &[Vec<PointOffsetType>],
+        capacity: usize,
+        leaf_k: usize,
+        progress: &mut BuildProgress,
+    ) -> OperationResult<Reservoirs> {
+        debug_assert!(!owners.is_empty(), "a pass without points");
+        let len = owners.len() as u64;
+        // `points` are sorted, so the owners are the points of a range of ids
+        let owner_ids = points[owners.start]..=points[owners.end - 1];
+        // Only now, when partitioning has freed its buffers
+        let reservoirs = Reservoirs::for_owners(points, owners, capacity);
         let sketches = self.sketches;
         leaf::for_each_leaf_edge(
             self.scorer,
-            &leaves,
+            leaves,
             leaf_k,
             self.stopped,
             Share::new(progress.start(Phase::LeafKnn), len),
             |point, candidate, score| {
-                reservoirs.insert(point, candidate, sketches.hash(point, candidate), score);
+                // Checked before the hash, which reads the sketches of both
+                if owner_ids.contains(&point) {
+                    reservoirs.insert(point, candidate, sketches.hash(point, candidate), score);
+                }
             },
         )?;
         progress.end(Phase::LeafKnn);
-        drop(leaves);
-        stats.leaf_knn_time = timer.elapsed();
         Ok(reservoirs)
     }
 }
@@ -863,8 +948,18 @@ mod orchestration_tests {
             let len = points.len() as u64;
             let mut progress = BuildProgress::new(&tracker, len);
             let reservoirs = self.with_build(&sketches, |build| {
+                let leaves = build
+                    .leaves(points, capacity, 4, &mut progress, stats)
+                    .unwrap();
                 build
-                    .candidates(points, capacity, 4, &mut progress, stats)
+                    .candidates(
+                        points,
+                        0..points.len(),
+                        &leaves,
+                        capacity,
+                        stats.leaf_k,
+                        &mut progress,
+                    )
                     .unwrap()
             });
             assert_eq!(
@@ -1277,6 +1372,46 @@ mod orchestration_tests {
         }
     }
 
+    /// The reservoirs built in several passes give the links of one pass, on partitioned and
+    /// single-leaf levels, also with a last pass smaller than the others.
+    #[rstest]
+    fn reservoir_passes_keep_the_links(#[values(2, 3, 7)] passes: usize) {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::new(Distance::Euclid, None);
+        let levels = random_levels(5);
+        let expected = fixture.build(&fixture.points, &levels);
+        let params = PipnnParams {
+            reservoir_passes: passes,
+            ..params()
+        };
+        let stopped = AtomicBool::new(false);
+        let links = fixture
+            .build_with(&fixture.points, &levels, hnsw_m(), &params, &stopped)
+            .unwrap()
+            .unwrap();
+        assert!(links == expected);
+    }
+
+    /// More passes than points: a pass per point.
+    #[test]
+    fn more_reservoir_passes_than_points() {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::new(Distance::Euclid, None);
+        let points = &fixture.points[..LEAF + 9];
+        let levels = vec![0; POINTS];
+        let expected = fixture.build(points, &levels);
+        let params = PipnnParams {
+            reservoir_passes: usize::MAX,
+            ..params()
+        };
+        let stopped = AtomicBool::new(false);
+        let links = fixture
+            .build_with(points, &levels, hnsw_m(), &params, &stopped)
+            .unwrap()
+            .unwrap();
+        assert!(links == expected);
+    }
+
     #[test]
     fn seeds_change_the_links() {
         let _scope = ambient::test_guard();
@@ -1410,6 +1545,7 @@ mod orchestration_tests {
     #[case::leaves_of_one(PipnnParams { partition: PartitionParams { max_leaf_size: 1, ..params().partition }, ..params() })]
     #[case::no_leaf_k(PipnnParams { leaf_k: 0, ..params() })]
     #[case::no_reservoir(PipnnParams { reservoir_factor: 0, ..params() })]
+    #[case::no_pass(PipnnParams { reservoir_passes: 0, ..params() })]
     fn rejects_params_without_links(#[case] params: PipnnParams) {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Distance::Euclid, None);
