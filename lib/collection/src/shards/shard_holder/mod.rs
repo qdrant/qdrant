@@ -116,16 +116,6 @@ impl ShardHolder {
         futures::future::join_all(futures).await;
     }
 
-    pub async fn save_key_mapping_to_tar(
-        &self,
-        tar: &common::tar_ext::BuilderExt,
-    ) -> CollectionResult<()> {
-        self.key_mapping
-            .save_to_tar(tar, Path::new(SHARD_KEY_MAPPING_FILE))
-            .await?;
-        Ok(())
-    }
-
     pub fn get_shard_id_to_key_mapping(&self) -> &AHashMap<ShardId, ShardKey> {
         &self.shard_id_to_key_mapping
     }

@@ -84,7 +84,7 @@ impl Collection {
         let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
 
         // Create snapshot of each shard
-        {
+        let (collection_config, shard_key_mapping) = {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
                 .prefix(&format!("{snapshot_name}-temp-"))
                 .tempdir_in(global_temp_dir)
@@ -97,7 +97,7 @@ impl Collection {
                 })?;
 
             let mut futures = Vec::new();
-            {
+            let metadata = {
                 let shards_holder = self.shards_holder.read().await;
 
                 // Create snapshot of each shard
@@ -118,14 +118,24 @@ impl Collection {
                         .await?;
                     futures.push(future);
                 }
-            }
+
+                // Capture the collection config and shard key mapping under the same lock as the
+                // shards above. Creating a shard key or resharding changes them together with the
+                // shards. Reading them later could reference shards this snapshot doesn't
+                // contain, which makes it impossible to restore.
+                let collection_config = self.collection_config.read().await.to_bytes()?;
+                let shard_key_mapping = shards_holder.get_shard_key_to_ids_mapping();
+                (collection_config, shard_key_mapping)
+            };
 
             for future in futures {
                 future.await.map_err(|err| {
                     CollectionError::service_error(format!("failed to create snapshot: {err}"))
                 })?;
             }
-        }
+
+            metadata
+        };
 
         // Save collection config and version
         tar.append_data(
@@ -134,16 +144,13 @@ impl Collection {
         )
         .await?;
 
-        tar.append_data(
-            self.collection_config.read().await.to_bytes()?,
-            Path::new(COLLECTION_CONFIG_FILE),
-        )
-        .await?;
+        tar.append_data(collection_config, Path::new(COLLECTION_CONFIG_FILE))
+            .await?;
 
-        self.shards_holder
-            .read()
-            .await
-            .save_key_mapping_to_tar(&tar)
+        let shard_key_mapping = serde_json::to_vec(&shard_key_mapping).map_err(|err| {
+            CollectionError::service_error(format!("failed to serialize shard key mapping: {err}"))
+        })?;
+        tar.append_data(shard_key_mapping, Path::new(SHARD_KEY_MAPPING_FILE))
             .await?;
 
         self.payload_index_schema
