@@ -99,9 +99,7 @@ fn record(class: RequestClass, status: RequestStatus) {
 pub fn classify(method: &Method, query: Option<&str>) -> RequestClass {
     let has_key = |key: &str| {
         query.is_some_and(|query| {
-            query
-                .split('&')
-                .any(|pair| pair.split('=').next() == Some(key))
+            url::form_urlencoded::parse(query.as_bytes()).any(|(name, _)| name == key)
         })
     };
     match *method {

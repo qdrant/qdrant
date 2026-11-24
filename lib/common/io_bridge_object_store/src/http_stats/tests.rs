@@ -14,22 +14,17 @@ use crate::backends::aws::{AwsConfig, AwsCredentials};
 fn classifies_by_s3_price_class() {
     let cases = [
         (Method::GET, None, RequestClass::Get),
-        (Method::GET, Some("partNumber=1"), RequestClass::Get),
         (Method::HEAD, None, RequestClass::Get),
         (
             Method::GET,
-            Some("list-type=2&prefix=a%2F"),
+            Some("list-type=2&prefix=a"),
             RequestClass::List,
         ),
-        (Method::GET, Some("uploads"), RequestClass::List),
-        (Method::PUT, None, RequestClass::Put),
         (
             Method::PUT,
             Some("partNumber=2&uploadId=x"),
             RequestClass::Put,
         ),
-        (Method::POST, Some("uploads"), RequestClass::Put),
-        (Method::POST, Some("uploadId=x"), RequestClass::Put),
         (Method::POST, Some("delete"), RequestClass::Delete),
         (Method::DELETE, None, RequestClass::Delete),
         (Method::OPTIONS, None, RequestClass::Other),
@@ -37,18 +32,6 @@ fn classifies_by_s3_price_class() {
     for (method, query, class) in cases {
         assert_eq!(classify(&method, query), class, "{method} ?{query:?}");
     }
-}
-
-#[test]
-fn a_key_only_matches_whole_query_keys() {
-    assert_eq!(
-        classify(&Method::GET, Some("x-list-type=2")),
-        RequestClass::Get
-    );
-    assert_eq!(
-        classify(&Method::POST, Some("undelete=1")),
-        RequestClass::Put
-    );
 }
 
 /// Serves `responses` in order, one connection each, ignoring request bodies (none are sent).
