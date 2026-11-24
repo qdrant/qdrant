@@ -1,3 +1,4 @@
+use std::io::Read as _;
 use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +13,7 @@ use fs_err as fs;
 use memmap2::MmapMut;
 
 use super::{MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageWrite};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors;
@@ -44,6 +45,13 @@ impl MultivectorOffsetsStorageRam {
             offsets: offsets_mmap_type.deref_mut().iter().copied().collect(),
             path: path.to_path_buf(),
         })
+    }
+
+    /// Check offsets loaded from disk. See [`validate_offsets_count`] and [`validate_offsets`].
+    pub fn validate(&self, points_count: usize, inner_vectors_count: usize) -> OperationResult<()> {
+        let Self { offsets, path: _ } = self;
+        validate_offsets_count(offsets.len(), points_count)?;
+        validate_offsets(offsets, 0, inner_vectors_count)
     }
 
     fn open_options(populate: Populate) -> OpenOptions {
@@ -159,6 +167,28 @@ impl MultivectorOffsetsStorageMmap<MmapFile> {
 
     pub fn load(path: &Path) -> OperationResult<Self> {
         Self::open(&MmapFs, path)
+    }
+
+    /// Check offsets loaded from disk. See [`validate_offsets_count`] and [`validate_offsets`].
+    ///
+    /// Reads the file with plain sequential reads in batches, rather than through the mapping,
+    /// which is advised for random access and would not read ahead.
+    pub fn validate(&self, points_count: usize, inner_vectors_count: usize) -> OperationResult<()> {
+        /// Number of offsets to read at once, 512 KiB
+        const BATCH_LEN: usize = 64 * 1024;
+
+        let len = self.offsets.len()? as usize;
+        validate_offsets_count(len, points_count)?;
+
+        let mut file = fs::File::open(&self.path)?;
+        let mut buffer = vec![MultivectorOffset::default(); len.min(BATCH_LEN)];
+        for first_id in (0..len).step_by(BATCH_LEN) {
+            let batch = &mut buffer[..(len - first_id).min(BATCH_LEN)];
+            file.read_exact(bytemuck::cast_slice_mut(batch))?;
+            validate_offsets(batch, first_id, inner_vectors_count)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -474,6 +504,44 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
     fn heap_size_bytes(&self) -> usize {
         self.data.heap_size_bytes()
     }
+}
+
+/// Check that there is an offset for each of the `points_count` points.
+///
+/// Scoring expects an offset for every point and panics otherwise. An immutable storage is
+/// always created with one offset per point.
+fn validate_offsets_count(offsets_count: usize, points_count: usize) -> OperationResult<()> {
+    if offsets_count < points_count {
+        return Err(OperationError::inconsistent_storage(format!(
+            "Quantized multivector storage has {offsets_count} offsets, but {points_count} points",
+        )));
+    }
+    Ok(())
+}
+
+/// Check that every offset only addresses existing inner vectors.
+///
+/// Scoring expects this and panics otherwise. Offsets loaded from disk may come from a crafted
+/// snapshot, so check them before use. `first_id` is the point offset of the first entry in
+/// `offsets`.
+fn validate_offsets(
+    offsets: &[MultivectorOffset],
+    first_id: usize,
+    inner_vectors_count: usize,
+) -> OperationResult<()> {
+    for (index, &MultivectorOffset { start, count }) in offsets.iter().enumerate() {
+        let in_bounds = start
+            .checked_add(count)
+            .is_some_and(|end| end as usize <= inner_vectors_count);
+        if !in_bounds {
+            return Err(OperationError::inconsistent_storage(format!(
+                "Quantized multivector offset of point {} addresses {count} inner vectors \
+                 starting at {start}, but there are only {inner_vectors_count}",
+                first_id + index,
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn create_offsets_file_from_iter(
