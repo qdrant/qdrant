@@ -8,7 +8,6 @@ use std::cmp;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
@@ -26,7 +25,7 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{GridstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
-use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
+use crate::tracker::{BlockOffset, PageId, PendingCapture, PointOffset, Tracker, ValuePointer};
 
 /// Read-write storage for values of type `V`, operating in mutable mode.
 ///
@@ -606,7 +605,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
 
     /// Create flusher that durably persists all pending changes when invoked.
     pub(super) fn flusher(&self) -> Flusher {
-        let pending_updates = self.tracker.read().pending_updates.clone();
+        let pending = self.tracker.read().capture_pending();
 
         let pages = Arc::downgrade(&self.pages);
         let tracker = Arc::downgrade(&self.tracker);
@@ -632,7 +631,7 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             let pages_flusher = pages.read().flusher();
             pages_flusher()?;
 
-            let old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
+            let old_pointers = Self::flush_tracker(&tracker, pending)?;
 
             if old_pointers.is_empty() {
                 return Ok(());
@@ -649,18 +648,26 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
     /// Write pending updates to the tracker and flush it.
     fn flush_tracker(
         tracker: &Arc<RwLock<Tracker<S>>>,
-        pending_updates: AHashMap<PointOffset, PointerUpdates>,
+        pending: PendingCapture,
     ) -> crate::Result<Vec<ValuePointer>> {
+        let journal = {
+            let guard = tracker.read();
+            // A later capture was flushed already, don't journal pointers it superseded
+            if guard.is_outdated(&pending) {
+                return Ok(Vec::new());
+            }
+            guard.journal()
+        };
+
         // Journal the pointer writes first, so opening can repair a torn write to the tracker.
         // Not holding the tracker lock during the sync
-        let journal = tracker.read().journal();
         if let Some(journal) = &journal {
-            journal.append(&pending_updates)?;
+            journal.append(pending.updates())?;
         }
 
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates)?;
+            let old_pointers = guard.write_pending(pending)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };
