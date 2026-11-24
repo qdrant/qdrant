@@ -117,11 +117,15 @@ impl UpdateWorkers {
             segments.write().report_optimizer_error(err);
         }
 
+        // Read the pins under the WAL lock. Pins are taken under it too, so no pin can be taken
+        // between reading the pins and acknowledging.
+        let mut wal_lock = wal.blocking_lock();
+
         let Some(ack) = wal_ack_version(confirmed_version, &wal_ack_pins) else {
             return;
         };
 
-        if let Err(err) = wal.blocking_lock().ack(ack) {
+        if let Err(err) = wal_lock.ack(ack) {
             log::warn!("Failed to acknowledge WAL version: {err}");
             segments.write().report_optimizer_error(err);
         }
