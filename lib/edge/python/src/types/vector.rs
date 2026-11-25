@@ -39,7 +39,12 @@ impl FromPyObject<'_, '_> for PyVector {
         let vector = match vector.extract()? {
             Helper::Single(single) => VectorStructPersisted::Single(single),
             Helper::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
-            Helper::Named(named) => VectorStructPersisted::Named(PyNamedVector::peel_map(named)),
+            Helper::Named(named) => VectorStructPersisted::Named(
+                named
+                    .into_iter()
+                    .map(|(name, vector)| (name, PyNamedVector::peel(vector)))
+                    .collect(),
+            ),
         };
 
         Ok(Self(vector))
@@ -65,7 +70,9 @@ impl<'py> IntoPyObject<'py> for &PyVector {
         match &self.0 {
             VectorStructPersisted::Single(single) => single.into_bound_py_any(py),
             VectorStructPersisted::MultiDense(multi) => multi.into_bound_py_any(py),
-            VectorStructPersisted::Named(named) => Ok(PyNamedVector::wrap_map_ref(named)
+            VectorStructPersisted::Named(named) => Ok(named
+                .iter()
+                .map(|(name, vector)| (name, PyNamedVector::wrap_ref(vector)))
                 .into_py_dict(py)?
                 .into_any()),
         }
@@ -77,7 +84,11 @@ impl Repr for PyVector {
         match &self.0 {
             VectorStructPersisted::Single(single) => single.fmt(f),
             VectorStructPersisted::MultiDense(multi) => multi.fmt(f),
-            VectorStructPersisted::Named(named) => f.map(PyNamedVector::wrap_map_ref(named)),
+            VectorStructPersisted::Named(named) => f.map(
+                named
+                    .iter()
+                    .map(|(name, vector)| (name, PyNamedVector::wrap_ref(vector))),
+            ),
         }
     }
 }
@@ -85,21 +96,6 @@ impl Repr for PyVector {
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyNamedVector(VectorPersisted);
-
-impl PyNamedVector {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorPersisted> {
-        map.into_iter()
-            .map(|(name, vector)| (name, vector.0))
-            .collect()
-    }
-
-    pub fn wrap_map_ref(
-        map: &HashMap<String, VectorPersisted>,
-    ) -> impl Iterator<Item = (&String, &Self)> {
-        map.iter()
-            .map(|(name, vector)| (name, Self::wrap_ref(vector)))
-    }
-}
 
 impl FromPyObject<'_, '_> for PyNamedVector {
     type Error = PyErr;

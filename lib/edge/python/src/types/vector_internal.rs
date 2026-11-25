@@ -42,9 +42,12 @@ impl FromPyObject<'_, '_> for PyVectorInternal {
             Helper::MultiDense(multi) => {
                 VectorStructInternal::MultiDense(MultiDenseVectorInternal::from(multi))
             }
-            Helper::Named(named) => {
-                VectorStructInternal::Named(PyNamedVectorInternal::peel_map(named))
-            }
+            Helper::Named(named) => VectorStructInternal::Named(
+                named
+                    .into_iter()
+                    .map(|(name, vector)| (name, PyNamedVectorInternal::peel(vector)))
+                    .collect(),
+            ),
         };
 
         Ok(Self(vector))
@@ -70,7 +73,9 @@ impl<'py> IntoPyObject<'py> for &PyVectorInternal {
         match &self.0 {
             VectorStructInternal::Single(single) => single.into_bound_py_any(py),
             VectorStructInternal::MultiDense(multi) => multi_dense_into_py(multi, py),
-            VectorStructInternal::Named(named) => Ok(PyNamedVectorInternal::wrap_map_ref(named)
+            VectorStructInternal::Named(named) => Ok(named
+                .iter()
+                .map(|(name, vector)| (name, PyNamedVectorInternal::wrap_ref(vector)))
                 .into_py_dict(py)?
                 .into_any()),
         }
@@ -82,7 +87,11 @@ impl Repr for PyVectorInternal {
         match &self.0 {
             VectorStructInternal::Single(single) => single.fmt(f),
             VectorStructInternal::MultiDense(multi) => f.list(multi.multi_vectors()),
-            VectorStructInternal::Named(named) => f.map(PyNamedVectorInternal::wrap_map_ref(named)),
+            VectorStructInternal::Named(named) => f.map(
+                named
+                    .iter()
+                    .map(|(name, vector)| (name, PyNamedVectorInternal::wrap_ref(vector))),
+            ),
         }
     }
 }
@@ -90,21 +99,6 @@ impl Repr for PyVectorInternal {
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyNamedVectorInternal(pub VectorInternal);
-
-impl PyNamedVectorInternal {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorInternal> {
-        map.into_iter()
-            .map(|(name, vector)| (name, vector.0))
-            .collect()
-    }
-
-    pub fn wrap_map_ref(
-        map: &HashMap<String, VectorInternal>,
-    ) -> impl Iterator<Item = (&String, &Self)> {
-        map.iter()
-            .map(|(name, vector)| (name, Self::wrap_ref(vector)))
-    }
-}
 
 impl FromPyObject<'_, '_> for PyNamedVectorInternal {
     type Error = PyErr;

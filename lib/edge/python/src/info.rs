@@ -4,7 +4,6 @@ use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use edge::ShardInfo;
 use pyo3::prelude::*;
-use segment::json_path::JsonPath;
 use segment::types::PayloadIndexInfo;
 
 use crate::repr::*;
@@ -35,7 +34,11 @@ impl PyShardInfo {
 
     #[getter]
     pub fn payload_schema(&self) -> HashMap<PyJsonPath, PyPayloadIndexInfo> {
-        PyPayloadIndexInfo::wrap_map(&self.0.payload_schema)
+        self.0
+            .payload_schema
+            .iter()
+            .map(|(path, info)| (PyJsonPath(path.clone()), PyPayloadIndexInfo(info.clone())))
+            .collect()
     }
 
     pub fn __repr__(&self) -> String {
@@ -59,14 +62,6 @@ impl PyShardInfo {
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayloadIndexInfo(PayloadIndexInfo);
-
-impl PyPayloadIndexInfo {
-    fn wrap_map(map: &HashMap<JsonPath, PayloadIndexInfo>) -> HashMap<PyJsonPath, Self> {
-        map.iter()
-            .map(|(path, info)| (PyJsonPath(path.clone()), Self(info.clone())))
-            .collect()
-    }
-}
 
 #[pyclass_repr]
 #[pymethods]

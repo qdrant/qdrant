@@ -14,16 +14,6 @@ use crate::repr::*;
 #[repr(transparent)]
 pub struct PyPointId(pub PointIdType);
 
-impl PyPointId {
-    pub fn peel_set(set: ahash::HashSet<Self>) -> ahash::HashSet<PointIdType> {
-        set.into_iter().map(|point_id| point_id.0).collect()
-    }
-
-    pub fn wrap_set(set: &ahash::HashSet<PointIdType>) -> ahash::HashSet<Self> {
-        set.iter().copied().map(Self).collect()
-    }
-}
-
 impl FromPyObject<'_, '_> for PyPointId {
     type Error = PyErr;
 

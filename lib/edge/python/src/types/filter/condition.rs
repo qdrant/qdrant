@@ -189,13 +189,13 @@ impl PyHasIdCondition {
     #[new]
     pub fn new(point_ids: ahash::HashSet<PyPointId>) -> Self {
         Self(HasIdCondition {
-            has_id: MaybeArc::NoArc(ahash::AHashSet::from(PyPointId::peel_set(point_ids))),
+            has_id: MaybeArc::NoArc(point_ids.into_iter().map(PyPointId::peel).collect()),
         })
     }
 
     #[getter]
     pub fn point_ids(&self) -> ahash::HashSet<PyPointId> {
-        PyPointId::wrap_set(&self.0.has_id)
+        self.0.has_id.iter().copied().map(PyPointId).collect()
     }
 
     pub fn __repr__(&self) -> String {

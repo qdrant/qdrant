@@ -34,7 +34,11 @@ impl PyFormula {
     ) -> PyResult<Self> {
         let formula = FormulaInternal {
             formula: ExpressionInternal::from(formula),
-            defaults: PyValue::peel_map(defaults.unwrap_or_default()),
+            defaults: defaults
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(key, value)| (key, PyValue::peel(value)))
+                .collect(),
         };
 
         let formula = ParsedFormula::try_from(formula)
