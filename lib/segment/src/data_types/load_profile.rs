@@ -46,6 +46,10 @@ pub struct LoadProfile {
     /// Payload fields whose indexes the request's filter (or ordering) reads. Their
     /// indexes keep the configured placement; every other field index loads cold.
     warm_payload_fields: HashSet<PayloadKeyType>,
+    /// Whether the request reads raw payloads: it does whenever it reads any payload field
+    /// (an unindexed condition falls back to the payload). Kept apart from
+    /// `warm_payload_fields` so [`Self::retain_warm`] can drop fields without parking it.
+    warm_payload_storage: bool,
     /// Deferred-points threshold of the shard, in KB like the indexing threshold. `None`
     /// shows every point.
     deferred_points_threshold_kb: Option<usize>,
@@ -62,6 +66,7 @@ impl LoadProfile {
 
         Self {
             warm_vectors: HashSet::new(),
+            warm_payload_storage: !warm_payload_fields.is_empty(),
             warm_payload_fields,
             deferred_points_threshold_kb: None,
         }
@@ -70,9 +75,11 @@ impl LoadProfile {
     /// Profile of a (core) search: the queried vector keeps its configured placement —
     /// storage, index and quantized vectors — and the filter's field indexes stay warm.
     pub fn for_search(vector_name: &VectorName, filter: Option<&Filter>) -> Self {
+        let warm_payload_fields = filter_payload_keys(filter);
         Self {
             warm_vectors: HashSet::from([vector_name.to_owned()]),
-            warm_payload_fields: filter_payload_keys(filter),
+            warm_payload_storage: !warm_payload_fields.is_empty(),
+            warm_payload_fields,
             deferred_points_threshold_kb: None,
         }
     }
@@ -83,6 +90,7 @@ impl LoadProfile {
         Self {
             warm_vectors: HashSet::new(),
             warm_payload_fields: HashSet::new(),
+            warm_payload_storage: false,
             deferred_points_threshold_kb: None,
         }
     }
@@ -114,10 +122,12 @@ impl LoadProfile {
         let LoadProfile {
             warm_vectors,
             warm_payload_fields,
+            warm_payload_storage,
             deferred_points_threshold_kb,
         } = other;
         self.warm_vectors.extend(warm_vectors);
         self.warm_payload_fields.extend(warm_payload_fields);
+        self.warm_payload_storage |= warm_payload_storage;
         // Parts of one request share the shard's threshold; the stricter one wins otherwise.
         self.deferred_points_threshold_kb = match (
             self.deferred_points_threshold_kb,
@@ -128,12 +138,42 @@ impl LoadProfile {
         };
     }
 
+    /// Stop warming the components the caller knows load cold anyway: vectors failing
+    /// `keep_vector`, payload fields failing `keep_payload_field`, and the payload storage
+    /// unless `keep_payload_storage`.
+    ///
+    /// The caller decides from config, e.g. a vector whose storage, index and quantized vectors
+    /// are all configured cold, or a payload field without a warm index. The result places
+    /// those components exactly as before, so two profiles that differ only in them compare
+    /// equal once both are reduced. Only ever drops: like [`Self::merge`], a component
+    /// that keeps its placement in the result kept it in `self`.
+    ///
+    /// Compare reduced profiles, but open with the full one: a dropped vector's HNSW graph
+    /// would load on first use (see [`Self::vector_index_placement`]) rather than at open.
+    pub fn retain_warm(
+        &mut self,
+        mut keep_vector: impl FnMut(&VectorName) -> bool,
+        mut keep_payload_field: impl FnMut(&JsonPath) -> bool,
+        keep_payload_storage: bool,
+    ) {
+        let Self {
+            warm_vectors,
+            warm_payload_fields,
+            warm_payload_storage,
+            deferred_points_threshold_kb: _,
+        } = self;
+        warm_vectors.retain(|name| keep_vector(name));
+        warm_payload_fields.retain(|field| keep_payload_field(field));
+        *warm_payload_storage &= keep_payload_storage;
+    }
+
     /// Internal id from which points of a segment with `config` are deferred, or `None` to
     /// show every point. See [`segment_deferred_internal_id`].
     pub fn deferred_internal_id(&self, config: &SegmentConfig) -> Option<PointOffsetType> {
         let Self {
             warm_vectors: _,
             warm_payload_fields: _,
+            warm_payload_storage: _,
             deferred_points_threshold_kb,
         } = self;
         segment_deferred_internal_id(config, (*deferred_points_threshold_kb)?)
@@ -143,13 +183,14 @@ impl LoadProfile {
     pub fn payload_storage_placement(&self) -> Option<Populate> {
         let Self {
             warm_vectors: _,
-            warm_payload_fields,
+            warm_payload_fields: _,
+            warm_payload_storage,
             deferred_points_threshold_kb: _,
         } = self;
-        if warm_payload_fields.is_empty() {
-            Some(Populate::No)
-        } else {
+        if *warm_payload_storage {
             None
+        } else {
+            Some(Populate::No)
         }
     }
 
@@ -191,6 +232,7 @@ impl LoadProfile {
         let Self {
             warm_vectors: _,
             warm_payload_fields,
+            warm_payload_storage: _,
             deferred_points_threshold_kb: _,
         } = self;
         if warm_payload_fields.contains(field) {
@@ -206,6 +248,7 @@ impl LoadProfile {
         let Self {
             warm_vectors,
             warm_payload_fields: _,
+            warm_payload_storage: _,
             deferred_points_threshold_kb: _,
         } = self;
         if warm_vectors.contains(vector_name) {
@@ -459,5 +502,34 @@ mod tests {
             profile.payload_index_placement(&path("city")),
             Some(Populate::No)
         );
+    }
+
+    #[test]
+    fn retain_warm_drops_components_but_keeps_payload_storage_apart() {
+        let filter = Filter::new_must(match_condition("city", "London"));
+        let mut profile = LoadProfile::for_search("dense", Some(&filter));
+        profile.merge(LoadProfile::for_search("sparse", None));
+
+        let mut reduced = profile.clone();
+        reduced.retain_warm(|name| name == "dense", |_| false, true);
+        assert_eq!(reduced.vector_storage_placement("dense"), None);
+        assert_eq!(
+            reduced.vector_storage_placement("sparse"),
+            Some(Populate::No)
+        );
+        assert_eq!(
+            reduced.payload_index_placement(&path("city")),
+            Some(Populate::No)
+        );
+        // Dropping every field leaves the payload storage as it was.
+        assert_eq!(reduced.payload_storage_placement(), None);
+
+        reduced.retain_warm(|_| true, |_| true, false);
+        assert_eq!(reduced.payload_storage_placement(), Some(Populate::No));
+
+        // Keeping everything is the identity.
+        let mut kept = profile.clone();
+        kept.retain_warm(|_| true, |_| true, true);
+        assert_eq!(kept, profile);
     }
 }

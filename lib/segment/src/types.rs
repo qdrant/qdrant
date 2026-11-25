@@ -1249,6 +1249,25 @@ impl QuantizationConfig {
             QuantizationConfig::Turbo(t) => t.turbo.memory_placement(),
         }
     }
+
+    /// Configured memory placement of quantized vectors over a vector storage that is cold or
+    /// not: [`Self::memory_placement`], else following the storage, pinned in RAM alongside
+    /// an in-RAM storage and cold alongside an on-disk one. Before the node-wide low-memory mode.
+    pub fn resolved_memory_placement(&self, cold_vector_storage: bool) -> Memory {
+        resolve_quantized_memory_placement(self.memory_placement(), cold_vector_storage)
+    }
+}
+
+/// See [`QuantizationConfig::resolved_memory_placement`].
+pub(crate) fn resolve_quantized_memory_placement(
+    requested: Option<Memory>,
+    cold_vector_storage: bool,
+) -> Memory {
+    requested.unwrap_or(if cold_vector_storage {
+        Memory::Cold
+    } else {
+        Memory::Pinned
+    })
 }
 
 impl Validate for QuantizationConfig {
