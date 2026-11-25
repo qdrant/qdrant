@@ -1026,13 +1026,21 @@ fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: In
     let excluded = [1i64, 2, 3, 4, 5, 10];
     let est = index.except_cardinality(excluded.iter());
     assert_eq!(est.min, 1);
-    assert_eq!(est.max, 1);
+    if index_type != IndexType::Mmap {
+        assert_eq!(est.max, 1);
+    } else {
+        assert!(est.min <= est.exp && est.exp <= est.max);
+    }
 
     // Excluding duplicate keys present in the index must not double-subtract.
     let excluded_dups = [10i64, 10, 10, 10];
     let est_dups = index.except_cardinality(excluded_dups.iter());
     assert_eq!(est_dups.min, 1);
-    assert_eq!(est_dups.max, 1);
+    if index_type != IndexType::Mmap {
+        assert_eq!(est_dups.max, 1);
+    } else {
+        assert!(est_dups.min <= est_dups.exp && est_dups.exp <= est_dups.max);
+    }
 
     // Excluding all keys in the segment (10, 20, 30) yields exact 0 across all storage types.
     let excluded_all = [10i64, 20, 30];
@@ -1049,4 +1057,14 @@ fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: In
     } else {
         assert!(est_live.min <= est_live.exp && est_live.exp <= est_live.max);
     }
+
+    // Multi-valued point [10, 20] with excluded [1, 2, 10] still matches via 20.
+    let multi_data = vec![vec![10i64, 20]];
+    let multi_dir = Builder::new().prefix("except_multi_dir").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&multi_data, multi_dir.path(), index_type, |v| (*v).into());
+    let multi_index = load_map_index::<IntPayloadType>(&multi_data, multi_dir.path(), index_type);
+    let est_multi = multi_index.except_cardinality([1i64, 2, 10].iter());
+    assert_eq!(est_multi.min, 1);
+    assert_eq!(est_multi.exp, 1);
+    assert_eq!(est_multi.max, 1);
 }

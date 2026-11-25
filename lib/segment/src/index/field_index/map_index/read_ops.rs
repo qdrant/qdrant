@@ -155,13 +155,11 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         // otherwise values present only in other segments would inflate the subtraction
         // against `get_unique_values_count()` and falsely collapse `max_values_per_point` to 0.
         let mut total_excluded_value_count = 0usize;
-        let mut max_excluded_value_count = 0usize;
         let mut excluded_unique_values_count = 0usize;
         for val in excluded.unique() {
             if let Some(count) = self.get_count_for_value(val) {
                 excluded_unique_values_count += 1;
                 total_excluded_value_count += count;
-                max_excluded_value_count = max_excluded_value_count.max(count);
             }
         }
 
@@ -187,10 +185,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
                 .saturating_sub(total_excluded_value_count),
         );
 
-        let max = self
-            .get_indexed_points()
-            .saturating_sub(max_excluded_value_count)
-            .min(non_excluded_values_count);
+        let max = self.get_indexed_points().min(non_excluded_values_count);
 
         let exp = number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
             .max(min)
