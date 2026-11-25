@@ -4,6 +4,7 @@ use std::sync::Arc;
 use shard::wal::{SerdeWal, WalRawRecord};
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::orphan_points::{OrphanPoints, OrphanPointsError, find_orphan_points};
@@ -163,16 +164,30 @@ impl RecoverableWal {
     /// Find the points changed by orphan operations in this WAL
     ///
     /// See [`find_orphan_points`] for `source_clocks` and `max_points`.
+    ///
+    /// Reads all WAL records on the blocking pool, holding the WAL lock until it's done.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - the spawned read still runs to completion and its result is dropped. The WAL
+    /// lock is held until it finishes.
     pub async fn find_orphan_points(
         &self,
         source_clocks: &RecoveryPoint,
         max_points: usize,
     ) -> Result<OrphanPoints, OrphanPointsError> {
-        find_orphan_points(
-            self.wal.lock().await.read_all(true),
-            source_clocks,
-            max_points,
-        )
+        let wal = Mutex::lock_owned(self.wal.clone()).await;
+        let source_clocks = source_clocks.clone();
+
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            find_orphan_points(wal.read_all(true), &source_clocks, max_points)
+        }))
+        .await
+        .map_err(|err| {
+            OrphanPointsError::WalReadError(format!("failed to join WAL read task: {err}"))
+        })?
     }
 
     pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
