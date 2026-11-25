@@ -18,7 +18,7 @@ _interrupt () {
 
 trap _interrupt SIGINT
 
-./qdrant $@ &
+./qdrant "$@" &
 
 # Get PID for the traps
 QDRANT_PID=$!
@@ -49,7 +49,7 @@ Please check memory consumption, increase memory limit or remove some collection
 if [ ! -f "$QDRANT_INIT_FILE_PATH" ]; then
     # Run qdrant in recovery mode.
     # No collection operations are allowed in recovery mode except for removing collections
-    QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant $@ &
+    QDRANT__STORAGE__RECOVERY_MODE="$RECOVERY_MESSAGE" ./qdrant "$@" &
     # Get PID for the traps
     QDRANT_PID=$!
     wait $QDRANT_PID
