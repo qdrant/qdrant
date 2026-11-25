@@ -166,8 +166,12 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         }
 
         for (local_index, &score) in self.scores.iter().enumerate() {
-            // publish only the non-zero scores above the current min to beat
-            if score != 0.0 && score > self.top_results.threshold() {
+            // Publish only the non-zero scores above the current min to beat.
+            // A non-negative threshold already rules out zero scores; testing
+            // `score != 0.0` on every slot would be a badly predicted branch.
+            if score > self.top_results.threshold()
+                && (self.top_results.threshold() >= 0.0 || score != 0.0)
+            {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
                 if !filter_condition(real_id) {
