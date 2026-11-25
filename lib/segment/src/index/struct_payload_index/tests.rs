@@ -846,7 +846,23 @@ fn unindexed_conditions_on_mmap_match_full_payload_checks() {
             "pad": {"blob": "x".repeat((i % 13) as usize), "list": [i, i + 1, {"c": i}]},
             "a": a,
             "z": {"b": {"c": 3, "k": "k1"}, "arr": [{"v": 2}]},
+            // Keys the storage writes with a JSON escape. Paths can't express a `"` or `\`
+            // in a key, so only the tab key is used in filters.
+            "q\"k": i,
+            "b\\s": [i, "x"],
         });
+        if !i.is_multiple_of(3) {
+            let k = if i.is_multiple_of(4) {
+                Value::Null
+            } else {
+                json!(format!("k{}", i % 2))
+            };
+            let tab = json!({"c": i % 6, "k": k});
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("tab\tkey".to_string(), tab);
+        }
         if i.is_multiple_of(11) {
             payload.as_object_mut().unwrap().remove("a");
         }
@@ -873,7 +889,7 @@ fn unindexed_conditions_on_mmap_match_full_payload_checks() {
     // Storage level: only the requested first key, with the same value as the full payload
     for point in 0..num_points as u32 {
         let full = payload_storage.get(point).unwrap();
-        for key in ["a", "z", "pad", "missing"] {
+        for key in ["a", "z", "pad", "missing", "q\"k", "b\\s", "tab\tkey"] {
             let partial = payload_storage.payload_ref_field(point, key).unwrap();
             assert!(partial.len() <= 1, "point {point}, key {key}");
             assert_eq!(
@@ -882,6 +898,12 @@ fn unindexed_conditions_on_mmap_match_full_payload_checks() {
                 "point {point}, key {key}"
             );
         }
+    }
+
+    // The escaped keys are stored, so the checks above compared real values
+    let stored = payload_storage.get(1).unwrap();
+    for key in ["q\"k", "b\\s", "tab\tkey"] {
+        assert!(stored.0.contains_key(key), "{key:?}");
     }
 
     let filters = [
@@ -909,6 +931,11 @@ fn unindexed_conditions_on_mmap_match_full_payload_checks() {
             "must": [{"key": "z.b.c", "match": {"value": 3}}],
             "must_not": [{"is_null": {"key": "a.b.k"}}],
         }),
+        // First key stored with a JSON escape
+        json!({"must": [{"key": "\"tab\tkey\".c", "range": {"gte": 3}}]}),
+        json!({"must": [{"key": "\"tab\tkey\".k", "match": {"value": "k1"}}]}),
+        json!({"must": [{"is_empty": {"key": "\"tab\tkey\".c"}}]}),
+        json!({"must": [{"is_null": {"key": "\"tab\tkey\".k"}}]}),
         // Nested keeps the full parse, mixed with a partial one
         json!({"must": [
             {"nested": {"key": "a.arr", "filter": {"must": [{"key": "v", "match": {"value": 2}}]}}},
