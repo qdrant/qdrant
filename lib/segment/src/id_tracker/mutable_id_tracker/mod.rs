@@ -115,8 +115,23 @@ impl MutableIdTracker {
             );
         }
 
+        // Versions are loaded first: replaying the mappings needs to know which slots have one
+        let internal_to_version = if has_versions {
+            load_versions(&versions_path).map_err(|err| {
+                OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
+            })?
+        } else {
+            vec![]
+        };
+
+        // A slot "has a version" when the versions file reaches it: the file's length is the commit
+        // mark, see `versions_storage`. Zero-filled gaps count as having one, so this only tells
+        // abandoned inserts apart on the first load after a crash, before any later version write
+        // grows the file over them. See <https://github.com/qdrant/qdrant/pull/11633>.
+        let has_version =
+            |internal_id: PointOffsetType| (internal_id as usize) < internal_to_version.len();
         let (mappings, mappings_expected_len) = if has_mappings {
-            load_mappings(&mappings_path, deferred_internal_id).map_err(|err| {
+            load_mappings(&mappings_path, deferred_internal_id, has_version).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
             })?
         } else {
@@ -128,14 +143,6 @@ impl MutableIdTracker {
                 deferred_internal_id,
             );
             (mappings, 0)
-        };
-
-        let internal_to_version = if has_versions {
-            load_versions(&versions_path).map_err(|err| {
-                OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
-            })?
-        } else {
-            vec![]
         };
 
         // Compare internal point mappings and versions count, report warning if we don't

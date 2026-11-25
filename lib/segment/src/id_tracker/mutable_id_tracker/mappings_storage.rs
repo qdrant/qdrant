@@ -129,12 +129,13 @@ fn write_mapping_changes<W: Write>(
 pub(super) fn load_mappings(
     mappings_path: &Path,
     deferred_internal_id: Option<PointOffsetType>,
+    has_version: impl Fn(PointOffsetType) -> bool,
 ) -> OperationResult<(PointMappings, u64)> {
     let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
 
-    let mappings = read_mappings(&mut reader, deferred_internal_id)?;
+    let mappings = read_mappings(&mut reader, deferred_internal_id, has_version)?;
 
     let read_to = reader.stream_position()?;
     reader.into_inner().drop_cache()?;
@@ -200,10 +201,12 @@ where
 
 /// Read point mappings from the given reader
 ///
-/// Returns loaded point mappings.
+/// Returns loaded point mappings. `has_version` tells whether a slot has a persisted version, see
+/// the `Insert` arms below for how it affects the replay.
 pub(super) fn read_mappings<R>(
     reader: R,
     deferred_internal_id: Option<PointOffsetType>,
+    has_version: impl Fn(PointOffsetType) -> bool,
 ) -> OperationResult<PointMappings>
 where
     R: Read + Seek,
@@ -228,6 +231,29 @@ where
 
     for change in read_mappings_iter(reader) {
         match change? {
+            // A link to a slot without a persisted version, for a point that is still linked
+            // elsewhere: its flush stopped between mappings and versions. This is how an
+            // append-only mutation relocates a point to a fresh slot of the same segment. Keep
+            // the previous copy, the last one fully persisted, and leave the operation to WAL
+            // replay. Linking the fresh slot would tombstone the previous copy, and the
+            // inconsistency fix would then drop the point altogether.
+            //
+            // A point linked nowhere else is linked as before: the inconsistency fix drops it.
+            //
+            // The fresh slot stays reserved, never linked, never handed out again: its storages
+            // may already hold data written for it. Note that the log still names the fresh slot,
+            // and `has_version` is only reliable on the first load after the crash: a later
+            // version write for a higher slot zero-fills this slot's entry and makes it look
+            // committed. Relinking the point in the log closes that gap, see
+            // <https://github.com/qdrant/qdrant/pull/11641>.
+            //
+            // See <https://github.com/qdrant/qdrant/pull/11633> for how points were lost and why
+            // this is safe.
+            MappingChange::Insert(external_id, internal_id)
+                if !has_version(internal_id) && mappings.heads(&external_id).next().is_some() =>
+            {
+                mappings.reserve_slot(internal_id);
+            }
             MappingChange::Insert(external_id, internal_id) => {
                 mappings.set_link(external_id, internal_id);
             }
