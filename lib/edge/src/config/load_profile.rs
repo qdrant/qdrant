@@ -55,7 +55,6 @@ impl EdgeConfig {
 
 #[cfg(test)]
 mod tests {
-    use segment::json_path::JsonPath;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Match, PayloadSchemaType,
         QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig, ScalarType,
@@ -64,161 +63,118 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::vectors::EdgeVectorParams;
+    use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
-    fn dense(memory: Option<Memory>) -> EdgeVectorParams {
+    fn dense(
+        memory: Option<Memory>,
+        hnsw: Option<Memory>,
+        quantization: Option<Option<Memory>>,
+    ) -> EdgeVectorParams {
         let mut params = EdgeVectorParams::builder(4, Distance::Dot).build();
         params.memory = memory;
-        params
-    }
-
-    fn hnsw(memory: Memory) -> HnswConfig {
-        HnswConfig {
+        params.hnsw_config = hnsw.map(|memory| HnswConfig {
             memory: Some(memory),
             ..Default::default()
-        }
-    }
-
-    fn scalar(memory: Option<Memory>) -> QuantizationConfig {
+        });
         #[allow(deprecated)]
-        let scalar = ScalarQuantizationConfig {
+        let scalar = |memory| ScalarQuantizationConfig {
             r#type: ScalarType::Int8,
             quantile: None,
             always_ram: None,
             memory,
         };
-        QuantizationConfig::Scalar(ScalarQuantization { scalar })
-    }
-
-    fn path(raw: &str) -> JsonPath {
-        raw.parse().unwrap()
+        params.quantization_config = quantization.map(|memory| {
+            QuantizationConfig::Scalar(ScalarQuantization {
+                scalar: scalar(memory),
+            })
+        });
+        params
     }
 
     fn filter_on(key: &str) -> Filter {
         Filter::new_must(Condition::Field(FieldCondition::new_match(
-            path(key),
+            key.parse().unwrap(),
             Match::from(ValueVariants::String(String::from("x"))),
         )))
     }
 
-    fn schema(raw: serde_json::Value) -> PayloadFieldSchema {
-        serde_json::from_value(raw).unwrap()
-    }
-
-    fn warm_vectors<'a>(config: &EdgeConfig, names: &[&'a str]) -> Vec<&'a str> {
-        let profile = names
-            .iter()
-            .map(|name| LoadProfile::for_search(name, None))
-            .reduce(|mut merged, profile| {
-                merged.merge(profile);
-                merged
-            })
-            .unwrap();
-        let reduced = config.disregard_cold(profile, &HashMap::new());
-        names
-            .iter()
-            .copied()
-            .filter(|name| reduced.vector_storage_placement(name).is_none())
-            .collect()
-    }
-
+    /// Whether a shard opened for a retrieve serves `requested` without reopening.
     #[test]
-    fn a_dense_vector_is_cold_only_when_every_component_is() {
+    fn covers_requests_adding_only_components_that_load_cold() {
+        use Memory::{Cached, Cold, Pinned};
+
+        let sparse = |memory| EdgeSparseVectorParams {
+            memory,
+            ..Default::default()
+        };
         let mut config = EdgeConfig::builder()
-            .vector("unset", dense(None))
-            .vector("cold", dense(Some(Memory::Cold)))
+            .vector("unset", dense(None, None, None))
+            .vector("cold", dense(Some(Cold), None, None))
+            .vector(
+                "cold_own_hnsw_cached",
+                dense(Some(Cold), Some(Cached), None),
+            )
+            .vector("cold_quantized_unset", dense(Some(Cold), None, Some(None)))
+            .vector(
+                "cold_quantized_pinned",
+                dense(Some(Cold), None, Some(Some(Pinned))),
+            )
+            .vector(
+                "cached_own_hnsw_cold",
+                dense(Some(Cached), Some(Cold), None),
+            )
+            .sparse_vector("sparse_cold", sparse(Some(Cold)))
+            .sparse_vector("sparse_unset", sparse(None))
+            .payload_memory(Cold)
             .build();
-        assert_eq!(warm_vectors(&config, &["unset", "cold"]), ["unset", "cold"]);
-
-        config.hnsw_config = Some(hnsw(Memory::Cold));
-        assert_eq!(warm_vectors(&config, &["unset", "cold"]), ["unset"]);
-
-        config.vectors.get_mut("cold").unwrap().hnsw_config = Some(hnsw(Memory::Cached));
-        assert_eq!(warm_vectors(&config, &["cold"]), ["cold"]);
-        config.vectors.get_mut("cold").unwrap().hnsw_config = None;
-
-        config.quantization_config = Some(scalar(None));
-        assert!(warm_vectors(&config, &["cold"]).is_empty());
-        config.quantization_config = Some(scalar(Some(Memory::Pinned)));
-        assert_eq!(warm_vectors(&config, &["cold"]), ["cold"]);
-        config.vectors.get_mut("cold").unwrap().quantization_config =
-            Some(scalar(Some(Memory::Cold)));
-        assert!(warm_vectors(&config, &["cold"]).is_empty());
-    }
-
-    #[test]
-    fn payload_fields_without_a_warm_index_are_dropped() {
+        config.hnsw_config = Some(HnswConfig {
+            memory: Some(Cold),
+            ..Default::default()
+        });
         let payload_schema = HashMap::from([
             (
-                path("indexed"),
+                "indexed".parse().unwrap(),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
             ),
             (
-                path("cold"),
-                schema(json!({"type": "keyword", "memory": "cold"})),
-            ),
-            (
-                path("cached"),
-                schema(json!({"type": "keyword", "memory": "cached"})),
+                "cold_index".parse().unwrap(),
+                serde_json::from_value(json!({"type": "keyword", "memory": "cold"})).unwrap(),
             ),
         ]);
-        let mut profile = LoadProfile::for_retrieve();
-        for field in ["indexed", "cold", "cached", "unindexed"] {
-            profile.merge(LoadProfile::for_scroll(Some(&filter_on(field)), None));
-        }
-        let config = EdgeConfig::builder().payload_memory(Memory::Cold).build();
-        let reduced = config.disregard_cold(profile.clone(), &payload_schema);
-        for (field, warm) in [
-            ("indexed", true),
-            ("cached", true),
-            ("cold", false),
-            ("unindexed", false),
-        ] {
-            assert_eq!(
-                reduced.payload_index_placement(&path(field)).is_none(),
-                warm,
-                "{field}"
-            );
-        }
-        let config = EdgeConfig::builder().payload_memory(Memory::Cached).build();
-        assert_eq!(
-            config.disregard_cold(profile.clone(), &payload_schema),
-            profile
-        );
-    }
-
-    #[test]
-    fn requests_adding_only_cold_components_reduce_to_the_active_profile() {
-        let mut config = EdgeConfig::builder()
-            .vector("warm", dense(None))
-            .vector("cold", dense(Some(Memory::Cold)))
-            .payload_memory(Memory::Cold)
-            .build();
-        config.hnsw_config = Some(hnsw(Memory::Cold));
-        let payload_schema = HashMap::from([(
-            path("city"),
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-        )]);
-        let covers = |active: &LoadProfile, requested: LoadProfile| {
+        let covers = |config: &EdgeConfig, requested: LoadProfile| {
+            let active = LoadProfile::for_retrieve();
             let mut merged = active.clone();
             merged.merge(requested);
             config.disregard_cold(merged, &payload_schema)
-                == config.disregard_cold(active.clone(), &payload_schema)
+                == config.disregard_cold(active, &payload_schema)
         };
 
-        let active = LoadProfile::for_search("warm", None);
-        assert!(covers(&active, LoadProfile::for_search("cold", None)));
-        assert!(covers(
-            &active,
-            LoadProfile::for_search("cold", Some(&filter_on("unindexed")))
-        ));
-        assert!(!covers(
-            &active,
-            LoadProfile::for_search("cold", Some(&filter_on("city")))
-        ));
-        assert!(!covers(
-            &LoadProfile::for_retrieve(),
-            LoadProfile::for_search("warm", None)
-        ));
+        for (vector, covered) in [
+            ("unset", false),
+            ("cold", true),
+            ("cold_own_hnsw_cached", false),
+            ("cold_quantized_unset", true),
+            ("cold_quantized_pinned", false),
+            ("cached_own_hnsw_cold", false),
+            ("sparse_cold", true),
+            ("sparse_unset", false),
+            ("missing", true),
+        ] {
+            let requested = LoadProfile::for_search(vector, None);
+            assert_eq!(covers(&config, requested), covered, "vector {vector}");
+        }
+        for (field, covered) in [
+            ("indexed", false),
+            ("cold_index", true),
+            ("unindexed", true),
+        ] {
+            let requested = LoadProfile::for_search("cold", Some(&filter_on(field)));
+            assert_eq!(covers(&config, requested), covered, "field {field}");
+        }
+
+        // A warm payload storage loads warm for any field.
+        config.payload_memory = Some(Cached);
+        let requested = LoadProfile::for_scroll(Some(&filter_on("unindexed")), None);
+        assert!(!covers(&config, requested));
     }
 }
