@@ -477,6 +477,13 @@ pub async fn do_update_vectors(
     auth: Auth,
     inference_params: InferenceParams,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
+    // The REST handler already runs this via `actix_web_validator::Json`, but the
+    // gRPC handler does not. Without this, an empty dense vector on `wait=false`
+    // is acknowledged and then dropped by the segment dimension check.
+    operation
+        .validate()
+        .map_err(|err| StorageError::bad_input(err.to_string()))?;
+
     let toc = toc_provider
         .check_strict_mode(
             &operation,
