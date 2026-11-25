@@ -4,10 +4,29 @@ use std::fmt;
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, IgnoredAny, MapAccess, Visitor};
 use serde_json::{Map, Value};
 
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::types::OwnedPayloadRef;
+
+/// Payload holding only the top-level `field` of a stored payload, given in its JSON encoding.
+///
+/// A point without stored payload (`None`) reads as an empty payload.
+pub fn payload_field_from_bytes(
+    bytes: Option<&[u8]>,
+    field: &str,
+) -> OperationResult<OwnedPayloadRef<'static>> {
+    let fields = match bytes {
+        Some(bytes) => parse_payload_field(bytes, field).map_err(|err| {
+            OperationError::service_error(format!("Failed to deserialize payload: {err}"))
+        })?,
+        None => Map::new(),
+    };
+    Ok(OwnedPayloadRef::from(fields))
+}
+
 /// Parse only the top-level `field` of a JSON object payload.
 ///
 /// The other values are scanned but not materialized, which skips their allocations.
-pub fn parse_payload_field(bytes: &[u8], field: &str) -> serde_json::Result<Map<String, Value>> {
+fn parse_payload_field(bytes: &[u8], field: &str) -> serde_json::Result<Map<String, Value>> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let map = FieldSeed(field).deserialize(&mut deserializer)?;
     deserializer.end()?;

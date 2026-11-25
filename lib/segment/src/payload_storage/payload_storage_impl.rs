@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::JsonPath;
-use crate::payload_storage::partial_payload::parse_payload_field;
+use crate::payload_storage::partial_payload::payload_field_from_bytes;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::types::{OwnedPayloadRef, Payload, PayloadKeyTypeRef};
 
@@ -144,16 +144,10 @@ where
         point_offset: PointOffsetType,
         field: &str,
     ) -> OperationResult<OwnedPayloadRef<'_>> {
-        let fields = match self
+        let bytes = self
             .storage
-            .get_value_bytes::<Random>(point_offset, HwMetric::PayloadIoRead)?
-        {
-            Some(bytes) => parse_payload_field(&bytes, field).map_err(|err| {
-                OperationError::service_error(format!("Failed to deserialize payload: {err}"))
-            })?,
-            None => serde_json::Map::new(),
-        };
-        Ok(OwnedPayloadRef::from(fields))
+            .get_value_bytes::<Random>(point_offset, HwMetric::PayloadIoRead)?;
+        payload_field_from_bytes(bytes.as_deref(), field)
     }
 
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
