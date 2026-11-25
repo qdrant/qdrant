@@ -281,6 +281,7 @@ impl TableOfContent {
         let collection_pass = auth.check_point_op(collection_name, &request, "discover")?;
 
         let collection = self.get_collection(&collection_pass).await?;
+        self.validate_discover_lookup_from(&request).await?;
         discovery::discover(
             request,
             &collection,
@@ -314,6 +315,9 @@ impl TableOfContent {
         };
 
         let collection = self.get_collection(&collection_pass).await?;
+        for (request, _shard_selector) in &requests {
+            self.validate_discover_lookup_from(request).await?;
+        }
 
         discovery::discover_batch(
             requests,
@@ -676,6 +680,17 @@ impl TableOfContent {
     async fn validate_recommend_lookup_from(
         &self,
         request: &RecommendRequestInternal,
+    ) -> StorageResult<()> {
+        if let Some(lookup_from) = &request.lookup_from {
+            self.validate_lookup_from_collection_exists(&lookup_from.collection)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn validate_discover_lookup_from(
+        &self,
+        request: &DiscoverRequestInternal,
     ) -> StorageResult<()> {
         if let Some(lookup_from) = &request.lookup_from {
             self.validate_lookup_from_collection_exists(&lookup_from.collection)
