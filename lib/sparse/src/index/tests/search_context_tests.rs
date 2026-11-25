@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -507,6 +508,68 @@ mod test_mod {
         search_context.promote_longest_posting_lists_to_the_front();
 
         assert_eq!(search_context.posting_list_len(0), 3);
+    }
+
+    /// The filter applies to the last posting list too, and is only checked for
+    /// points that could enter the top.
+    #[test]
+    fn search_filters_last_posting_list_test() {
+        // The first batch only holds point 1, so the rest is scored as the last
+        // posting list.
+        let index = TestIndex::from_ram({
+            let mut builder = InvertedIndexBuilder::new();
+            builder.add(1, [(1, 1.0)].into());
+            for (offset, weight) in [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
+                .into_iter()
+                .enumerate()
+            {
+                builder.add(20_000 + offset as PointOffsetType, [(1, weight)].into());
+            }
+            builder.build()
+        });
+
+        let _scope = ambient::test_guard();
+        let is_stopped = AtomicBool::new(false);
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1],
+                values: vec![1.0],
+            },
+            3,
+            &index.index,
+            &mut scratch,
+            &is_stopped,
+            1,
+        )
+        .unwrap();
+
+        // The two best points are filtered out.
+        let checked = Cell::new(0);
+        let filter = |idx: PointOffsetType| {
+            checked.set(checked.get() + 1);
+            idx != 20_000 && idx != 20_001
+        };
+
+        assert_eq!(
+            round_scores(search_context.search(&filter)),
+            vec![
+                ScoredPointOffset {
+                    score: 6.0,
+                    idx: 20_002
+                },
+                ScoredPointOffset {
+                    score: 5.0,
+                    idx: 20_003
+                },
+                ScoredPointOffset {
+                    score: 4.0,
+                    idx: 20_004
+                },
+            ]
+        );
+        // Points 1 and 20_000..=20_004. The rest score below the full top.
+        assert_eq!(checked.get(), 6);
     }
 
     /// A zero score must not be returned, also while the top is not full
