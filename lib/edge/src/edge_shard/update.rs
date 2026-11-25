@@ -60,8 +60,8 @@ impl EdgeShard {
         self.apply(operation_id, operation)
     }
 
-    /// Re-apply the WAL entries not yet acknowledged as persisted by the segments, so that
-    /// operations written to the WAL before a crash are not lost.
+    /// Re-apply WAL entries that may still need to be persisted by the segments, including
+    /// operations written to the WAL before a crash.
     ///
     /// Entries come from this shard's own updates or from a Qdrant snapshot's WAL. Re-applying an
     /// operation the segments already hold is a no-op thanks to point versions. An operation that
@@ -74,6 +74,22 @@ impl EdgeShard {
                 last_operation_id: _,
             } => return Ok(()),
         };
+
+        let mut first_index = wal.first_index();
+        if !wal.has_acknowledged_index() {
+            // Older Edge shards have no WAL acknowledgement. After an interrupted flush,
+            // segments can have different durable versions. Only skip entries strictly
+            // below every segment's persisted version: the boundary operation itself
+            // may have been only partially applied when the flush captured it.
+            let persisted_version = self
+                .segments
+                .read()
+                .iter()
+                .map(|(_, segment)| segment.get().read().persistent_version())
+                .min()
+                .unwrap_or(0);
+            first_index = first_index.max(persisted_version);
+        }
 
         // Operations may reference a vector name that was deleted later. The config already
         // reflects the deletion, so such operations would fail validation and drop all their
@@ -88,7 +104,7 @@ impl EdgeShard {
                 .collect()
         };
 
-        for entry in wal.read(wal.first_index()) {
+        for entry in wal.read(first_index) {
             let (operation_id, record) = entry.map_err(|err| {
                 OperationError::service_error(format!("failed to read WAL entry: {err}"))
             })?;
