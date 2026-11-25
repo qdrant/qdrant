@@ -1003,3 +1003,50 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
         with_prefix
     );
 }
+
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
+    // Segment only contains keys 10 and 20 (plus key 30 whose only point is deleted),
+    // while the `except` filter includes keys absent from this segment (1..=5).
+    let data = vec![vec![10i64], vec![10], vec![20], vec![30]];
+
+    let temp_dir = Builder::new()
+        .prefix("except_absent_dir")
+        .tempdir()
+        .unwrap();
+    save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+    let mut index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+    index.remove_point(3).unwrap();
+
+    // Excluding absent values + 1 present value (10) leaves point 2 (value 20) matching.
+    let excluded = [1i64, 2, 3, 4, 5, 10];
+    let est = index.except_cardinality(excluded.iter());
+    assert_eq!(est.min, 1);
+    assert_eq!(est.max, 1);
+
+    // Excluding duplicate keys present in the index must not double-subtract.
+    let excluded_dups = [10i64, 10, 10, 10];
+    let est_dups = index.except_cardinality(excluded_dups.iter());
+    assert_eq!(est_dups.min, 1);
+    assert_eq!(est_dups.max, 1);
+
+    // Excluding all keys in the segment (10, 20, 30) yields exact 0 across all storage types.
+    let excluded_all = [10i64, 20, 30];
+    let est_zero = index.except_cardinality(excluded_all.iter());
+    assert!(est_zero.equals_min_exp_max(&CardinalityEstimation::exact(0)));
+
+    // Excluding only the live keys (10, 20) while deleted key 30 remains in the index
+    // must not panic; MutableGridstore and RamMmap decrement `values_count` on delete so
+    // they return exact 0 immediately.
+    let excluded_live = [10i64, 20];
+    let est_live = index.except_cardinality(excluded_live.iter());
+    if index_type != IndexType::Mmap {
+        assert!(est_live.equals_min_exp_max(&CardinalityEstimation::exact(0)));
+    } else {
+        assert!(est_live.min <= est_live.exp && est_live.exp <= est_live.max);
+    }
+}

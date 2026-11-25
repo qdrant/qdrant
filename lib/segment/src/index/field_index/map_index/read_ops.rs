@@ -151,21 +151,31 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         N: 'b,
     {
         // Minimal case: we exclude as many points as possible.
-        let excluded_value_counts: Vec<_> = excluded
-            .map(|val| self.get_count_for_value(val).unwrap_or(0))
-            .collect();
-        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
+        // Only count distinct excluded values that actually exist in this segment's index,
+        // otherwise values present only in other segments would inflate the subtraction
+        // against `get_unique_values_count()` and falsely collapse `max_values_per_point` to 0.
+        let mut total_excluded_value_count = 0usize;
+        let mut max_excluded_value_count = 0usize;
+        let mut excluded_unique_values_count = 0usize;
+        for val in excluded.unique() {
+            if let Some(count) = self.get_count_for_value(val) {
+                excluded_unique_values_count += 1;
+                total_excluded_value_count += count;
+                max_excluded_value_count = max_excluded_value_count.max(count);
+            }
+        }
 
         debug_assert!(total_excluded_value_count <= self.get_values_count());
+        debug_assert!(excluded_unique_values_count <= self.get_unique_values_count());
 
         let non_excluded_values_count = self
             .get_values_count()
             .saturating_sub(total_excluded_value_count);
         let max_values_per_point = self
             .get_unique_values_count()
-            .saturating_sub(excluded_value_counts.len());
+            .saturating_sub(excluded_unique_values_count);
 
-        if max_values_per_point == 0 {
+        if non_excluded_values_count == 0 || max_values_per_point == 0 {
             debug_assert_eq!(non_excluded_values_count, 0);
             return CardinalityEstimation::exact(0);
         }
@@ -176,8 +186,6 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
             self.get_indexed_points()
                 .saturating_sub(total_excluded_value_count),
         );
-
-        let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
 
         let max = self
             .get_indexed_points()
