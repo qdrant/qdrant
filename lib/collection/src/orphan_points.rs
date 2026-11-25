@@ -29,7 +29,8 @@ pub const MAX_ORPHAN_POINTS: usize = 10_000;
 pub struct OrphanPoints {
     /// Points the orphan operations can have changed
     pub point_ids: HashSet<PointIdType>,
-    /// For each clock the source knows, the tag of the last record at or below the source's tick
+    /// For each clock the source knows, the tag of the last non-forced record at or below the
+    /// source's tick
     pub clocks: Vec<ClockTag>,
 }
 
@@ -103,7 +104,7 @@ pub enum OrphanPointsError {
         clock_id: u32,
         tick: u64,
     },
-    #[error("WAL has no record of clock {peer_id}({clock_id}) at or below tick {tick}")]
+    #[error("WAL has no non-forced record of clock {peer_id}({clock_id}) at or below tick {tick}")]
     MissingRecord {
         peer_id: PeerId,
         clock_id: u32,
@@ -123,9 +124,13 @@ pub enum OrphanPointsError {
 /// tick 0 for a clock the source doesn't know. Records of these clocks with a higher tick are
 /// orphan operations.
 ///
+/// Forced records, written by shard transfers, can have a lower tick than records before them, so
+/// they don't count as a record at or below the source's tick, or as the first record of a clock.
+/// Forced records above the source's tick still count as orphan operations.
+///
 /// Fails if:
-/// - the WAL has no record at or below the source's tick of a clock the source knows, so the
-///   source can't verify that both replicas have the same operation there
+/// - the WAL has no non-forced record at or below the source's tick of a clock the source knows,
+///   so the source can't verify that both replicas have the same operation there
 /// - the WAL may be missing orphan records of a clock the source doesn't know, because it is
 ///   truncated
 /// - an orphan operation can change points it doesn't list
@@ -140,7 +145,7 @@ pub fn find_orphan_points(
         .map(|tag| ((tag.peer_id, tag.clock_id), tag.clock_tick))
         .collect();
 
-    let mut earliest_ticks = HashMap::new();
+    let mut earliest_own_ticks = HashMap::new();
     let mut clocks = HashMap::new();
     let mut point_ids = HashSet::new();
 
@@ -158,10 +163,20 @@ pub fn find_orphan_points(
             continue;
         };
 
-        earliest_ticks.entry(key).or_insert(clock_tag.clock_tick);
+        // A forced record can have a lower tick than records before it, so it tells nothing about
+        // which records were truncated. Only records that passed the clock check do: their ticks
+        // never go down through the WAL.
+        if !clock_tag.force {
+            earliest_own_ticks
+                .entry(key)
+                .or_insert(clock_tag.clock_tick);
+        }
 
         if clock_tag.clock_tick <= source_tick {
-            clocks.insert(key, clock_tag);
+            if !clock_tag.force {
+                clocks.insert(key, clock_tag);
+            }
+
             continue;
         }
 
@@ -176,15 +191,17 @@ pub fn find_orphan_points(
         }
     }
 
-    // Truncation removes records from the start of the WAL. If the WAL still has a record of a
-    // clock at or below the source's tick, no orphan record of that clock was truncated. The source
-    // also verifies that record against its own WAL, so it is required. A clock the source doesn't
-    // know has no such record, so its first record, at tick 1, must still be in the WAL instead.
+    // Truncation removes records from the start of the WAL. Orphan records passed the clock check,
+    // because this replica wrote them as update leader, so they come after every non-forced record
+    // of the same clock with a lower tick. If a non-forced record at or below the source's tick is
+    // still in the WAL, no orphan record of that clock was truncated. The source also verifies that
+    // record against its own WAL, so it is required. A clock the source doesn't know has no such
+    // record, so its first record, at tick 1, must still be in the WAL instead.
     for (&(peer_id, clock_id), &source_tick) in &source_ticks {
         let key = (peer_id, clock_id);
 
         if source_tick == 0 {
-            let has_first_record = earliest_ticks.get(&key).is_some_and(|&tick| tick <= 1);
+            let has_first_record = earliest_own_ticks.get(&key).is_some_and(|&tick| tick <= 1);
 
             if !has_first_record {
                 return Err(OrphanPointsError::Incomplete {
@@ -265,6 +282,15 @@ mod tests {
     )]
     fn tag(peer_id: PeerId, tick: u64) -> Option<ClockTag> {
         Some(ClockTag::new_with_token(peer_id, 0, tick, tick))
+    }
+
+    /// Tag of a forced record, which a shard transfer writes
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "records take an optional clock tag"
+    )]
+    fn forced_tag(peer_id: PeerId, tick: u64) -> Option<ClockTag> {
+        Some(ClockTag::new_with_token(peer_id, 0, tick, tick).force(true))
     }
 
     fn source_clocks(ticks: &[(PeerId, u64)]) -> RecoveryPoint {
@@ -371,6 +397,68 @@ mod tests {
             find_orphan_points(records_of_other_clock, &source_clocks(&[(PEER_ID, 0)]), 100);
 
         assert_eq!(orphan_points.unwrap_err(), incomplete);
+    }
+
+    #[test]
+    fn test_find_orphan_points_forced_records() {
+        let missing_record = OrphanPointsError::MissingRecord {
+            peer_id: PEER_ID,
+            clock_id: 0,
+            tick: 2,
+        };
+
+        // The orphan record at tick 3 was truncated, before a forced copy of tick 2 was written
+        let records_from_forced_copy = records(vec![
+            (upsert(2), forced_tag(PEER_ID, 2)),
+            (upsert(4), tag(PEER_ID, 4)),
+        ]);
+
+        let orphan_points = find_orphan_points(
+            records_from_forced_copy,
+            &source_clocks(&[(PEER_ID, 2)]),
+            100,
+        );
+
+        assert_eq!(orphan_points.unwrap_err(), missing_record);
+
+        // Same WAL without truncation. The boundary is the non-forced record at tick 2, and a forced
+        // record above the source's tick is an orphan too
+        let records_not_truncated = records(vec![
+            (upsert(1), tag(PEER_ID, 1)),
+            (upsert(2), tag(PEER_ID, 2)),
+            (upsert(3), tag(PEER_ID, 3)),
+            (upsert(2), forced_tag(PEER_ID, 2)),
+            (upsert(4), tag(PEER_ID, 4)),
+            (upsert(5), forced_tag(PEER_ID, 5)),
+        ]);
+
+        let orphan_points =
+            find_orphan_points(records_not_truncated, &source_clocks(&[(PEER_ID, 2)]), 100);
+
+        let OrphanPoints { point_ids, clocks } = orphan_points.unwrap();
+        assert_eq!(point_ids, ids(&[3, 4, 5]));
+        assert_eq!(clocks, vec![tag(PEER_ID, 2).unwrap()]);
+
+        // A forced first record of a clock the source doesn't know doesn't count either
+        let records_from_forced_first = records(vec![
+            (upsert(1), forced_tag(PEER_ID, 1)),
+            (upsert(2), tag(PEER_ID, 2)),
+        ]);
+
+        let orphan_points = find_orphan_points(
+            records_from_forced_first,
+            &source_clocks(&[(PEER_ID, 0)]),
+            100,
+        );
+
+        assert_eq!(
+            orphan_points.unwrap_err(),
+            OrphanPointsError::Incomplete {
+                peer_id: PEER_ID,
+                clock_id: 0,
+                tick: 0,
+            },
+        );
     }
 
     #[test]
