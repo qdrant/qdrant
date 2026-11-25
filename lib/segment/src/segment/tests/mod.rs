@@ -264,6 +264,77 @@ fn test_read_filtered_must_not_equal_to_primary_clause() {
     );
 }
 
+/// A `min_should` condition that also appears in `should` must still be applied, even when the
+/// planner takes its primary clauses from the `should` group.
+///
+/// `should: [.., HasId(1..=9), HasId(10)]` and `min_should: [HasId(1..=9)]` estimate the same
+/// cardinality (9 of 10 points), so the `should` group wins the tie and its union becomes the
+/// primary clauses. Every condition is then primary, but the union also yields point 10, which
+/// fails `min_should`.
+///
+/// The `unseen_token` case adds a `text` condition with a word not in the index. It matches
+/// nothing, but it is a primary clause, so the planner reaches the same path.
+#[rstest]
+#[case::has_id_only(false)]
+#[case::unseen_token(true)]
+fn test_read_filtered_min_should_overlapping_should(#[case] with_unseen_token: bool) {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let _scope = ambient::test_guard();
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for id in 1..=10u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let payload: Payload =
+            serde_json::from_value(serde_json::json!({ "title": "hello world" })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+    segment
+        .create_field_index(
+            20,
+            &JsonPath::new("title"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Text)),
+        )
+        .unwrap();
+
+    let first_nine = Condition::HasId(HasIdCondition::from_iter((1..=9u64).map(PointIdType::from)));
+    let tenth = Condition::HasId(HasIdCondition::from_iter([PointIdType::from(10)]));
+    let unseen_token = Condition::Field(FieldCondition::new_match(
+        JsonPath::new("title"),
+        Match::new_text("qzxvbnm"),
+    ));
+
+    let mut should = vec![first_nine.clone(), tenth];
+    if with_unseen_token {
+        should.insert(0, unseen_token);
+    }
+    let filter = Filter {
+        should: Some(should),
+        min_should: Some(crate::types::MinShould {
+            conditions: vec![first_nine],
+            min_count: 1,
+        }),
+        ..Default::default()
+    };
+
+    let is_stopped = AtomicBool::new(false);
+    let mut ids = segment
+        .read_filtered(
+            None,
+            None,
+            Some(&filter),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    ids.sort();
+
+    let expected: Vec<PointIdType> = (1..=9u64).map(PointIdType::from).collect();
+    assert_eq!(ids, expected);
+}
+
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]

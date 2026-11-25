@@ -166,12 +166,13 @@ impl MmapFile {
             advice,
         } = options;
 
-        let populate = match populate {
-            Populate::Auto => Self::populate_auto(),
-            Populate::Partial(_) | // mmap does not support partial populate
-            Populate::No => false,
+        let (populate, populate_range) = match populate {
+            Populate::Auto => (Self::populate_auto(), None),
+            Populate::No => (false, None),
+            // Sub-range is populated asynchronously with `MADV_WILLNEED` (see below)
+            Populate::Partial(range) => (false, Some(range)),
             Populate::PreferBackground | // mmap does not yet implement background populate
-            Populate::Blocking => true,
+            Populate::Blocking => (true, None),
         };
 
         let (file, file_id) = open_file(path.as_ref(), writeable)?;
@@ -201,6 +202,18 @@ impl MmapFile {
             ptr_seq,
             file_id,
         };
+
+        // `MADV_WILLNEED` reads the range ahead in a few large I/Os, even under `MADV_RANDOM`
+        if let Some(range) = populate_range
+            && !crate::low_memory::low_memory_mode().skip_populate()
+        {
+            let bytes = mmap.as_bytes::<Random>();
+            let range = range.into_byte_range::<u8>();
+            let end = (range.end as usize).min(bytes.len());
+            if let Some(region) = bytes.get(range.start as usize..end) {
+                crate::mmap::advice::will_need_multiple_pages(region);
+            }
+        }
 
         Ok(mmap)
     }
@@ -470,16 +483,17 @@ impl MmapFile {
                 // documented on `MmapFile` they must `reopen()` before reading after
                 // any growth, so no live reference into the old location exists.
                 let remap_options = memmap2::RemapOptions::new().may_move(true);
-                unsafe {
-                    mmap.remap(new_len, remap_options)?;
-                    mmap_seq
-                        .as_mut()
-                        .map(|m| m.remap(new_len, remap_options))
-                        .transpose()?;
-                };
+                unsafe { mmap.remap(new_len, remap_options)? };
 
-                // Whether or not `remap` moved the memory region let's update the pointers
+                // `remap` may have moved the primary mapping. Update its pointer before
+                // remapping the sequential one, so a failure there can't leave it dangling.
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
+                self.ptr = ptr;
+
+                if let Some(mmap_seq) = mmap_seq.as_mut() {
+                    unsafe { mmap_seq.remap(new_len, remap_options)? };
+                }
+
                 let ptr_seq = mmap_seq
                     .as_ref()
                     .map(|m| SendSyncPtr(m.as_mut_ptr()))

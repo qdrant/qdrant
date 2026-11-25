@@ -96,6 +96,12 @@ pub struct SearchParams {
     /// payload fields. Rarely needed on mobile.
     #[uniffi(default = false)]
     pub indexed_only: bool,
+    /// Sparse vectors only. Keep only the provided number of dimensions from the query.
+    /// Dimensions are selected by largest absolute weight. Must be at least 1. This parameter
+    /// enables approximate sparse search (Qdrant's default is exact): use with caution.
+    /// `None` searches with the full query.
+    #[uniffi(default = None)]
+    pub max_sparse_dims: Option<u64>,
 }
 
 impl From<SearchParams> for SegmentSearchParams {
@@ -104,6 +110,7 @@ impl From<SearchParams> for SegmentSearchParams {
             hnsw_ef,
             exact,
             indexed_only,
+            max_sparse_dims,
         } = p;
         SegmentSearchParams {
             hnsw_ef: hnsw_ef.map(crate::error::clamp_usize),
@@ -112,6 +119,7 @@ impl From<SearchParams> for SegmentSearchParams {
             indexed_only,
             acorn: None,
             idf: None,
+            max_sparse_dims: max_sparse_dims.map(crate::error::clamp_usize),
         }
     }
 }

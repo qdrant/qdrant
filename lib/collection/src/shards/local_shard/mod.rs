@@ -900,6 +900,8 @@ impl LocalShard {
             .first()
             .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
 
+        let mut skipped_missing_point_ops: usize = 0;
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -926,7 +928,7 @@ impl LocalShard {
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &ambient::unmeasured(reason("Internal operation"), || {
-                CollectionUpdater::update(
+                CollectionUpdater::replay(
                     &self.segments,
                     op_num,
                     update.operation,
@@ -954,6 +956,17 @@ impl LocalShard {
                 Err(err @ CollectionError::OutOfMemory { .. }) => {
                     log::error!("{err}");
                     return Err(err.clone());
+                }
+                // Replay may start before the persisted state of some segments, so an update
+                // to a point that a later operation deleted is expected to miss. Count these
+                // and report once below, keeping the per-operation detail (incl. the point ID)
+                // at debug level.
+                Err(err) if err.is_missing_point() => {
+                    log::debug!(
+                        "Recovering shard {}: skipped WAL operation {op_num}: {err}",
+                        self.path.display(),
+                    );
+                    skipped_missing_point_ops += 1;
                 }
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
@@ -992,6 +1005,13 @@ impl LocalShard {
         }
 
         bar.finish();
+        if skipped_missing_point_ops > 0 {
+            log::info!(
+                "Recovering shard {}: skipped {skipped_missing_point_ops} WAL operations on \
+                 points that no longer exist",
+                self.path.display(),
+            );
+        }
         if !show_progress_bar {
             log::info!(
                 "Recovered collection {collection_id}: {wal_entries_to_replay}/{wal_entries_to_replay} (100%)"
@@ -1754,3 +1774,29 @@ fn collect_segment_memory_metadata(
         }
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(LocalShard {
+    collection_name,
+    segments,
+    collection_config,
+    shared_storage_config,
+    payload_index_schema,
+    wal,
+    update_handler,
+    update_sender,
+    update_tracker,
+    update_lock,
+    path,
+    optimizers,
+    optimizers_log,
+    total_optimized_points,
+    search_runtime,
+    disk_usage_watcher,
+    read_rate_limiter,
+    write_rate_limiter,
+    is_gracefully_stopped,
+    update_operation_lock,
+    applied_seq_handler,
+    effective_optimizers_config,
+});

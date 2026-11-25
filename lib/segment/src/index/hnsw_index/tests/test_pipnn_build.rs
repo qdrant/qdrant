@@ -37,7 +37,8 @@ use crate::types::{
 };
 
 const DIM: usize = 16;
-const POINTS: usize = 10_000;
+/// Enough for several PiPNN leaves of 256–1024 points.
+const POINTS: usize = 3_000;
 const M: usize = 16;
 
 /// PiPNN counts each point of level 0 once per phase, of which there are 3, HNSW once.
@@ -55,9 +56,13 @@ const ANY_SIZE: usize = 0;
 const NEVER: usize = usize::MAX;
 
 fn make_segment(path: &Path, distance: Distance, seed: u64) -> Segment {
+    make_segment_of(path, distance, seed, POINTS)
+}
+
+fn make_segment_of(path: &Path, distance: Distance, seed: u64, points: usize) -> Segment {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut segment = build_simple_segment(path, DIM, distance).unwrap();
-    for n in 0..POINTS as u64 {
+    for n in 0..points as u64 {
         let vector = random_vector(&mut rng, DIM);
         segment
             .upsert_point(n as SeqNumberType, n.into(), only_default_vector(&vector))
@@ -229,10 +234,11 @@ fn builds_and_searches(
 fn small_segments_stay_on_hnsw() {
     let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let segment = make_segment(dir.path(), Distance::Cosine, 42);
+    let points = 500;
+    let segment = make_segment_of(dir.path(), Distance::Cosine, 42, points);
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
-    let (_, main_graph) = build_index(&segment, hnsw_dir.path(), POINTS + 1, 4, 1);
-    assert_eq!(method_of(&main_graph, POINTS), Method::Hnsw);
+    let (_, main_graph) = build_index(&segment, hnsw_dir.path(), points + 1, 4, 1);
+    assert_eq!(method_of(&main_graph, points), Method::Hnsw);
 }
 
 /// The same seed builds the same graph on any number of threads, entry points included.
@@ -363,9 +369,12 @@ fn heals_a_pipnn_graph() {
 fn payload_blocks_over_pipnn() {
     let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let mut segment = make_segment(dir.path(), Distance::Cosine, 42);
-    // 8 colors of about 1,250 points and 4 sizes of 2,500, all above the full scan threshold
-    for n in 0..POINTS as u64 {
+    // Fewer points than the other tests: the blocks are what is tested, and HNSW builds
+    // them for both main graphs
+    let points = 2_500;
+    let mut segment = make_segment_of(dir.path(), Distance::Cosine, 42, points);
+    // 8 colors of about 312 points and 4 sizes of 625, all above the full scan threshold
+    for n in 0..points as u64 {
         let payload = payload_json! {"color": format!("c{}", n % 8), "size": (n % 4) as i64};
         segment
             .set_full_payload(n as SeqNumberType, n.into(), &payload)
@@ -397,7 +406,7 @@ fn payload_blocks_over_pipnn() {
         let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
         let (index, progress) = build_index_from(&segment, index_dir.path(), min_points, 4, 1, &[]);
         let main_graph = find_progress(&progress, "main_graph").unwrap();
-        let method = method_of(main_graph, POINTS);
+        let method = method_of(main_graph, points);
         let additional_links = find_progress(&progress, "additional_links").unwrap();
         assert_eq!(additional_links.children.len(), 2, "{additional_links:?}");
         // Without a total: blocks are only counted once they are built

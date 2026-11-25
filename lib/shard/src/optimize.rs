@@ -23,13 +23,15 @@ use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockReadGuard, RwLockUpgradableReadGuard};
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::{ReadSegmentEntry as _, StorageSegmentEntry as _};
 use segment::segment::{Segment, SegmentVersion};
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
 use segment::types::{PointIdType, VectorNameBuf};
 use uuid::Uuid;
 
@@ -332,7 +334,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         })?;
     drop(progress_wait_permit);
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(INDEX_BUILD_SEED);
     segment_builder.build(
         segments_path,
         output_segment_uuid,
@@ -853,7 +855,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
 #[cfg(test)]
 mod tests {
-    use common::flags::{FeatureFlags, init_feature_flags};
     use common::types::DeferredBehavior;
     use segment::entry::NonAppendableSegmentEntry as _;
     use tempfile::Builder;
@@ -911,11 +912,6 @@ mod tests {
     #[test]
     fn unwrap_proxy_removes_pending_changes_log_after_flush() {
         use crate::segment_holder::FlushMode;
-
-        init_feature_flags(FeatureFlags {
-            persist_proxy_segments: true,
-            ..Default::default()
-        });
 
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
@@ -1167,11 +1163,6 @@ mod tests {
         use segment::segment_constructor::{load_segment, normalize_segment_dir};
 
         use crate::segment_holder::FlushMode;
-
-        init_feature_flags(FeatureFlags {
-            persist_proxy_segments: true,
-            ..Default::default()
-        });
 
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 

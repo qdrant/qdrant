@@ -6,6 +6,8 @@ mod read_ops;
 pub mod replica_set_state;
 mod shard_transfer;
 pub mod snapshots;
+#[cfg(feature = "staging")]
+mod staging;
 mod telemetry;
 mod update;
 
@@ -1692,3 +1694,29 @@ impl ShardReplicaSet {
 pub enum Change {
     Remove(ShardId, PeerId),
 }
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(ShardReplicaSet {
+    local,
+    remotes,
+    replica_state,
+    locally_disabled_peers,
+    shard_path,
+    shard_id,
+    shard_key,
+    notify_peer_failure_cb,
+    abort_shard_transfer_cb,
+    channel_service,
+    collection_id,
+    collection_config,
+    optimizers_config,
+    shared_storage_config,
+    payload_index_schema,
+    update_runtime,
+    search_runtime,
+    optimizer_resource_budget,
+    write_ordering_lock,
+    clock_set,
+    partial_snapshot_meta,
+    snapshot_recovery_lock,
+});

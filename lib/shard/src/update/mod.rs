@@ -11,6 +11,7 @@ mod vectors;
 use std::num::NonZeroUsize;
 
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::json_path::JsonPath;
 use segment::types::{Payload, SeqNumberType};
 
 pub use self::field_index::{create_field_index, delete_field_index};
@@ -156,6 +157,7 @@ pub fn process_payload_operation(
     match payload_operation {
         PayloadOps::SetPayload(sp) => {
             let payload: Payload = sp.payload;
+            JsonPath::check_value_set_depth(sp.key.as_ref(), &payload.0)?;
             if let Some(points) = sp.points {
                 set_payload(
                     segments,

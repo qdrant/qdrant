@@ -37,24 +37,18 @@ fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rng: &mut R, dim: usize
     })
 }
 
-#[rstest]
-#[case::nearest(QueryVariant::Nearest, 32, 5)]
-#[case::discover(QueryVariant::Discover, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
-#[case::reco_best_score(QueryVariant::RecoBestScore, 64, 10)]
-#[case::reco_sum_scores(QueryVariant::RecoSumScores, 64, 10)]
-fn test_filterable_hnsw(
-    #[case] query_variant: QueryVariant,
-    #[case] ef: usize,
-    #[case] max_failures: usize, // out of 100
-) {
-    _test_filterable_hnsw(query_variant, ef, max_failures);
-}
+/// One index for all query variants, each with the same queries.
+#[test]
+fn test_filterable_hnsw() {
+    // (name, variant, ef, max failures out of 100)
+    let variants = [
+        ("nearest", QueryVariant::Nearest, 32, 5),
+        // tests that check better precision are in `hnsw_discover_test.rs`
+        ("discover", QueryVariant::Discover, 128, 10),
+        ("reco_best_score", QueryVariant::RecoBestScore, 64, 10),
+        ("reco_sum_scores", QueryVariant::RecoSumScores, 64, 10),
+    ];
 
-fn _test_filterable_hnsw(
-    query_variant: QueryVariant,
-    ef: usize,
-    max_failures: usize, // out of 100
-) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
@@ -176,64 +170,70 @@ fn _test_filterable_hnsw(
     .unwrap();
 
     let top = 3;
-    let mut hits = 0;
     let attempts = 100;
-    for i in 0..attempts {
-        let query = random_query(&query_variant, &mut rng, dim);
+    let query_seed: u64 = rng.random();
+    let mut searches = 0;
+    for (name, query_variant, ef, max_failures) in variants {
+        let mut rng = StdRng::seed_from_u64(query_seed);
+        let mut hits = 0;
+        for _ in 0..attempts {
+            let query = random_query(&query_variant, &mut rng, dim);
 
-        let range_size = 40;
-        let left_range = rng.random_range(0..400);
-        let right_range = left_range + range_size;
+            let range_size = 40;
+            let left_range = rng.random_range(0..400);
+            let right_range = left_range + range_size;
 
-        let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new(int_key),
-            Range {
-                lt: None,
-                gt: None,
-                gte: Some(OrderedFloat(f64::from(left_range))),
-                lte: Some(OrderedFloat(f64::from(right_range))),
-            },
-        )));
+            let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+                JsonPath::new(int_key),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat(f64::from(left_range))),
+                    lte: Some(OrderedFloat(f64::from(right_range))),
+                },
+            )));
 
-        let filter_query = Some(&filter);
+            let filter_query = Some(&filter);
 
-        let index_result = hnsw_index
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-                &Default::default(),
-            )
-            .unwrap();
+            let index_result = hnsw_index
+                .search(
+                    &[&query],
+                    filter_query,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        ..Default::default()
+                    }),
+                    &Default::default(),
+                )
+                .unwrap();
 
-        // check that search was performed using HNSW index
-        assert_eq!(
-            hnsw_index
-                .get_telemetry_data(TelemetryDetail::default())
-                .filtered_large_cardinality
-                .count,
-            i + 1
-        );
+            // check that search was performed using HNSW index
+            searches += 1;
+            assert_eq!(
+                hnsw_index
+                    .get_telemetry_data(TelemetryDetail::default())
+                    .filtered_large_cardinality
+                    .count,
+                searches
+            );
 
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_index
-            .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
-            .unwrap();
+            let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[&query], filter_query, top, None, &Default::default())
+                .unwrap();
 
-        if plain_result == index_result {
-            hits += 1;
+            if plain_result == index_result {
+                hits += 1;
+            }
         }
+        eprintln!("{name}: hits = {hits} out of {attempts}");
+        assert!(
+            attempts - hits <= max_failures,
+            "{name}: hits {hits} of {attempts}"
+        ); // Not more than X% failures
     }
-    assert!(
-        attempts - hits <= max_failures,
-        "hits: {hits} of {attempts}"
-    ); // Not more than X% failures
-    eprintln!("hits = {hits:#?} out of {attempts}");
 }
 
 #[rstest]

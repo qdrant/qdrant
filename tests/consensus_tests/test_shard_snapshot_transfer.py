@@ -11,6 +11,7 @@ N_PEERS = 3
 N_SHARDS = 3
 N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
+SHARD_TRANSFER_TIMEOUT_SEC = 90
 
 
 def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, duration=None):
@@ -77,7 +78,12 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    #
+    # Allow more than the default 30s: on a busy CI runner a Raft leader change
+    # can drop the uncommitted `RecoveryToPartial` proposal, and the sender only
+    # re-proposes after its confirmation wait on the receiver times out (up to
+    # ~30s with gRPC retries), so the transfer still completes, just later.
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0, wait_for_timeout=SHARD_TRANSFER_TIMEOUT_SEC)
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])

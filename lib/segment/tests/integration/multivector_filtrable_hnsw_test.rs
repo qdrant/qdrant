@@ -30,7 +30,8 @@ use segment::types::{
 use segment::vector_storage::VectorStorageRead;
 use tempfile::Builder;
 
-/// Check all cases with single vector per multi and several vectors per multi
+/// Check all cases with single vector per multi and several vectors per multi. Query variants
+/// with the same vectors per point share one index and the same queries.
 #[rstest]
 // `test_attr(ignore = ...)` (not just `ignore = ...`) is required for rstest
 // to forward the attribute to each generated per-case test function. See
@@ -39,19 +40,24 @@ use tempfile::Builder;
     target_os = "windows",
     test_attr(ignore = "slow on Windows, not OS-specific")
 )]
-#[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
-#[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
-#[case::discover_eq(QueryVariant::Discover, 1, 128, 5)]
-#[case::discover_multi(QueryVariant::Discover, 3, 128, 20)]
-#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 10)]
-#[case::recobestscore_multi(QueryVariant::RecoBestScore, 2, 64, 10)]
-#[case::recosumscores_eq(QueryVariant::RecoSumScores, 1, 64, 5)]
-#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 20)]
+// Variants as (name, variant, ef, max failures out of 100)
+#[case::eq(1, vec![
+    ("nearest", QueryVariant::Nearest, 32, 5),
+    ("discover", QueryVariant::Discover, 128, 5),
+    ("recobestscore", QueryVariant::RecoBestScore, 64, 10),
+    ("recosumscores", QueryVariant::RecoSumScores, 64, 5),
+])]
+#[case::multi_3(3, vec![
+    ("nearest", QueryVariant::Nearest, 64, 20),
+    ("discover", QueryVariant::Discover, 128, 20),
+])]
+#[case::multi_2(2, vec![
+    ("recobestscore", QueryVariant::RecoBestScore, 64, 10),
+    ("recosumscores", QueryVariant::RecoSumScores, 64, 20),
+])]
 fn test_multi_filterable_hnsw(
-    #[case] query_variant: QueryVariant,
     #[case] max_num_vector_per_points: usize,
-    #[case] ef: usize,
-    #[case] max_failures: usize, // out of 100
+    #[case] variants: Vec<(&str, QueryVariant, usize, usize)>,
 ) {
     use segment::json_path::JsonPath;
     use segment::payload_json;
@@ -167,71 +173,77 @@ fn test_multi_filterable_hnsw(
     .unwrap();
 
     let top = 3;
-    let mut hits = 0;
     let attempts = 100;
-    for i in 0..attempts {
-        // Random number of vectors per multivec query
-        let num_vector_for_query = rng.random_range(1..=max_num_vector_per_points);
-        let query =
-            random_multi_vec_query(&query_variant, &mut rng, vector_dim, num_vector_for_query);
+    let query_seed: u64 = rng.random();
+    let mut searches = 0;
+    for (name, query_variant, ef, max_failures) in variants {
+        let mut rng = StdRng::seed_from_u64(query_seed);
+        let mut hits = 0;
+        for i in 0..attempts {
+            // Random number of vectors per multivec query
+            let num_vector_for_query = rng.random_range(1..=max_num_vector_per_points);
+            let query =
+                random_multi_vec_query(&query_variant, &mut rng, vector_dim, num_vector_for_query);
 
-        let range_size = 40;
-        let left_range = rng.random_range(0..400);
-        let right_range = left_range + range_size;
+            let range_size = 40;
+            let left_range = rng.random_range(0..400);
+            let right_range = left_range + range_size;
 
-        let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            JsonPath::new(int_key),
-            Range {
-                lt: None,
-                gt: None,
-                gte: Some(OrderedFloat(f64::from(left_range))),
-                lte: Some(OrderedFloat(f64::from(right_range))),
-            },
-        )));
+            let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+                JsonPath::new(int_key),
+                Range {
+                    lt: None,
+                    gt: None,
+                    gte: Some(OrderedFloat(f64::from(left_range))),
+                    lte: Some(OrderedFloat(f64::from(right_range))),
+                },
+            )));
 
-        let filter_query = Some(&filter);
+            let filter_query = Some(&filter);
 
-        let index_result = hnsw_index
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    ..Default::default()
-                }),
-                &Default::default(),
-            )
-            .unwrap();
+            let index_result = hnsw_index
+                .search(
+                    &[&query],
+                    filter_query,
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        ..Default::default()
+                    }),
+                    &Default::default(),
+                )
+                .unwrap();
 
-        // check that search was performed using HNSW index
-        assert_eq!(
-            hnsw_index
-                .get_telemetry_data(TelemetryDetail::default())
-                .filtered_large_cardinality
-                .count,
-            i + 1
-        );
+            // check that search was performed using HNSW index
+            searches += 1;
+            assert_eq!(
+                hnsw_index
+                    .get_telemetry_data(TelemetryDetail::default())
+                    .filtered_large_cardinality
+                    .count,
+                searches
+            );
 
-        // segment uses a plain index by configuration
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_index
-            .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
-            .unwrap();
+            // segment uses a plain index by configuration
+            let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_index
+                .borrow()
+                .search(&[&query], filter_query, top, None, &Default::default())
+                .unwrap();
 
-        if plain_result == index_result {
-            hits += 1;
-        } else {
-            eprintln!("Attempt {i}/{attempts}");
-            eprintln!("Different results for query {query:?}");
-            eprintln!("plain_result = {plain_result:#?}");
-            eprintln!("index_result = {index_result:#?}");
+            if plain_result == index_result {
+                hits += 1;
+            } else {
+                eprintln!("{name}: attempt {i}/{attempts}");
+                eprintln!("Different results for query {query:?}");
+                eprintln!("plain_result = {plain_result:#?}");
+                eprintln!("index_result = {index_result:#?}");
+            }
         }
+        eprintln!("{name}: hits = {hits} out of {attempts}");
+        assert!(
+            attempts - hits <= max_failures,
+            "{name}: hits {hits}/{attempts} (expected less than {max_failures} failures)"
+        ); // Not more than X% failures
     }
-    assert!(
-        attempts - hits <= max_failures,
-        "hits: {hits}/{attempts} (expected less than {max_failures} failures)"
-    ); // Not more than X% failures
-    eprintln!("hits = {hits:#?} out of {attempts}");
 }

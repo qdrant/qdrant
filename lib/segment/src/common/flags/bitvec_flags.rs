@@ -48,7 +48,10 @@ where
     ) -> OperationResult<Self> {
         match FlagsMode::detect(&fs, directory)?.unwrap_or(mode_if_create) {
             FlagsMode::Dynamic => {
-                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate)?;
+                // The first `len` bits are copied into RAM right away, so always prefetch them.
+                // `open` narrows this to those bits, not the whole (larger) file.
+                let dynamic_flags =
+                    DynamicStoredFlags::open(&fs, directory, Populate::PreferBackground)?;
                 Self::new(fs, dynamic_flags)
             }
             FlagsMode::Compact => {

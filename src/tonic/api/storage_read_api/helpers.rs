@@ -46,7 +46,7 @@ impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S> {
         method: &str,
     ) -> Result<(PathBuf, PathBuf), Status> {
         let pass = auth
-            .check_collection_access(collection_name, AccessRequirements::new(), method)
+            .check_collection_access(collection_name, AccessRequirements::new().extras(), method)
             .map_err(Status::from)?;
 
         let verification_pass = new_unchecked_verification_pass();

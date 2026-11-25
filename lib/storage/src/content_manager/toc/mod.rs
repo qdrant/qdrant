@@ -942,3 +942,26 @@ mod tests {
         assert_eq!(default_shard_number_per_node(3, 1000).get(), 1);
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see the macro's docs.
+common::impl_send_sync_checked!(TableOfContent {
+    collections,
+    storage_config,
+    adaptive_search_handle,
+    _high_cpu_search_runtime,
+    _high_io_search_runtime,
+    update_runtime,
+    general_runtime,
+    optimizer_resource_budget,
+    alias_persistence,
+    this_peer_id,
+    channel_service,
+    consensus_proposal_sender,
+    toc_dispatcher,
+    update_rate_limiter,
+    collection_create_lock,
+    collection_hw_metrics,
+    telemetry,
+    quota_manager,
+    dirty_collections,
+});

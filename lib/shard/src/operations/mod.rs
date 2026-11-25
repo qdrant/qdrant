@@ -643,4 +643,72 @@ mod tests {
 
         assert_eq!(operation, deserialized);
     }
+    /// New operations can carry payloads nested up to `MAX_NEW_PAYLOAD_NESTING_DEPTH` levels deep.
+    /// WAL records with such payloads must be readable, for every operation that carries one.
+    #[test]
+    fn test_wal_roundtrip_deepest_new_payload() {
+        use segment::json_path::MAX_NEW_PAYLOAD_NESTING_DEPTH;
+
+        use crate::wal::WalRawRecord;
+
+        let mut payload = serde_json::Map::new();
+        for _ in 1..MAX_NEW_PAYLOAD_NESTING_DEPTH {
+            let mut outer = serde_json::Map::new();
+            outer.insert("a".to_string(), serde_json::Value::Object(payload));
+            payload = outer;
+        }
+        let payload = Payload(payload);
+
+        let set_payload_op = || SetPayloadOp {
+            payload: payload.clone(),
+            points: Some(vec![1.into()]),
+            filter: None,
+            key: None,
+        };
+        let points_list = || {
+            PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+                id: 1.into(),
+                vector: VectorStructPersisted::Single(vec![1.0]),
+                payload: Some(payload.clone()),
+            }])
+        };
+
+        let operations = [
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(set_payload_op())),
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(
+                set_payload_op(),
+            )),
+            CollectionUpdateOperations::PointOperation(
+                PointOperations::UpsertPoints(points_list()),
+            ),
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsBatch(BatchPersisted {
+                    ids: vec![1.into()],
+                    vectors: BatchVectorStructPersisted::Single(vec![vec![1.0]]),
+                    payloads: Some(vec![Some(payload.clone())]),
+                }),
+            )),
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+                ConditionalInsertOperationInternal {
+                    points_op: points_list(),
+                    condition: Filter::new_must(Condition::HasId(HasIdCondition::from(
+                        [PointIdType::from(1)]
+                            .into_iter()
+                            .collect::<ahash::AHashSet<_>>(),
+                    ))),
+                    update_mode: Some(UpdateMode::Upsert),
+                },
+            )),
+        ];
+
+        for operation in operations {
+            let record = OperationWithClockTag {
+                operation,
+                clock_tag: Some(ClockTag::new(1, 2, 3)),
+            };
+            let raw = WalRawRecord::new(&record).unwrap();
+            let deserialized: OperationWithClockTag = raw.deserialize().unwrap();
+            assert_eq!(record, deserialized);
+        }
+    }
 }

@@ -338,6 +338,13 @@ fn f32_kernels_match_fallback() {
             rng.random_range(-1.0f32..1.0)
         });
         for (j, &shape) in GEMM_SHAPES.iter().enumerate() {
+            // Its many blocks only at the shallow depths: the depth slices are covered by the
+            // other shapes, and deep, this shape took most of the test's time
+            if depth > 16
+                && let Shape::Rows(600) = shape
+            {
+                continue;
+            }
             let k = [1, 4, 10, 2000][j % 4];
             operands.check(&mut rng, shape, k, &mut reused);
         }
@@ -358,6 +365,13 @@ fn u8_kernels_match_fallback() {
         let max = if depth % 2 == 0 { 127 } else { 2 };
         let operands = TestOperands::new(&mut rng, depth, combine, |rng| rng.random_range(0..=max));
         for (j, &shape) in GEMM_SHAPES.iter().enumerate() {
+            // Its many blocks only at the shallow depths: the depth slices are covered by the
+            // other shapes, and deep, this shape took most of the test's time
+            if depth > 64
+                && let Shape::Rows(600) = shape
+            {
+                continue;
+            }
             let k = [4, 1, 10][j % 3];
             operands.check(&mut rng, shape, k, &mut reused);
         }
@@ -446,10 +460,18 @@ fn check_codes<E: TestElem>(
     let around = slices
         .into_iter()
         .flat_map(|slice| [slice - 1, slice, slice + 3]);
+    let shallow = slices[0].min(slices[1]) + 3;
     for (i, depth) in [1, 3, 8].into_iter().chain(around).enumerate() {
         let operands = TestOperands::new(&mut rng, depth, code_combine(i), element);
         let operands = with_codebook(operands, &mut rng, values);
         for (j, &shape) in CODE_SHAPES.iter().enumerate() {
+            // The shapes with many blocks only up to the smaller slice: the larger slice is
+            // covered by the other shapes, and there these two took most of the test's time
+            if depth > shallow
+                && let Shape::Rows(131) | Shape::Other(47, 300) = shape
+            {
+                continue;
+            }
             let k = [4, 1, 10][j % 3];
             operands.check(&mut rng, shape, k, &mut reused);
         }

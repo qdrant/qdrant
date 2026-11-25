@@ -28,7 +28,7 @@ fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 ndarray = "0.17.2"
-ndarray-npy = { version = "0.10.0", default-features = false }
+ndarray-npy = { version = "0.11.0", default-features = false }
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
 rstest = { workspace = true }
@@ -36,6 +36,7 @@ segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
 object_store = { workspace = true }
+io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 bytes = { workspace = true }
 tokio = { workspace = true }
 tap = { workspace = true }
@@ -44,7 +45,7 @@ tap = { workspace = true }
 pprof = { workspace = true }
 
 [dependencies]
-io_bridge_object_store = { path = "../common/io_bridge_object_store" }
+io_bridge = { path = "../common/io_bridge" }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
 bitpacking = { workspace = true }
@@ -63,7 +64,6 @@ serde_json = { workspace = true }
 serde_cbor = { workspace = true }
 serde-value = "0.7"
 serde_variant = { workspace = true }
-serde-untagged = "0.1.9"
 ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }

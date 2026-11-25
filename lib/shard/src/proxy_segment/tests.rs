@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use ahash::{AHashMap, AHashSet};
 use common::ambient::hw::HwMetric;
 use common::ambient::{AmbientContext, Handoff};
-use common::flags::{FeatureFlags, init_feature_flags};
 use common::types::DeferredBehavior;
 use common::{ambient, tar_ext};
 use fs_err::File;
@@ -536,11 +535,6 @@ fn test_take_snapshot() {
 /// partial and streamed snapshots all carry it and recovery can replay it.
 #[test]
 fn test_take_snapshot_includes_pending_changes_log() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
@@ -672,11 +666,6 @@ fn test_point_vector_count_multivec() {
 
 #[test]
 fn test_proxy_segment_flush() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -717,11 +706,6 @@ fn test_proxy_segment_flush() {
 /// (e.g. a crash) and are replayed onto the actual segment when it is loaded again.
 #[test]
 fn test_pending_changes_recovered_on_restart() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -803,11 +787,6 @@ fn test_pending_changes_recovered_on_restart() {
 /// the old file untouched.
 #[test]
 fn test_unproxy_leaves_pending_changes_log_without_adoption() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -873,11 +852,6 @@ fn test_unproxy_leaves_pending_changes_log_without_adoption() {
 /// are replayed onto the segment, inner most layer first.
 #[test]
 fn test_double_proxy_pending_changes_levels() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -1079,11 +1053,6 @@ fn test_propagate_to_wrapped_vector_name_and_index() {
 /// pending changes log with it.
 #[test]
 fn test_drop_data_removes_pending_changes_log() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -1143,11 +1112,6 @@ fn test_persistent_version_not_advanced_by_failed_flush() {
 /// durable while the inner layer's are not on disk anywhere, and the acknowledge would pass both.
 #[test]
 fn test_persistent_version_held_back_by_failed_inner_flush() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()
@@ -1184,11 +1148,6 @@ fn test_persistent_version_held_back_by_failed_inner_flush() {
 /// the log entries are dead weight. They must not accumulate across proxy generations.
 #[test]
 fn test_pending_changes_log_is_compacted_after_propagation() {
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let tmp_dir = tempfile::Builder::new()
         .prefix("segment_dir")
         .tempdir()

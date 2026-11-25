@@ -316,6 +316,28 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
+/// Check that no payload in an upsert is nested deeper than new payloads may be.
+fn check_new_payloads_depth(operation: &PointInsertOperations) -> Result<(), StorageError> {
+    let check = |payload: &segment::types::Payload| {
+        JsonPath::check_new_payload_depth(None, &payload.0)
+            .map_err(|err| StorageError::from(CollectionError::from(err)))
+    };
+    match operation {
+        PointInsertOperations::PointsBatch(batch) => batch
+            .batch
+            .payloads
+            .iter()
+            .flatten()
+            .flatten()
+            .try_for_each(check),
+        PointInsertOperations::PointsList(list) => list
+            .points
+            .iter()
+            .filter_map(|point| point.payload.as_ref())
+            .try_for_each(check),
+    }
+}
+
 pub async fn do_upsert_points(
     toc_provider: impl CheckedTocProvider,
     collection_name: String,
@@ -334,6 +356,9 @@ pub async fn do_upsert_points(
     operation
         .validate()
         .map_err(|err| StorageError::bad_input(err.to_string()))?;
+
+    // Reject before the operation is written to the WAL
+    check_new_payloads_depth(&operation)?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -612,6 +637,10 @@ pub async fn do_set_payload(
         key,
     } = operation;
 
+    // Reject before the operation is written to the WAL
+    JsonPath::check_new_payload_depth(key.as_ref(), &payload.0)
+        .map_err(|err| StorageError::from(CollectionError::from(err)))?;
+
     let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
             payload,
@@ -656,6 +685,10 @@ pub async fn do_overwrite_payload(
         shard_key,
         key: _,
     } = operation;
+
+    // Reject before the operation is written to the WAL
+    JsonPath::check_new_payload_depth(None, &payload.0)
+        .map_err(|err| StorageError::from(CollectionError::from(err)))?;
 
     let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(SetPayloadOp {

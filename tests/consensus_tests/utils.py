@@ -862,9 +862,9 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
 
 
 def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
-                                              expected_shard_transfer_count: int, headers={}):
+                                              expected_shard_transfer_count: int, headers={}, **kwargs):
     try:
-        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count, headers=headers)
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count, headers=headers, **kwargs)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e

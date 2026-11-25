@@ -29,6 +29,7 @@
 
 mod apply;
 mod batch;
+mod checked_apply_error;
 mod holder;
 mod lifecycle;
 pub(crate) mod locate;
@@ -54,6 +55,7 @@ use uuid::Uuid;
 
 pub use self::apply::{PointApplyKind, PointApplyRecord, PointUsage, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
+pub use self::checked_apply_error::CheckedApplyError;
 use self::holder::LookupSegmentHolder;
 pub use self::metering::{UpdateBytes, UpdateMetering};
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
@@ -127,6 +129,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     }
 
     /// The append target; `None` when every appendable is claimed by a rebuild.
+    /// Unchanged by [`Self::apply_batch`], so it identifies the segment that received its stores.
     pub fn write_target(&self) -> Option<Uuid> {
         self.segments.read().write_target_uuid()
     }

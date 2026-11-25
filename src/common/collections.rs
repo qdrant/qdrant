@@ -708,6 +708,14 @@ pub async fn do_update_collection_cluster(
                 ));
             }
 
+            // Resharding is meant to redistribute data across peers, it makes no sense in a
+            // cluster with a single peer, even if it runs in consensus (distributed) mode
+            if consensus_state.peer_count() <= 1 {
+                return Err(StorageError::bad_request(
+                    "resharding is not supported in a single-node cluster",
+                ));
+            }
+
             // Assign random UUID if not specified by user before processing operation on all peers
             let uuid = uuid.unwrap_or_else(Uuid::new_v4);
 

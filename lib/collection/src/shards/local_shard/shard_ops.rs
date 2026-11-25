@@ -234,8 +234,9 @@ impl ShardOperation for LocalShard {
         wait: WaitUntil,
         timeout: Option<Duration>,
     ) -> CollectionResult<UpdateResult> {
-        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
-        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        // `LocalShard::update` only has a single cancel safe `await`, `lock_and_write` doesn't await
+        // after advancing the clock, and update is applied by a separate task, so, surprisingly,
+        // this method is cancel safe. :D
         //
         // The filter-resolving fallback inside `submit_update` adds more awaits (fence, drain,
         // resolution scan), but nothing is appended or dispatched until its single WAL write, so

@@ -26,7 +26,7 @@ use segment::index::hnsw_index::hnsw::with_pipnn_min_points;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::normalize_segment_dir;
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
@@ -324,7 +324,7 @@ fn test_build_not_ready_defers_version_file() {
     builder.update(&[&segment1], &stopped).unwrap();
 
     let permit = ResourcePermit::dummy(get_num_indexing_threads(0) as u32);
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(INDEX_BUILD_SEED);
 
     let built_segment = builder
         .build(
@@ -479,7 +479,7 @@ fn build_segment(
         true,
         permit,
         stopped,
-        &mut rand::rng(),
+        &mut StdRng::seed_from_u64(INDEX_BUILD_SEED),
         progress,
     )
 }

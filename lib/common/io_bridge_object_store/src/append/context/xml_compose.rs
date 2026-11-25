@@ -64,12 +64,10 @@ impl XmlComposeAppend {
     ) -> UioResult<u64> {
         let final_size = offset + data.len() as u64;
 
-        // An empty prefix means a plain put produces the right object.
-        if offset == 0 {
-            store
-                .put(key, PutPayload::from(data))
-                .await
-                .map_err(UniversalIoError::s3)?;
+        // An empty prefix means a plain put produces the right object, but
+        // only if there is no object yet. An existing object, even an empty
+        // one, takes the compose path below, which checks its size.
+        if offset == 0 && self.put_if_absent(store, key, data.clone()).await? {
             return Ok(final_size);
         }
 
@@ -99,6 +97,34 @@ impl XmlComposeAppend {
 
         result?;
         Ok(final_size)
+    }
+
+    /// `PUT {key}` conditional on the object not existing yet
+    /// (`x-goog-if-generation-match: 0`). Returns `false`, having written
+    /// nothing, if it already exists.
+    async fn put_if_absent(
+        &self,
+        store: &Arc<AmazonS3>,
+        key: &object_store::path::Path,
+        data: Bytes,
+    ) -> UioResult<bool> {
+        let (status, _headers, body) = self
+            .request(
+                store,
+                http::Method::PUT,
+                key,
+                None,
+                &[(IF_GENERATION_MATCH, "0".to_string())],
+                data,
+            )
+            .await?;
+        if status == http::StatusCode::PRECONDITION_FAILED {
+            return Ok(false);
+        }
+        if !status.is_success() {
+            return Err(failure("create for compose append", key, status, &body));
+        }
+        Ok(true)
     }
 
     /// `HEAD` the destination for its generation, checking its size is

@@ -81,11 +81,6 @@ pub struct FeatureFlags {
     /// Read on the sending side only: nodes accept raw payloads regardless.
     pub transfer_raw_payloads: bool,
 
-    /// Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are
-    /// open. Replays the persisted changes on startup to guarantee data consistency. Required for
-    /// serverless deployments where storage and compute is separated.
-    pub persist_proxy_segments: bool,
-
     /// When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage
     /// (aka inline-storage without standalone vector storage) for new segments.
     ///
@@ -112,8 +107,7 @@ pub struct FeatureFlags {
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
-    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
-    /// [`Self::versioned_deletes`].
+    /// [`Self::compact_logstore_tracker`] and [`Self::versioned_deletes`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -135,7 +129,6 @@ impl Default for FeatureFlags {
             compact_logstore_tracker: false,
             transfer_raw_points: true,
             transfer_raw_payloads: true,
-            persist_proxy_segments: false,
             combined_vector_storage: true,
             versioned_deletes: false,
             pipnn_graph_building: false,
@@ -179,7 +172,6 @@ impl FeatureFlags {
             compact_bitmask: true,
             transfer_raw_points: true,
             transfer_raw_payloads: true,
-            persist_proxy_segments: true,
             combined_vector_storage: true,
             // Deliberately not enabled by `all`: it changes the persisted storage format.
             versioned_deletes: false,
@@ -202,7 +194,6 @@ impl FeatureFlags {
             self.compact_bitmask = true;
             self.append_only_storages = true;
             self.compact_logstore_tracker = true;
-            self.persist_proxy_segments = true;
             self.versioned_deletes = true;
         }
 
@@ -264,7 +255,6 @@ mod tests {
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
-        assert!(flags.persist_proxy_segments);
         assert!(flags.versioned_deletes);
     }
 
@@ -282,7 +272,6 @@ mod tests {
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
-        assert!(flags.persist_proxy_segments);
         assert!(flags.versioned_deletes);
     }
 

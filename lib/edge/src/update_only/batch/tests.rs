@@ -213,3 +213,26 @@ fn rejects_filter_selected_operations() {
 
     assert!(UpdateBatchPlan::build([(1, operation)]).is_err());
 }
+
+/// A keyed set payload that would nest the payload too deep to read back is
+/// rejected, the deepest supported key is not.
+#[test]
+fn rejects_set_payload_nested_too_deep() {
+    use segment::json_path::MAX_PAYLOAD_NESTING_DEPTH;
+
+    let keyed_set_payload = |key_len: usize| {
+        CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+            payload: payload_json! { "b": 2 },
+            points: Some(vec![point_id(7)]),
+            filter: None,
+            key: Some(vec!["a"; key_len].join(".").parse().unwrap()),
+        }))
+    };
+
+    for key_len in [MAX_PAYLOAD_NESTING_DEPTH, 1_000_000] {
+        assert!(UpdateBatchPlan::build([(1, keyed_set_payload(key_len))]).is_err());
+    }
+    assert!(
+        UpdateBatchPlan::build([(1, keyed_set_payload(MAX_PAYLOAD_NESTING_DEPTH - 1))]).is_ok()
+    );
+}

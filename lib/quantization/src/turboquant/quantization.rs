@@ -782,7 +782,10 @@ impl TurboQuantizer {
         scores: &mut [f32],
     ) {
         assert!(
-            data.len() >= scores.len() * stride,
+            scores
+                .len()
+                .checked_mul(stride)
+                .is_some_and(|required_len| data.len() >= required_len),
             "score_precomputed_batch: {} vectors of {stride} bytes don't fit into {} data bytes",
             scores.len(),
             data.len(),

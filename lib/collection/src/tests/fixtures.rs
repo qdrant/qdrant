@@ -134,7 +134,6 @@ pub fn filter_single_id(id: impl Into<PointIdType>) -> Filter {
 pub fn init_test_feature_flags() {
     init_feature_flags(FeatureFlags {
         write_segment_manifest: true,
-        persist_proxy_segments: true,
         ..Default::default()
     });
 }

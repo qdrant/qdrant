@@ -160,6 +160,10 @@ impl ShardReplicaSet {
 
         let wal_ack_pins = local_shard.update_handler.lock().await.wal_ack_pins.clone();
 
+        // Lock WAL before taking the local shard, queue proxy creation needs it
+        let wal = Arc::clone(&local_shard.wal.wal);
+        let wal_lock = wal.lock().await;
+
         // Proxify local shard
         //
         // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
@@ -171,19 +175,21 @@ impl ShardReplicaSet {
 
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
-            None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, &wal_ack_pins, progress).await)
-            }
-            Some(from_version) => {
-                QueueProxyShard::new_from_version(
-                    local_shard,
-                    remote_shard,
-                    &wal_ack_pins,
-                    from_version,
-                    progress,
-                )
-                .await
-            }
+            None => Ok(QueueProxyShard::new(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                progress,
+            )),
+            Some(from_version) => QueueProxyShard::new_from_version(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                from_version,
+                progress,
+            ),
         };
 
         // Insert queue proxy shard on success or revert to local shard on failure
@@ -549,3 +555,6 @@ impl ShardReplicaSet {
         local_shard.wal_version().await
     }
 }
+
+#[cfg(test)]
+mod tests;

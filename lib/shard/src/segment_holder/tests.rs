@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use common::ambient;
-use common::flags::{FeatureFlags, init_feature_flags};
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
@@ -2466,11 +2465,6 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
 fn test_proxy_segment_does_not_hold_back_wal_ack() {
     use crate::proxy_segment::ProxySegment;
 
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut holder = SegmentHolder::default();
@@ -2625,11 +2619,6 @@ fn test_unwrap_proxy_reports_failed_propagation() {
 fn test_flush_all_up_to_does_not_claim_unfinished_operation_through_proxy() {
     use crate::proxy_segment::ProxySegment;
 
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let wrapped_segment = LockedSegment::new(build_segment_1(dir.path()));
@@ -2708,11 +2697,6 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
     };
     use segment::segment_constructor::load_segment;
     use segment::types::SnapshotFormat;
-
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment = build_segment_1(dir.path());
@@ -2796,11 +2780,6 @@ fn test_snapshot_proxies_clean_up_pending_changes_logs() {
 fn test_nested_proxies_pending_changes_logs() {
     use segment::entry::SnapshotEntry as _;
 
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
-
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let _scope = ambient::test_guard();
     let segment = build_segment_1(dir.path());
@@ -2883,11 +2862,6 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
 
     use crate::optimize::unwrap_proxy;
     use crate::proxy_segment::ProxySegment;
-
-    init_feature_flags(FeatureFlags {
-        persist_proxy_segments: true,
-        ..Default::default()
-    });
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vector_config = VectorNameConfig::dense(DenseVectorConfig {

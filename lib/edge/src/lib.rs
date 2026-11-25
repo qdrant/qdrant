@@ -48,7 +48,7 @@ pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 #[cfg(feature = "serverless")]
 pub use update_only::{
-    PointAction, PointApplyKind, PointApplyRecord, PointCopy, PointPreview, PointUpdates,
-    PointUsage, SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview,
-    UpdateBytes, UpdateMetering, UpdateOnlyEdgeShard,
+    CheckedApplyError, PointAction, PointApplyKind, PointApplyRecord, PointCopy, PointPreview,
+    PointUpdates, PointUsage, SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan,
+    UpdateBatchPreview, UpdateBytes, UpdateMetering, UpdateOnlyEdgeShard,
 };

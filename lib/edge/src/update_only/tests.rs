@@ -17,7 +17,10 @@ use crate::read_only::tests::{
     delete as leader_delete, exact_count, init_serverless_feature_flags, open_follower, point,
     scrolled_ids, test_config, upsert,
 };
-use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointApplyKind, UpdateOnlyEdgeShard};
+use crate::{
+    CheckedApplyError, EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointAction, PointApplyKind,
+    UpdateOnlyEdgeShard,
+};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
 /// wrote it closed — a writer opens a directory, not a running shard.
@@ -379,6 +382,7 @@ mod store {
         let (writer, outcome) = writer.apply_batch(store_batch(2000, vec![moved])).unwrap();
         let record = &outcome.points[0];
         assert_eq!(record.tombstoned.len(), 1, "below the cutoff, moves retire");
+        assert!(!record.deferred);
         assert!(record.shadowed.is_empty());
 
         let filler = (2001..=2256).map(point).collect();
@@ -393,6 +397,7 @@ mod store {
             .unwrap();
         let record = &outcome.points[0];
         assert_eq!(record.kind, PointApplyKind::Stored);
+        assert!(record.deferred);
         assert!(record.tombstoned.is_empty());
         assert_eq!(record.superseded, None);
         assert_eq!(
@@ -441,6 +446,197 @@ mod store {
             retrieve_500(&follower),
             Some(point(500).vector.try_into().unwrap()),
         );
+    }
+
+    #[test]
+    fn store_batch_reports_deferred_points_across_the_cutoff() {
+        for threshold_kb in [Some(1), None] {
+            let dir = leader_with_ten_points("edge-update-deferred-records");
+            recreate_payload_storages_append_only(dir.path());
+            let writer = UpdateOnlyEdgeShard::open(
+                MmapFs,
+                dir.path(),
+                crate::LocalSegmentEnumerator::new(dir.path()),
+                threshold_kb,
+            )
+            .unwrap();
+            let target = writer.write_target().unwrap();
+
+            let (writer, outcome) = writer
+                .apply_batch(store_batch(100, vec![point(11)]))
+                .unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(outcome.points.len(), 1);
+            assert!(!outcome.points[0].deferred);
+            assert!(outcome.points[0].shadowed.is_empty());
+
+            let (writer, outcome) = writer
+                .apply_batch(store_batch(101, (12..=258).map(point).collect()))
+                .unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(outcome.points.len(), 247);
+            for (record, id) in outcome.points.iter().zip(12..=258) {
+                assert_eq!(record.id, ExtendedPointId::NumId(id));
+                assert_eq!(record.kind, PointApplyKind::Stored);
+                assert_eq!(record.deferred, threshold_kb.is_some() && id >= 257);
+                assert!(record.shadowed.is_empty());
+            }
+
+            let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! { "kind": "rewritten" },
+                points: Some(vec![ExtendedPointId::NumId(11)]),
+                filter: None,
+                key: None,
+            }));
+            let (writer, outcome) = writer.apply_batch([(102, set_payload)]).unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            let [record] = &outcome.points[..] else {
+                panic!("expected one payload rewrite");
+            };
+            assert_eq!(record.id, ExtendedPointId::NumId(11));
+            assert_eq!(record.kind, PointApplyKind::Stored);
+            assert_eq!(record.deferred, threshold_kb.is_some());
+            assert!(record.shadowed.is_empty());
+            assert_eq!(record.superseded, Some((target, 10)));
+
+            let operations = store_batch(101, vec![point(258)])
+                .into_iter()
+                .chain(conditional_batch(
+                    103,
+                    vec![point(12)],
+                    UpdateMode::InsertOnly,
+                ))
+                .chain(conditional_batch(
+                    104,
+                    vec![point(999)],
+                    UpdateMode::UpdateOnly,
+                ))
+                .chain([(
+                    105,
+                    PointOperation(DeletePoints {
+                        ids: vec![ExtendedPointId::NumId(13)],
+                    }),
+                )]);
+            let (writer, outcome) = writer.apply_batch(operations).unwrap();
+            assert_eq!(writer.write_target(), Some(target));
+            assert_eq!(
+                outcome
+                    .points
+                    .iter()
+                    .map(|record| record.kind)
+                    .collect::<Vec<_>>(),
+                [
+                    PointApplyKind::Skipped,
+                    PointApplyKind::Rejected,
+                    PointApplyKind::Missing,
+                    PointApplyKind::Deleted,
+                ],
+            );
+            assert!(outcome.points.iter().all(|record| !record.deferred));
+        }
+    }
+
+    /// A refused check writes nothing and hands the writer back, which then
+    /// applies the same batch, resolving it once, when the check passes.
+    #[test]
+    fn checked_apply_refusal_writes_nothing() {
+        let dir = leader_with_ten_points("edge-update-checked");
+        recreate_payload_storages_append_only(dir.path());
+        let merged = payload_json! { "kind": "merged" };
+        let batch = || {
+            [(
+                100,
+                PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                    payload: merged.clone(),
+                    points: Some(vec![ExtendedPointId::NumId(5)]),
+                    filter: None,
+                    key: None,
+                })),
+            )]
+        };
+        let retrieve_payload = || {
+            open_follower(dir.path())
+                .retrieve(
+                    RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(5)])
+                        .with_payload(WithPayloadInterface::Bool(true))
+                        .build(),
+                )
+                .unwrap()
+                .remove(0)
+                .payload
+        };
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let (writer, refused) = writer
+            .apply_batch_checked(batch(), None, |point| match &point.action {
+                PointAction::Store(stored) => Err(stored.payload.clone()),
+                PointAction::Delete
+                | PointAction::Skip
+                | PointAction::Rejected
+                | PointAction::Missing => panic!("expected the merge to be stored"),
+            })
+            .unwrap();
+        match refused.unwrap_err() {
+            CheckedApplyError::Refused(payload) => {
+                assert_eq!(payload, merged, "the check sees the merged payload");
+            }
+            CheckedApplyError::NotWritten(error) => panic!("expected a refusal, got {error}"),
+        }
+        assert_ne!(retrieve_payload(), Some(merged.clone()));
+
+        let mut checked = 0;
+        let (_writer, outcome) = writer
+            .apply_batch_checked(batch(), None, |_| {
+                checked += 1;
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_eq!(checked, 1);
+        let outcome = outcome.unwrap();
+        assert_eq!(outcome.stored, 1);
+        assert_eq!(outcome.points[0].kind, PointApplyKind::Stored);
+        assert_eq!(retrieve_payload(), Some(merged));
+    }
+
+    /// An error before the first write hands back a usable writer.
+    #[test]
+    fn checked_apply_error_before_writing_keeps_the_writer() {
+        let dir = leader_with_ten_points("edge-update-checked-unwritten");
+        recreate_payload_storages_append_only(dir.path());
+        let update_missing = shard::operations::CollectionUpdateOperations::VectorOperation(
+            crate::VectorOperations::UpdateVectors(crate::UpdateVectorsOp {
+                points: vec![shard::operations::vector_ops::PointVectorsPersisted {
+                    id: ExtendedPointId::NumId(42),
+                    vector: point(42).vector,
+                }],
+                update_filter: None,
+            }),
+        );
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let mut checked = 0;
+        let (writer, unwritten) = writer
+            .apply_batch_checked([(100, update_missing)], None, |_| {
+                checked += 1;
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        match unwritten.unwrap_err() {
+            CheckedApplyError::NotWritten(
+                segment::common::operation_error::OperationError::PointIdError { missed_point_id },
+            ) => {
+                assert_eq!(missed_point_id, ExtendedPointId::NumId(42));
+            }
+            CheckedApplyError::NotWritten(error) => panic!("expected a missing point, got {error}"),
+            CheckedApplyError::Refused(()) => panic!("the check never runs on a failed resolve"),
+        }
+        assert_eq!(checked, 0);
+
+        let (_writer, outcome) = writer
+            .apply_batch_checked(store_batch(101, vec![point(42)]), None, |_| Ok::<_, ()>(()))
+            .unwrap();
+        assert_eq!(outcome.unwrap().stored, 1);
+        assert!(scrolled_ids(&open_follower(dir.path())).contains(&ExtendedPointId::NumId(42)));
     }
 
     /// A retried store batch is a no-op — through the same writer and through
