@@ -19,6 +19,7 @@
 //!
 //! Same pipeline as 4-bit from that point on (i8 × i8 → i16 + `vpadalq_s16`).
 
+use super::super::{BLOCK_BYTES, BlockedFactors};
 use super::{CODEBOOK_I8, FOLDED_MAX_DIM, centroid_dot};
 
 /// `PAIR_TABLE_EVEN[nibble]` = `CODEBOOK_I8[nibble & 0b11]`.
@@ -237,6 +238,245 @@ pub unsafe fn score_2bit_internal_folded_neon(a: &[u8], b: &[u8], factors: &[i16
                 &b[simd_bytes..],
                 &factors[4 * simd_bytes..],
             )
+    }
+}
+
+// ------------------------------------------------------------------
+// Block order — the TQ+ symmetric score of `super::super::BlockedFactors` and
+// `super::super::FoldedQuery`, the same sum as `score_2bit_internal_folded`. A
+// block of `BLOCK_BYTES` code bytes is read by bit offset: the codes in bits
+// 0..2 of its 32 bytes (dimensions `4p`), then those in bits 2..4 (`4p + 1`),
+// 4..6 and 6..8, not interleaved back into dimension order: the factors and a
+// folded query are stored in that order. Same instructions as
+// `score_2bit_internal_folded_neon`: `tbl` looks the codes up, `sqrdmulh` folds
+// them widened to i16 (`(2·c·f + 2¹⁵) >> 16`, which equals `fold_q15`'s
+// `(c·f + 2¹⁴) >> 15`), `smlal` sums the products in i32 lanes:
+//   per product:   |q_a · q_b| ≤ 127 · 127 = 16 129
+//   total:         < 2¹⁶ · 2¹⁴ = 2³⁰ at `FOLDED_MAX_DIM` ✓
+// ------------------------------------------------------------------
+
+/// [`CODEBOOK_I8`] padded with zeros to a `tbl` table.
+const CODEBOOK_TABLE: [i8; 16] = {
+    let mut table = [0; 16];
+    let mut code = 0;
+    while code < CODEBOOK_I8.len() {
+        table[code] = CODEBOOK_I8[code];
+        code += 1;
+    }
+    table
+};
+
+/// 16-bit lanes of a 128-bit vector.
+const LANES: usize = 8;
+/// Codes per lookup: the bytes of a 128-bit vector.
+const PART: usize = 16;
+
+/// The 16 values of `values` from `position` on.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn load_i16_part(values: &[i16], position: usize) -> [core::arch::aarch64::int16x8_t; 2] {
+    use core::arch::aarch64::*;
+    debug_assert!(position + PART <= values.len());
+    unsafe {
+        let ptr = values.as_ptr().add(position);
+        [vld1q_s16(ptr), vld1q_s16(ptr.add(LANES))]
+    }
+}
+
+/// Stores the 16 values `folded` at `position` of `values`.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn store_i16_part(
+    values: &mut [i16],
+    position: usize,
+    folded: [core::arch::aarch64::int16x8_t; 2],
+) {
+    use core::arch::aarch64::*;
+    debug_assert!(position + PART <= values.len());
+    unsafe {
+        let ptr = values.as_mut_ptr().add(position);
+        vst1q_s16(ptr, folded[0]);
+        vst1q_s16(ptr.add(LANES), folded[1]);
+    }
+}
+
+/// The 32 bytes of block `block` of `codes`.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn load_block(codes: &[u8], block: usize) -> [core::arch::aarch64::uint8x16_t; 2] {
+    use core::arch::aarch64::*;
+    debug_assert!((block + 1) * BLOCK_BYTES <= codes.len());
+    unsafe {
+        let ptr = codes.as_ptr().add(block * BLOCK_BYTES);
+        [vld1q_u8(ptr), vld1q_u8(ptr.add(PART))]
+    }
+}
+
+/// `q` of 16 codebook values with their factors: widened to i16, then scaled by `sqrdmulh`.
+#[inline]
+#[target_feature(enable = "neon")]
+fn fold_part(
+    values: core::arch::aarch64::int8x16_t,
+    factors: [core::arch::aarch64::int16x8_t; 2],
+) -> [core::arch::aarch64::int16x8_t; 2] {
+    use core::arch::aarch64::*;
+    [
+        vqrdmulhq_s16(vmovl_s8(vget_low_s8(values)), factors[0]),
+        vqrdmulhq_s16(vmovl_high_s8(values), factors[1]),
+    ]
+}
+
+/// Two sets of four accumulators: the even and the odd vectors of 16 codes of a block.
+type Accumulators = [[core::arch::aarch64::int32x4_t; 4]; 2];
+
+#[inline]
+#[target_feature(enable = "neon")]
+fn zero_accumulators() -> Accumulators {
+    use core::arch::aarch64::*;
+    [[vdupq_n_s32(0); 4]; 2]
+}
+
+/// Adds the products of the 16 lanes of `a` and `b` to four accumulators, so that no `smlal`
+/// waits for the one before.
+#[inline]
+#[target_feature(enable = "neon")]
+fn multiply_add(
+    acc: &mut [core::arch::aarch64::int32x4_t; 4],
+    a: [core::arch::aarch64::int16x8_t; 2],
+    b: [core::arch::aarch64::int16x8_t; 2],
+) {
+    use core::arch::aarch64::*;
+    acc[0] = vmlal_s16(acc[0], vget_low_s16(a[0]), vget_low_s16(b[0]));
+    acc[1] = vmlal_high_s16(acc[1], a[0], b[0]);
+    acc[2] = vmlal_s16(acc[2], vget_low_s16(a[1]), vget_low_s16(b[1]));
+    acc[3] = vmlal_high_s16(acc[3], a[1], b[1]);
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+fn reduce_accumulators(accumulators: &Accumulators) -> i64 {
+    use core::arch::aarch64::*;
+    let mut sum = vdupq_n_s32(0);
+    for &acc in accumulators.as_flattened() {
+        sum = vaddq_s32(sum, acc);
+    }
+    i64::from(vaddvq_s32(sum))
+}
+
+/// Signed codebook values of the codes in the low 2 bits of each byte of `shifted`.
+#[inline]
+#[target_feature(enable = "neon")]
+fn lookup_2bit_neon(
+    codebook: core::arch::aarch64::int8x16_t,
+    shifted: core::arch::aarch64::uint8x16_t,
+) -> core::arch::aarch64::int8x16_t {
+    use core::arch::aarch64::*;
+    vqtbl1q_s8(codebook, vandq_u8(shifted, vdupq_n_u8(0x03)))
+}
+
+/// Signed codebook values of the codes of block `block` of `codes`, by bit offset, 16 per
+/// vector.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn unpack_blocked_neon(
+    codebook: core::arch::aarch64::int8x16_t,
+    codes: &[u8],
+    block: usize,
+) -> [core::arch::aarch64::int8x16_t; 8] {
+    use core::arch::aarch64::*;
+    let [bytes_0, bytes_1] = unsafe { load_block(codes, block) };
+    [
+        lookup_2bit_neon(codebook, bytes_0),
+        lookup_2bit_neon(codebook, bytes_1),
+        lookup_2bit_neon(codebook, vshrq_n_u8(bytes_0, 2)),
+        lookup_2bit_neon(codebook, vshrq_n_u8(bytes_1, 2)),
+        lookup_2bit_neon(codebook, vshrq_n_u8(bytes_0, 4)),
+        lookup_2bit_neon(codebook, vshrq_n_u8(bytes_1, 4)),
+        vqtbl1q_s8(codebook, vshrq_n_u8(bytes_0, 6)),
+        vqtbl1q_s8(codebook, vshrq_n_u8(bytes_1, 6)),
+    ]
+}
+
+/// [`super::fold_2bit_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `codes`, `values` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn fold_2bit_blocked_neon(
+    factors: &BlockedFactors,
+    codes: &[u8],
+    values: &mut [i16],
+) {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_TABLE.as_ptr());
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_neon(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (8 * block + part) * PART;
+                let folded = fold_part(code, load_i16_part(&factors.factors, position));
+                store_i16_part(values, position, folded);
+            }
+        }
+    }
+}
+
+/// [`super::score_2bit_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `codes`, `query` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn score_2bit_blocked_neon(
+    query: &[i16],
+    factors: &BlockedFactors,
+    codes: &[u8],
+) -> i64 {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_TABLE.as_ptr());
+        let mut acc = zero_accumulators();
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_neon(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (8 * block + part) * PART;
+                let folded = fold_part(code, load_i16_part(&factors.factors, position));
+                multiply_add(&mut acc[part % 2], load_i16_part(query, position), folded);
+            }
+        }
+        reduce_accumulators(&acc)
+    }
+}
+
+/// [`super::score_2bit_internal_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `a`, `b` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn score_2bit_internal_blocked_neon(
+    factors: &BlockedFactors,
+    a: &[u8],
+    b: &[u8],
+) -> i64 {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_TABLE.as_ptr());
+        let mut acc = zero_accumulators();
+        for block in 0..factors.layout.blocks() {
+            let codes_a = unpack_blocked_neon(codebook, a, block);
+            let codes_b = unpack_blocked_neon(codebook, b, block);
+            for part in 0..8 {
+                let factor = load_i16_part(&factors.factors, (8 * block + part) * PART);
+                multiply_add(
+                    &mut acc[part % 2],
+                    fold_part(codes_a[part], factor),
+                    fold_part(codes_b[part], factor),
+                );
+            }
+        }
+        reduce_accumulators(&acc)
     }
 }
 

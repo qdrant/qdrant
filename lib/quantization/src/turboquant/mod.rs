@@ -138,11 +138,7 @@ struct StoredQueryTQ {
     record: Vec<u8>,
     /// What the symmetric score reads of the record besides its codes.
     values: quantization::SymmetricValues,
-    /// TQ+ 2 and 4 bits on x86_64 and aarch64: the codes folded once
-    #[cfg(any(
-        target_arch = "x86_64",
-        all(target_arch = "aarch64", target_feature = "neon")
-    ))]
+    /// TQ+ 2 and 4 bits on CPUs with block-order kernels: the codes folded once
     folded: Option<quantization::FoldedStoredQuery>,
 }
 
