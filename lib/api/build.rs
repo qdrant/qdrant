@@ -287,6 +287,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecommendPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("RecommendPoints.filter", ""),
             ("RecommendPoints.params", ""),
+            ("RecommendPoints.limit", "range(min = 1)"),
             ("RecommendPoints.timeout", "range(min = 1)"),
             ("RecommendPoints.positive_vectors", ""),
             ("RecommendPoints.negative_vectors", ""),
