@@ -35,6 +35,11 @@ struct TestServer {
 
 impl TestServer {
     fn start() -> Self {
+        Self::start_on("127.0.0.1")
+    }
+
+    /// Start the server on the given local IP address, the URL uses that address as host
+    fn start_on(host: &str) -> Self {
         // Same provider as in main
         let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -50,11 +55,8 @@ impl TestServer {
                 .unwrap(),
         );
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!(
-            "https://127.0.0.1:{}/",
-            listener.local_addr().unwrap().port()
-        );
+        let listener = TcpListener::bind((host, 0)).unwrap();
+        let url = format!("https://{host}:{}/", listener.local_addr().unwrap().port());
         let requests = Arc::new(AtomicUsize::new(0));
 
         let requests_clone = requests.clone();
@@ -200,4 +202,27 @@ async fn test_tls_with_ca_cert_verifies_server_cert() {
     }
 
     assert_eq!(server.requests(), 2);
+}
+
+/// TLS with CA certificate must reject a certificate that is not valid for the requested host
+///
+/// The server certificate is signed by the CA, but is not valid for 127.0.0.2.
+///
+/// Only on Linux, other platforms don't route all of 127.0.0.0/8 to the loopback interface.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn test_tls_with_ca_cert_verifies_server_hostname() {
+    let server = TestServer::start_on("127.0.0.2");
+    let tls_config = tls_config(Some("cacert.pem"));
+
+    for verification in ALL_VERIFICATIONS {
+        let result = server.get(Some(&tls_config), false, verification).await;
+        let err = result.expect_err("must reject the server");
+
+        // Must be rejected for the host name, not for an untrusted certificate
+        let err = format!("{err:?}");
+        assert!(err.contains("NotValidForName"), "{verification:?}: {err}");
+    }
+
+    assert_eq!(server.requests(), 0);
 }
