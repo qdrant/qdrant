@@ -358,7 +358,22 @@ impl From<tonic::transport::Error> for StorageError {
 
 impl From<reqwest::Error> for StorageError {
     fn from(err: reqwest::Error) -> Self {
-        Self::service_error(format!("Http request error: {err}"))
+        // reqwest only displays the top level error, not what caused it. Include the causes, so
+        // that users can tell a rejected TLS certificate from an unreachable server.
+        let mut description = format!("Http request error: {err}");
+
+        let mut source = std::error::Error::source(&err);
+        while let Some(cause) = source {
+            let cause_description = cause.to_string();
+            // Some errors already display their cause
+            if !description.ends_with(&cause_description) {
+                description.push_str(": ");
+                description.push_str(&cause_description);
+            }
+            source = cause.source();
+        }
+
+        Self::service_error(description)
     }
 }
 

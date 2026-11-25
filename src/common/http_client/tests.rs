@@ -146,9 +146,13 @@ async fn test_tls_without_ca_cert_verifies_server_cert() {
     let result = server
         .get(Some(&tls_config), false, ServerCertVerification::Strict)
         .await;
-    assert!(result.is_err(), "must reject the server");
+    let err = result.expect_err("must reject the server");
 
     assert_eq!(server.requests(), 0);
+
+    // The error users get must tell that the certificate was rejected
+    let err = StorageError::from(err).to_string();
+    assert!(err.contains("invalid peer certificate"), "{err}");
 }
 
 /// TLS without CA certificate cannot verify other peers, so it accepts any certificate
