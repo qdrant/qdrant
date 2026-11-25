@@ -76,7 +76,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
             temp_file.set_len(length as u64)?;
         }
 
-        crate::fs::rename_with_retry(&temp_path, path)?;
+        crate::fs::rename_while_held(&temp_path, path)?;
 
         OpenOptions::new().read(true).write(true).open(path)
     }

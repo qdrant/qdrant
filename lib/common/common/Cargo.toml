@@ -74,9 +74,6 @@ io-uring = "0.7.12"
 procfs = { version = "0.18", default-features = false }
 thread-priority = "3.0.0"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
-
 [[bench]]
 name = "bitpacking"
 harness = false

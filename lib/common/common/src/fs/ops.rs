@@ -9,6 +9,10 @@ use serde::de::DeserializeOwned;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Write a file atomically: write a temporary file, then replace `path` with it.
+///
+/// On Windows, the final replace is retried while another process briefly holds the file, see
+/// [`rename_while_held`](super::rename_while_held).
 #[allow(
     clippy::disallowed_types,
     reason = "can't use `fs_err::File` since `atomicwrites` only provides `&mut std::fs::File`"
@@ -18,49 +22,35 @@ where
     E: From<Error>,
     F: FnOnce(&mut BufWriter<&mut std::fs::File>) -> Result<(), E>,
 {
-    #[cfg(windows)]
-    {
-        atomic_save_windows(path, write)
-    }
     #[cfg(not(windows))]
     {
         let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
-        af.write(|f| write_and_flush(path, f, write))
+        af.write(|file| write_and_flush(path, file, write))
             .map_err(|e| match e {
                 atomicwrites::Error::Internal(err) => E::from(err),
                 atomicwrites::Error::User(err) => err,
             })
     }
-}
+    #[cfg(windows)]
+    {
+        // Same steps as `AtomicFile::write`, but with a retry on the final replace
+        let parent = match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            Some(_) | None => Path::new("."),
+        };
+        let tmp_dir = tempfile::Builder::new()
+            .prefix(".atomicwrite")
+            .tempdir_in(parent)?;
+        let tmp_path = tmp_dir.path().join("tmpfile.tmp");
 
-/// Same as `atomicwrites` (temp file in the same directory, then replace),
-/// but retries the final rename, which an antivirus/EDR scanner holding the
-/// target or the fresh temp file can make fail with access denied.
-/// Persistence retains `atomicwrites`' Windows write-through replacement.
-#[cfg(windows)]
-#[allow(
-    clippy::disallowed_types,
-    clippy::disallowed_methods,
-    reason = "`tempfile` provides `std::fs::File`, see `atomic_save`"
-)]
-fn atomic_save_windows<E, F>(path: &Path, write: F) -> Result<(), E>
-where
-    E: From<Error>,
-    F: FnOnce(&mut BufWriter<&mut std::fs::File>) -> Result<(), E>,
-{
-    let parent = match path.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => Path::new("."),
-    };
-    let mut tmp = tempfile::Builder::new()
-        .prefix(".atomicwrite")
-        .tempfile_in(parent)
-        .map_err(E::from)?;
-    write_and_flush(path, tmp.as_file_mut(), write)?;
-    tmp.as_file().sync_all().map_err(E::from)?;
-    // Closes the file handle before renaming
-    let temp_path = tmp.into_temp_path();
-    super::persist_with_retry(temp_path, path).map_err(E::from)
+        let mut file = File::create(&tmp_path)?;
+        write_and_flush(path, file.file_mut(), write)?;
+        file.sync_all()?;
+        drop(file);
+
+        super::retry::retry_while_held(path, || atomicwrites::replace_atomic(&tmp_path, path))?;
+        Ok(())
+    }
 }
 
 #[allow(clippy::disallowed_types, reason = "see `atomic_save`")]
@@ -76,8 +66,7 @@ where
             e.kind(),
             format!("Failed to flush {}: {e}", path.display()),
         ))
-    })?;
-    Ok(())
+    })
 }
 
 pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
