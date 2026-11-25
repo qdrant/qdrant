@@ -215,10 +215,11 @@ impl ClusterState {
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
         let mut validated = Vec::with_capacity(changes.len());
 
-        // TODO: Validate each removal against earlier removals in the same batch.
-        //
-        // Checking each removal against the initial replica set lets a batch remove
-        // the last source of truth even though every removal passes validation.
+        // Replicas left after earlier removals in the same batch.
+        // Validating each removal against the initial replica set would let a batch remove
+        // the same replica twice, or remove the last source of truth.
+        let mut remaining_replicas = BTreeMap::new();
+
         for change in changes {
             let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
             let Some(shard) = state.shards.get(&shard_id) else {
@@ -227,18 +228,24 @@ impl ClusterState {
                 )));
             };
 
-            if !shard.replicas.contains_key(&peer_id) {
+            let replicas = remaining_replicas
+                .entry(shard_id)
+                .or_insert_with(|| shard.replicas.clone());
+
+            if !replicas.contains_key(&peer_id) {
                 return Err(StorageError::bad_request(format!(
                     "Peer {peer_id} has no replica of shard {shard_id}"
                 )));
             }
 
-            if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
+            if replicas.len() == 1 || is_last_source_of_truth(replicas, peer_id) {
                 return Err(StorageError::bad_request(format!(
                     "Shard {shard_id} must have at least one active replica after removing \
                      {peer_id}",
                 )));
             }
+
+            replicas.remove(&peer_id);
 
             let mut transfers: Vec<_> = state
                 .transfers
@@ -445,11 +452,15 @@ impl ClusterState {
             )));
         }
 
-        // TODO: Check that nested *replica* placement lists are not empty (e.g., `[[], [], []]`)
-
         if placement.is_empty() {
             return Err(StorageError::bad_request(format!(
                 "Shard key {shard_key} placement cannot be empty"
+            )));
+        }
+
+        if placement.iter().any(|replicas| replicas.is_empty()) {
+            return Err(StorageError::bad_request(format!(
+                "Shard key {shard_key} placement cannot contain empty replica lists"
             )));
         }
 
@@ -473,6 +484,9 @@ impl ClusterState {
 
         let base_id = max_id + 1;
 
+        // The dispatcher always sets the initial state when proposing `CreateShardKey`.
+        // Operations proposed by older peers, or by cluster migration, can still omit it,
+        // and then each peer resolves it here, as older versions do.
         let init_state = initial_state.unwrap_or_else(|| {
             let use_initializing = context.is_distributed
                 && self.all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
@@ -669,6 +683,15 @@ impl ClusterState {
             }
         }
 
+        // With auto sharding, finish and abort derive the shard count from the target shard ID,
+        // so it must be the last shard (for scale-down) or the one after it (for scale-up).
+        //
+        // Finishing scale-down drops the target shard,
+        // so with custom sharding it must belong to the given shard key.
+        if is_new_resharding {
+            validate_resharding_target(state, sharding_method, key)?;
+        }
+
         let mut actions = Actions::new();
 
         if key.direction == ReshardingDirection::Up && !state.shards.contains_key(&key.shard_id) {
@@ -804,8 +827,8 @@ impl ClusterState {
                 state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
             if is_auto_sharding {
-                // TODO: When starting resharding, validate that auto-sharding scale-down targets
-                // the last nonzero shard, so a malformed entry cannot panic here
+                // When starting scale-down resharding, we validate that there are at least
+                // two shards and that resharding targets the last one, so it's never zero
                 let shard_number = NonZeroU32::new(key.shard_id)
                     .expect("cannot have zero shards after finishing resharding down");
 
@@ -989,8 +1012,8 @@ impl ClusterState {
             state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
 
         if is_auto_sharding {
-            // TODO: When starting resharding, validate that auto-sharding scale-up targets
-            //       the next shard ID, so a malformed entry targeting shard 0 cannot panic here
+            // When starting scale-up resharding, we validate that resharding targets
+            // the shard after the last one, so it's never zero
             let shard_number = NonZeroU32::new(key.shard_id)
                 .expect("cannot have zero shards after aborting resharding up");
 
@@ -1983,6 +2006,82 @@ fn initial_replica_state_for_transfer(
             }
         }
     }
+}
+
+/// Check that resharding targets the shard the API selects.
+///
+/// Scaling up targets the shard after the last one, across all shard keys.
+/// Scaling down targets the last shard with auto sharding,
+/// and a shard of the given shard key with custom sharding.
+fn validate_resharding_target(
+    state: &collection::collection_state::State,
+    sharding_method: ShardingMethod,
+    key: &ReshardKey,
+) -> StorageResult<()> {
+    if key.direction == ReshardingDirection::Down && sharding_method == ShardingMethod::Custom {
+        let key_shard_ids = shard_ids_for_key(state, key.shard_key.as_ref());
+
+        if !key_shard_ids.contains(&key.shard_id) {
+            return Err(StorageError::bad_request(format!(
+                "resharding down must target a shard of shard key {:?}, but targets shard {}",
+                key.shard_key, key.shard_id,
+            )));
+        }
+
+        return Ok(());
+    }
+
+    // When scaling up, Start creates the target shard before saving the resharding state.
+    // If Start is replayed in between (after a crash or a failed write),
+    // the target shard already exists, and must not count as the last shard.
+    //
+    // Start creates the target shard with exactly one replica,
+    // in `Resharding` state on the target peer, so we check for that.
+    let target_shard_is_already_created = key.direction == ReshardingDirection::Up
+        && state.shards.get(&key.shard_id).is_some_and(|shard| {
+            shard.replicas.get(&key.peer_id) == Some(&ReplicaState::Resharding)
+                && shard.replicas.len() == 1
+        });
+
+    // Skip the target shard when calculating the last shard ID, if it's already created
+    let last_shard_id = state
+        .shards
+        .keys()
+        .copied()
+        .filter(|&shard_id| !(shard_id == key.shard_id && target_shard_is_already_created))
+        .max();
+
+    let Some(last_shard_id) = last_shard_id else {
+        return Err(StorageError::bad_request(
+            "cannot reshard collection without shards",
+        ));
+    };
+
+    let expected_shard_id = match key.direction {
+        ReshardingDirection::Up => {
+            // Scale-up must target `last_shard + 1`, and with auto sharding,
+            // Start sets the shard count to `target_shard + 1`,
+            // so `last_shard + 2` must fit into `u32`
+            if last_shard_id > u32::MAX - 2 {
+                return Err(StorageError::bad_request(format!(
+                    "cannot add shard after shard {last_shard_id} by resharding up",
+                )));
+            }
+
+            last_shard_id + 1
+        }
+
+        ReshardingDirection::Down => last_shard_id,
+    };
+
+    if key.shard_id != expected_shard_id {
+        return Err(StorageError::bad_request(format!(
+            "resharding {:?} must target shard {expected_shard_id}, but targets shard {}",
+            key.direction, key.shard_id,
+        )));
+    }
+
+    Ok(())
 }
 
 fn validate_transfer(

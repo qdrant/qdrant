@@ -54,17 +54,16 @@ impl ClusterState {
     /// Whether every known peer runs at least `version`.
     /// Implementation intentionally matches `ChannelService::all_peers_at_version`.
     pub fn all_peers_at_version(&self, version: &Version) -> bool {
-        // TODO:
-        // Check that peer address map and peer metadata map contain the same peers
-        // and each peer matches required version
+        // A peer without metadata has an unknown version
+        let all_known = self
+            .peer_address_by_id
+            .keys()
+            .all(|peer_id| self.peer_metadata_by_id.contains_key(peer_id));
 
-        // More peer addresses than metadata means at least one version is unknown
-        if self.peer_address_by_id.len() > self.peer_metadata_by_id.len() {
-            return false;
-        }
-
-        self.peer_metadata_by_id
-            .values()
-            .all(|metadata| metadata.version() >= version)
+        all_known
+            && self
+                .peer_metadata_by_id
+                .values()
+                .all(|metadata| metadata.version() >= version)
     }
 }

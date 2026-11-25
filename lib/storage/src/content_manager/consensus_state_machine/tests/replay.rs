@@ -197,7 +197,7 @@ fn replay_may_diverge(operation: &ConsensusOperations) -> bool {
         return false;
     };
 
-    rename_alias_may_diverge(operation) || collection_metadata_may_diverge(operation)
+    rename_alias_may_diverge(operation)
 }
 
 /// `RenameAlias` is not idempotent: it moves whatever the alias points at,
@@ -260,19 +260,4 @@ fn rename_alias_may_diverge(operation: &CollectionMetaOperations) -> bool {
     }
 
     renames_pre_existing && renamed.is_subset(&created)
-}
-
-/// Metadata is merged into the config, where a null value removes the key it names. A collection
-/// with no metadata yet takes the whole payload instead, nulls included, and a replay merges that
-/// payload into itself and drops those keys.
-fn collection_metadata_may_diverge(operation: &CollectionMetaOperations) -> bool {
-    let CollectionMetaOperations::UpdateCollection(operation) = operation else {
-        return false;
-    };
-
-    operation
-        .update_collection
-        .metadata
-        .as_ref()
-        .is_some_and(|metadata| metadata.0.values().any(serde_json::Value::is_null))
 }

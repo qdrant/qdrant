@@ -179,12 +179,13 @@ impl ChannelService {
         let id_to_address = self.id_to_address.read();
         let id_to_metadata = self.id_to_metadata.read();
 
-        // Ensure there aren't more peer addresses than metadata
-        if id_to_address.len() > id_to_metadata.len() {
-            let peers_without_metadata: HashMap<_, _> = id_to_address
-                .iter()
-                .filter(|(id, _uri)| !id_to_metadata.contains_key(id))
-                .collect();
+        // Ensure every peer has metadata
+        let peers_without_metadata: HashMap<_, _> = id_to_address
+            .iter()
+            .filter(|(id, _uri)| !id_to_metadata.contains_key(id))
+            .collect();
+
+        if !peers_without_metadata.is_empty() {
             log::info!(
                 "Not all peers at version:{version} because there are peers without metadata:{peers_without_metadata:?}"
             );
@@ -327,5 +328,36 @@ mod tests {
             None
         ));
         assert!(!is_peer_host("http://localhost:6333/", None));
+    }
+
+    #[test]
+    fn all_peers_at_version_requires_metadata_of_every_peer() {
+        let channel_service = ChannelService::default();
+        let version = Version::new(1, 15, 0);
+
+        for peer_id in [1, 2] {
+            let uri = format!("http://peer-{peer_id}").parse().unwrap();
+            channel_service.id_to_address.write().insert(peer_id, uri);
+        }
+
+        // Metadata of a peer without an address does not stand in for peer 2
+        for peer_id in [1, 3] {
+            let metadata = PeerMetadata {
+                version: version.clone(),
+            };
+            channel_service
+                .id_to_metadata
+                .write()
+                .insert(peer_id, metadata);
+        }
+
+        assert!(!channel_service.all_peers_at_version(&version));
+
+        let metadata = PeerMetadata {
+            version: version.clone(),
+        };
+        channel_service.id_to_metadata.write().insert(2, metadata);
+
+        assert!(channel_service.all_peers_at_version(&version));
     }
 }
