@@ -27,6 +27,8 @@ use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use tempfile::TempDir;
 
+use super::retry::rename_with_retry;
+
 /// Safe delete a directory by moving it into a temporary directory first.
 ///
 /// Allows deleting in the background without blocking the main thread.
@@ -48,7 +50,7 @@ pub fn safe_delete_in_tmp(path: &Path, temp_dir: &Path) -> io::Result<TempDir> {
     fs::create_dir_all(temp_dir)?;
     let to_delete = tempfile::Builder::new().prefix("").tempdir_in(temp_dir)?;
     // Append /x as older Windows can't rename onto an existing dir. See #5924.
-    fs::rename(path, to_delete.path().join("x"))?;
+    rename_with_retry(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -72,7 +74,7 @@ pub fn safe_delete_with_suffix(path: &Path) -> io::Result<()> {
         .prefix(file_name)
         .suffix(".deleted")
         .tempdir_in(parent)?;
-    fs::rename(path, to_delete.path().join("x"))?;
+    rename_with_retry(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -159,6 +161,95 @@ mod tests {
         // Case 4: nonexistent, follow `fs::remove_dir_all` behavior
         assert!(safe_delete_in_tmp(&nonexistent, &tmp).is_err());
         assert!(safe_delete_with_suffix(&nonexistent).is_err());
+
+        assert_eq!(fs::read_dir(&segments)?.count(), 0);
+        assert_eq!(fs::read_dir(&tmp)?.count(), 0);
+
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_safe_delete_preserves_error_before_retry() -> io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use super::super::retry::test_hooks::with_rename_retry_hook;
+
+        let base = tempfile::tempdir()?;
+        let segment = base.path().join("segment");
+        fs::create_dir(&segment)?;
+        fs::write(segment.join("file"), b"test")?;
+        let tmp = base.path().join("tmp");
+        fs::write(&tmp, b"not a directory")?;
+        #[expect(clippy::disallowed_types, reason = "std::fs is needed for share_mode")]
+        let handle = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(segment.join("file"))?;
+
+        let result =
+            with_rename_retry_hook(move || drop(handle), || safe_delete_in_tmp(&segment, &tmp));
+
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(segment.join("file"))?, b"test");
+        assert_eq!(fs::read(&tmp)?, b"not a directory");
+        safe_delete_with_suffix(&segment)?;
+        Ok(())
+    }
+
+    /// Simulates an AV/EDR scanner briefly holding a file inside the segment
+    /// directory, which makes the directory rename fail with access denied.
+    #[cfg(windows)]
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        clippy::disallowed_types,
+        reason = "std::fs is needed for share_mode and the raw OS error code"
+    )]
+    fn test_safe_delete_retries_while_file_is_held() -> io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use super::super::retry::test_hooks::with_rename_retry_hook;
+
+        let base = tempfile::tempdir()?;
+        let segments = base.path().join("segments");
+        let tmp = base.path().join("tmp");
+
+        for name in ["segment1", "segment2"] {
+            let segment = segments.join(name);
+            fs::create_dir_all(&segment)?;
+            fs::write(segment.join("file"), b"test")?;
+        }
+
+        let hold = |name: &str| {
+            // Share mode 0: no FILE_SHARE_DELETE, like a scanner's handle
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(segments.join(name).join("file"))
+        };
+
+        // Without retry, the plain rename fails while the handle is held
+        let handle = hold("segment1")?;
+        let err = std::fs::rename(segments.join("segment1"), base.path().join("x")).unwrap_err();
+        assert!(
+            super::super::retry::is_transient_windows_error(&err),
+            "unexpected error: {err}"
+        );
+        drop(handle);
+
+        let handle = hold("segment1")?;
+        with_rename_retry_hook(
+            move || drop(handle),
+            || safe_delete_with_suffix(&segments.join("segment1")),
+        )?;
+
+        let handle = hold("segment2")?;
+        with_rename_retry_hook(
+            move || drop(handle),
+            || safe_delete_in_tmp(&segments.join("segment2"), &tmp),
+        )?
+        .close()?;
 
         assert_eq!(fs::read_dir(&segments)?.count(), 0);
         assert_eq!(fs::read_dir(&tmp)?.count(), 0);

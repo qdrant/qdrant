@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::{LazyLock, OnceLock};
 use std::{io, mem, ptr};
 
-use fs_err as fs;
 use fs_err::{File, OpenOptions};
 use memmap2::{Mmap, MmapMut};
 
@@ -77,7 +76,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
             temp_file.set_len(length as u64)?;
         }
 
-        fs::rename(&temp_path, path)?;
+        crate::fs::rename_with_retry(&temp_path, path)?;
 
         OpenOptions::new().read(true).write(true).open(path)
     }
