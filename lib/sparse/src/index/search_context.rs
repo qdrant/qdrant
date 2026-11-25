@@ -24,6 +24,9 @@ pub struct IndexedPostingListIterator<T: PostingListIter> {
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
+/// Length of the batch scores buffer. Fits any batch plus one slot past it, which is never read.
+const SCORES_LEN: usize = ADVANCE_BATCH_SIZE + 2;
+
 pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     postings_iterators: Vec<IndexedPostingListIterator<T>>,
     query: RemappedSparseVector,
@@ -146,26 +149,35 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         filter_condition: &F,
     ) {
         // init batch scores
-        let batch_len = batch_last_id - batch_start_id + 1;
-        self.scores.clear(); // keep underlying allocated memory
-        self.scores.resize(batch_len as usize, 0.0);
+        let batch_len = (batch_last_id - batch_start_id) as usize + 1;
+        if self.scores.len() != SCORES_LEN {
+            self.scores.clear();
+            self.scores.resize(SCORES_LEN, 0.0);
+        }
+        let scores = self
+            .scores
+            .first_chunk_mut::<SCORES_LEN>()
+            .expect("scores buffer has SCORES_LEN elements");
+        scores[..batch_len].fill(0.0);
 
         for posting in self.postings_iterators.iter_mut() {
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
-                self.scores.as_mut_slice(),
+                scores,
                 #[inline(always)]
                 |scores, id, weight| {
-                    let element_score = weight * posting.query_weight;
-                    let local_id = (id - batch_start_id) as usize;
-                    // SAFETY: `id` is within `batch_start_id..=batch_last_id`
-                    // Thus, `local_id` is within `0..batch_len`.
-                    *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                    // Posting lists are sorted by id, so `id` falls in the batch and
+                    // `id - batch_start_id` indexes the scores buffer. A corrupt posting list,
+                    // e.g. from a crafted snapshot, may break this: an id below `batch_start_id`
+                    // wraps to a huge value. Clamp into the last slot, which is never read back,
+                    // so such ids are dropped without a branch and never write out of bounds.
+                    let local_id = min(id.wrapping_sub(batch_start_id) as usize, SCORES_LEN - 1);
+                    scores[local_id] += weight * posting.query_weight;
                 },
             );
         }
 
-        for (local_index, &score) in self.scores.iter().enumerate() {
+        for (local_index, &score) in scores[..batch_len].iter().enumerate() {
             // Publish only the non-zero scores above the current min to beat.
             // A non-negative threshold already rules out zero scores; testing
             // `score != 0.0` on every slot would be a badly predicted branch.
@@ -294,10 +306,13 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             };
 
             // compute batch range of contiguous ids for the next batch
+            // A corrupt posting list may have its last id below its first, never end the batch
+            // before it starts
             let last_batch_id = min(
-                start_batch_id + ADVANCE_BATCH_SIZE as u32,
+                start_batch_id.saturating_add(ADVANCE_BATCH_SIZE as u32),
                 self.max_record_id,
-            );
+            )
+            .max(start_batch_id);
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
