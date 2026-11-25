@@ -5,6 +5,7 @@ use common::defaults;
 use parking_lot::Mutex;
 use segment::types::PointIdType;
 
+use super::orphan_check::log_other_replica_clocks;
 use super::overwrite_points::overwrite_points;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
@@ -244,6 +245,17 @@ async fn resolve_wal_delta(
                 "Remote shard is ahead on clocks of other peers: {ahead_clocks}",
             )));
         }
+
+        // Report if other active replicas have the operations we are about to treat as orphans
+        log_other_replica_clocks(
+            replica_set,
+            remote_shard,
+            collection_id,
+            shard_id,
+            &ahead_clocks,
+            &newest_clocks,
+        )
+        .await;
 
         // Our tick for each clock the remote shard is ahead on, tick 0 if we don't know the clock
         let source_clocks = ahead_clocks.same_clocks_in(&newest_clocks);
