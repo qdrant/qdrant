@@ -341,4 +341,29 @@ mod tests {
 
         assert!(query.validate().is_ok());
     }
+
+    #[test]
+    fn update_vectors_rejects_empty_dense_vector() {
+        use super::super::{UpdateVectors, VectorStruct};
+
+        let empty = UpdateVectors {
+            points: vec![PointVectors {
+                id: 1.into(),
+                vector: VectorStruct::Single(vec![]),
+            }],
+            shard_key: None,
+            update_filter: None,
+        };
+        assert!(empty.validate().is_err());
+
+        let present = UpdateVectors {
+            points: vec![PointVectors {
+                id: 1.into(),
+                vector: VectorStruct::Single(vec![0.1, 0.2]),
+            }],
+            shard_key: None,
+            update_filter: None,
+        };
+        assert!(present.validate().is_ok());
+    }
 }
