@@ -434,6 +434,24 @@ mod tests {
                     (0..must_not).map(|_| next()).collect(),
                 );
                 assert_congruence(&filter, 1 << total, &mut rng);
+
+                // Either side first gives the same result.
+                for order in [ClauseOrder::MustFirst, ClauseOrder::ShouldFirst] {
+                    let mut total = 0;
+                    let mut next = || {
+                        total += 1;
+                        ConditionCheckerEnum::TestBitOfId(TestBitOfId(total - 1))
+                    };
+                    let mut filter = OptimizedFilter::new(
+                        (0..should).map(|_| next()).collect(),
+                        (0..min_should).map(|_| next()).collect(),
+                        min_should_count,
+                        (0..must).map(|_| next()).collect(),
+                        (0..must_not).map(|_| next()).collect(),
+                    );
+                    filter.order = Some(order);
+                    assert_congruence(&filter, 1 << total, &mut rng);
+                }
             }
         }
     }
@@ -504,7 +522,14 @@ mod tests {
             let must_not = gen_clause();
 
             let count = rng.random_range(0..=min_should.len() + 1);
-            OptimizedFilter::new(should, min_should, count, must, must_not)
+            let mut filter = OptimizedFilter::new(should, min_should, count, must, must_not);
+            // Either side first, or the fixed orders, give the same result.
+            filter.order = [
+                None,
+                Some(ClauseOrder::MustFirst),
+                Some(ClauseOrder::ShouldFirst),
+            ][rng.random_range(0..3)];
+            filter
         }
     }
 }

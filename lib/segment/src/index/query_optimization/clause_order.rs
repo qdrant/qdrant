@@ -38,3 +38,29 @@ impl ClauseOrder {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn side(conditions: usize, passing: f64) -> Side {
+        Side {
+            conditions,
+            passing,
+        }
+    }
+
+    #[test]
+    fn selective_side_first() {
+        // A `must` passing 1% before a `should` of two conditions passing 75%.
+        let order = ClauseOrder::by_rejection(side(1, 0.01), side(2, 0.75));
+        assert_eq!(order, ClauseOrder::MustFirst);
+
+        // A `should` of two conditions passing 2% before a `must` passing 90%.
+        let order = ClauseOrder::by_rejection(side(1, 0.9), side(2, 0.02));
+        assert_eq!(order, ClauseOrder::ShouldFirst);
+
+        // One condition rejecting 30% before ten rejecting 95% together.
+        let order = ClauseOrder::by_rejection(side(1, 0.7), side(10, 0.05));
+        assert_eq!(order, ClauseOrder::MustFirst);
+    }
+}
