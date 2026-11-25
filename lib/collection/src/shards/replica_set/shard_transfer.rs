@@ -571,6 +571,21 @@ impl ShardReplicaSet {
         local_shard.resolve_wal_delta(recovery_point).await
     }
 
+    /// Get the remote shards of the other active replicas
+    ///
+    /// Active replicas are `Active` and `ReshardingScaleDown` ones, like in [`Self::active_shards`].
+    pub async fn active_remote_shards(&self) -> Vec<RemoteShard> {
+        let active_peers = self.active_shards(true);
+
+        self.remotes
+            .read()
+            .await
+            .iter()
+            .filter(|remote| active_peers.contains(&remote.peer_id))
+            .cloned()
+            .collect()
+    }
+
     /// Find the points changed by orphan operations in the WAL of the local shard
     ///
     /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
