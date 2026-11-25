@@ -17512,6 +17512,9 @@ pub mod storage_read_client {
     /// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
     /// considered internal: the request/response shape may change between
     /// releases.
+    ///
+    /// ReadBytes, ReadWhole and ReadBatch return at most 128 MiB per request, and
+    /// fail with RESOURCE_EXHAUSTED otherwise. Use ReadBytesStream for larger reads.
     #[derive(Debug, Clone)]
     pub struct StorageReadClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -17668,6 +17671,7 @@ pub mod storage_read_client {
             self.inner.unary(req, path, codec).await
         }
         /// Maps to UniversalRead::read() — single range from a single file.
+        /// The length is limited to 128 MiB.
         pub async fn read_bytes(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadBytesRequest>,
@@ -17718,6 +17722,7 @@ pub mod storage_read_client {
             self.inner.server_streaming(req, path, codec).await
         }
         /// Maps to UniversalRead::read_whole() — read an entire file.
+        /// Only files up to 128 MiB can be read, use ReadBytesStream for larger files.
         pub async fn read_whole(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadWholeRequest>,
@@ -17743,6 +17748,7 @@ pub mod storage_read_client {
             self.inner.unary(req, path, codec).await
         }
         /// Maps to UniversalRead::read_batch() — multiple ranges from a single file.
+        /// Ranges must not overlap. At most 1024 ranges and 128 MiB in total per request.
         pub async fn read_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadBatchRequest>,
@@ -17807,6 +17813,7 @@ pub mod storage_read_server {
             tonic::Status,
         >;
         /// Maps to UniversalRead::read() — single range from a single file.
+        /// The length is limited to 128 MiB.
         async fn read_bytes(
             &self,
             request: tonic::Request<super::ReadBytesRequest>,
@@ -17829,6 +17836,7 @@ pub mod storage_read_server {
             tonic::Status,
         >;
         /// Maps to UniversalRead::read_whole() — read an entire file.
+        /// Only files up to 128 MiB can be read, use ReadBytesStream for larger files.
         async fn read_whole(
             &self,
             request: tonic::Request<super::ReadWholeRequest>,
@@ -17837,6 +17845,7 @@ pub mod storage_read_server {
             tonic::Status,
         >;
         /// Maps to UniversalRead::read_batch() — multiple ranges from a single file.
+        /// Ranges must not overlap. At most 1024 ranges and 128 MiB in total per request.
         async fn read_batch(
             &self,
             request: tonic::Request<super::ReadBatchRequest>,
@@ -17857,6 +17866,9 @@ pub mod storage_read_server {
     /// Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
     /// considered internal: the request/response shape may change between
     /// releases.
+    ///
+    /// ReadBytes, ReadWhole and ReadBatch return at most 128 MiB per request, and
+    /// fail with RESOURCE_EXHAUSTED otherwise. Use ReadBytesStream for larger reads.
     #[derive(Debug)]
     pub struct StorageReadServer<T> {
         inner: Arc<T>,
