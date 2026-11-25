@@ -99,11 +99,39 @@ pub fn persist_while_held(temp_path: TempPath, path: &Path) -> io::Result<()> {
 
 #[cfg(all(test, windows))]
 mod tests {
+    use std::io::Write as _;
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::thread::JoinHandle;
     use std::time::Duration;
 
     use fs_err as fs;
 
     use super::*;
+
+    /// Open `path` like a scanner: nobody else can replace or rename it while the handle is open.
+    #[expect(clippy::disallowed_types, reason = "`share_mode` needs `std::fs`")]
+    fn hold(path: &Path) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap()
+    }
+
+    /// Hold `path` like [`hold`], and release it after 100 ms.
+    fn hold_briefly(path: &Path) -> JoinHandle<()> {
+        let file = hold(path);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(file);
+        })
+    }
+
+    fn temp_path_with(dir: &Path, content: &[u8]) -> TempPath {
+        let mut file = tempfile::NamedTempFile::new_in(dir).unwrap();
+        file.write_all(content).unwrap();
+        file.into_temp_path()
+    }
 
     /// Like a scanner holding a file inside a directory while we rename the directory.
     #[test]
@@ -126,5 +154,53 @@ mod tests {
         handle.join().unwrap();
 
         assert_eq!(fs::read(to.join("file")).unwrap(), b"test");
+    }
+
+    #[test]
+    fn test_atomic_save_while_target_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.json");
+        crate::fs::atomic_save_json(&path, &1).unwrap();
+
+        let handle = hold_briefly(&path);
+        crate::fs::atomic_save_json(&path, &2).unwrap();
+        handle.join().unwrap();
+
+        assert_eq!(crate::fs::read_json::<u32>(&path).unwrap(), 2);
+        // The temporary directory is gone
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn test_persist_while_target_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        fs::write(&path, b"old").unwrap();
+        let temp_path = temp_path_with(dir.path(), b"new");
+
+        let handle = hold_briefly(&path);
+        persist_while_held(temp_path, &path).unwrap();
+        handle.join().unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// The file is held for longer than we retry: the error is returned, the old file is kept
+    /// and the temporary file is removed.
+    #[test]
+    fn test_persist_fails_when_target_stays_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        fs::write(&path, b"old").unwrap();
+        let temp_path = temp_path_with(dir.path(), b"new");
+
+        let file = hold(&path);
+        let err = persist_while_held(temp_path, &path).unwrap_err();
+        drop(file);
+
+        assert!(is_held_by_other_process(&err), "unexpected error: {err}");
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
