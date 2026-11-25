@@ -10,7 +10,9 @@ use uuid::Uuid;
 use super::MappingOperation::{Delete, Insert};
 use super::{PendingInsert, UpdateOnlyAppendableIdTracker};
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
-use crate::id_tracker::mutable_id_tracker::mappings_storage::{load_mappings, mappings_path};
+use crate::id_tracker::mutable_id_tracker::mappings_storage::{
+    LoadedMappings, load_mappings, mappings_path,
+};
 use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
     load_versions, store_version_changes, versions_path,
@@ -120,7 +122,11 @@ fn heals_a_torn_mappings_tail() {
     let healed = fs_err::read(&path).unwrap();
     assert_eq!(healed[..committed.len()], committed);
 
-    let (mappings, read_to) = load_mappings(&path, None, |_| true).unwrap();
+    let LoadedMappings {
+        mappings,
+        abandoned_relocations: _,
+        read_to,
+    } = load_mappings(&path, None, |_| true).unwrap();
     assert_eq!(read_to, healed.len() as u64, "log must parse to its end");
     assert_eq!(
         mappings.internal_id_with_behavior(&num(10), DeferredBehavior::VisibleOnly),

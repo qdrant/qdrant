@@ -445,7 +445,7 @@ fn test_point_mappings_truncation() {
     assert_eq!(
         load_mappings(&mappings_path, None, |_| true)
             .unwrap()
-            .0
+            .mappings
             .internal_id_with_behavior(
                 &PointIdType::NumId(1),
                 common::types::DeferredBehavior::VisibleOnly,
@@ -464,7 +464,7 @@ fn test_point_mappings_truncation() {
     assert_eq!(
         load_mappings(&mappings_path, None, |_| true)
             .unwrap()
-            .0
+            .mappings
             .internal_id_with_behavior(
                 &PointIdType::NumId(1),
                 common::types::DeferredBehavior::VisibleOnly,
@@ -483,7 +483,7 @@ fn test_point_mappings_truncation() {
     assert_eq!(
         load_mappings(&mappings_path, None, |_| true)
             .unwrap()
-            .0
+            .mappings
             .internal_id_with_behavior(
                 &PointIdType::NumId(1),
                 common::types::DeferredBehavior::VisibleOnly,
@@ -501,7 +501,7 @@ fn test_point_mappings_truncation() {
     assert_eq!(
         load_mappings(&mappings_path, None, |_| true)
             .unwrap()
-            .0
+            .mappings
             .internal_id_with_behavior(
                 &PointIdType::NumId(1),
                 common::types::DeferredBehavior::VisibleOnly,
