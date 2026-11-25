@@ -239,6 +239,16 @@ where
             // inconsistency fix would then drop the point altogether.
             //
             // A point linked nowhere else is linked as before: the inconsistency fix drops it.
+            //
+            // The fresh slot stays reserved, never linked, never handed out again: its storages
+            // may already hold data written for it. Note that the log still names the fresh slot,
+            // and `has_version` is only reliable on the first load after the crash: a later
+            // version write for a higher slot zero-fills this slot's entry and makes it look
+            // committed. Relinking the point in the log closes that gap, see
+            // <https://github.com/qdrant/qdrant/pull/11641>.
+            //
+            // See <https://github.com/qdrant/qdrant/pull/11633> for how points were lost and why
+            // this is safe.
             MappingChange::Insert(external_id, internal_id)
                 if !has_version(internal_id) && mappings.heads(&external_id).next().is_some() =>
             {
