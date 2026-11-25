@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -19,7 +20,8 @@ use crate::index::inverted_index::inverted_index_compressed_immutable_ram::Inver
 use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use crate::index::posting_list_common::PostingListIter;
+use crate::index::posting_list::PostingList;
+use crate::index::posting_list_common::{PostingElementEx, PostingListIter};
 use crate::index::search_context::SearchContext;
 
 /// Match all filter condition for testing
@@ -658,5 +660,59 @@ mod test_mod {
         if index.index.is_cold() {
             assert!(ctx.hw_data()[HwMetric::VectorIoRead] > 0);
         }
+    }
+}
+
+/// A corrupt index, e.g. from a crafted snapshot, may have posting lists that are not sorted by
+/// record id. Searching it must not panic or index out of bounds.
+#[test]
+fn test_search_unsorted_posting_lists() {
+    let posting_list = |ids: &[PointOffsetType]| PostingList {
+        elements: ids
+            .iter()
+            .map(|&record_id| PostingElementEx {
+                record_id,
+                weight: 1.0,
+                max_next_weight: 1.0,
+            })
+            .collect(),
+    };
+
+    let cases = [
+        // An id below the batch start
+        [posting_list(&[9, 4, 20]), posting_list(&[10, 30])],
+        // Last ids below the first ids
+        [posting_list(&[10, 5]), posting_list(&[9, 4])],
+    ];
+
+    let _scope = ambient::test_guard();
+    for [first, second] in cases {
+        let ids: HashSet<_> = [&first, &second]
+            .into_iter()
+            .flat_map(|list| list.elements.iter().map(|element| element.record_id))
+            .collect();
+        let index = InvertedIndexRam {
+            postings: vec![PostingList::default(), first, second],
+            vector_count: ids.len(),
+            total_sparse_size: 0,
+        };
+
+        let is_stopped = AtomicBool::new(false);
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1, 2],
+                values: vec![1.0, 1.0],
+            },
+            10,
+            &index,
+            &mut scratch,
+            &is_stopped,
+            1,
+        )
+        .unwrap();
+
+        let results = search_context.search(&match_all);
+        assert!(results.iter().all(|result| ids.contains(&result.idx)));
     }
 }
