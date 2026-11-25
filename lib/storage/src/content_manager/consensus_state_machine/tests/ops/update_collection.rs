@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::NonZeroU32;
 
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, QuantizationConfigDiff,
 };
@@ -11,10 +12,12 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::transfer::ShardTransferMethod;
+use collection::shards::resharding::ReshardState;
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use segment::data_types::modifier::Modifier;
 use segment::types::*;
 use serde_json::json;
+use uuid::Uuid;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -403,6 +406,122 @@ fn update_collection_replica_change_replay_rejects_complete() {
 
     assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &goal);
+}
+
+/// Resharding up creates shard 1 on `OTHER_PEER_ID` and streams points from shard 0 into it.
+/// Shard 1 has a second, dead replica, so removing its resharding replica passes the
+/// last-source-of-truth check, aborts resharding and drops shard 1 itself.
+fn resharding_target_removal_case(version: &str) -> (ClusterState, ConsensusOperations) {
+    let mut state = auto_resharding_state(2);
+    add_peer(&mut state, PEER_ID, Some(version));
+    add_peer(&mut state, OTHER_PEER_ID, Some(version));
+
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.shards.get_mut(&1).expect("shard").replicas = HashMap::from([
+        (OTHER_PEER_ID, ReplicaState::Resharding),
+        (PEER_ID, ReplicaState::Dead),
+    ]);
+    collection.resharding = Some(ReshardState::new(
+        Uuid::nil(),
+        ReshardingDirection::Up,
+        OTHER_PEER_ID,
+        1,
+        None,
+    ));
+    collection.transfers.insert(ShardTransfer {
+        shard_id: 0,
+        to_shard_id: Some(1),
+        from: PEER_ID,
+        to: OTHER_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::ReshardingStreamRecords),
+        filter: None,
+    });
+
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(1, OTHER_PEER_ID)]);
+    let operation = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+
+    (state, operation)
+}
+
+#[test]
+fn update_collection_replica_change_rejects_resharding_target() {
+    let (state, operation) = resharding_target_removal_case("1.20.3");
+    let mut machine = state_machine(state.clone());
+
+    let outcome = machine.apply(&operation);
+
+    let Err(StorageError::BadRequest { description }) = outcome else {
+        panic!("removing a replica of the resharding target should be rejected, got {outcome:?}");
+    };
+    assert_eq!(
+        description,
+        format!(
+            "Can't remove replica of shard 1 from peer {OTHER_PEER_ID}, \
+             because resharding is creating this shard, abort resharding first"
+        ),
+    );
+    assert_eq!(machine.state(), &state);
+}
+
+/// Before `REJECT_RESHARDING_TARGET_REPLICA_REMOVAL_FROM_VERSION`, the removal is accepted and
+/// a replay from after `DropShard` is rejected. Pins that legacy behavior and the proptest
+/// exemption covering it.
+#[test]
+fn update_collection_replica_change_resharding_target_legacy_replay() {
+    let (state, operation) = resharding_target_removal_case("1.20.2");
+    let mut machine = state_machine(state.clone());
+
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("older peers accept removing a replica of the resharding target");
+    };
+    let goal = machine.state().clone();
+    assert!(
+        !goal
+            .collection(COLLECTION)
+            .expect("collection")
+            .shards
+            .contains_key(&1)
+    );
+
+    let drop_shard = actions
+        .iter()
+        .position(|action| matches!(action, Action::DropShard { shard_id: 1, .. }))
+        .expect("aborting resharding drops the new shard");
+    assert!(
+        drop_shard + 1 < actions.len(),
+        "drop is not the last action"
+    );
+
+    let mut partial_rejections = 0;
+    for crash_after in 0..=actions.len() {
+        let mut crashed = state.clone();
+        for action in &actions[..crash_after] {
+            crashed.apply_action(action);
+        }
+        let reached_goal = crashed == goal;
+        let mut replay = state_machine(crashed);
+        match replay.apply(&operation) {
+            Ok(_) => assert_eq!(replay.state(), &goal),
+            Err(error) if !reached_goal => {
+                partial_rejections += 1;
+                assert!(crash_after > drop_shard);
+                assert!(super::replay::resharding_target_removal_may_reject(
+                    &state, &operation, &error,
+                ));
+            }
+            Err(_) => {}
+        }
+    }
+    assert!(partial_rejections > 0);
+
+    // The exemption does not cover clusters where the removal is rejected upfront
+    let (new_state, _) = resharding_target_removal_case("1.20.3");
+    let error = StorageError::bad_request(format!("Shard 1 of {COLLECTION} not found"));
+    assert!(!super::replay::resharding_target_removal_may_reject(
+        &new_state, &operation, &error,
+    ));
 }
 
 fn update_collection_op(update: UpdateCollection) -> ConsensusOperations {
