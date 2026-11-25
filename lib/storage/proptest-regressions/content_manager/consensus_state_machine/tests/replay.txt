@@ -1,0 +1,2 @@
+# Replay after replica removal aborts scale-up resharding. See #11696.
+cc fbeb03dab65f12e71aa1fbc733444e597bb16dacb017b917d8373c10c1070680
