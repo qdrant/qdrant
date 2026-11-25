@@ -5,6 +5,7 @@ use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorageRead;
+use crate::payload_storage::partial_payload::parse_payload_field;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 
@@ -36,6 +37,23 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>> {
         let payload = self.get(point_offset)?;
         Ok(OwnedPayloadRef::from(payload))
+    }
+
+    fn payload_ref_field(
+        &self,
+        point_offset: PointOffsetType,
+        field: &str,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        let fields = match self
+            .storage
+            .get_value_bytes::<Random>(point_offset, HwMetric::PayloadIoRead)?
+        {
+            Some(bytes) => parse_payload_field(&bytes, field).map_err(|err| {
+                OperationError::service_error(format!("Failed to deserialize payload: {err}"))
+            })?,
+            None => serde_json::Map::new(),
+        };
+        Ok(OwnedPayloadRef::from(fields))
     }
 
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(

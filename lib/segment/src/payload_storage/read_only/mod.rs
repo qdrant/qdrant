@@ -70,5 +70,13 @@ mod tests {
         }
         // An unwritten point reads back as an empty payload.
         assert_eq!(storage.get(99).unwrap(), payload_json! {});
+
+        // A single field reads back alone, with the value of the full payload.
+        for key in ["a", "n", "missing"] {
+            let partial = storage.payload_ref_field(0, key).unwrap();
+            assert_eq!(partial.get(key), payload.0.get(key), "{key}");
+            assert!(partial.len() <= 1, "{key}");
+        }
+        assert!(storage.payload_ref_field(99, "a").unwrap().is_empty());
     }
 }
