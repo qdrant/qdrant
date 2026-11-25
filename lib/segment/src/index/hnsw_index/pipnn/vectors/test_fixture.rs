@@ -1,4 +1,4 @@
-//! Quantized vectors to test [`SourceVectors::Quantized`] and what reads them.
+//! Quantized vectors to test [`IndexBuildVectors::Quantized`] and what reads them.
 
 use std::sync::atomic::AtomicBool;
 
@@ -9,7 +9,7 @@ use rand::{RngExt as _, SeedableRng as _};
 use rand_distr::StandardNormal;
 use tempfile::TempDir;
 
-use super::SourceVectors;
+use super::IndexBuildVectors;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
@@ -119,8 +119,8 @@ impl Fixture {
         }
     }
 
-    pub fn source(&self) -> SourceVectors<'_> {
-        SourceVectors::Quantized(&self.quantized)
+    pub fn source(&self) -> IndexBuildVectors<'_> {
+        IndexBuildVectors::Quantized(&self.quantized)
     }
 
     /// The scorer of HNSW, which scores the quantized vectors.
@@ -129,11 +129,13 @@ impl Fixture {
         FilteredScorer::new_internal(0, &self.storage, quantized, None, &self.deleted).unwrap()
     }
 
-    /// The rows of all points.
+    /// The decoded vectors of all points.
     pub fn decoded(&self) -> Vec<Vec<f32>> {
         let mut decoded = vec![Vec::new(); POINTS];
-        (self.source().f32_rows().unwrap())
-            .for_each_in_batch(&self.points, &mut |i, row, _| decoded[i] = row.to_vec())
+        (self.source().f32_reader().unwrap())
+            .for_each_in_batch(&self.points, &mut |i, vector, _| {
+                decoded[i] = vector.to_vec()
+            })
             .unwrap();
         decoded
     }

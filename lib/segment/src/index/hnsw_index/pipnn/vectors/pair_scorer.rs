@@ -1,9 +1,9 @@
-//! Scores of pairs of stored points of [`SourceVectors`].
+//! Scores of pairs of stored points of [`IndexBuildVectors`].
 
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::SourceVectors;
+use super::IndexBuildVectors;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorStorage;
@@ -24,7 +24,7 @@ pub enum PairScorer<'a> {
     Original(Box<dyn RawScorer + 'a>),
 }
 
-impl<'a> SourceVectors<'a> {
+impl<'a> IndexBuildVectors<'a> {
     /// A [`PairScorer`] over these vectors. Over the originals, made for `point`, whose vector it
     /// reads; over quantized vectors, it reads nothing. Fails if a raw scorer over the originals
     /// can't be made.

@@ -9,8 +9,8 @@
 //! probability `1 - θ/π` (Charikar's LSH), as the paper assumes. Hyperplanes drawn uniformly
 //! from a cube instead would favor its diagonals.
 //!
-//! Which vectors are projected: the rows of [`SourceVectors::f32_rows`], read once, in batches in
-//! id order.
+//! Which vectors are projected: those of [`IndexBuildVectors::f32_reader`], read once, in batches
+//! in id order.
 //! - A build with quantized vectors projects their decoded codes, and reads no original vector.
 //!   The decoded codes have the geometry their scorer scores, except for TurboQuant with TQ+:
 //!   at 2 and 4 bits the score also adds a correction stored with each vector, and with Euclid at
@@ -18,8 +18,8 @@
 //!   only approximate it.
 //! - Otherwise the original vectors as `score_internal` scores them, except the Turbo datatype
 //!   storages, which are decoded as for requantization: that only approximates the geometry their
-//!   score sees, see `TurboRows` in `source_vectors`. For Cosine, the projections of the unit
-//!   vector, since only the direction counts there: float vectors are stored normalized, byte
+//!   score sees, see `TurboReader` in `vectors`. For Cosine, the projections of the
+//!   unit vector, since only the direction counts there: float vectors are stored normalized, byte
 //!   vectors aren't, and the Turbo storages only approximately. Codes aren't normalized: their
 //!   scorer scores them as they are.
 //! - TurboQuant, as a datatype or a quantization, is projected in its rotated space. The rotation
@@ -33,7 +33,7 @@
 //! summation doesn't matter. A tie sets the bit both ways, as `>=` does in the paper.
 //!
 //! The same pass also takes a 64-bit fingerprint of every projected vector, a hash of its values'
-//! bits with -0.0 as 0.0 (or of its code, see [`RowIdentity`]), 8 bytes per point, from which
+//! bits with -0.0 as 0.0 (or of its code, see [`DuplicateKey`]), 8 bytes per point, from which
 //! [`super::duplicates`] finds identical vectors. They are returned apart from the sketches, so
 //! that the build can free them once the duplicates are found, before its peak. Identical vectors
 //! get identical fingerprints and projections. A vector or code that scores NaN gets none: it
@@ -47,14 +47,15 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::reason::reason;
 use common::types::PointOffsetType;
+use quantization::DuplicateKey;
 use rand::rngs::StdRng;
 use rand::{RngExt as _, SeedableRng as _};
 use rayon::prelude::*;
 
+use super::vectors::IndexBuildVectors;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::types::Distance;
 use crate::vector_storage::VectorStorageRead as _;
-use crate::vector_storage::source_vectors::{RowIdentity, SourceVectors};
 
 /// Number of hyperplanes, one hash bit each.
 ///
@@ -86,24 +87,24 @@ pub(super) struct Fingerprints {
 
 impl Sketches {
     /// Projections of the `source` vectors of `points`, which must be sorted and distinct, as debug
-    /// builds check, and their fingerprints. `None` if `source` has no rows, see
-    /// [`SourceVectors::f32_rows`], so the caller builds with HNSW.
+    /// builds check, and their fingerprints. `None` if `source` has no f32 vectors, see
+    /// [`IndexBuildVectors::f32_reader`], so the caller builds with HNSW.
     ///
     /// Reads the vectors once, in batches, in parallel on the current rayon pool, and checks
     /// `stopped` before each batch. Fails on points past the stored vectors, which the id tracker
     /// can hold, and on failed reads.
     pub fn new(
-        source: SourceVectors<'_>,
+        source: IndexBuildVectors<'_>,
         points: &[PointOffsetType],
         seed: u64,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<(Self, Fingerprints)>> {
-        let Some(vectors) = source.f32_rows() else {
+        let Some(vectors) = source.f32_reader() else {
             return Ok(None);
         };
         let normalize = match source {
-            SourceVectors::Original(storage) => storage.distance() == Distance::Cosine,
-            SourceVectors::Quantized(_) => false,
+            IndexBuildVectors::Original(storage) => storage.distance() == Distance::Cosine,
+            IndexBuildVectors::Quantized(_) => false,
         };
 
         debug_assert!(
@@ -148,17 +149,17 @@ impl Sketches {
                 check_process_stopped(stopped)?;
                 let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                 let start = batch[0];
-                vectors.for_each_in_batch(batch, &mut |i, vector, identity| {
+                vectors.for_each_in_batch(batch, &mut |i, vector, key| {
                     let at = (batch[i] - start) as usize;
                     let (projected, nan) = project(vector, &hyperplanes, normalize);
                     projections[at] = projected;
                     fingerprints[at] = if nan {
                         None
                     } else {
-                        match identity {
-                            RowIdentity::Values => Some(fingerprint(vector)),
-                            RowIdentity::Code(code) => Some(fingerprint_code(code)),
-                            RowIdentity::ScoresNan => None,
+                        match key {
+                            DuplicateKey::Values => Some(fingerprint(vector)),
+                            DuplicateKey::Bytes(code) => Some(fingerprint_code(code)),
+                            DuplicateKey::ScoresNan => None,
                         }
                     };
                 })
@@ -447,7 +448,7 @@ mod tests {
 
         fn sketches(&self, points: &[PointOffsetType], seed: u64) -> Sketches {
             Sketches::new(
-                SourceVectors::Original(&self.storage),
+                IndexBuildVectors::Original(&self.storage),
                 points,
                 seed,
                 &AtomicBool::new(false),
@@ -850,7 +851,7 @@ mod tests {
         let fixture = Fixture::new(Kind::F32, Distance::Dot, &vectors);
         let points: Vec<_> = (0..POINTS as PointOffsetType).collect();
         let result = Sketches::new(
-            SourceVectors::Original(&fixture.storage),
+            IndexBuildVectors::Original(&fixture.storage),
             &points,
             SEED,
             &AtomicBool::new(true),
@@ -922,7 +923,7 @@ mod tests {
         for storage in [&sparse, &multi, &empty] {
             for points in [&[][..], &[0, 1]] {
                 let sketches =
-                    Sketches::new(SourceVectors::Original(storage), points, SEED, &stopped)
+                    Sketches::new(IndexBuildVectors::Original(storage), points, SEED, &stopped)
                         .unwrap();
                 assert!(sketches.is_none(), "{storage:?}");
             }
@@ -936,7 +937,7 @@ mod tests {
         let fixture = Fixture::new(Kind::F32, Distance::Dot, &vectors);
         let missing = POINTS as PointOffsetType;
         let result = Sketches::new(
-            SourceVectors::Original(&fixture.storage),
+            IndexBuildVectors::Original(&fixture.storage),
             &[0, missing],
             SEED,
             &AtomicBool::new(false),
@@ -955,7 +956,7 @@ mod tests {
         let vectors = random_vectors(Kind::F32, Distance::Dot, POINTS, DIM, 15);
         let fixture = Fixture::new(Kind::F32, Distance::Dot, &vectors);
         let _ = Sketches::new(
-            SourceVectors::Original(&fixture.storage),
+            IndexBuildVectors::Original(&fixture.storage),
             points,
             SEED,
             &AtomicBool::new(false),
@@ -1028,7 +1029,7 @@ mod tests {
 
         let points = [0, 1, 2];
         let (sketches, fingerprints) = Sketches::new(
-            SourceVectors::Original(&fixture.storage),
+            IndexBuildVectors::Original(&fixture.storage),
             &points,
             SEED,
             &AtomicBool::new(false),
@@ -1157,14 +1158,14 @@ mod tests {
         use super::super::{Fingerprints, HASH_BITS, Sketches, hyperplanes, project};
         use crate::data_types::vectors::VectorRef;
         use crate::index::hnsw_index::pipnn::duplicates;
+        use crate::index::hnsw_index::pipnn::vectors::test_fixture::{
+            COPIES, DIM, Fixture, binary, scalar, turbo,
+        };
         use crate::types::{
             BinaryQuantizationEncoding as Encoding, Distance, QuantizationConfig,
             TurboQuantBitSize as Bits,
         };
         use crate::vector_storage::VectorStorage as _;
-        use crate::vector_storage::source_vectors::test_fixture::{
-            COPIES, DIM, Fixture, binary, scalar, turbo,
-        };
 
         const SEED: u64 = 5;
 

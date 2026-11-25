@@ -14,10 +14,10 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
+use crate::index::hnsw_index::pipnn::vectors::IndexBuildVectors;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
 use crate::vector_storage::VectorStorageRead as _;
-use crate::vector_storage::matrix_scorer::{MatrixScorer, new_matrix_scorer};
-use crate::vector_storage::source_vectors::SourceVectors;
+use crate::vector_storage::matrix_scorer::MatrixScorer;
 
 /// Fewest points for a PiPNN main graph. At 5,000 points PiPNN built slower than HNSW, and
 /// level 0 graphs of about 1,025 to 4,000 points come out much worse than HNSW's.
@@ -73,7 +73,7 @@ pub(super) struct PipnnBuilder<'a> {
     /// main graph reads these and no others. Payload blocks are built with HNSW insertion, which
     /// reads the original vector of each point to make its query where the quantization can't
     /// encode a stored point as one (TurboQuant).
-    source: SourceVectors<'a>,
+    source: IndexBuildVectors<'a>,
     /// Scores `source`.
     scorer: MatrixScorer<'a>,
 }
@@ -97,8 +97,8 @@ impl<'a> PipnnBuilder<'a> {
             );
             return Err(Box::new(local));
         }
-        let source = SourceVectors::new(local.ctx.vector_storage, local.ctx.quantized_vectors);
-        let Some(scorer) = new_matrix_scorer(source) else {
+        let source = IndexBuildVectors::new(local.ctx.vector_storage, local.ctx.quantized_vectors);
+        let Some(scorer) = source.matrix_scorer() else {
             debug!("No PiPNN: no matrix scorer for these vectors");
             return Err(Box::new(local));
         };

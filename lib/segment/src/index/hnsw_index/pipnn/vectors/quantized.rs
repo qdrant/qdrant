@@ -1,20 +1,20 @@
-//! Quantized codes as [`F32Rows`]: each as its [`SymmetricVectors::symmetric_vector`], the vector
-//! whose geometry the symmetric score scores, identified as [`SymmetricVectors::code_identity`]
-//! tells.
+//! Quantized codes read by an [`F32VectorReader`]: each as its
+//! [`SymmetricVectors::symmetric_vector`], the vector whose geometry the symmetric score scores,
+//! with its [`SymmetricVectors::duplicate_key`].
 
 use common::types::PointOffsetType;
-use quantization::{CodeIdentity, EncodedVectors, SymmetricVectors};
+use quantization::{DuplicateKey, EncodedVectors, SymmetricVectors};
 
-use super::{F32Rows, RowIdentity};
+use super::F32VectorReader;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
 
-/// The rows of `quantized`, `None` for product quantization, which has no symmetric vector, and
+/// Reads `quantized` as f32, `None` for product quantization, which has no symmetric vector, and
 /// for multivectors.
-pub(super) fn f32_rows(quantized: &QuantizedVectors) -> Option<Box<dyn F32Rows + '_>> {
-    let rows = match quantized.get_storage() {
+pub(super) fn f32_reader(quantized: &QuantizedVectors) -> Option<Box<dyn F32VectorReader + '_>> {
+    let reader = match quantized.get_storage() {
         QuantizedVectorStorage::ScalarRam(q) => codes(q),
         QuantizedVectorStorage::ScalarMmap(q) => codes(q),
         QuantizedVectorStorage::ScalarChunkedMmap(q) => codes(q),
@@ -40,20 +40,20 @@ pub(super) fn f32_rows(quantized: &QuantizedVectors) -> Option<Box<dyn F32Rows +
         | QuantizedVectorStorage::TQMmapMulti(_)
         | QuantizedVectorStorage::TQChunkedMmapMulti(_) => return None,
     };
-    Some(rows)
+    Some(reader)
 }
 
 /// The codes of one quantization.
-struct Codes<'a, E>(&'a E);
+struct CodeReader<'a, E>(&'a E);
 
-fn codes<E>(encoded: &E) -> Box<dyn F32Rows + '_>
+fn codes<E>(encoded: &E) -> Box<dyn F32VectorReader + '_>
 where
     E: EncodedVectors + SymmetricVectors + Sync,
 {
-    Box::new(Codes(encoded))
+    Box::new(CodeReader(encoded))
 }
 
-impl<E> F32Rows for Codes<'_, E>
+impl<E> F32VectorReader for CodeReader<'_, E>
 where
     E: EncodedVectors + SymmetricVectors + Sync,
 {
@@ -68,25 +68,15 @@ where
     fn for_each_in_batch(
         &self,
         ids: &[PointOffsetType],
-        f: &mut dyn FnMut(usize, &[f32], RowIdentity<'_>),
+        f: &mut dyn FnMut(usize, &[f32], DuplicateKey<'_>),
     ) -> OperationResult<()> {
-        let mut row = Vec::with_capacity(self.dim());
+        let mut vector = Vec::with_capacity(self.dim());
         self.0.for_each_batch(ids, |i, code| {
-            row.clear();
-            row.extend(self.0.symmetric_vector(&code));
-            f(i, &row, RowIdentity::from(self.0.code_identity(&code)));
+            vector.clear();
+            vector.extend(self.0.symmetric_vector(&code));
+            f(i, &vector, self.0.duplicate_key(&code));
         })?;
         Ok(())
-    }
-}
-
-impl<'a> From<CodeIdentity<'a>> for RowIdentity<'a> {
-    fn from(identity: CodeIdentity<'a>) -> Self {
-        match identity {
-            CodeIdentity::Bytes(code) => RowIdentity::Code(code),
-            CodeIdentity::Values => RowIdentity::Values,
-            CodeIdentity::ScoresNan => RowIdentity::ScoresNan,
-        }
     }
 }
 

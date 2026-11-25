@@ -24,7 +24,7 @@
 //!
 //! This module only computes links. It knows nothing about `HNSWIndex`, the graph builders, or
 //! payload blocks: it takes the points, their levels, the degree limits, the deleted points, and
-//! the [`SourceVectors`] with a matrix scorer over them. Those are the quantized vectors where
+//! the [`IndexBuildVectors`] with a matrix scorer over them. Those are the quantized vectors where
 //! configured, and then no original vector is read: partitioning and the leaf k-NN score them
 //! with the matrix scorer, the sketches project them, and the final prune scores their pairs. It
 //! returns the links of every point on every level. Writing them into the graph is up to the
@@ -90,6 +90,7 @@ mod progress;
 mod prune;
 mod sketches;
 mod top_k_pool;
+pub(super) mod vectors;
 
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
@@ -106,11 +107,11 @@ use self::hash_prune::Reservoirs;
 pub(super) use self::partition::PartitionParams;
 use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
+use self::vectors::IndexBuildVectors;
 use super::HnswM;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::vector_storage::NotDeletedChecker;
 use crate::vector_storage::matrix_scorer::MatrixScorer;
-use crate::vector_storage::source_vectors::SourceVectors;
 
 /// Parameters of a PiPNN build.
 #[derive(Clone, Debug)]
@@ -207,7 +208,7 @@ impl PipnnParams {
 /// in a fixed order, such as the order of `points`.
 #[expect(clippy::too_many_arguments, reason = "the inputs of a graph build")]
 pub(super) fn build_links(
-    source: SourceVectors<'_>,
+    source: IndexBuildVectors<'_>,
     not_deleted: &NotDeletedChecker<'_>,
     scorer: &MatrixScorer<'_>,
     points: &[PointOffsetType],
@@ -494,7 +495,7 @@ fn broken_invariant(
 struct Build<'a, 's> {
     scorer: &'a MatrixScorer<'s>,
     sketches: &'a Sketches,
-    source: SourceVectors<'a>,
+    source: IndexBuildVectors<'a>,
     not_deleted: &'a NotDeletedChecker<'a>,
     params: &'a PipnnParams,
     stopped: &'a AtomicBool,
@@ -647,7 +648,6 @@ mod orchestration_tests {
         MultiVectorConfig, QuantizationConfig, ScalarQuantizationConfig,
     };
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::matrix_scorer::new_matrix_scorer;
     use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
@@ -729,8 +729,8 @@ mod orchestration_tests {
             }
         }
 
-        fn source(&self) -> SourceVectors<'_> {
-            SourceVectors::new(&self.storage, self.quantized.as_ref())
+        fn source(&self) -> IndexBuildVectors<'_> {
+            IndexBuildVectors::new(&self.storage, self.quantized.as_ref())
         }
 
         fn not_deleted(&self) -> NotDeletedChecker<'_> {
@@ -738,7 +738,7 @@ mod orchestration_tests {
         }
 
         fn scorer(&self) -> MatrixScorer<'_> {
-            new_matrix_scorer(self.source()).unwrap()
+            self.source().matrix_scorer().unwrap()
         }
 
         /// Makes the vectors of `points` NaN in every dimension. Only without quantization,
@@ -1324,7 +1324,7 @@ mod orchestration_tests {
             for points in [&[][..], &[0, 1, 2]] {
                 let (view, progress) = new_progress_tracker();
                 let links = build_links(
-                    SourceVectors::Original(storage),
+                    IndexBuildVectors::Original(storage),
                     &storage.not_deleted_checker(&fixture.deleted),
                     &fixture.scorer(),
                     points,

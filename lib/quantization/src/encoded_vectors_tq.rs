@@ -21,7 +21,7 @@ use crate::encoded_vectors::{
     validate_vector_parameters,
 };
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
-use crate::symmetric_vectors::{CodeIdentity, SymmetricVectors};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::matrix::{CODES_IN_F32, StorageSource, TurboMatrixOperands};
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -448,13 +448,13 @@ impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
 
     /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits), and
     /// none where a NaN in the vector it encodes left its scale or correction NaN.
-    fn code_identity<'c>(&self, code: &'c [u8]) -> CodeIdentity<'c> {
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
         if self.quantizer.score_symmetric(code, code).is_nan() {
-            CodeIdentity::ScoresNan
+            DuplicateKey::ScoresNan
         } else if self.quantizer.stores_ignored_correction() {
-            CodeIdentity::Values
+            DuplicateKey::Values
         } else {
-            CodeIdentity::Bytes(code)
+            DuplicateKey::Bytes(code)
         }
     }
 }

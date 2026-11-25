@@ -18,7 +18,7 @@ use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
-use crate::symmetric_vectors::{CodeIdentity, SymmetricVectors};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
@@ -753,8 +753,8 @@ impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsU8<TStorage> {
             .map(move |&c| alpha * f32::from(c) + offset)
     }
 
-    fn code_identity<'c>(&self, code: &'c [u8]) -> CodeIdentity<'c> {
-        CodeIdentity::Bytes(code)
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        DuplicateKey::Bytes(code)
     }
 }
 

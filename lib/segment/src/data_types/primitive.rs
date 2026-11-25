@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use bytemuck::Pod;
 use half::f16;
+use half::slice::HalfFloatSliceExt as _;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -188,5 +189,44 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                 .collect_vec(),
             multivector.as_vec_ref().dim,
         ))
+    }
+}
+
+/// A stored element of a dense vector, decoded to f32.
+pub(crate) trait F32Element: PrimitiveVectorElement {
+    /// `src` into `out`, of the same length.
+    fn decode(src: &[Self], out: &mut [f32]);
+
+    /// `vector` as f32, decoded into `buffer` unless it is f32 already.
+    fn as_f32<'a>(vector: &'a [Self], buffer: &'a mut Vec<f32>) -> &'a [f32] {
+        buffer.resize(vector.len(), 0.0);
+        Self::decode(vector, buffer);
+        buffer
+    }
+}
+
+impl F32Element for VectorElementType {
+    fn decode(src: &[Self], out: &mut [f32]) {
+        out.copy_from_slice(src);
+    }
+
+    fn as_f32<'a>(vector: &'a [Self], _: &'a mut Vec<f32>) -> &'a [f32] {
+        vector
+    }
+}
+
+impl F32Element for VectorElementTypeHalf {
+    /// The slice conversion uses F16C several values at a time; `f16::to_f32` checks for it
+    /// per value unless the build enables it, which cost a PiPNN leaf about 20%.
+    fn decode(src: &[Self], out: &mut [f32]) {
+        src.convert_to_f32_slice(out);
+    }
+}
+
+impl F32Element for VectorElementTypeByte {
+    fn decode(src: &[Self], out: &mut [f32]) {
+        for (o, &x) in out.iter_mut().zip(src) {
+            *o = f32::from(x);
+        }
     }
 }

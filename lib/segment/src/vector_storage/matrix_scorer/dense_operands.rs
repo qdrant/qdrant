@@ -2,10 +2,10 @@ use common::types::PointOffsetType;
 use pairwise::{Aux, Combine, CombineDispatch, CombineFn, MatrixOperands};
 
 use crate::common::operation_error::OperationError;
+use crate::data_types::primitive::F32Element;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::Distance;
 use crate::vector_storage::DenseVectorStorageRead;
-use crate::vector_storage::source_vectors::F32Element;
 
 /// How the inner product of two original vectors and their values become the score of
 /// `score_internal`. Unlike the quantized storages', these are matrix forms of the metrics, not

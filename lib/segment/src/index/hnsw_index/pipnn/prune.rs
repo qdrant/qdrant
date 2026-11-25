@@ -48,10 +48,10 @@ use rayon::prelude::*;
 
 use super::hash_prune::Reservoirs;
 use super::progress::Counter;
+use super::vectors::IndexBuildVectors;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::links_container::LinksContainer;
 use crate::vector_storage::NotDeletedChecker;
-use crate::vector_storage::source_vectors::SourceVectors;
 
 /// Points pruned per job, and between checks of the stop flag.
 ///
@@ -65,8 +65,8 @@ const POINTS_PER_JOB: usize = 64;
 /// each, chosen from their reservoirs by the HNSW heuristic. In the order of `points`.
 ///
 /// Scores pairs as `score_internal` of HNSW insertion's scorer does, with a
-/// [`SourceVectors::pair_scorer`] of `source`, which reads no original vector when it is quantized.
-/// Skips candidates that `not_deleted` rejects.
+/// [`IndexBuildVectors::pair_scorer`] of `source`, which reads no original vector when it is
+/// quantized. Skips candidates that `not_deleted` rejects.
 ///
 /// Runs in parallel on the current rayon pool, and checks `stopped` before every
 /// [`POINTS_PER_JOB`] points. Adds all of `points` to `progress` by the time it returns, each job
@@ -75,7 +75,7 @@ pub(super) fn prune(
     reservoirs: &Reservoirs,
     points: &[PointOffsetType],
     level_m: usize,
-    source: SourceVectors<'_>,
+    source: IndexBuildVectors<'_>,
     not_deleted: &NotDeletedChecker<'_>,
     stopped: &AtomicBool,
     progress: Counter<'_>,
@@ -229,8 +229,8 @@ mod tests {
             }
         }
 
-        fn source(&self) -> SourceVectors<'_> {
-            SourceVectors::new(&self.storage, self.quantized.as_ref())
+        fn source(&self) -> IndexBuildVectors<'_> {
+            IndexBuildVectors::new(&self.storage, self.quantized.as_ref())
         }
 
         fn not_deleted(&self) -> NotDeletedChecker<'_> {

@@ -150,8 +150,11 @@ impl Fixture {
     }
 
     fn check(&self, tolerance: Tolerance) {
-        let scorer = new_matrix_scorer(SourceVectors::new(&self.storage, self.quantized.as_ref()))
-            .expect("storage has a matrix operands");
+        let scorer = match &self.quantized {
+            Some(quantized) => quantized_matrix_scorer(quantized.get_storage()),
+            None => original_matrix_scorer(&self.storage),
+        }
+        .expect("storage has matrix operands");
         self.check_scorer(&scorer, tolerance);
     }
 
@@ -395,15 +398,10 @@ fn turbo16_storage(
 fn no_matrix_form() {
     let _scope = ambient::test_guard();
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, None);
-    assert!(new_matrix_scorer(SourceVectors::new(&fixture.storage, None)).is_none());
+    assert!(original_matrix_scorer(&fixture.storage).is_none());
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, Some(scalar()));
-    assert!(
-        new_matrix_scorer(SourceVectors::new(
-            &fixture.storage,
-            fixture.quantized.as_ref()
-        ))
-        .is_none()
-    );
+    let quantized = fixture.quantized.as_ref().unwrap();
+    assert!(quantized_matrix_scorer(quantized.get_storage()).is_none());
     let fixture = Fixture::new(Element::Turbo(TQBits::Bits16), Distance::Manhattan, None);
-    assert!(new_matrix_scorer(SourceVectors::new(&fixture.storage, None)).is_none());
+    assert!(original_matrix_scorer(&fixture.storage).is_none());
 }

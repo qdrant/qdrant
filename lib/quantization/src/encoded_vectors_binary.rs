@@ -19,7 +19,7 @@ use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
-use crate::symmetric_vectors::{CodeIdentity, SymmetricVectors};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -870,8 +870,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> SymmetricVectors
             .map(|bit| if bit.to_u8() == Some(1) { 1.0 } else { -1.0 })
     }
 
-    fn code_identity<'c>(&self, code: &'c [u8]) -> CodeIdentity<'c> {
-        CodeIdentity::Bytes(code)
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        DuplicateKey::Bytes(code)
     }
 }
 
