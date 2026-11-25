@@ -141,6 +141,18 @@ impl RecoverableWal {
         self.newest_clocks.lock().await.to_recovery_point()
     }
 
+    /// Resolve the WAL delta for the given `recovery_point`
+    ///
+    /// See [`resolve_wal_delta`].
+    ///
+    /// Reads WAL records on the blocking pool, holding the WAL lock until it's done.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// If cancelled - the spawned read still runs to completion and its result is dropped. The WAL
+    /// lock is held until it finishes.
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,
@@ -149,16 +161,21 @@ impl RecoverableWal {
 
         let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point();
 
-        resolve_wal_delta(
-            self.wal
-                .lock()
-                .await
-                .read_all(true)
-                .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
-            recovery_point,
-            newest_clocks,
-            oldest_clocks,
-        )
+        let wal = Mutex::lock_owned(self.wal.clone()).await;
+
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+            resolve_wal_delta(
+                wal.read_all(true)
+                    .map(|e| e.map(|(op_num, op)| (op_num, op.clock_tag))),
+                recovery_point,
+                newest_clocks,
+                oldest_clocks,
+            )
+        }))
+        .await
+        .map_err(|err| {
+            WalDeltaError::WalReadError(format!("failed to join WAL read task: {err}"))
+        })?
     }
 
     /// Find the points changed by orphan operations in this WAL
