@@ -22,7 +22,10 @@ use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
-use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
+use geo::{
+    BoundingRect, Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon,
+    Rect,
+};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use num_derive::FromPrimitive;
@@ -3769,6 +3772,14 @@ impl Hash for GeoRadius {
 
 impl CheckGeoPoint for GeoRadius {
     fn check_point(&self, point: &GeoPoint) -> bool {
+        // Cheap reject: the great-circle distance is at least the distance along the
+        // meridian. The margin keeps float rounding from rejecting a point on the edge.
+        let lat_distance =
+            (point.lat.0 - self.center.lat.0).abs().to_radians() * Haversine.radius();
+        if lat_distance * (1.0 - 1e-9) >= self.radius.0 {
+            return false;
+        }
+
         let query_center = Point::from(self.center);
         Haversine.distance(query_center, Point::from(*point)) < self.radius.0
     }
@@ -3782,10 +3793,23 @@ pub struct GeoPolygonShadow {
 
 pub struct PolygonWrapper {
     pub polygon: Polygon,
+    /// Bounding rectangle of the polygon, to reject most points without walking its rings.
+    bounding_rect: Option<Rect>,
 }
 
 impl CheckGeoPoint for PolygonWrapper {
     fn check_point(&self, point: &GeoPoint) -> bool {
+        if let Some(rect) = &self.bounding_rect {
+            let (min, max) = (rect.min(), rect.max());
+            let in_rect = min.x <= point.lon.0
+                && point.lon.0 <= max.x
+                && min.y <= point.lat.0
+                && point.lat.0 <= max.y;
+            if !in_rect {
+                return false;
+            }
+        }
+
         let point_new = Point::new(point.lon.0, point.lat.0);
         self.polygon.contains(&point_new)
     }
@@ -3859,8 +3883,11 @@ impl GeoPolygon {
                 .map(LineString)
                 .collect(),
         };
+        let polygon = Polygon::new(exterior_line, interior_lines);
+        let bounding_rect = polygon.bounding_rect();
         PolygonWrapper {
-            polygon: Polygon::new(exterior_line, interior_lines),
+            polygon,
+            bounding_rect,
         }
     }
 }
