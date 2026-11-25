@@ -1250,9 +1250,8 @@ impl QuantizationConfig {
         }
     }
 
-    /// Configured memory placement of quantized vectors over a vector storage that is cold or
-    /// not: [`Self::memory_placement`], else following the storage, pinned in RAM alongside
-    /// an in-RAM storage and cold alongside an on-disk one. Before the node-wide low-memory mode.
+    /// [`Self::memory_placement`], else following the vector storage: cold over cold storage,
+    /// pinned otherwise. Ignores the node-wide low-memory mode.
     pub fn resolved_memory_placement(&self, cold_vector_storage: bool) -> Memory {
         resolve_quantized_memory_placement(self.memory_placement(), cold_vector_storage)
     }

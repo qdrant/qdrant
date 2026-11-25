@@ -46,9 +46,8 @@ pub struct LoadProfile {
     /// Payload fields whose indexes the request's filter (or ordering) reads. Their
     /// indexes keep the configured placement; every other field index loads cold.
     warm_payload_fields: HashSet<PayloadKeyType>,
-    /// Whether the request reads raw payloads: it does whenever it reads any payload field
-    /// (an unindexed condition falls back to the payload). Kept apart from
-    /// `warm_payload_fields` so [`Self::retain_warm`] can drop fields without parking it.
+    /// Whether the request reads any payload field. Kept apart from `warm_payload_fields`
+    /// so [`Self::retain_warm`] can drop fields without parking the payload storage.
     warm_payload_storage: bool,
     /// Deferred-points threshold of the shard, in KB like the indexing threshold. `None`
     /// shows every point.
@@ -138,18 +137,8 @@ impl LoadProfile {
         };
     }
 
-    /// Stop warming the components the caller knows load cold anyway: vectors failing
-    /// `keep_vector`, payload fields failing `keep_payload_field`, and the payload storage
-    /// unless `keep_payload_storage`.
-    ///
-    /// The caller decides from config, e.g. a vector whose storage, index and quantized vectors
-    /// are all configured cold, or a payload field without a warm index. The result places
-    /// those components exactly as before, so two profiles that differ only in them compare
-    /// equal once both are reduced. Only ever drops: like [`Self::merge`], a component
-    /// that keeps its placement in the result kept it in `self`.
-    ///
-    /// Compare reduced profiles, but open with the full one: a dropped vector's HNSW graph
-    /// would load on first use (see [`Self::vector_index_placement`]) rather than at open.
+    /// Stop warming components the caller knows load cold anyway. Meant for comparing
+    /// profiles: opening with the result defers dropped vectors' HNSW graphs to first use.
     pub fn retain_warm(
         &mut self,
         mut keep_vector: impl FnMut(&VectorName) -> bool,

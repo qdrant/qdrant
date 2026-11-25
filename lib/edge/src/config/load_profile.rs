@@ -1,5 +1,4 @@
-//! Reconciles a request's [`LoadProfile`] with the collection config: which of the components
-//! it warms would load cold anyway.
+//! Reconciles a [`LoadProfile`] with the collection config.
 
 use std::collections::HashMap;
 
@@ -9,18 +8,9 @@ use segment::types::{Memory, PayloadFieldSchema, PayloadKeyType, VectorName};
 use super::shard::EdgeConfig;
 
 impl EdgeConfig {
-    /// `profile` without the components this config keeps cold, along with the payload
-    /// fields that have no index in `payload_schema`: warming any of them changes no
-    /// placement. Two profiles that differ only in such components reduce to the same profile,
-    /// so a caller holding a shard opened with one can serve the other from it.
-    ///
-    /// Collection-level only: a component counts as cold when the config explicitly places it
-    /// cold. Unset placements count as warm, even where a segment may still end up cold
-    /// (an `mmap_threshold`, a big sparse index), so a reduced profile never parks a component
-    /// a warm open would load warm. Vectors the config doesn't define have nothing to load
-    /// and are dropped too.
-    ///
-    /// Compare reduced profiles, but open with the full one (see [`LoadProfile::retain_warm`]).
+    /// `profile` without the components that load cold anyway: those the config explicitly
+    /// places cold, unindexed payload fields and undefined vectors. Unset placements count
+    /// as warm. Meant for comparing profiles; open with the full one.
     pub fn disregard_cold(
         &self,
         mut profile: LoadProfile,
@@ -38,9 +28,6 @@ impl EdgeConfig {
         profile
     }
 
-    /// Whether any component a profile places for `vector_name` may load warm: for a dense
-    /// vector its storage, HNSW graph and quantized vectors, for a sparse one its index (sparse
-    /// storage loads by its config, whatever the profile).
     fn vector_may_load_warm(&self, vector_name: &VectorName) -> bool {
         if let Some(params) = self.vectors.get(vector_name) {
             let config = self.dense_vector_optimizer_config(params);
@@ -116,7 +103,6 @@ mod tests {
         serde_json::from_value(raw).unwrap()
     }
 
-    /// Vectors `config` keeps warm, among `names`, after reducing a profile warming them all.
     fn warm_vectors<'a>(config: &EdgeConfig, names: &[&'a str]) -> Vec<&'a str> {
         let profile = names
             .iter()
@@ -140,24 +126,19 @@ mod tests {
             .vector("unset", dense(None))
             .vector("cold", dense(Some(Memory::Cold)))
             .build();
-        // The default HNSW graph is cached: cold storage alone is not enough.
         assert_eq!(warm_vectors(&config, &["unset", "cold"]), ["unset", "cold"]);
 
         config.hnsw_config = Some(hnsw(Memory::Cold));
-        // Unset storage may load either way: it stays.
         assert_eq!(warm_vectors(&config, &["unset", "cold"]), ["unset"]);
 
-        // A vector's own HNSW config overrides the collection's.
         config.vectors.get_mut("cold").unwrap().hnsw_config = Some(hnsw(Memory::Cached));
         assert_eq!(warm_vectors(&config, &["cold"]), ["cold"]);
         config.vectors.get_mut("cold").unwrap().hnsw_config = None;
 
-        // Quantized vectors follow a cold storage unless set; set warm, they keep it warm.
         config.quantization_config = Some(scalar(None));
         assert!(warm_vectors(&config, &["cold"]).is_empty());
         config.quantization_config = Some(scalar(Some(Memory::Pinned)));
         assert_eq!(warm_vectors(&config, &["cold"]), ["cold"]);
-        // A vector's own quantization config overrides the collection's.
         config.vectors.get_mut("cold").unwrap().quantization_config =
             Some(scalar(Some(Memory::Cold)));
         assert!(warm_vectors(&config, &["cold"]).is_empty());
@@ -197,7 +178,6 @@ mod tests {
                 "{field}"
             );
         }
-        // A cold payload storage is dropped; a warm one stays, even with no field left.
         assert_eq!(reduced.payload_storage_placement(), Some(Populate::No));
         let config = EdgeConfig::builder().payload_memory(Memory::Cached).build();
         let only_unindexed = LoadProfile::for_scroll(Some(&filter_on("unindexed")), None);
@@ -209,7 +189,6 @@ mod tests {
         );
     }
 
-    /// What a caller holding a shard opened with `active` checks for `requested`.
     #[test]
     fn requests_adding_only_cold_components_reduce_to_the_active_profile() {
         let mut config = EdgeConfig::builder()
