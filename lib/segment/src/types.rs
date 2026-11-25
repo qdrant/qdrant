@@ -5112,7 +5112,7 @@ mod tests {
     use serde_json;
     use validator::Validate;
 
-    use super::test_utils::build_polygon_with_interiors;
+    use super::test_utils::{build_polygon, build_polygon_with_interiors};
     use super::*;
 
     #[test]
@@ -5647,6 +5647,56 @@ mod tests {
 
         let outside_result = radius.check_point(&GeoPoint::new_unchecked(1.5, 1.5));
         assert!(!outside_result);
+    }
+
+    /// The cheap rejects never change the outcome, also on the edge of the
+    /// radius or of the polygon's bounding rectangle.
+    #[test]
+    fn test_geo_cheap_reject_matches_exact_check() {
+        use rand::rngs::StdRng;
+        use rand::{RngExt as _, SeedableRng as _};
+
+        let mut rng = StdRng::seed_from_u64(42);
+        for _ in 0..200 {
+            let center = GeoPoint::new_unchecked(
+                rng.random_range(-180.0..180.0),
+                rng.random_range(-89.0..89.0),
+            );
+            let radius = GeoRadius {
+                center,
+                radius: OrderedFloat(rng.random_range(1.0..5_000_000.0)),
+            };
+            // Due north or south at about the radius, where the meridian distance is the
+            // whole distance.
+            let edge = radius.radius.0 / Haversine.radius();
+            for _ in 0..200 {
+                let sign = [-1.0, 1.0][rng.random_range(0..2)];
+                let offset = edge.to_degrees() * (1.0 + rng.random_range(-1e-6..1e-6));
+                let lat = (center.lat.0 + sign * offset).clamp(-90.0, 90.0);
+                let point = GeoPoint::new_unchecked(center.lon.0, lat);
+                let exact =
+                    Haversine.distance(Point::from(center), Point::from(point)) < radius.radius.0;
+                assert_eq!(radius.check_point(&point), exact, "{radius:?} {point:?}");
+            }
+        }
+
+        let polygon = build_polygon(vec![
+            (0.0, 0.0),
+            (10.0, 2.0),
+            (8.0, 9.0),
+            (3.0, 10.0),
+            (-2.0, 4.0),
+            (0.0, 0.0),
+        ])
+        .convert();
+        for _ in 0..10_000 {
+            // On and around the bounding rectangle [-2, 10] x [0, 10].
+            let lon = [-2.0, 10.0, rng.random_range(-3.0..11.0)][rng.random_range(0..3)];
+            let lat = [0.0, 10.0, rng.random_range(-1.0..11.0)][rng.random_range(0..3)];
+            let point = GeoPoint::new_unchecked(lon, lat);
+            let exact = polygon.polygon.contains(&Point::new(lon, lat));
+            assert_eq!(polygon.check_point(&point), exact, "{point:?}");
+        }
     }
 
     #[test]
