@@ -9,21 +9,23 @@ use super::shard::EdgeConfig;
 
 impl EdgeConfig {
     /// `profile` without the components that load cold anyway: those the config explicitly
-    /// places cold, unindexed payload fields and undefined vectors. Unset placements count
-    /// as warm. Meant for comparing profiles; open with the full one.
+    /// places cold and undefined vectors, plus unindexed payload fields when the payload
+    /// storage is cold (they keep a warm one warm). Unset placements count as warm. Meant for
+    /// comparing profiles; open with the full one.
     pub fn disregard_cold(
         &self,
         mut profile: LoadProfile,
         payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> LoadProfile {
+        let payload_storage_cold = self.payload_memory_placement().is_cold();
         profile.retain_warm(
             |vector_name| self.vector_may_load_warm(vector_name),
             |field| {
-                payload_schema
-                    .get(field)
-                    .is_some_and(|schema| !schema.is_cold())
+                !payload_storage_cold
+                    || payload_schema
+                        .get(field)
+                        .is_some_and(|schema| !schema.is_cold())
             },
-            !self.payload_memory_placement().is_cold(),
         );
         profile
     }
@@ -52,7 +54,6 @@ impl EdgeConfig {
 
 #[cfg(test)]
 mod tests {
-    use common::universal_io::Populate;
     use segment::json_path::JsonPath;
     use segment::types::{
         Condition, Distance, FieldCondition, Filter, HnswConfig, Match, PayloadSchemaType,
@@ -178,14 +179,10 @@ mod tests {
                 "{field}"
             );
         }
-        assert_eq!(reduced.payload_storage_placement(), Some(Populate::No));
         let config = EdgeConfig::builder().payload_memory(Memory::Cached).build();
-        let only_unindexed = LoadProfile::for_scroll(Some(&filter_on("unindexed")), None);
-        let reduced = config.disregard_cold(only_unindexed, &payload_schema);
-        assert_eq!(reduced.payload_storage_placement(), None);
         assert_eq!(
-            reduced.payload_index_placement(&path("unindexed")),
-            Some(Populate::No)
+            config.disregard_cold(profile.clone(), &payload_schema),
+            profile
         );
     }
 

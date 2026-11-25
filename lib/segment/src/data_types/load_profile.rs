@@ -46,9 +46,6 @@ pub struct LoadProfile {
     /// Payload fields whose indexes the request's filter (or ordering) reads. Their
     /// indexes keep the configured placement; every other field index loads cold.
     warm_payload_fields: HashSet<PayloadKeyType>,
-    /// Whether the request reads any payload field. Kept apart from `warm_payload_fields`
-    /// so [`Self::retain_warm`] can drop fields without parking the payload storage.
-    warm_payload_storage: bool,
     /// Deferred-points threshold of the shard, in KB like the indexing threshold. `None`
     /// shows every point.
     deferred_points_threshold_kb: Option<usize>,
@@ -65,7 +62,6 @@ impl LoadProfile {
 
         Self {
             warm_vectors: HashSet::new(),
-            warm_payload_storage: !warm_payload_fields.is_empty(),
             warm_payload_fields,
             deferred_points_threshold_kb: None,
         }
@@ -74,11 +70,9 @@ impl LoadProfile {
     /// Profile of a (core) search: the queried vector keeps its configured placement —
     /// storage, index and quantized vectors — and the filter's field indexes stay warm.
     pub fn for_search(vector_name: &VectorName, filter: Option<&Filter>) -> Self {
-        let warm_payload_fields = filter_payload_keys(filter);
         Self {
             warm_vectors: HashSet::from([vector_name.to_owned()]),
-            warm_payload_storage: !warm_payload_fields.is_empty(),
-            warm_payload_fields,
+            warm_payload_fields: filter_payload_keys(filter),
             deferred_points_threshold_kb: None,
         }
     }
@@ -89,7 +83,6 @@ impl LoadProfile {
         Self {
             warm_vectors: HashSet::new(),
             warm_payload_fields: HashSet::new(),
-            warm_payload_storage: false,
             deferred_points_threshold_kb: None,
         }
     }
@@ -121,12 +114,10 @@ impl LoadProfile {
         let LoadProfile {
             warm_vectors,
             warm_payload_fields,
-            warm_payload_storage,
             deferred_points_threshold_kb,
         } = other;
         self.warm_vectors.extend(warm_vectors);
         self.warm_payload_fields.extend(warm_payload_fields);
-        self.warm_payload_storage |= warm_payload_storage;
         // Parts of one request share the shard's threshold; the stricter one wins otherwise.
         self.deferred_points_threshold_kb = match (
             self.deferred_points_threshold_kb,
@@ -137,23 +128,21 @@ impl LoadProfile {
         };
     }
 
-    /// Stop warming components the caller knows load cold anyway. Meant for comparing
-    /// profiles: opening with the result defers dropped vectors' HNSW graphs to first use.
+    /// Stop warming components the caller knows load cold anyway. Dropping every payload
+    /// field also parks the payload storage. Meant for comparing profiles: opening with the
+    /// result defers dropped vectors' HNSW graphs to first use.
     pub fn retain_warm(
         &mut self,
         mut keep_vector: impl FnMut(&VectorName) -> bool,
         mut keep_payload_field: impl FnMut(&JsonPath) -> bool,
-        keep_payload_storage: bool,
     ) {
         let Self {
             warm_vectors,
             warm_payload_fields,
-            warm_payload_storage,
             deferred_points_threshold_kb: _,
         } = self;
         warm_vectors.retain(|name| keep_vector(name));
         warm_payload_fields.retain(|field| keep_payload_field(field));
-        *warm_payload_storage &= keep_payload_storage;
     }
 
     /// Internal id from which points of a segment with `config` are deferred, or `None` to
@@ -162,7 +151,6 @@ impl LoadProfile {
         let Self {
             warm_vectors: _,
             warm_payload_fields: _,
-            warm_payload_storage: _,
             deferred_points_threshold_kb,
         } = self;
         segment_deferred_internal_id(config, (*deferred_points_threshold_kb)?)
@@ -172,14 +160,13 @@ impl LoadProfile {
     pub fn payload_storage_placement(&self) -> Option<Populate> {
         let Self {
             warm_vectors: _,
-            warm_payload_fields: _,
-            warm_payload_storage,
+            warm_payload_fields,
             deferred_points_threshold_kb: _,
         } = self;
-        if *warm_payload_storage {
-            None
-        } else {
+        if warm_payload_fields.is_empty() {
             Some(Populate::No)
+        } else {
+            None
         }
     }
 
@@ -221,7 +208,6 @@ impl LoadProfile {
         let Self {
             warm_vectors: _,
             warm_payload_fields,
-            warm_payload_storage: _,
             deferred_points_threshold_kb: _,
         } = self;
         if warm_payload_fields.contains(field) {
@@ -237,7 +223,6 @@ impl LoadProfile {
         let Self {
             warm_vectors,
             warm_payload_fields: _,
-            warm_payload_storage: _,
             deferred_points_threshold_kb: _,
         } = self;
         if warm_vectors.contains(vector_name) {
