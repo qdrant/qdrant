@@ -534,12 +534,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             + encoding_buffer.capacity() * size_of::<f64>()
     }
 
-    fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
-        // Turbo quant is asymmetric, so we cannot encode internal vectors, only queries.
-        // This method is used for symmetric quantization,
-        // where we can encode internal vectors without access to original vector data,
-        // which may require disk access.
-        None
+    /// The stored vector `id` as a query that scores the others as [`Self::score_internal`] does,
+    /// so that an index is built from the codes alone, without reading the originals.
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryTQ> {
+        let record = self.encoded_vectors.get_vector_data(id);
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(record.len() * mul);
+        Some(self.quantizer.stored_query(&record))
     }
 
     fn vectors_count(&self) -> usize {

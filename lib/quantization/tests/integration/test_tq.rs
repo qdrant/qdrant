@@ -289,6 +289,85 @@ mod tests {
         }
     }
 
+    /// A stored vector as a query scores every point exactly as `score_internal` does, in runs of
+    /// consecutive ids and in scattered ones.
+    #[test]
+    fn test_tq_internal_query_matches_score_internal() {
+        let dim = 100;
+        let vectors_count = 64;
+        let _scope = ambient::test_guard();
+        let distances = [
+            (DistanceType::Dot, false),
+            (DistanceType::Cosine, false),
+            (DistanceType::L2, true),
+            (DistanceType::L1, true),
+        ];
+
+        for &bits in BITS {
+            for (distance, invert) in distances {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+                    .map(|_| {
+                        let vector: Vec<f32> =
+                            (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                        match distance {
+                            DistanceType::Cosine => normalize(&vector),
+                            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => vector,
+                        }
+                    })
+                    .collect();
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: distance,
+                    invert,
+                };
+                for mode in [TQMode::Normal, TQMode::Plus] {
+                    if !supported(bits, mode) {
+                        continue;
+                    }
+                    let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
+                        &vector_parameters,
+                        bits,
+                        mode,
+                    );
+                    let encoded = EncodedVectorsTQ::encode(
+                        vector_data.iter(),
+                        std::iter::repeat_n(true, vectors_count),
+                        TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                        &vector_parameters,
+                        bits,
+                        mode,
+                        TQRotation::Padded,
+                        false,
+                        1,
+                        None,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
+
+                    let consecutive: Vec<u32> = (0..vectors_count as u32).collect();
+                    let scattered: Vec<u32> = (0..vectors_count as u32).rev().step_by(3).collect();
+                    for point in [0, 17] {
+                        let query = encoded.encode_internal_vector(point).unwrap();
+                        for ids in [&consecutive, &scattered] {
+                            let mut scores = vec![0.0; ids.len()];
+                            encoded.score_points(&query, ids, &mut scores).unwrap();
+                            for (&id, &score) in ids.iter().zip(&scores) {
+                                assert_eq!(
+                                    score.to_bits(),
+                                    encoded.score_internal(point, id).to_bits(),
+                                    "bits={bits:?}, mode={mode:?}, distance={distance:?}, \
+                                     point={point}, id={id}",
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[rstest::rstest]
     #[case::normal(TQMode::Normal, 1)]
     #[case::plus(TQMode::Plus, 1)]

@@ -9,7 +9,7 @@
 //! `test_codebook_matches_lloyd_max` for the consistency check.
 
 use super::query::{Code, Encoding, QuerySimd};
-use super::{FOLDED_MAX_DIM, SimdBackend, fold_q15};
+use super::{BlockedBackend, BlockedFactors, FOLDED_MAX_DIM, SimdBackend, fold_q15};
 
 /// `max|c|` over `CENTROIDS_4BIT` — the extreme centroid.  Shared by both archs.
 const CODEBOOK_ABS_MAX: f32 = 2.733;
@@ -285,6 +285,74 @@ pub(crate) fn fold_codes(codes: &[u8], factors: &[i16], out: &mut [u8], flip: u8
         SimdBackend::Scalar => |_, _, _, _| 0,
     };
     super::fold_codes::<4>(codes, factors, out, flip, codebook_signed_i64, simd);
+}
+
+/// The whole blocks of the 4-bit `codes` folded with `factors` into `values`, in block order:
+/// the kernels of [`super::FoldedQuery::new`].
+///
+/// # Safety
+///
+/// `codes` and `values` must cover the whole blocks of `factors`.
+pub(super) unsafe fn fold_4bit_blocked(factors: &BlockedFactors, codes: &[u8], values: &mut [i16]) {
+    // SAFETY: `factors` hold a backend this CPU runs; the caller covers the blocks
+    unsafe {
+        match factors.backend {
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx512 => x64::fold_4bit_blocked_avx512(factors, codes, values),
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx2 => x64::fold_4bit_blocked_avx2(factors, codes, values),
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            BlockedBackend::Neon => arm::fold_4bit_blocked_neon(factors, codes, values),
+        }
+    }
+}
+
+/// `Σ query · q(codes)` over the whole blocks of the 4-bit `codes`, with `query` folded in block
+/// order: the kernels of [`super::FoldedQuery::score`].
+///
+/// # Safety
+///
+/// `query` and `codes` must cover the whole blocks of `factors`.
+pub(super) unsafe fn score_4bit_blocked(
+    query: &[i16],
+    factors: &BlockedFactors,
+    codes: &[u8],
+) -> i64 {
+    // SAFETY: `factors` hold a backend this CPU runs; the caller covers the blocks
+    unsafe {
+        match factors.backend {
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx512 => x64::score_4bit_blocked_avx512(query, factors, codes),
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx2 => x64::score_4bit_blocked_avx2(query, factors, codes),
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            BlockedBackend::Neon => arm::score_4bit_blocked_neon(query, factors, codes),
+        }
+    }
+}
+
+/// `Σ q(a) · q(b)` over the whole blocks of the 4-bit `a` and `b`, both folded per pair, in block
+/// order: the kernels of [`super::BlockedFactors::score_symmetric`].
+///
+/// # Safety
+///
+/// `a` and `b` must cover the whole blocks of `factors`.
+pub(super) unsafe fn score_4bit_internal_blocked(
+    factors: &BlockedFactors,
+    a: &[u8],
+    b: &[u8],
+) -> i64 {
+    // SAFETY: `factors` hold a backend this CPU runs; the caller covers the blocks
+    unsafe {
+        match factors.backend {
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx512 => x64::score_4bit_internal_blocked_avx512(factors, a, b),
+            #[cfg(target_arch = "x86_64")]
+            BlockedBackend::Avx2 => x64::score_4bit_internal_blocked_avx2(factors, a, b),
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            BlockedBackend::Neon => arm::score_4bit_internal_blocked_neon(factors, a, b),
+        }
+    }
 }
 
 /// Square of the codebook scale — the integer sum from
