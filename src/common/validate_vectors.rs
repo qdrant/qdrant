@@ -77,7 +77,7 @@ fn validate_batch_vectors(
     Ok(())
 }
 
-fn validate_point_vectors(
+pub fn validate_point_vectors(
     vector: &VectorStructPersisted,
     vectors_config: &VectorsConfig,
 ) -> Result<(), StorageError> {
