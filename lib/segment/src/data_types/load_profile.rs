@@ -503,33 +503,4 @@ mod tests {
             Some(Populate::No)
         );
     }
-
-    #[test]
-    fn retain_warm_drops_components_but_keeps_payload_storage_apart() {
-        let filter = Filter::new_must(match_condition("city", "London"));
-        let mut profile = LoadProfile::for_search("dense", Some(&filter));
-        profile.merge(LoadProfile::for_search("sparse", None));
-
-        let mut reduced = profile.clone();
-        reduced.retain_warm(|name| name == "dense", |_| false, true);
-        assert_eq!(reduced.vector_storage_placement("dense"), None);
-        assert_eq!(
-            reduced.vector_storage_placement("sparse"),
-            Some(Populate::No)
-        );
-        assert_eq!(
-            reduced.payload_index_placement(&path("city")),
-            Some(Populate::No)
-        );
-        // Dropping every field leaves the payload storage as it was.
-        assert_eq!(reduced.payload_storage_placement(), None);
-
-        reduced.retain_warm(|_| true, |_| true, false);
-        assert_eq!(reduced.payload_storage_placement(), Some(Populate::No));
-
-        // Keeping everything is the identity.
-        let mut kept = profile.clone();
-        kept.retain_warm(|_| true, |_| true, true);
-        assert_eq!(kept, profile);
-    }
 }

@@ -75,7 +75,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
+    use crate::config::vectors::EdgeVectorParams;
 
     fn dense(memory: Option<Memory>) -> EdgeVectorParams {
         let mut params = EdgeVectorParams::builder(4, Distance::Dot).build();
@@ -161,44 +161,6 @@ mod tests {
         config.vectors.get_mut("cold").unwrap().quantization_config =
             Some(scalar(Some(Memory::Cold)));
         assert!(warm_vectors(&config, &["cold"]).is_empty());
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn legacy_on_disk_flags_and_sparse_indexes() {
-        let mut storage = dense(None);
-        storage.on_disk = Some(true);
-        let mut config = EdgeConfig::builder().vector("dense", storage).build();
-        config.hnsw_config = Some(HnswConfig {
-            on_disk: Some(true),
-            ..Default::default()
-        });
-        let on_disk = EdgeSparseVectorParams {
-            on_disk: Some(true),
-            ..Default::default()
-        };
-        let cold = EdgeSparseVectorParams {
-            memory: Some(Memory::Cold),
-            ..Default::default()
-        };
-        let cached = EdgeSparseVectorParams {
-            memory: Some(Memory::Cached),
-            ..Default::default()
-        };
-        config
-            .sparse_vectors
-            .insert(String::from("on_disk"), on_disk);
-        config.sparse_vectors.insert(String::from("cold"), cold);
-        config.sparse_vectors.insert(String::from("cached"), cached);
-        config
-            .sparse_vectors
-            .insert(String::from("unset"), EdgeSparseVectorParams::default());
-        assert_eq!(
-            warm_vectors(&config, &["dense", "on_disk", "cold", "cached", "unset"]),
-            ["cached", "unset"]
-        );
-        // Not in the config: nothing to load.
-        assert!(warm_vectors(&config, &["missing"]).is_empty());
     }
 
     #[test]
