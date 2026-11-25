@@ -27,7 +27,7 @@ use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::transport::Uri;
 
-use self::state_machine::CachedStateMachine;
+use self::state_machine::{CachedStateMachine, Invalidation};
 use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
@@ -53,6 +53,9 @@ pub mod prelude {
 
     pub type ConsensusState = super::ConsensusManager<TableOfContent>;
 }
+
+/// Applying an entry blocks Raft ticks and messages on the consensus thread, so log slower entries.
+const SLOW_ENTRY_APPLY: Duration = Duration::from_secs(1);
 
 /// Minimum delay between proposals of our peer metadata while it is outdated in consensus.
 ///
@@ -155,6 +158,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
 
         let state_machine = CachedStateMachine::new(toc.as_ref(), &persistent_state);
+        log::info!(
+            "Consensus state machine initialized: {}",
+            state_machine.summary(),
+        );
 
         Ok(Self {
             persistent: RwLock::new(persistent_state),
@@ -218,9 +225,17 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn record_message_send_success(&self, peer_address: &Uri) {
-        self.message_send_failures
+        let failures = self
+            .message_send_failures
             .write()
             .remove(&peer_address.to_string());
+
+        if let Some(failures) = failures {
+            log::info!(
+                "Sent message to {peer_address} after {} failed attempts",
+                failures.count,
+            );
+        }
     }
 
     pub fn record_consensus_working(&self) {
@@ -395,7 +410,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // while the in-memory state machine has applied it completely.
         // Reload the state those writes left behind before planning the retry.
         if result.is_err() {
-            self.invalidate_state_machine();
+            self.invalidate_state_machine(Invalidation::EntryFailed);
         }
 
         result
@@ -416,69 +431,47 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 break;
             };
 
-            log::debug!("Applying committed entry with index {entry_index}");
-
             let entry = self
                 .wal
                 .lock()
                 .entry(entry_index)
-                .context(format!("Failed to get entry at index {entry_index}"))?;
+                .with_context(|| format!("Failed to get entry at index {entry_index}"))?;
 
             let apply_started = Instant::now();
 
-            let stop_consensus: bool = if entry.data.is_empty() {
-                // Empty entry, when the peer becomes Leader it will send an empty entry.
-                false
-            } else {
-                match entry.get_entry_type() {
-                    EntryType::EntryNormal => {
-                        let operation_result = self.apply_normal_entry(&entry);
+            let stop_consensus = match entry.get_entry_type() {
+                // When the peer becomes leader it will send an empty entry.
+                _ if entry.data.is_empty() => false,
 
-                        match operation_result {
-                            Ok(status) => {
-                                log::debug!(
-                                    "Successfully applied consensus operation entry. \
-                                     Index: {}, status: {status}",
-                                    entry.index,
-                                );
+                EntryType::EntryNormal => {
+                    let operation_result = self.apply_normal_entry(&entry);
 
-                                false
-                            }
+                    match operation_result {
+                        Ok(_) => false,
 
-                            Err(err @ StorageError::ServiceError { .. }) => {
-                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
-                                return Err(err)
-                                    .context("Failed to apply collection meta operation entry");
-                            }
-
-                            Err(err) => {
-                                log::warn!(
-                                    "Failed to apply collection meta operation entry with user error: {err}",
-                                );
-
-                                // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                false
-                            }
+                        Err(err @ StorageError::ServiceError { .. }) => {
+                            // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
+                            return Err(err).with_context(|| {
+                                format!("Failed to apply consensus entry index={entry_index}")
+                            });
                         }
+
+                        // This is a user error so we can safely consider it applied but with error as it was incorrect.
+                        // The state machine has already logged the rejection.
+                        Err(_) => false,
                     }
+                }
 
-                    EntryType::EntryConfChangeV2 => {
-                        let stop_consensus = self
-                            .apply_conf_change_entry(&entry, raw_node)
-                            .context("Failed to apply configuration change entry")?;
+                EntryType::EntryConfChangeV2 => self
+                    .apply_conf_change_entry(&entry, raw_node)
+                    .with_context(|| {
+                        format!("Failed to apply consensus configuration entry index={entry_index}")
+                    })?,
 
-                        log::debug!(
-                            "Successfully applied configuration change entry. \
-                             Index: {}, stop consensus: {stop_consensus}",
-                            entry.index,
-                        );
-
-                        stop_consensus
-                    }
-
-                    ty @ EntryType::EntryConfChange => {
-                        return Err(anyhow!("Unexpected entry type: {ty:?}"));
-                    }
+                ty @ EntryType::EntryConfChange => {
+                    return Err(anyhow!(
+                        "Unexpected consensus entry type {ty:?} index={entry_index}"
+                    ));
                 }
             };
 
@@ -491,7 +484,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
 
-            self.applied_log.record(&entry, apply_started.elapsed());
+            let elapsed = apply_started.elapsed();
+            if elapsed >= SLOW_ENTRY_APPLY {
+                log::warn!(
+                    "Consensus thread blocked for {elapsed:?} \
+                     while applying consensus entry index={entry_index}",
+                );
+            }
+
+            self.applied_log.record(&entry, elapsed);
         }
 
         Ok(false) // do not stop consensus
@@ -623,7 +624,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             ));
         }
 
-        let result = self.apply_with_state_machine(&operation);
+        let result = self.apply_with_state_machine(entry.index, &operation);
         self.notify_operation(&operation, result.clone());
         result
     }
@@ -703,7 +704,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // Snapshot recovery replaces applied state without updating consensus state machine.
         // Invalidate it so it rebuilds from recovered state on next entry.
-        self.invalidate_state_machine();
+        self.invalidate_state_machine(Invalidation::RaftSnapshot);
 
         let SnapshotData {
             collections_data,
@@ -833,7 +834,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // Invalidate the CSM cache so the next operation reloads the new address.
         // Keep the persistent lock until invalidation finishes, so planning cannot start
         // between the address update and cache invalidation.
-        self.invalidate_state_machine();
+        self.invalidate_state_machine(Invalidation::PeerAddress);
         result
     }
 
@@ -857,6 +858,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let Ok(receiver_res) = tokio::time::timeout(wait_timeout, receiver.recv()).await else {
             forget_operation_awaiter(&mut self.on_consensus_op_apply.lock(), operation, receiver);
+
+            // An applied index behind the commit index means application is slow or stuck.
+            // Otherwise, the proposal was likely dropped, e.g. by a leader change.
+            let (commit, last_applied) = {
+                let persistent = self.persistent.read();
+                let commit = persistent.state.hard_state.commit;
+                let last_applied = persistent.last_applied_entry();
+                (commit, last_applied)
+            };
+            log::warn!(
+                "Timed out after {wait_timeout:?} waiting for consensus to apply {operation:?}: \
+                 commit={commit}, last_applied={}, leader_established={}",
+                last_applied.map_or_else(|| "none".to_string(), |index| index.to_string()),
+                self.is_leader_established.check_ready(),
+            );
 
             return Err(StorageError::service_error(format!(
                 "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
@@ -1340,7 +1356,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
 
-        log::debug!("Requesting entries from {low} to {high}");
+        log::trace!("Requesting entries from {low} to {high}");
 
         if high > self.last_index()? + 1 {
             panic!(
@@ -1759,10 +1775,13 @@ mod tests {
 
         let error = manager.apply_entries(&mut raw).unwrap_err();
 
+        let error = format!("{error:#}");
         assert!(
-            error
-                .to_string()
-                .contains("Failed to apply collection meta operation entry")
+            error.starts_with(
+                "Failed to apply consensus entry index=1: Service internal error: \
+                 Failed to apply action 1/1 SetClusterMetadataKey(key=\"owner\"): ",
+            ),
+            "{error}",
         );
         assert!(
             !manager

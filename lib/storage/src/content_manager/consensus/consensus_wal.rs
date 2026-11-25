@@ -214,15 +214,15 @@ impl ConsensusOpWal {
                 }
             }
 
-            if log::log_enabled!(log::Level::Debug) {
+            if log::log_enabled!(log::Level::Trace) {
                 if let Ok(op) = ConsensusOperations::try_from(&new_entry) {
-                    log::debug!(
+                    log::trace!(
                         "Appending operation, term: {}, index: {}, entry: {op:?}",
                         new_entry.term,
                         new_entry.index,
                     );
                 } else {
-                    log::debug!("Appending entry: {new_entry:?}");
+                    log::trace!("Appending entry: {new_entry:?}");
                 }
             }
 

@@ -129,7 +129,7 @@ fn failed_action_preserves_cache_and_reloads_partial_writes() {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(manager.state_machine.lock().machine.state(), &before);
-    assert!(manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_some());
     assert!(
         container.collections.lock()[COLLECTION]
             .payload_index_schema
@@ -141,7 +141,7 @@ fn failed_action_preserves_cache_and_reloads_partial_writes() {
     manager.apply_normal_entry(&entry).unwrap();
 
     assert_eq!(container.snapshots(), 2);
-    assert!(!manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_none());
     assert_eq!(
         manager.state_machine.lock().machine.state().collections,
         *container.collections.lock()
@@ -209,7 +209,7 @@ fn dirty_collection_resync_after_execution() {
     container.add_shard(0);
     container.mark_dirty();
 
-    manager.finish_state_machine(&[operation], &[plan]);
+    manager.finish_state_machine(1, &[operation], &[plan]);
 
     assert_eq!(
         manager.state_machine.lock().machine.state().collections,
@@ -230,7 +230,7 @@ fn dirty_collection_refresh_keeps_unrelated_divergence() {
     container.mark_dirty();
     container.add_alias(OTHER_ALIAS);
 
-    manager.finish_state_machine(&[operation], &[plan]);
+    manager.finish_state_machine(1, &[operation], &[plan]);
 }
 
 #[test]
@@ -244,9 +244,9 @@ fn discovery_invalidation_survives_execution_completion() {
         .add_peer(OTHER_PEER_ID, "http://localhost:7000".parse().unwrap())
         .unwrap();
 
-    manager.finish_state_machine(&[operation], &[plan]);
+    manager.finish_state_machine(1, &[operation], &[plan]);
 
-    assert!(manager.state_machine.lock().needs_reload);
+    assert!(manager.state_machine.lock().invalidated.is_some());
     manager.plan_operation(&nop()).unwrap();
     assert!(
         manager
@@ -309,8 +309,12 @@ fn comparison_observes_collection_without_invalidating_cache() {
         &[drop_payload_index(COLLECTION)],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
-    assert!(!cached.needs_reload);
+    let report = report.expect("shards differ");
+    assert!(
+        report.starts_with("collections[books].shards ("),
+        "{report}"
+    );
+    assert!(cached.invalidated.is_none());
 }
 
 #[test]
@@ -329,7 +333,11 @@ fn comparison_resolves_aliases() {
         &[drop_payload_index(ALIAS)],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
+    let report = report.expect("shards differ");
+    assert!(
+        report.starts_with("collections[books].shards ("),
+        "{report}"
+    );
 }
 
 #[test]
@@ -351,7 +359,11 @@ fn peer_removal_compares_all_collections() {
         &[operation],
     );
 
-    assert_eq!(report.as_deref(), Some("collections[books].shards"));
+    let report = report.expect("shards differ");
+    assert!(
+        report.starts_with("collections[books].shards ("),
+        "{report}"
+    );
 }
 
 fn indexed_container() -> Container {
