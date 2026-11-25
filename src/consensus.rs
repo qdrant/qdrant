@@ -635,7 +635,7 @@ impl Consensus {
                     peer.id,
                     peer.uri
                         .parse()
-                        .context(format!("Failed to parse peer URI: {}", peer.uri))?,
+                        .with_context(|| format!("Failed to parse peer URI: {}", peer.uri))?,
                 )
                 .context("Failed to add peer")?
         }
