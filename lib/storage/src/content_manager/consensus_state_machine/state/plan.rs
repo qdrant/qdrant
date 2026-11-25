@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use collection::collection::{ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION, vector_name_schema};
+use collection::collection::{
+    ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION, REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION,
+    vector_name_schema,
+};
 use collection::collection_state::ShardInfo;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::ReshardingDirection;
@@ -195,24 +198,77 @@ impl ClusterState {
         };
         let mut planned: Actions = diffs[..split].iter().map(&config_action).collect();
 
+        // A removal skipped because its replica is already gone only proves the operation
+        // was partially applied. Whether the whole operation is already complete is decided
+        // below, once every action is planned, so a trailing configuration change still
+        // emits when the replica subplan comes back empty.
+        let mut completed_removal = None;
+
         if let Some(changes) = shard_replica_changes {
-            planned.extend(self.plan_replica_changes(context, &collection, changes)?);
+            let (removals, completed) = self.plan_replica_changes(context, &collection, changes)?;
+            completed_removal = completed;
+            planned.extend(removals);
         }
 
         planned.extend(diffs[split..].iter().map(config_action));
 
+        if planned.is_empty()
+            && let Some((shard_id, peer_id)) = completed_removal
+        {
+            // Every removal was already applied (or asks for a replica that never existed)
+            // and the operation has nothing else to emit: there is nothing to resume, so
+            // keep rejecting it.
+            return Err(StorageError::bad_request(format!(
+                "Peer {peer_id} has no replica of shard {shard_id}"
+            )));
+        }
+
         Ok(planned)
     }
 
+    /// Plans the aborts and removals for a batch of replica changes.
+    ///
+    /// The second return value is the first removal skipped because its replica was already
+    /// gone, which happens when a replay finds an earlier prefix of this same operation
+    /// applied. The caller decides whether that makes the whole operation reject.
     fn plan_replica_changes(
         &self,
         context: &NodeContext,
         collection: &str,
         changes: &[collection::shards::replica_set::Change],
-    ) -> StorageResult<Actions> {
-        let state = self.collection(collection).expect("collection exists");
+    ) -> StorageResult<(Actions, Option<(ShardId, PeerId)>)> {
         let fixed_cancellation =
             self.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+
+        // From 1.20.3 on, validate each removal against the replica map its own transfer
+        // aborts leave behind. Aborting a transfer whose source is removed marks its target
+        // `Dead` (sync) or removes it (a move), so checking the map from before the aborts
+        // can accept a removal that leaves the shard without a source of truth. Such an
+        // entry committed live, but was rejected when replayed from a prefix that contains
+        // the abort. Older peers still validate against the initial map, so the fixed
+        // validation can only run once every peer plans removals the same way.
+        if self.all_peers_at_version(&REPLICA_REMOVAL_VALIDATION_FIX_FROM_VERSION) {
+            return self.plan_replica_changes_post_abort(
+                context,
+                collection,
+                changes,
+                fixed_cancellation,
+            );
+        }
+
+        let actions =
+            self.plan_replica_changes_legacy(context, collection, changes, fixed_cancellation)?;
+        Ok((actions, None))
+    }
+
+    fn plan_replica_changes_legacy(
+        &self,
+        context: &NodeContext,
+        collection: &str,
+        changes: &[collection::shards::replica_set::Change],
+        fixed_cancellation: bool,
+    ) -> StorageResult<Actions> {
+        let state = self.collection(collection).expect("collection exists");
         let mut validated = Vec::with_capacity(changes.len());
 
         // TODO: Validate each removal against earlier removals in the same batch.
@@ -292,6 +348,99 @@ impl ClusterState {
         }
 
         Ok(actions)
+    }
+
+    fn plan_replica_changes_post_abort(
+        &self,
+        context: &NodeContext,
+        collection: &str,
+        changes: &[collection::shards::replica_set::Change],
+        fixed_cancellation: bool,
+    ) -> StorageResult<(Actions, Option<(ShardId, PeerId)>)> {
+        let mut planned = self.clone();
+        let mut actions = Actions::new();
+        let mut completed = None;
+
+        for change in changes {
+            let &collection::shards::replica_set::Change::Remove(shard_id, peer_id) = change;
+
+            // Plan the aborts first, so the removal is validated against the replica map
+            // they leave behind, and each removal against the removals before it.
+            let mut transfers: Vec<_> = planned
+                .collection(collection)
+                .expect("collection exists")
+                .transfers
+                .iter()
+                .filter(|transfer| {
+                    if fixed_cancellation {
+                        transfer.is_source_or_target(peer_id, shard_id)
+                    } else {
+                        transfer.from == peer_id || transfer.to == peer_id
+                    }
+                })
+                .map(ShardTransfer::key)
+                .collect();
+            transfers.sort_by_key(|&key| transfer_sort_key(key));
+
+            for key in transfers {
+                let transfer = transfer_by_key(
+                    planned.collection(collection).expect("collection exists"),
+                    key,
+                );
+
+                if transfer.is_none() {
+                    continue;
+                }
+
+                let abort = planned.plan_abort_transfer_scoped(
+                    context,
+                    collection.into(),
+                    key,
+                    AbortTransferScope {
+                        skip_replica: Some((shard_id, peer_id)),
+                    },
+                )?;
+                apply_actions(&mut planned, &abort);
+                actions.extend(abort);
+            }
+
+            {
+                let state = planned.collection(collection).expect("collection exists");
+                let Some(shard) = state.shards.get(&shard_id) else {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {shard_id} of {collection} not found"
+                    )));
+                };
+
+                if !shard.replicas.contains_key(&peer_id) {
+                    // Replaying a partially applied batch finds an earlier removal already
+                    // applied: the replica is gone from the map the prefix left behind.
+                    // Rejecting here would make that partial state permanent, so skip the
+                    // completed removal and resume the rest of the batch.
+                    completed.get_or_insert((shard_id, peer_id));
+                    continue;
+                }
+
+                if shard.replicas.len() == 1 || is_last_source_of_truth(&shard.replicas, peer_id) {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {shard_id} must have at least one active replica after removing \
+                         {peer_id}",
+                    )));
+                }
+            }
+
+            let remove = Action::RemoveReplica {
+                collection: collection.into(),
+                shard_id,
+                peer_id,
+            };
+            planned.apply_action(&remove);
+            actions.push(remove);
+        }
+
+        // A skipped removal does not decide on its own whether the operation rejects: the
+        // caller weighs it against everything else the operation still has to emit.
+        Ok((actions, completed))
     }
 
     pub fn plan_create_named_vector(&self, op: &CreateNamedVector) -> StorageResult<Actions> {
