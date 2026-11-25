@@ -122,8 +122,12 @@ impl QuantizedVectors {
         requested: Option<Memory>,
         cold_vector_storage: bool,
     ) -> Memory {
-        crate::types::resolve_quantized_memory_placement(requested, cold_vector_storage)
-            .clamp_to_low_memory()
+        let follow_storage = if cold_vector_storage {
+            Memory::Cold
+        } else {
+            Memory::Pinned
+        };
+        requested.unwrap_or(follow_storage).clamp_to_low_memory()
     }
 
     pub(in crate::vector_storage::quantized) fn is_ram(

@@ -35,13 +35,14 @@ impl EdgeConfig {
             let config = self.dense_vector_optimizer_config(params);
             let storage_cold = config.memory_placement() == Some(Memory::Cold);
             let index_cold = config.hnsw_config.memory_placement().is_cold();
+            // Unset, quantized vectors follow the storage.
             let quantized_cold = config
                 .quantization_config
                 .as_ref()
                 .is_none_or(|quantization| {
                     quantization
-                        .resolved_memory_placement(storage_cold)
-                        .is_cold()
+                        .memory_placement()
+                        .map_or(storage_cold, Memory::is_cold)
                 });
             return !(storage_cold && index_cold && quantized_cold);
         }
