@@ -4,8 +4,10 @@ use common::types::PointOffsetType;
 use itertools::Either;
 use smallvec::SmallVec;
 
+use super::clause_order::{ClauseOrder, Side};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::field_index::CardinalityEstimation;
 
 /// Ids checked per [`ConditionChecker::check_batched`] call when collecting matches.
 /// Large enough for on-disk indexes to overlap the reads of one batch.
@@ -21,6 +23,9 @@ pub struct OptimizedFilter<'a> {
     must: Vec<ConditionCheckerEnum<'a>>,
     /// All conditions must NOT match
     must_not: Vec<ConditionCheckerEnum<'a>>,
+    /// Which side to check first, see [`Self::ordered_by_estimations`]. Without it, a
+    /// check point by point does `should` first, and a batched check `must` first.
+    order: Option<ClauseOrder>,
 }
 
 impl<'a> OptimizedFilter<'a> {
@@ -37,7 +42,37 @@ impl<'a> OptimizedFilter<'a> {
             min_should_count,
             must,
             must_not,
+            order: None,
         }
+    }
+
+    /// Check the side that rejects the most points for its cost first, `must` and
+    /// `must_not` or `should` and `min_should`, given the estimated number of points out
+    /// of `total` that pass each clause.
+    pub fn ordered_by_estimations(
+        mut self,
+        should: &CardinalityEstimation,
+        min_should: &CardinalityEstimation,
+        must: &CardinalityEstimation,
+        must_not: &CardinalityEstimation,
+        total: usize,
+    ) -> Self {
+        let share =
+            |estimation: &CardinalityEstimation| estimation.exp as f64 / total.max(1) as f64;
+        let (min_should_conditions, min_should_passing) = match self.min_should_count {
+            0 => (0, 1.0),
+            _ => (self.min_should.len(), share(min_should)),
+        };
+        let must_side = Side {
+            conditions: self.must.len() + self.must_not.len(),
+            passing: share(must) * share(must_not),
+        };
+        let should_side = Side {
+            conditions: self.should.len() + min_should_conditions,
+            passing: share(should) * min_should_passing,
+        };
+        self.order = Some(ClauseOrder::by_rejection(must_side, should_side));
+        self
     }
 
     /// A filter that matches a point iff the single given checker matches it.
@@ -54,6 +89,7 @@ impl<'a> OptimizedFilter<'a> {
             min_should_count: _,
             must,
             must_not,
+            order: _,
         } = self;
         [should, min_should, must, must_not]
             .into_iter()
@@ -116,51 +152,14 @@ impl ConditionChecker for OptimizedFilter<'_> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        let OptimizedFilter {
-            should,
-            min_should,
-            min_should_count,
-            must,
-            must_not,
-        } = self;
-
-        // `should`: at least one matches, if not empty.
-        if !should.is_empty()
-            && !should
-                .iter()
-                .try_any(|condition| condition.check(point_id))?
-        {
-            return Ok(false);
-        }
-
-        // `min_should`: at least `min_count` match.
-        let mut remaining = *min_should_count;
-        let mut min_should_iter = min_should.iter();
-        while remaining > 0 {
-            let Some(condition) = min_should_iter.next() else {
-                // Not enough conditions to match `min_count`
-                return Ok(false);
-            };
-            if condition.check(point_id)? {
-                remaining -= 1;
+        Ok(match self.order.unwrap_or(ClauseOrder::ShouldFirst) {
+            ClauseOrder::ShouldFirst => {
+                self.check_should_side(point_id)? && self.check_must_side(point_id)?
             }
-        }
-
-        // `must`: all match.
-        for condition in must {
-            if !condition.check(point_id)? {
-                return Ok(false);
+            ClauseOrder::MustFirst => {
+                self.check_must_side(point_id)? && self.check_should_side(point_id)?
             }
-        }
-
-        // `must_not`: none match.
-        for condition in must_not {
-            if condition.check(point_id)? {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        })
     }
 
     fn check_batched<K: CheckItem>(
@@ -175,25 +174,21 @@ impl ConditionChecker for OptimizedFilter<'_> {
             min_should_count,
             must,
             must_not,
+            order,
         } = self;
         match select {
             Select::Matches => {
                 // must ∩ must_not ∩ should ∩ min_should
-
-                let mut n = all_of(must, ids, Select::Matches, rest)?;
-                n = all_of(must_not, &mut ids[..n], Select::NonMatches, rest)?;
-                if !should.is_empty() {
-                    // Empty `should` means "no constraint", not an empty disjunction.
-                    n = any_of(should, &mut ids[..n], Select::Matches, rest)?;
+                match order.unwrap_or(ClauseOrder::MustFirst) {
+                    ClauseOrder::MustFirst => {
+                        let n = self.select_must_side(ids, rest)?;
+                        self.select_should_side(&mut ids[..n], rest)
+                    }
+                    ClauseOrder::ShouldFirst => {
+                        let n = self.select_should_side(ids, rest)?;
+                        self.select_must_side(&mut ids[..n], rest)
+                    }
                 }
-                n = at_least(
-                    min_should,
-                    &mut ids[..n],
-                    *min_should_count,
-                    Select::Matches,
-                    rest,
-                )?;
-                Ok(n)
             }
             Select::NonMatches => {
                 // ¬must ∪ ¬must_not ∪ ¬should ∪ ¬min_should
@@ -219,6 +214,102 @@ impl ConditionChecker for OptimizedFilter<'_> {
                 Ok(n)
             }
         }
+    }
+}
+
+impl OptimizedFilter<'_> {
+    /// Whether `point_id` passes `should` and `min_should`.
+    #[inline]
+    fn check_should_side(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        let OptimizedFilter {
+            should,
+            min_should,
+            min_should_count,
+            must: _,
+            must_not: _,
+            order: _,
+        } = self;
+
+        // `should`: at least one matches, if not empty.
+        if !should.is_empty()
+            && !should
+                .iter()
+                .try_any(|condition| condition.check(point_id))?
+        {
+            return Ok(false);
+        }
+
+        // `min_should`: at least `min_count` match.
+        let mut remaining = *min_should_count;
+        let mut min_should_iter = min_should.iter();
+        while remaining > 0 {
+            let Some(condition) = min_should_iter.next() else {
+                // Not enough conditions to match `min_count`
+                return Ok(false);
+            };
+            if condition.check(point_id)? {
+                remaining -= 1;
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Whether `point_id` passes `must` and `must_not`.
+    #[inline]
+    fn check_must_side(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        let OptimizedFilter {
+            should: _,
+            min_should: _,
+            min_should_count: _,
+            must,
+            must_not,
+            order: _,
+        } = self;
+
+        // `must`: all match.
+        for condition in must {
+            if !condition.check(point_id)? {
+                return Ok(false);
+            }
+        }
+
+        // `must_not`: none match.
+        for condition in must_not {
+            if condition.check(point_id)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Move the ids passing `must` and `must_not` to the front, return their count.
+    #[inline]
+    fn select_must_side<K: CheckItem>(&self, ids: &mut [K], rest: Rest) -> OperationResult<usize> {
+        let n = all_of(&self.must, ids, Select::Matches, rest)?;
+        all_of(&self.must_not, &mut ids[..n], Select::NonMatches, rest)
+    }
+
+    /// Move the ids passing `should` and `min_should` to the front, return their count.
+    #[inline]
+    fn select_should_side<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        let mut n = ids.len();
+        if !self.should.is_empty() {
+            // Empty `should` means "no constraint", not an empty disjunction.
+            n = any_of(&self.should, ids, Select::Matches, rest)?;
+        }
+        at_least(
+            &self.min_should,
+            &mut ids[..n],
+            self.min_should_count,
+            Select::Matches,
+            rest,
+        )
     }
 }
 

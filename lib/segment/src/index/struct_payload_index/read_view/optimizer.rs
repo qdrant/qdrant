@@ -62,7 +62,6 @@ where
         deferred_behavior: DeferredBehavior,
         materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
-        let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
         let Filter {
             should,
             min_should,
@@ -70,14 +69,13 @@ where
             must_not,
         } = filter;
 
-        let (should, estimation) = self.optimize_should(
+        let (should, should_estimation) = self.optimize_should(
             should.as_deref().unwrap_or(&[]),
             payload_provider.clone(),
             total,
             deferred_behavior,
             materialization,
         )?;
-        filter_estimations.push(estimation);
 
         let (min_should, min_should_count) = match min_should.as_ref() {
             Some(MinShould {
@@ -86,7 +84,7 @@ where
             }) => (conditions.as_slice(), *min_count),
             None => (&[][..], 0),
         };
-        let (min_should, estimation) = self.optimize_min_should(
+        let (min_should, min_should_estimation) = self.optimize_min_should(
             min_should,
             min_should_count,
             payload_provider.clone(),
@@ -94,28 +92,38 @@ where
             deferred_behavior,
             materialization,
         )?;
-        filter_estimations.push(estimation);
 
-        let (must, estimation) = self.optimize_must(
+        let (must, must_estimation) = self.optimize_must(
             must.as_deref().unwrap_or(&[]),
             payload_provider.clone(),
             total,
             deferred_behavior,
             materialization,
         )?;
-        filter_estimations.push(estimation);
 
-        let (must_not, estimation) = self.optimize_must_not(
+        let (must_not, must_not_estimation) = self.optimize_must_not(
             must_not.as_deref().unwrap_or(&[]),
             payload_provider,
             total,
             deferred_behavior,
             materialization,
         )?;
-        filter_estimations.push(estimation);
 
         let optimized_filter =
-            OptimizedFilter::new(should, min_should, min_should_count, must, must_not);
+            OptimizedFilter::new(should, min_should, min_should_count, must, must_not)
+                .ordered_by_estimations(
+                    &should_estimation,
+                    &min_should_estimation,
+                    &must_estimation,
+                    &must_not_estimation,
+                    total,
+                );
+        let filter_estimations = [
+            should_estimation,
+            min_should_estimation,
+            must_estimation,
+            must_not_estimation,
+        ];
 
         Ok((
             optimized_filter,
