@@ -86,3 +86,100 @@ pub fn check_read_batch_ranges(ranges: &[ReadRange]) -> Result<(), Status> {
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use tonic::Code;
+
+    use super::*;
+
+    fn ranges(ranges: &[(u64, u64)]) -> Vec<ReadRange> {
+        ranges
+            .iter()
+            .map(|&(byte_offset, length)| ReadRange::new(byte_offset, length))
+            .collect()
+    }
+
+    #[test]
+    fn read_batch_accepts_disjoint_and_adjacent_ranges() {
+        check_read_batch_ranges(&ranges(&[(10, 5), (0, 2), (2, 3), (15, 0), (100, 1)])).unwrap();
+    }
+
+    #[test]
+    fn read_batch_rejects_duplicate_ranges() {
+        for duplicated in [(4, 2), (4, 0)] {
+            let err =
+                check_read_batch_ranges(&ranges(&[duplicated, (10, 1), duplicated])).unwrap_err();
+            assert_eq!(err.code(), Code::InvalidArgument, "{duplicated:?}");
+            assert!(err.message().contains("Duplicate"), "{}", err.message());
+        }
+    }
+
+    #[test]
+    fn read_batch_rejects_overlapping_ranges() {
+        for overlapping in [
+            [(0, 10), (9, 2)],
+            [(0, 10), (0, 5)],
+            [(5, 1), (0, 10)],
+            [(0, 10), (5, 0)],
+        ] {
+            let err = check_read_batch_ranges(&ranges(&overlapping)).unwrap_err();
+            assert_eq!(err.code(), Code::InvalidArgument, "{overlapping:?}");
+            assert!(err.message().contains("overlaps"), "{}", err.message());
+        }
+    }
+
+    #[test]
+    fn read_batch_rejects_overlap_with_earlier_long_range() {
+        // The overlap is with the first range, not with the one directly before it.
+        let err = check_read_batch_ranges(&ranges(&[(0, 100), (10, 5), (50, 5)])).unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+    }
+
+    #[test]
+    fn read_batch_rejects_too_many_ranges() {
+        let at_limit = (0..MAX_READ_BATCH_RANGES as u64)
+            .map(|i| ReadRange::new(i, 1))
+            .collect::<Vec<_>>();
+        check_read_batch_ranges(&at_limit).unwrap();
+
+        let over_limit = (0..=MAX_READ_BATCH_RANGES as u64)
+            .map(|i| ReadRange::new(i, 1))
+            .collect::<Vec<_>>();
+        let err = check_read_batch_ranges(&over_limit).unwrap_err();
+        assert_eq!(err.code(), Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn read_batch_rejects_too_many_bytes() {
+        let half = MAX_READ_BYTES_PER_REQUEST / 2;
+        check_read_batch_ranges(&ranges(&[(0, half), (half, half)])).unwrap();
+
+        let err = check_read_batch_ranges(&ranges(&[(0, half), (half, half + 1)])).unwrap_err();
+        assert_eq!(err.code(), Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn read_batch_rejects_total_length_overflow() {
+        let err = check_read_batch_ranges(&ranges(&[(0, u64::MAX), (u64::MAX, 1)])).unwrap_err();
+        assert_eq!(err.code(), Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn read_bytes_length_limit() {
+        check_read_bytes_length(MAX_READ_BYTES_PER_REQUEST).unwrap();
+        let err = check_read_bytes_length(MAX_READ_BYTES_PER_REQUEST + 1).unwrap_err();
+        assert_eq!(err.code(), Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn read_whole_length_limit() {
+        check_read_whole_length(MAX_READ_BYTES_PER_REQUEST).unwrap();
+        let err = check_read_whole_length(MAX_READ_BYTES_PER_REQUEST + 1).unwrap_err();
+        assert_eq!(err.code(), Code::ResourceExhausted);
+        assert!(
+            err.message().contains("ReadBytesStream"),
+            "{}",
+            err.message()
+        );
+    }
+}
