@@ -66,7 +66,10 @@ pub fn check_read_batch_ranges(ranges: &[ReadRange]) -> Result<(), Status> {
     let mut previous = None;
     let mut furthest_end = 0;
     for range in sorted {
-        let range_end = range.byte_offset.saturating_add(range.length);
+        let range_end = range
+            .byte_offset
+            .checked_add(range.length)
+            .ok_or_else(|| Status::invalid_argument("Range end overflows u64"))?;
         if previous == Some(range) {
             return Err(Status::invalid_argument(format!(
                 "Duplicate range {}..{range_end}",
