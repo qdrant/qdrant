@@ -541,6 +541,38 @@ pub struct CreateNamedVector {
     pub config: shard::operations::vector_name_ops::VectorNameConfig,
 }
 
+impl CreateNamedVector {
+    /// Validate the new vector's name, with the same rules as
+    /// [`CreateCollectionOperation::validate_vector_names`].
+    ///
+    /// Sparse vectors can't use the empty name: it is the name of the unnamed dense vector,
+    /// and both would share a storage directory in a segment.
+    pub fn validate_vector_name(&self) -> StorageResult<()> {
+        let Self {
+            collection_name: _,
+            vector_name,
+            config,
+        } = self;
+
+        common::validation::validate_vector_name(vector_name).map_err(|err| {
+            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+        })?;
+
+        match config {
+            shard::operations::vector_name_ops::VectorNameConfig::Dense(_) => {}
+            shard::operations::vector_name_ops::VectorNameConfig::Sparse(_) => {
+                if vector_name == DEFAULT_VECTOR_NAME {
+                    return Err(StorageError::bad_input(
+                        "Sparse vector name cannot be empty",
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct DeleteNamedVector {
     pub collection_name: String,

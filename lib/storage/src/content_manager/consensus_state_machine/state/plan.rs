@@ -312,9 +312,7 @@ impl ClusterState {
 
         // Same as in `plan_create_collection`: the API validates the name before proposal,
         // but a committed entry does not have to come through it
-        common::validation::validate_vector_name(vector_name).map_err(|err| {
-            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
-        })?;
+        op.validate_vector_name()?;
 
         // Reject vector that already exists with different config.
         //

@@ -125,6 +125,27 @@ fn create_named_vector_reject_invalid_name(config: VectorNameConfig) {
     assert_eq!(machine.state(), &state);
 }
 
+/// The empty name belongs to the unnamed dense vector: a sparse vector under it would share
+/// that vector's storage directory. Collection creation rejects it, and so must this path.
+#[test]
+fn create_named_vector_reject_empty_name_sparse() {
+    let state = cluster_state(Vec::new());
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&create_named_vector_op("", sparse()));
+
+    assert!(
+        matches!(
+            &outcome,
+            Err(StorageError::BadInput { description })
+                if description.contains("Sparse vector name cannot be empty"),
+        ),
+        "empty sparse vector name should be rejected as bad input, got {outcome:?}",
+    );
+
+    assert_eq!(machine.state(), &state);
+}
+
 #[test]
 fn delete_named_vector_dense() {
     delete_named_vector_impl(dense(4, Distance::Cosine));

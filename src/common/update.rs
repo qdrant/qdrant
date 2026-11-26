@@ -1110,11 +1110,16 @@ pub async fn do_create_vector_name(
     params: UpdateParams,
     auth: Auth,
 ) -> Result<UpdateResult, StorageError> {
+    let consensus_op = CreateNamedVector {
+        collection_name: collection_name.clone(),
+        vector_name: vector_name.clone(),
+        config: config.clone(),
+    };
+
     // Validate the vector name once at the single chokepoint that both REST and
-    // gRPC entrypoints land in (REST also runs the same check via `VectorNamePath`).
-    common::validation::validate_vector_name(&vector_name).map_err(|err| {
-        StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
-    })?;
+    // gRPC entrypoints land in (REST also runs the format check via `VectorNamePath`).
+    // This also rejects an empty sparse vector name, like collection creation does.
+    consensus_op.validate_vector_name()?;
 
     // Reject before consensus submission — this operation allocates storage for
     // the new vector across every existing point, and once proposed it reaches
@@ -1133,12 +1138,6 @@ pub async fn do_create_vector_name(
     )
     .await?;
     shard::quota::global().check_update()?;
-
-    let consensus_op = CreateNamedVector {
-        collection_name: collection_name.clone(),
-        vector_name: vector_name.clone(),
-        config: config.clone(),
-    };
 
     let toc = dispatcher.toc(&auth, &pass).clone();
 
