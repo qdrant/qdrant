@@ -4,6 +4,9 @@
 //! data without holding the lock. Creating a shard key or starting resharding in that window adds
 //! a shard. The archived collection config and shard key mapping must not reference it, because
 //! its data is not in the snapshot.
+//!
+//! Schema changes in that window are the opposite case: they are in the archived WAL, so the
+//! archived collection config must include them.
 
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -22,6 +25,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use common::ambient::{self, AmbientContext, AmbientFutureExt as _};
 use common::budget::ResourceBudget;
 use futures::FutureExt as _;
+use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::types::{Distance, ShardKey};
 use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
@@ -295,6 +299,57 @@ async fn test_snapshot_with_concurrent_resharding_up() {
     .await;
     assert_eq!(restored.config().await.params.shard_number.get(), 1);
     assert_eq!(shard_ids(&restored).await, [0]);
+
+    restored.stop_gracefully().await;
+    collection.stop_gracefully().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_with_concurrent_vector_creation() {
+    let _scope = ambient::async_test_guard();
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let collection = Arc::new(simple_collection_fixture(dir.path(), 1).await);
+
+    let (snapshot_task, unpark) =
+        start_parked_snapshot(&collection, snapshots_temp_dir.path()).await;
+
+    // Create a named vector while the snapshot is in progress
+    let vector_config = VectorNameConfig::dense(DenseVectorConfig {
+        size: 4,
+        distance: Distance::Dot,
+        multivector_config: None,
+        datatype: None,
+    });
+    tokio::time::timeout(
+        TIMEOUT,
+        collection
+            .create_named_vector("extra".into(), vector_config)
+            .measured(AmbientContext::new()),
+    )
+    .await
+    .expect("creating a named vector must not wait for the snapshot")
+    .unwrap();
+
+    drop(unpark);
+    let snapshot_name = snapshot_task.await.unwrap();
+
+    // The shard data and WAL in the snapshot have the vector, so the config must declare it
+    let restore_dir = Builder::new().prefix("restored").tempdir().unwrap();
+    let restored = restore_snapshot(
+        &dir.path().join("snapshots").join(snapshot_name),
+        restore_dir.path(),
+    )
+    .await;
+    assert!(
+        restored
+            .config()
+            .await
+            .params
+            .vectors
+            .get_params("extra")
+            .is_some(),
+    );
 
     restored.stop_gracefully().await;
     collection.stop_gracefully().await;
