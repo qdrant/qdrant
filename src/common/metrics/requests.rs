@@ -14,6 +14,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// This array *must* be sorted.
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{collection_name}/index",
+    "/collections/{collection_name}/index/{field_name}",
     "/collections/{collection_name}/points",
     "/collections/{collection_name}/points/batch",
     "/collections/{collection_name}/points/count",
@@ -305,24 +306,40 @@ impl OperationDurationMetricsBuilder {
 mod tests {
     #[test]
     fn test_grpc_whitelist_matches_rest_sibling_endpoints() {
-        use super::GRPC_ENDPOINT_WHITELIST;
+        use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
 
-        // Every one of these gRPC RPCs already has a whitelisted REST sibling
-        // (DeleteVectors -> /points/vectors/delete, CreateFieldIndex/
-        // DeleteFieldIndex -> /index, SearchMatrixPairs/SearchMatrixOffsets ->
-        // /points/search/matrix/{pairs,offsets}); the gRPC whitelist had drifted
-        // out of sync with REST's, so `grpc_responses_total` was silently
-        // missing for these operations while `rest_responses_total` had them.
-        for endpoint in [
-            "/qdrant.Points/CreateFieldIndex",
-            "/qdrant.Points/DeleteFieldIndex",
-            "/qdrant.Points/DeleteVectors",
-            "/qdrant.Points/SearchMatrixOffsets",
-            "/qdrant.Points/SearchMatrixPairs",
+        // Pairs of gRPC RPC and its REST sibling route pattern. The two
+        // whitelists had drifted apart, so metrics were reported for one
+        // protocol but silently missing for the other.
+        for (grpc, rest) in [
+            (
+                "/qdrant.Points/CreateFieldIndex",
+                "/collections/{collection_name}/index",
+            ),
+            (
+                "/qdrant.Points/DeleteFieldIndex",
+                "/collections/{collection_name}/index/{field_name}",
+            ),
+            (
+                "/qdrant.Points/DeleteVectors",
+                "/collections/{collection_name}/points/vectors/delete",
+            ),
+            (
+                "/qdrant.Points/SearchMatrixOffsets",
+                "/collections/{collection_name}/points/search/matrix/offsets",
+            ),
+            (
+                "/qdrant.Points/SearchMatrixPairs",
+                "/collections/{collection_name}/points/search/matrix/pairs",
+            ),
         ] {
             assert!(
-                GRPC_ENDPOINT_WHITELIST.binary_search(&endpoint).is_ok(),
-                "{endpoint} must be in GRPC_ENDPOINT_WHITELIST to match its REST sibling",
+                GRPC_ENDPOINT_WHITELIST.binary_search(&grpc).is_ok(),
+                "{grpc} must be in GRPC_ENDPOINT_WHITELIST to match its REST sibling {rest}",
+            );
+            assert!(
+                REST_ENDPOINT_WHITELIST.binary_search(&rest).is_ok(),
+                "{rest} must be in REST_ENDPOINT_WHITELIST to match its gRPC sibling {grpc}",
             );
         }
     }
