@@ -47,6 +47,12 @@ pub(crate) static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::V
 pub static NESTED_PAYLOAD_INDEX_FROM_VERSION: LazyLock<semver::Version> =
     LazyLock::new(|| semver::Version::parse("1.19.3-dev").unwrap());
 
+/// First version that rejects a committed [`CreateNamedVector`] for a sparse vector named `""`.
+/// Older peers accept and apply it, so consensus may only reject it once every peer runs this
+/// version. Otherwise upgraded and old peers would apply the same entry differently.
+pub static REJECT_EMPTY_SPARSE_VECTOR_NAME_FROM_VERSION: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.20.3-dev").unwrap());
+
 // *Operation wrapper structure is only required for better OpenAPI generation
 
 /// Create alternative name for a collection.
