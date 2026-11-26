@@ -435,8 +435,8 @@ pub fn get_quantized_vector_size(
 
 /// The vectors of the rotated, padded space, see [`TurboQuantizer::symmetric_vector`]. Exact for
 /// Dot and Cosine except at 2 and 4 bits with TQ+, whose score adds a correction stored with each
-/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ only the cross term is exact, the
-/// distance a proxy. Not score-equivalent for L1 at any width.
+/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ the distance is only close: the
+/// score takes the cosine of the angle between the signs. Not score-equivalent for L1 at any width.
 impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
     fn symmetric_dim(&self) -> usize {
         self.quantizer.get_padded_dim()
@@ -446,7 +446,8 @@ impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
         self.quantizer.symmetric_vector(code)
     }
 
-    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits), and
+    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits,
+    /// except for L2), and
     /// none where a NaN in the vector it encodes left its scale or correction NaN.
     fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
         if self.quantizer.score_symmetric(code, code).is_nan() {
