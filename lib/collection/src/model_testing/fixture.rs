@@ -10,12 +10,17 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
+use rand::rngs::SmallRng;
+use rand::seq::IndexedRandom;
+use rand::{RngExt, SeedableRng};
 use segment::data_types::index::{
+    BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
     Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface,
     TextIndexParams, TextScoringParams, TokenizerType,
 };
+use segment::data_types::modifier::Modifier;
 use segment::types::{
-    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, Memory,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, HnswConfig, Memory,
     MultiVectorConfig, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
     ScalarQuantizationConfig, ScalarType, TurboQuantBitSize, TurboQuantQuantizationConfig,
@@ -25,10 +30,10 @@ use segment::types::{
 use super::op::nested_indexes;
 use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
-use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use crate::config::{CollectionConfigInternal, CollectionParams, IdTrackerParams, WalConfig};
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{Datatype, SparseVectorParams, VectorsConfig};
+use crate::operations::types::{Datatype, SparseIndexParams, SparseVectorParams, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
@@ -114,6 +119,97 @@ fn quantization_config(kind: QuantizationKind) -> QuantizationConfig {
 /// default (see `config/config.yaml`); `Op::SetFlushInterval` moves it around during the run.
 pub(super) const INITIAL_FLUSH_INTERVAL_SEC: u64 = 5;
 
+/// Storage and index parameters of a run, drawn from its seed. With a single hard-coded choice
+/// every run exercised the same variants: payload in memory, the default id tracker placement,
+/// a WAL that never rolls over, searches that never reach the HNSW graph, in-memory payload and
+/// sparse indexes.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct FixtureVariation {
+    /// Payload on disk (mmap) instead of in memory.
+    on_disk_payload: bool,
+    /// Placement of the id tracker of indexed segments, `None` for the engine default.
+    id_tracker_memory: Option<Memory>,
+    /// WAL segment size, `None` for the 32 MB default, which a short run never fills. At 1 MB
+    /// the WAL rolls over segments and truncates acknowledged ones.
+    wal_capacity_mb: Option<usize>,
+    /// HNSW full scan threshold in KB, `None` for the default (10000), under which every search
+    /// of this small collection is a plain scan. A low value sends them through the graph.
+    hnsw_full_scan_threshold: Option<usize>,
+    /// Sparse index on disk (mmap) instead of in memory, `None` for the engine default.
+    sparse_index_on_disk: Option<bool>,
+    /// IDF modifier on the sparse vectors.
+    sparse_idf: bool,
+    /// The always-on payload indexes (`num`, `f`, `b`, `d`, `g`) on disk instead of in memory.
+    payload_index_on_disk: bool,
+}
+
+impl FixtureVariation {
+    /// Drawn from a generator of its own, so the op stream of the seed is unchanged.
+    pub(super) fn from_seed(seed: u64) -> Self {
+        let rng = &mut SmallRng::seed_from_u64(seed ^ 0x0066_6978_7475_7265);
+        let memories = [
+            None,
+            Some(Memory::Cold),
+            Some(Memory::Cached),
+            Some(Memory::Pinned),
+        ];
+        Self {
+            on_disk_payload: rng.random_bool(0.5),
+            id_tracker_memory: *memories.choose(rng).unwrap(),
+            wal_capacity_mb: rng.random_bool(0.5).then_some(1),
+            hnsw_full_scan_threshold: *[None, Some(1), Some(10)].choose(rng).unwrap(),
+            sparse_index_on_disk: *[None, Some(false), Some(true)].choose(rng).unwrap(),
+            sparse_idf: rng.random_bool(0.5),
+            payload_index_on_disk: rng.random_bool(0.5),
+        }
+    }
+
+    /// Back to the default full scan threshold. With append-only mutations, a search through
+    /// the HNSW graph can return the same point twice from one segment, which trips a
+    /// `debug_assert` in the search result processing (`segment/read_view/search.rs`).
+    /// TODO(model tester): drop once that is fixed.
+    pub(super) fn keep_searches_on_plain_scan(&mut self) {
+        self.hnsw_full_scan_threshold = None;
+    }
+}
+
+/// Schema of an always-on payload index: the plain field type, or its on-disk variant.
+fn eager_schema(schema_type: PayloadSchemaType, on_disk: bool) -> PayloadFieldSchema {
+    if !on_disk {
+        return PayloadFieldSchema::FieldType(schema_type);
+    }
+    let on_disk = Some(true);
+    let params = match schema_type {
+        // `range` stays on for `ScrollOrdered`, `lookup` for the equality filters and facets.
+        PayloadSchemaType::Integer => PayloadSchemaParams::Integer(IntegerIndexParams {
+            lookup: Some(true),
+            range: Some(true),
+            on_disk,
+            ..Default::default()
+        }),
+        PayloadSchemaType::Float => PayloadSchemaParams::Float(FloatIndexParams {
+            on_disk,
+            ..Default::default()
+        }),
+        PayloadSchemaType::Bool => PayloadSchemaParams::Bool(BoolIndexParams {
+            on_disk,
+            ..Default::default()
+        }),
+        PayloadSchemaType::Datetime => PayloadSchemaParams::Datetime(DatetimeIndexParams {
+            on_disk,
+            ..Default::default()
+        }),
+        PayloadSchemaType::Geo => PayloadSchemaParams::Geo(GeoIndexParams {
+            on_disk,
+            ..Default::default()
+        }),
+        PayloadSchemaType::Keyword | PayloadSchemaType::Text | PayloadSchemaType::Uuid => {
+            unreachable!("not an always-on index type: {schema_type:?}")
+        }
+    };
+    PayloadFieldSchema::FieldParams(params)
+}
+
 /// Build a fresh soak collection rooted at `storage_path`. Creates `collection/` and
 /// `snapshots/` subdirs, wiping any pre-existing contents — each soak run starts from a
 /// clean slate. If you need to preserve a crashed run's state for post-mortem, copy the
@@ -128,6 +224,7 @@ pub(super) async fn fixture(
     on_disk: bool,
     text_params: TextIndexParams,
     nested_index_setup: NestedIndexSetup,
+    variation: FixtureVariation,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
     let snapshots_dir = storage_path.join("snapshots");
@@ -140,7 +237,14 @@ pub(super) async fn fixture(
             .unwrap_or_else(|e| panic!("failed to create {}: {e:?}", dir.display()));
     }
 
-    let wal_config = WalConfig::default();
+    let wal_config = match variation.wal_capacity_mb {
+        None => WalConfig::default(),
+        Some(wal_capacity_mb) => WalConfig {
+            wal_capacity_mb,
+            wal_segments_ahead: 0,
+            ..WalConfig::default()
+        },
+    };
 
     // Build the initial vector schema from the candidate pool. The remaining (initially
     // inactive) candidates are reachable through `Op::CreateVectorName` later in the run.
@@ -167,8 +271,13 @@ pub(super) async fn fixture(
                 sparse_vectors.insert(
                     name.to_string(),
                     SparseVectorParams {
-                        index: None,
-                        modifier: None,
+                        index: variation
+                            .sparse_index_on_disk
+                            .map(|on_disk| SparseIndexParams {
+                                on_disk: Some(on_disk),
+                                ..Default::default()
+                            }),
+                        modifier: variation.sparse_idf.then_some(Modifier::Idf),
                     },
                 );
             }
@@ -193,9 +302,11 @@ pub(super) async fn fixture(
         sharding_method: None,
         read_fan_out_factor: None,
         read_fan_out_delay_ms: None,
-        on_disk_payload: Some(false),
+        on_disk_payload: Some(variation.on_disk_payload),
         payload: None,
-        id_tracker: None,
+        id_tracker: variation.id_tracker_memory.map(|memory| IdTrackerParams {
+            memory: Some(memory),
+        }),
     };
 
     // Optimizer config — `max_segment_size_kb` / `indexing_threshold_kb` are caller-supplied
@@ -221,7 +332,13 @@ pub(super) async fn fixture(
         params: collection_params,
         optimizer_config,
         wal_config,
-        hnsw_config: Default::default(),
+        hnsw_config: match variation.hnsw_full_scan_threshold {
+            None => HnswConfig::default(),
+            Some(full_scan_threshold) => HnswConfig {
+                full_scan_threshold,
+                ..HnswConfig::default()
+            },
+        },
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
         uuid: None,
@@ -287,7 +404,7 @@ pub(super) async fn fixture(
         .map(|(field, schema)| {
             (
                 field.parse().unwrap(),
-                PayloadFieldSchema::FieldType(*schema),
+                eager_schema(*schema, variation.payload_index_on_disk),
             )
         })
         .chain([("t".parse().unwrap(), text_schema)])
