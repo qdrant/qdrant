@@ -269,3 +269,32 @@ async fn test_create_shard_key_rejects_empty_placement() {
 
     collection.stop_gracefully().await;
 }
+
+#[tokio::test]
+async fn apply_state_uses_custom_shard_mapping() {
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = new_collection(source_dir.path()).await;
+    let shard_key = key("tenant");
+    source
+        .create_shard_key(shard_key.clone(), placement(1), ReplicaState::Active)
+        .await
+        .unwrap();
+    let mut state = source.state().await;
+    // The configured count is a default for new keys. This key only has shard 1.
+    state.config.params.shard_number = NonZeroU32::new(3).unwrap();
+    source.stop_gracefully().await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let collection = new_collection(dir.path()).await;
+    collection
+        .apply_state(state, PEER_ID, |_| {})
+        .await
+        .unwrap();
+
+    assert_eq!(registered_shard_ids(&collection).await, [1]);
+    assert_eq!(mapped_shard_ids(&collection, &shard_key).await, [1]);
+    assert_eq!(collection.config().await.params.shard_number.get(), 3);
+    let persisted = CollectionConfigInternal::load(dir.path()).unwrap();
+    assert_eq!(persisted.params.shard_number.get(), 3);
+    collection.stop_gracefully().await;
+}
