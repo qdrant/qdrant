@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use api::rest::MaxOptimizationThreads;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::json_path::JsonPath;
@@ -7,8 +8,8 @@ use segment::types::{Payload, PayloadFieldSchema, PointIdType, Slice, VectorName
 
 use super::super::Model;
 use super::super::op::{
-    NamedVectors, match_num_and_slice_filter, match_num_filter, model_entry_from, model_vector,
-    num_matches,
+    NamedVectors, OptimizerState, match_num_and_slice_filter, match_num_filter, model_entry_from,
+    model_vector, num_matches,
 };
 use super::{apply_update, to_named_persisted};
 use crate::collection::Collection;
@@ -328,6 +329,35 @@ pub(super) async fn apply_set_flush_interval(collection: &Collection, flush_inte
         })
         .await
         .expect("update flush_interval_sec failed");
+    collection.recreate_optimizers_background();
+}
+
+/// Turn the optimizer on or off on the live collection, mirroring the production
+/// `update_collection` path with `optimizers_config.max_optimization_threads`: persist the
+/// optimizer-config diff, then recreate the optimizers so the update workers pick it up.
+///
+/// Like [`apply_set_flush_interval`], the recreation runs in the background and we don't wait for
+/// it, so an optimization already running may finish (or be cancelled) while the loop keeps
+/// writing. The model isn't touched.
+pub(super) async fn apply_set_optimizer(collection: &Collection, state: OptimizerState) {
+    collection
+        .update_optimizer_params_from_diff(OptimizersConfigDiff {
+            max_optimization_threads: Some(MaxOptimizationThreads::Threads(
+                state.max_optimization_threads(),
+            )),
+            // Every other field stays `None` so the diff touches the optimizer thread count only.
+            deleted_threshold: None,
+            vacuum_min_vector_number: None,
+            default_segment_number: None,
+            max_segment_size: None,
+            #[expect(deprecated)]
+            memmap_threshold: None,
+            indexing_threshold: None,
+            flush_interval_sec: None,
+            prevent_unoptimized: None,
+        })
+        .await
+        .expect("update max_optimization_threads failed");
     collection.recreate_optimizers_background();
 }
 
