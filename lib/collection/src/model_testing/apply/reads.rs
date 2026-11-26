@@ -32,6 +32,7 @@ use super::super::op::{
     url_prefix_matches,
 };
 use super::super::{Model, ModelEntry, VectorValue};
+use super::topk;
 use crate::collection::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
@@ -562,18 +563,19 @@ pub(super) async fn apply_search(
             .await
             .expect("search failed")
             .iter()
-            .map(|r| r.id)
-            .collect::<AHashSet<PointIdType>>()
+            .map(|r| (r.id, r.score))
+            .collect::<Vec<(PointIdType, f32)>>()
     };
 
-    let returned_ids = run().await;
+    let scored = run().await;
+    let returned_ids: AHashSet<PointIdType> = scored.iter().map(|(id, _)| *id).collect();
     let (candidates, expected_len) =
         nearest_candidates(model, vector_name, filter_num, filter_url_prefix, limit);
     let strict = nearest_is_strict(exact, query);
 
     // Only re-run for the diagnostic comparison when we're about to fail the strict check.
     let retry_ids = if strict && returned_ids.len() != expected_len {
-        run().await
+        run().await.into_iter().map(|(id, _)| id).collect()
     } else {
         AHashSet::new()
     };
@@ -599,6 +601,20 @@ pub(super) async fn apply_search(
         filter_url_prefix,
         "search",
     );
+    if strict && topk::supported(vector_name) {
+        topk::check(
+            model,
+            vector_name,
+            query,
+            &candidates,
+            limit,
+            &scored,
+            &format!(
+                "search(exact, name={vector_name}, filter_num={filter_num:?}, \
+                 filter_url_prefix={filter_url_prefix:?}, limit={limit})"
+            ),
+        );
+    }
 }
 
 /// Basic coverage of the Query API. Issues a plain Nearest query (no prefetch/fusion) via
@@ -644,17 +660,18 @@ pub(super) async fn apply_query(
             .await
             .expect("query failed")
             .iter()
-            .map(|r| r.id)
-            .collect::<AHashSet<PointIdType>>()
+            .map(|r| (r.id, r.score))
+            .collect::<Vec<(PointIdType, f32)>>()
     };
 
-    let returned_ids = run().await;
+    let scored = run().await;
+    let returned_ids: AHashSet<PointIdType> = scored.iter().map(|(id, _)| *id).collect();
     let (candidates, expected_len) =
         nearest_candidates(model, vector_name, filter_num, filter_url_prefix, limit);
     let strict = nearest_is_strict(exact, query);
 
     let retry_ids = if strict && returned_ids.len() != expected_len {
-        run().await
+        run().await.into_iter().map(|(id, _)| id).collect()
     } else {
         AHashSet::new()
     };
@@ -680,6 +697,20 @@ pub(super) async fn apply_query(
         filter_url_prefix,
         "query",
     );
+    if strict && topk::supported(vector_name) {
+        topk::check(
+            model,
+            vector_name,
+            query,
+            &candidates,
+            limit,
+            &scored,
+            &format!(
+                "query(exact, name={vector_name}, filter_num={filter_num:?}, \
+                 filter_url_prefix={filter_url_prefix:?}, limit={limit})"
+            ),
+        );
+    }
 }
 
 /// Coverage of the Query API's `prefetch` + fusion path (the plain `Query` op only does a top-level
@@ -1970,7 +2001,7 @@ fn check_scores_by_definition(
 
 /// Nearest search restricted by a generated boolean filter. Every result has the vector and
 /// matches the filter in the model, and an exact scan returns exactly `limit` of the candidates
-/// (or all of them). Scores are not compared, like in `Search`.
+/// (or all of them), the best ones by the model's own scores.
 pub(super) async fn apply_search_by_expr(
     collection: &Collection,
     model: &Model,
@@ -1982,7 +2013,7 @@ pub(super) async fn apply_search_by_expr(
 ) {
     let ctx = format!("search_by_expr(name={vector_name}, exact={exact}, limit={limit}, {expr:?})");
     let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
-    let results: Vec<PointIdType> = collection
+    let results: Vec<(PointIdType, f32)> = collection
         .search(
             CoreSearchRequest {
                 query: QueryEnum::Nearest(named_query),
@@ -2006,7 +2037,7 @@ pub(super) async fn apply_search_by_expr(
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"))
         .iter()
-        .map(|r| r.id)
+        .map(|r| (r.id, r.score))
         .collect();
 
     let candidates: AHashSet<PointIdType> = model
@@ -2017,7 +2048,7 @@ pub(super) async fn apply_search_by_expr(
         .collect();
     // With points the engine may answer either way for, only membership can be checked.
     let ambiguous = model.values().any(|entry| expr.ambiguous(&entry.payload));
-    let returned: AHashSet<PointIdType> = results.iter().copied().collect();
+    let returned: AHashSet<PointIdType> = results.iter().map(|(id, _)| *id).collect();
     assert_eq!(
         returned.len(),
         results.len(),
@@ -2030,7 +2061,8 @@ pub(super) async fn apply_search_by_expr(
         "{ctx}: returned ids that do not match in the model: {extra:?}",
     );
     let expected_len = limit.min(candidates.len());
-    if nearest_is_strict(exact, query) && !ambiguous {
+    let strict = nearest_is_strict(exact, query) && !ambiguous;
+    if strict {
         let mut missing: Vec<_> = candidates.difference(&returned).copied().collect();
         missing.sort();
         assert_eq!(
@@ -2044,6 +2076,17 @@ pub(super) async fn apply_search_by_expr(
             results.len() <= expected_len,
             "{ctx}: returned {} points, expected at most {expected_len}",
             results.len(),
+        );
+    }
+    if strict && topk::supported(vector_name) {
+        topk::check(
+            model,
+            vector_name,
+            query,
+            &candidates,
+            limit,
+            &results,
+            &ctx,
         );
     }
 }
