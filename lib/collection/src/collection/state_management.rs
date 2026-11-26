@@ -1,18 +1,27 @@
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
+use segment::data_types::vector_name_config::{
+    DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
+};
+use segment::types::{VectorNameBuf, VectorStorageDatatype};
+use shard::operations::{
+    CollectionUpdateOperations, CreateVectorName, DeleteVectorName, VectorNameOperations,
+};
 
 use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
-use crate::config::{CollectionConfigInternal, CollectionParams};
+use crate::config::CollectionConfigInternal;
+use crate::operations::OperationWithClockTag;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::ReshardState;
@@ -49,9 +58,6 @@ impl Collection {
             payload_index_schema,
         } = state;
 
-        // Used to detect which named vectors have changed after applying new config
-        let old_collection_config = self.collection_config.read().await.params.clone();
-
         // Apply config first so that any replica created by apply_shard_info uses the target schema.
         let new_config = config.clone();
         self.apply_config(config).await?;
@@ -62,9 +68,9 @@ impl Collection {
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
         // Reconcile named vectors at the segment level to match the new config.
-        // This ensures segments have the correct vector storages after a Raft snapshot.
-        self.apply_vector_name_schema(old_collection_config, &new_config)
-            .await?;
+        // This inspects each local shard's actual segments so retries after a partial
+        // failure or restart repair any remaining schema divergence.
+        self.apply_vector_name_schema(&new_config).await?;
         Ok(())
     }
 
@@ -329,145 +335,211 @@ impl Collection {
     ///
     /// This is called during state application (Raft snapshot recovery) to ensure
     /// that segments have the correct vector storages, even if the node missed the
-    /// original create/delete vector name operations.
+    /// original create/delete vector name operations or is retrying after a partial
+    /// reconciliation failure.
     async fn apply_vector_name_schema(
         &self,
-        old_collection_params: CollectionParams,
         target_config: &CollectionConfigInternal,
     ) -> CollectionResult<()> {
-        use segment::data_types::vector_name_config::{
-            DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
-        };
-        use segment::types::VectorStorageDatatype;
+        let target_dense: BTreeMap<VectorNameBuf, DenseVectorConfig> = target_config
+            .params
+            .vectors
+            .params_iter()
+            .map(|(vector_name, target_params)| {
+                (
+                    vector_name.to_owned(),
+                    DenseVectorConfig {
+                        size: target_params.size.get() as usize,
+                        distance: target_params.distance,
+                        multivector_config: target_params.multivector_config,
+                        datatype: target_params.datatype.map(VectorStorageDatatype::from),
+                    },
+                )
+            })
+            .collect();
 
-        let mut to_create: Vec<(segment::types::VectorNameBuf, VectorNameConfig)> = Vec::new();
-        let mut to_delete: Vec<segment::types::VectorNameBuf> = Vec::new();
+        let target_sparse: BTreeMap<VectorNameBuf, SparseVectorConfig> = target_config
+            .params
+            .sparse_vectors
+            .as_ref()
+            .map(|sparse_vectors| {
+                sparse_vectors
+                    .iter()
+                    .map(|(vector_name, target_params)| {
+                        (
+                            vector_name.clone(),
+                            SparseVectorConfig {
+                                modifier: target_params.modifier,
+                                datatype: target_params
+                                    .index
+                                    .as_ref()
+                                    .and_then(|idx| idx.datatype)
+                                    .map(VectorStorageDatatype::from),
+                            },
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        // Dense vectors: compare target vs current
-        for (vector_name, target_params) in target_config.params.vectors.params_iter() {
-            let target_dense = DenseVectorConfig {
-                size: target_params.size.get() as usize,
-                distance: target_params.distance,
-                multivector_config: target_params.multivector_config,
-                datatype: target_params.datatype.map(VectorStorageDatatype::from),
+        let shards: Vec<Arc<ShardReplicaSet>> = self
+            .shards_holder
+            .read()
+            .await
+            .all_shards()
+            .map(Arc::clone)
+            .collect();
+
+        let mut shard_plans = Vec::new();
+        for shard in shards {
+            let Some(segments) = shard.local_segments().await else {
+                continue;
             };
 
-            match old_collection_params.vectors.get_params(vector_name) {
-                None => {
-                    // New vector — create it
-                    to_create.push((
-                        vector_name.to_owned(),
-                        VectorNameConfig::dense(target_dense),
-                    ));
-                }
-                Some(current_params) => {
-                    // Exists in both — check if parameters changed (delete+recreate)
-                    let current_dense = DenseVectorConfig {
-                        size: current_params.size.get() as usize,
-                        distance: current_params.distance,
-                        multivector_config: current_params.multivector_config,
-                        datatype: current_params.datatype.map(VectorStorageDatatype::from),
-                    };
-                    if current_dense != target_dense {
-                        to_delete.push(vector_name.to_owned());
-                        to_create.push((
-                            vector_name.to_owned(),
-                            VectorNameConfig::dense(target_dense),
-                        ));
+            let (to_delete, to_create) = {
+                let segments = segments.read();
+                let mut to_delete: BTreeSet<VectorNameBuf> = BTreeSet::new();
+                let mut to_create: BTreeMap<VectorNameBuf, VectorNameConfig> = BTreeMap::new();
+
+                for (_, segment) in segments.iter() {
+                    let segment_guard = segment.get().read();
+                    let segment_config = segment_guard.config();
+
+                    for (vector_name, expected_dense) in &target_dense {
+                        match segment_config.vector_data.get(vector_name.as_str()) {
+                            None => {
+                                to_create.insert(
+                                    vector_name.clone(),
+                                    VectorNameConfig::dense(expected_dense.clone()),
+                                );
+                            }
+                            Some(current_cfg) => {
+                                let current_dense = DenseVectorConfig {
+                                    size: current_cfg.size,
+                                    distance: current_cfg.distance,
+                                    multivector_config: current_cfg.multivector_config,
+                                    datatype: current_cfg.datatype,
+                                };
+                                if current_dense != *expected_dense {
+                                    to_delete.insert(vector_name.clone());
+                                    to_create.insert(
+                                        vector_name.clone(),
+                                        VectorNameConfig::dense(expected_dense.clone()),
+                                    );
+                                }
+                            }
+                        }
                     }
-                }
-            }
-        }
 
-        // Dense vectors: delete those in current but not in target
-        for (vector_name, _) in old_collection_params.vectors.params_iter() {
-            if target_config
-                .params
-                .vectors
-                .get_params(vector_name)
-                .is_none()
-            {
-                to_delete.push(vector_name.to_owned());
-            }
-        }
-
-        // Sparse vectors: compare target vs current
-        if let Some(target_sparse) = &target_config.params.sparse_vectors {
-            let current_sparse = old_collection_params.sparse_vectors.as_ref();
-            for (vector_name, target_params) in target_sparse {
-                let target_sparse_cfg = SparseVectorConfig {
-                    modifier: target_params.modifier,
-                    datatype: target_params
-                        .index
-                        .as_ref()
-                        .and_then(|idx| idx.datatype)
-                        .map(VectorStorageDatatype::from),
-                };
-
-                let current_exists = current_sparse.and_then(|c| c.get(vector_name));
-                match current_exists {
-                    None => {
-                        to_create.push((
-                            vector_name.clone(),
-                            VectorNameConfig::sparse(target_sparse_cfg),
-                        ));
+                    for vector_name in segment_config.vector_data.keys() {
+                        if !target_dense.contains_key(vector_name) {
+                            to_delete.insert(vector_name.clone());
+                        }
                     }
-                    Some(current_params) => {
-                        let current_sparse_cfg = SparseVectorConfig {
-                            modifier: current_params.modifier,
-                            datatype: current_params
-                                .index
-                                .as_ref()
-                                .and_then(|idx| idx.datatype)
-                                .map(VectorStorageDatatype::from),
-                        };
-                        if current_sparse_cfg != target_sparse_cfg {
-                            to_delete.push(vector_name.clone());
-                            to_create.push((
-                                vector_name.clone(),
-                                VectorNameConfig::sparse(target_sparse_cfg),
-                            ));
+
+                    for (vector_name, expected_sparse) in &target_sparse {
+                        match segment_config.sparse_vector_data.get(vector_name.as_str()) {
+                            None => {
+                                to_create.insert(
+                                    vector_name.clone(),
+                                    VectorNameConfig::sparse(*expected_sparse),
+                                );
+                            }
+                            Some(current_cfg) => {
+                                let current_sparse = SparseVectorConfig {
+                                    modifier: current_cfg.modifier,
+                                    datatype: current_cfg.index.datatype,
+                                };
+                                if current_sparse != *expected_sparse {
+                                    to_delete.insert(vector_name.clone());
+                                    to_create.insert(
+                                        vector_name.clone(),
+                                        VectorNameConfig::sparse(*expected_sparse),
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    for vector_name in segment_config.sparse_vector_data.keys() {
+                        if !target_sparse.contains_key(vector_name) {
+                            to_delete.insert(vector_name.clone());
                         }
                     }
                 }
+
+                (to_delete, to_create)
+            };
+
+            if !to_delete.is_empty() || !to_create.is_empty() {
+                shard_plans.push((shard, to_delete, to_create));
             }
         }
 
-        // Sparse vectors: delete those in current but not in target
-        if let Some(current_sparse) = &old_collection_params.sparse_vectors {
-            let target_sparse = target_config.params.sparse_vectors.as_ref();
-            for vector_name in current_sparse.keys() {
-                if !target_sparse.is_some_and(|t| t.contains_key(vector_name)) {
-                    to_delete.push(vector_name.clone());
-                }
-            }
-        }
-
-        if to_delete.is_empty() && to_create.is_empty() {
+        if shard_plans.is_empty() {
             return Ok(());
         }
 
-        // The collection config already contains the target schema. Apply the changes only to
-        // shards, deleting old storages before creating replacements for the same names.
-        let update_result = async {
-            for vector_name in to_delete {
-                self.delete_named_vector_on_shards(vector_name, WaitUntil::Segment)
-                    .await?;
-            }
+        // The collection config already contains the target schema. Apply the required
+        // deletions and creations per local shard, running all shard tasks to completion
+        // because `ShardReplicaSet::update_local` is not cancel safe.
+        let results = self
+            .update_runtime
+            .spawn(
+                async move {
+                    let local_updates = FuturesUnordered::new();
 
-            for (vector_name, config) in to_create {
-                self.create_named_vector_on_shards(vector_name, config, WaitUntil::Segment)
-                    .unmeasured(reason("Raft snapshot vector schema reconciliation"))
-                    .await?;
-            }
+                    for (shard, to_delete, to_create) in shard_plans {
+                        local_updates.push(async move {
+                            for vector_name in to_delete {
+                                let operation = OperationWithClockTag::from(
+                                    CollectionUpdateOperations::VectorNameOperation(
+                                        VectorNameOperations::DeleteVectorName(DeleteVectorName {
+                                            vector_name,
+                                        }),
+                                    ),
+                                );
+                                shard
+                                    .update_local(operation, WaitUntil::Segment, None, true)
+                                    .unmeasured(reason("Schema changes aren't measured"))
+                                    .await?;
+                            }
 
-            Ok(())
-        }
-        .await;
+                            for (vector_name, config) in to_create {
+                                let operation = OperationWithClockTag::from(
+                                    CollectionUpdateOperations::VectorNameOperation(
+                                        VectorNameOperations::CreateVectorName(CreateVectorName {
+                                            vector_name,
+                                            config,
+                                        }),
+                                    ),
+                                );
+                                shard
+                                    .update_local(operation, WaitUntil::Segment, None, true)
+                                    .unmeasured(reason(
+                                        "Raft snapshot vector schema reconciliation",
+                                    ))
+                                    .await?;
+                            }
+
+                            Ok::<(), CollectionError>(())
+                        });
+                    }
+
+                    local_updates.collect::<Vec<_>>().await
+                }
+                .in_current_ambient(),
+            )
+            .await?;
 
         // Refresh optimizers after segment updates, including when only some shards succeeded.
         self.recreate_optimizers_background();
-        update_result
+
+        for result in results {
+            result?;
+        }
+
+        Ok(())
     }
 
     /// Truncate unapplied WAL records for all local shards in the collection.

@@ -406,6 +406,18 @@ impl ShardReplicaSet {
         }
     }
 
+    /// The local shard's segments, if this replica set owns or proxies a local shard.
+    pub(crate) async fn local_segments(
+        &self,
+    ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
+        self.local
+            .read()
+            .await
+            .as_ref()
+            .and_then(|shard| shard.local_shard())
+            .map(|local| local.segments())
+    }
+
     /// The local shard's segments, for tests to inspect their layout and schema
     #[cfg(feature = "testing")]
     pub async fn local_segments_for_test(
