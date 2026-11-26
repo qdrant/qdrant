@@ -1,3 +1,4 @@
+mod expr;
 mod generators;
 mod nested;
 
@@ -7,6 +8,7 @@ use std::num::NonZeroU32;
 
 use ahash::AHashSet;
 use api::rest::RecommendStrategy;
+pub(super) use expr::FilterExpr;
 use generators::{
     random_bm25_params, random_direction, random_distinct_ids, random_distinct_points,
     random_existing_ids, random_flush_interval_sec, random_num, random_partial_named_vectors,
@@ -298,6 +300,23 @@ pub(super) enum Op {
     CountByNested(NestedFilter),
     /// Verification op: scroll all points matching a `nested` filter over `offers`.
     ScrollFilteredByNested(NestedFilter),
+    /// Verification op: count points matching a generated boolean filter, see [`expr`].
+    CountByExpr(FilterExpr),
+    /// Verification op: scroll all points matching a generated boolean filter.
+    ScrollByExpr(FilterExpr),
+    /// Verification op: nearest search restricted by a generated boolean filter, so the filter
+    /// goes through the cardinality estimate and the filtered-search planner, not only through
+    /// scroll and count.
+    SearchByExpr {
+        vector_name: VectorNameBuf,
+        query: VectorValue,
+        limit: usize,
+        exact: bool,
+        expr: FilterExpr,
+    },
+    /// Delete every point matching a generated boolean filter. The engine resolves the filter to
+    /// ids when the op is submitted, like `DeleteByFilter`.
+    DeleteByExpr(FilterExpr),
 }
 
 /// `QueryText` limit meaning "every match": above any id pool the tester is normally run with.
@@ -396,7 +415,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 46;
+    const N: usize = 50;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -446,6 +465,10 @@ impl Swarm {
         "CountByNested",
         "ScrollFilteredByNested",
         "SetOptimizer",
+        "CountByExpr",
+        "ScrollByExpr",
+        "SearchByExpr",
+        "DeleteByExpr",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -512,6 +535,10 @@ impl Swarm {
         // Config change, like `SetFlushInterval`: restarts every shard's update workers, so keep
         // it rare. Half the draws disable the optimizer, so a run spends long stretches with it off.
         1, // SetOptimizer
+        5, // CountByExpr
+        5, // ScrollByExpr
+        5, // SearchByExpr
+        2, // DeleteByExpr
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -924,6 +951,27 @@ impl Op {
             } else {
                 OptimizerState::Disabled
             }),
+            46 => Op::CountByExpr(FilterExpr::random(rng)),
+            47 => Op::ScrollByExpr(FilterExpr::random(rng)),
+            48 => {
+                let vector_name = random_vector_name(rng, active);
+                let query = random_query_for_name(rng, &vector_name);
+                Op::SearchByExpr {
+                    vector_name,
+                    query,
+                    limit: rng.random_range(1..=10),
+                    exact: rng.random_bool(0.5),
+                    expr: FilterExpr::random(rng),
+                }
+            }
+            49 => {
+                // A delete has to be predictable for every point, see `FilterExpr::has_except`.
+                let mut expr = FilterExpr::random(rng);
+                while expr.has_except() {
+                    expr = FilterExpr::random(rng);
+                }
+                Op::DeleteByExpr(expr)
+            }
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -978,6 +1026,10 @@ impl Op {
             Op::CountByNested(_) => "CountByNested",
             Op::ScrollFilteredByNested(_) => "ScrollFilteredByNested",
             Op::SetOptimizer(_) => "SetOptimizer",
+            Op::CountByExpr(_) => "CountByExpr",
+            Op::ScrollByExpr(_) => "ScrollByExpr",
+            Op::SearchByExpr { .. } => "SearchByExpr",
+            Op::DeleteByExpr(_) => "DeleteByExpr",
         }
     }
 }
@@ -1114,6 +1166,11 @@ pub(super) fn url_prefix_matches(payload: &Payload, prefix: &str) -> bool {
 pub(super) trait ModelFilter: std::fmt::Debug {
     fn filter(&self) -> Filter;
     fn matches(&self, payload: &Payload) -> bool;
+    /// Whether the engine may answer either way for this payload, because its index and its
+    /// payload check disagree. The verifiers then accept the point both in and out of a result.
+    fn ambiguous(&self, _payload: &Payload) -> bool {
+        false
+    }
 }
 
 /// A string match on `url`.

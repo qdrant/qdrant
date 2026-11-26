@@ -24,14 +24,14 @@ use shard::scroll::ScrollRequestInternal;
 use shard::segment_holder::SegmentId;
 
 use super::super::op::{
-    FusionKind, ModelFilter, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter,
+    FilterExpr, FusionKind, ModelFilter, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter,
     canonical_sparse, dense_diff, dense_matches, has_num, is_empty_filter, is_empty_matches,
     is_null_filter, is_null_matches, match_has_id_filter, match_has_vector_filter,
     match_num_and_slice_filter, match_num_filter, match_slice_filter, match_tag_filter,
     match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
     url_prefix_matches,
 };
-use super::super::{Model, VectorValue};
+use super::super::{Model, ModelEntry, VectorValue};
 use crate::collection::Collection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
@@ -1020,11 +1020,18 @@ pub(super) async fn apply_count_matching(
         .await
         .unwrap_or_else(|e| panic!("count({model_filter:?}) failed: {e:?}"))
         .count;
+    let certain = |entry: &&ModelEntry| !model_filter.ambiguous(&entry.payload);
     let expected = model
         .values()
+        .filter(certain)
         .filter(|entry| model_filter.matches(&entry.payload))
         .count();
-    assert_eq!(actual, expected, "count({model_filter:?}) mismatch");
+    let ambiguous = model.len() - model.values().filter(certain).count();
+    assert!(
+        (expected..=expected + ambiguous).contains(&actual),
+        "count({model_filter:?}) mismatch: engine {actual}, model {expected} \
+         (+ up to {ambiguous} ambiguous)",
+    );
 }
 
 pub(super) async fn apply_scroll_matching(
@@ -1050,11 +1057,19 @@ pub(super) async fn apply_scroll_matching(
         .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("scroll({model_filter:?}) failed: {e:?}"));
-    let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
+    // Points the engine may answer either way for are left out of both sides.
+    let certain = |id: &PointIdType| {
+        model
+            .get(id)
+            .is_none_or(|entry| !model_filter.ambiguous(&entry.payload))
+    };
+    let returned: AHashSet<PointIdType> =
+        scroll.points.iter().map(|r| r.id).filter(certain).collect();
     let expected: AHashSet<PointIdType> = model
         .iter()
         .filter(|(_, entry)| model_filter.matches(&entry.payload))
         .map(|(id, _)| *id)
+        .filter(certain)
         .collect();
     assert_id_sets_eq(&returned, &expected, &format!("scroll({model_filter:?})"));
 }
@@ -1949,6 +1964,86 @@ fn check_scores_by_definition(
             doc.len,
             point.score,
             shard_docs.len(),
+        );
+    }
+}
+
+/// Nearest search restricted by a generated boolean filter. Every result has the vector and
+/// matches the filter in the model, and an exact scan returns exactly `limit` of the candidates
+/// (or all of them). Scores are not compared, like in `Search`.
+pub(super) async fn apply_search_by_expr(
+    collection: &Collection,
+    model: &Model,
+    vector_name: &str,
+    query: &VectorValue,
+    limit: usize,
+    exact: bool,
+    expr: &FilterExpr,
+) {
+    let ctx = format!("search_by_expr(name={vector_name}, exact={exact}, limit={limit}, {expr:?})");
+    let named_query = NamedQuery::new(nearest_internal_query(query), vector_name);
+    let results: Vec<PointIdType> = collection
+        .search(
+            CoreSearchRequest {
+                query: QueryEnum::Nearest(named_query),
+                filter: Some(expr.filter()),
+                params: Some(SearchParams {
+                    exact,
+                    ..Default::default()
+                }),
+                limit,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            },
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"))
+        .iter()
+        .map(|r| r.id)
+        .collect();
+
+    let candidates: AHashSet<PointIdType> = model
+        .iter()
+        .filter(|(_, entry)| entry.vectors.contains_key(vector_name))
+        .filter(|(_, entry)| expr.matches(&entry.payload) || expr.ambiguous(&entry.payload))
+        .map(|(id, _)| *id)
+        .collect();
+    // With points the engine may answer either way for, only membership can be checked.
+    let ambiguous = model.values().any(|entry| expr.ambiguous(&entry.payload));
+    let returned: AHashSet<PointIdType> = results.iter().copied().collect();
+    assert_eq!(
+        returned.len(),
+        results.len(),
+        "{ctx}: an id is returned twice"
+    );
+    let mut extra: Vec<_> = returned.difference(&candidates).copied().collect();
+    extra.sort();
+    assert!(
+        extra.is_empty(),
+        "{ctx}: returned ids that do not match in the model: {extra:?}",
+    );
+    let expected_len = limit.min(candidates.len());
+    if nearest_is_strict(exact, query) && !ambiguous {
+        let mut missing: Vec<_> = candidates.difference(&returned).copied().collect();
+        missing.sort();
+        assert_eq!(
+            results.len(),
+            expected_len,
+            "{ctx}: {} candidates in the model, not returned: {missing:?}",
+            candidates.len(),
+        );
+    } else {
+        assert!(
+            results.len() <= expected_len,
+            "{ctx}: returned {} points, expected at most {expected_len}",
+            results.len(),
         );
     }
 }

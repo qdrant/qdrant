@@ -25,12 +25,12 @@ use crate::operations::types::Datatype;
 // that filter ranges have plenty of "clearly in" and "clearly out" points to avoid floating-
 // point boundary flakes between the engine and the model.
 
-const TAGS: [&str; 3] = ["a", "b", "c"];
+pub(super) const TAGS: [&str; 3] = ["a", "b", "c"];
 /// Keys the `is_empty` / `is_null` scroll filters probe: `e` is never indexed (payload fallback),
 /// `tag` has its keyword index toggled, `num` is always indexed.
 const EMPTINESS_KEYS: [&str; 3] = ["e", "tag", "num"];
 const FLOATS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
-const DATETIMES: [&str; 5] = [
+pub(super) const DATETIMES: [&str; 5] = [
     "2023-01-15T00:00:00Z",
     "2023-04-15T00:00:00Z",
     "2023-07-15T00:00:00Z",
