@@ -13,7 +13,27 @@ use crate::collection::Collection;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{VectorPersisted, VectorStructPersisted, WriteOrdering};
 
+tokio::task_local! {
+    /// The `wait` flag writes are submitted with, set by [`apply`] for the op it runs.
+    static WRITE_WAIT: bool;
+}
+
+/// Apply `op` to the collection and the model. With `wait` false, a write is only acknowledged:
+/// the caller has to drain the update queue before reading the collection again.
 pub(super) async fn apply(
+    collection: &Collection,
+    model: &mut Model,
+    active: &mut BTreeSet<VectorNameBuf>,
+    op: &Op,
+    no_proxies: bool,
+    wait: bool,
+) {
+    WRITE_WAIT
+        .scope(wait, apply_op(collection, model, active, op, no_proxies))
+        .await;
+}
+
+async fn apply_op(
     collection: &Collection,
     model: &mut Model,
     active: &mut BTreeSet<VectorNameBuf>,
@@ -266,8 +286,9 @@ pub(super) async fn apply(
 
 /// Submit a write op through the standard path and panic with the engine error on failure.
 async fn apply_update(collection: &Collection, op: CollectionUpdateOperations, ctx: &str) {
+    let wait = WRITE_WAIT.try_with(|wait| *wait).unwrap_or(true);
     collection
-        .update_from_client_simple(op, true, None, WriteOrdering::default())
+        .update_from_client_simple(op, wait, None, WriteOrdering::default())
         .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"));

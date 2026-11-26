@@ -24,6 +24,7 @@
 //! |----------------|-------------------------------------------------|---|
 //! | `Header`       | First line — run configuration                  | `seed`, `op_num`, `shard_count`, `id_pool`, `disable_optimizer`, `max_segment_size_kb`, `indexing_threshold_kb`, `flush_interval_sec`, `restart_probability`, `swarm_interval`, `disable_snapshots`, `edge_verify`, `enable_force_off`, `duration_sec` (null unless `--duration`) |
 //! | *(op variant)* | Each `Op` from the workload generator           | See `op_payload` below — `id`/`ids`/etc. depending on variant |
+//! | `NoWait`       | The op line that follows was submitted with `wait=false` | |
 //! | `Restart`      | Mid-run close+reopen+verify                     | `pre_points`, `pre_segments` |
 //! | `EdgeVerify`   | Edge-follower checkpoint (restart / end of run) | `points` (model size; written before the compare so a divergence panic is attributable) |
 //! | `EdgeVerifySkipped` | Edge checkpoint skipped: optimizer still busy at deadline | |
@@ -151,6 +152,14 @@ impl Trace {
             }
         }
         self.write(&Value::Object(map));
+    }
+
+    /// Marks the op line that follows as submitted with `wait=false`.
+    pub(super) fn nowait(&mut self, tick: usize) {
+        self.write(&json!({
+            "op": tick,
+            "kind": "NoWait",
+        }));
     }
 
     pub(super) fn restart(&mut self, tick: usize, pre_points: usize, pre_segments: usize) {
