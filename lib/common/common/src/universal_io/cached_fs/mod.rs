@@ -304,7 +304,7 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
         Ok(())
     }
 
-    /// Selectively populate the file info cache for `paths` instead of listing the whole prefix.
+    /// Selectively populate the file info cache for `paths` instead of listing the whole directory.
     pub async fn select_cache_file_info_async<P: AsRef<Path> + Send + Sync>(
         &mut self,
         paths: &[P],
@@ -475,7 +475,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 }
 
 /// Construction context for [`CachedReadFs`]: the inner filesystem's own
-/// construction context plus the prefix path under which the file listing
+/// construction context plus the directory under which the file listing
 /// snapshot is taken. Always constructed explicitly.
 pub struct CachedReadFsContext<C> {
     pub inner: C,
