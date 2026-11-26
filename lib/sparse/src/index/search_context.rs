@@ -305,14 +305,15 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 break;
             };
 
+            // A corrupt posting list may report a last id below its head, ignore it from then on
+            if self.max_record_id < start_batch_id {
+                self.max_record_id = PointOffsetType::MAX;
+            }
             // compute batch range of contiguous ids for the next batch
-            // A corrupt posting list may have its last id below its first, never end the batch
-            // before it starts
             let last_batch_id = min(
                 start_batch_id.saturating_add(ADVANCE_BATCH_SIZE as u32),
                 self.max_record_id,
-            )
-            .max(start_batch_id);
+            );
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
