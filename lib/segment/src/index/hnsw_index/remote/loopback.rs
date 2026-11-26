@@ -179,6 +179,7 @@ impl LoopbackIndexer {
             options: RunOptions {
                 num_threads: 2,
                 heartbeat_interval: Duration::from_millis(100),
+                heartbeat_patience: Duration::from_secs(60),
                 read_batch: 1000,
             },
             work_dir: std::env::temp_dir(),

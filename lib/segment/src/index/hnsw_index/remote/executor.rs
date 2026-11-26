@@ -80,6 +80,10 @@ pub trait TaskSource: Sync {
 pub struct RunOptions {
     pub num_threads: usize,
     pub heartbeat_interval: Duration,
+    /// Give the task up once no heartbeat has reached core for this long. Core gives a task
+    /// up after its own lease without a call (`heartbeat_timeout_sec`, 60 s by default), so
+    /// a longer silence means the build is for nothing: core is gone, or builds elsewhere.
+    pub heartbeat_patience: Duration,
     /// Points per `ReadVectors` call.
     pub read_batch: u32,
 }
@@ -89,6 +93,7 @@ impl Default for RunOptions {
         Self {
             num_threads: common::defaults::thread_count_for_hnsw(common::cpu::get_num_cpus()),
             heartbeat_interval: Duration::from_secs(5),
+            heartbeat_patience: Duration::from_secs(120),
             read_batch: 65536,
         }
     }
@@ -159,6 +164,7 @@ pub fn run_task(
 
     let (progress_view, progress) = new_progress_tracker();
     let cancelled = AtomicBool::new(false);
+    let unreachable = AtomicBool::new(false);
     let done = AtomicBool::new(false);
     let stopped = AtomicBool::new(false);
 
@@ -176,6 +182,7 @@ pub fn run_task(
         // Heartbeats renew the lease during every stage (D6)
         scope.spawn(|| {
             let mut last = Instant::now();
+            let mut last_reached = Instant::now();
             while !done.load(Ordering::Relaxed) {
                 std::thread::sleep(Duration::from_millis(50));
                 if shutdown.load(Ordering::Relaxed) {
@@ -187,14 +194,20 @@ pub fn run_task(
                 last = Instant::now();
                 let tree = progress_view.snapshot("remote_build");
                 match source.heartbeat(task_progress(&tree)) {
-                    Ok(HeartbeatAction::Continue) => {}
+                    Ok(HeartbeatAction::Continue) => last_reached = Instant::now(),
                     Ok(HeartbeatAction::Cancel) | Err(SourceError::PermissionDenied) => {
                         cancelled.store(true, Ordering::Relaxed);
                         stopped.store(true, Ordering::Relaxed);
                     }
                     Err(SourceError::Other(err)) => {
-                        // Core may be briefly unreachable: keep going, the lease decides
+                        // Core may be briefly unreachable: keep going for a while. Core
+                        // cannot cancel a task it cannot reach the indexer of, and a dead
+                        // core never will, so the indexer has to give up on its own.
                         log::warn!("Heartbeat for task {} failed: {err}", task.task_id);
+                        if last_reached.elapsed() > options.heartbeat_patience {
+                            unreachable.store(true, Ordering::Relaxed);
+                            stopped.store(true, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -254,6 +267,15 @@ pub fn run_task(
         Err(_) if shutdown.load(Ordering::Relaxed) => {
             let _ = source.fail("shutdown");
             RunOutcome::Shutdown
+        }
+        Err(_) if unreachable.load(Ordering::Relaxed) => {
+            // If core is back and still waits, it learns at once
+            let reason = format!(
+                "no heartbeat reached core for {:?}",
+                options.heartbeat_patience,
+            );
+            let _ = source.fail(&reason);
+            RunOutcome::Failed(reason)
         }
         Err(SourceError::PermissionDenied) => RunOutcome::Dropped("token revoked".to_string()),
         Err(SourceError::Other(reason)) => {
@@ -715,6 +737,67 @@ mod tests {
             quantization: None,
             has_payload_blocks: true,
             max_block_wait,
+        }
+    }
+
+    /// A core that hands a task out, serves its vectors slowly, and answers no heartbeat.
+    struct GoneCore;
+
+    impl TaskSource for GoneCore {
+        fn get_task(&self) -> SourceResult<FetchedTask> {
+            let mut params = params(Duration::from_secs(1));
+            params.has_payload_blocks = false;
+            Ok(FetchedTask {
+                task_id: Uuid::new_v4(),
+                params,
+                graph_format_versions: vec![GRAPH_FORMAT_VERSION_V1],
+            })
+        }
+
+        fn read_vectors(
+            &self,
+            start: PointOffsetType,
+            end: PointOffsetType,
+            sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
+        ) -> SourceResult<()> {
+            std::thread::sleep(Duration::from_millis(100));
+            (start..end).try_for_each(|point| sink(point, &[0; 8]))
+        }
+
+        fn read_payload_blocks(&self, _next: u64) -> SourceResult<BlocksBatch> {
+            unimplemented!()
+        }
+
+        fn heartbeat(&self, _progress: TaskProgress) -> SourceResult<HeartbeatAction> {
+            Err(SourceError::Other("connection refused".to_string()))
+        }
+
+        fn upload(&self, _graph: WireGraph) -> SourceResult<()> {
+            panic!("the build must stop before the upload")
+        }
+
+        fn fail(&self, _reason: &str) -> SourceResult<()> {
+            Err(SourceError::Other("connection refused".to_string()))
+        }
+    }
+
+    #[test]
+    fn task_is_given_up_when_core_is_unreachable() {
+        // 10 points read one per 100 ms: the read alone outlasts the patience
+        let options = RunOptions {
+            num_threads: 1,
+            heartbeat_interval: Duration::from_millis(50),
+            heartbeat_patience: Duration::from_millis(200),
+            read_batch: 1,
+        };
+        let work_dir = tempfile::tempdir().unwrap();
+        let shutdown = AtomicBool::new(false);
+        let report = run_task(&GoneCore, &options, work_dir.path(), None, &shutdown);
+        match report.outcome {
+            RunOutcome::Failed(reason) => assert!(reason.contains("no heartbeat"), "{reason}"),
+            RunOutcome::Uploaded | RunOutcome::Dropped(_) | RunOutcome::Shutdown => {
+                panic!("unexpected outcome {:?}", report.outcome)
+            }
         }
     }
 
