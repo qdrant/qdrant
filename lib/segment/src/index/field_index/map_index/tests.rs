@@ -255,31 +255,29 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
 ///   unique values, or the estimate collapses to zero while points still match.
 /// - A point holding an excluded value still matches through any other value it has.
 #[rstest]
-#[case(IndexType::MutableGridstore)]
-#[case(IndexType::Mmap)]
-#[case(IndexType::RamMmap)]
-fn test_except_cardinality_bounds(#[case] index_type: IndexType) {
+// Excludes one of the three points, with as many absent values as unique ones.
+#[case(vec![vec![1], vec![2], vec![3]], &[1, 100, 200, 300], 2)]
+// The first point matches through 2, absent values included.
+#[case(vec![vec![1, 2], vec![1]], &[1, 100, 200], 1)]
+// Every point holds the excluded value, and every point matches through 2.
+#[case(vec![vec![1, 2], vec![1, 2]], &[1], 2)]
+fn test_except_cardinality_bounds(
+    #[case] data: Vec<Vec<IntPayloadType>>,
+    #[case] excluded: &[IntPayloadType],
+    #[case] matching: usize,
+    #[values(IndexType::MutableGridstore, IndexType::Mmap, IndexType::RamMmap)]
+    index_type: IndexType,
+) {
     let _scope = ambient::test_guard();
-    let cases: [(Vec<Vec<IntPayloadType>>, &[IntPayloadType], usize); 3] = [
-        // Excludes one of the three points, with as many absent values as unique ones.
-        (vec![vec![1], vec![2], vec![3]], &[1, 100, 200, 300], 2),
-        // The first point matches through 2, absent values included.
-        (vec![vec![1, 2], vec![1]], &[1, 100, 200], 1),
-        // Every point holds the excluded value, and every point matches through 2.
-        (vec![vec![1, 2], vec![1, 2]], &[1], 2),
-    ];
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+    let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
-    for (data, excluded, matching) in cases {
-        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
-        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
-
-        let estimation = index.except_cardinality(excluded.iter());
-        assert!(
-            estimation.min <= matching && matching <= estimation.max,
-            "{data:?} except {excluded:?}: {matching} points match, estimated {estimation:?}",
-        );
-    }
+    let estimation = index.except_cardinality(excluded.iter());
+    assert!(
+        estimation.min <= matching && matching <= estimation.max,
+        "{data:?} except {excluded:?}: {matching} points match, estimated {estimation:?}",
+    );
 }
 
 #[rstest]
