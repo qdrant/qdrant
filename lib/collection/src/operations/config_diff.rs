@@ -7,8 +7,8 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, Memory, ProductQuantization, ScalarQuantization,
-    StrictModeConfig, TurboQuantization,
+    BinaryQuantization, HnswConfig, IndexingAlgorithm, IndexingEffort, Memory, ProductQuantization,
+    ScalarQuantization, StrictModeConfig, TurboQuantization,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
@@ -43,6 +43,8 @@ pub struct HnswConfigDiff {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub m: Option<usize>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
+    /// If unset, derived from `indexing_effort`: 64 for `low`, 100 for `medium`,
+    /// 200 for `high`, 400 for `xhigh`.
     #[validate(range(min = 4))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ef_construct: Option<usize>,
@@ -85,6 +87,13 @@ pub struct HnswConfigDiff {
     /// Requires quantized vectors to be enabled. Multi-vectors are not supported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_storage: Option<bool>,
+    /// Algorithm that builds the graph. Default: `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// How much work the graph build may spend on quality. Sets the parameters of graphs built
+    /// by PiPNN, and the default `ef_construct` of graphs built by HNSW. Default: `medium`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
@@ -236,17 +245,21 @@ impl DiffConfig<HnswConfigDiff> for HnswConfig {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = diff;
 
         HnswConfig {
             m: m.unwrap_or(self.m),
-            ef_construct: ef_construct.unwrap_or(self.ef_construct),
+            ef_construct: ef_construct.or(self.ef_construct),
             full_scan_threshold: full_scan_threshold.unwrap_or(self.full_scan_threshold),
             max_indexing_threads: max_indexing_threads.unwrap_or(self.max_indexing_threads),
             on_disk: on_disk.or(self.on_disk),
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            indexing_algorithm: indexing_algorithm.or(self.indexing_algorithm),
+            indexing_effort: indexing_effort.or(self.indexing_effort),
         }
     }
 }
@@ -262,6 +275,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = diff;
 
         HnswConfigDiff {
@@ -273,6 +288,8 @@ impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {
             memory: memory.or(self.memory),
             payload_m: payload_m.or(self.payload_m),
             inline_storage: inline_storage.or(self.inline_storage),
+            indexing_algorithm: indexing_algorithm.or(self.indexing_algorithm),
+            indexing_effort: indexing_effort.or(self.indexing_effort),
         }
     }
 }
@@ -434,17 +451,21 @@ impl From<HnswConfig> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = config;
 
         HnswConfigDiff {
             m: Some(m),
-            ef_construct: Some(ef_construct),
+            ef_construct,
             full_scan_threshold: Some(full_scan_threshold),
             max_indexing_threads: Some(max_indexing_threads),
             on_disk,
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         }
     }
 }

@@ -203,7 +203,8 @@ impl From<CollectionConfigInternal> for CollectionConfig {
 
         CollectionConfig {
             params,
-            hnsw_config,
+            // Always report the `ef_construct` the graphs are built with
+            hnsw_config: hnsw_config.with_resolved_ef_construct(),
             optimizer_config,
             wal_config: Some(wal_config),
             quantization_config,

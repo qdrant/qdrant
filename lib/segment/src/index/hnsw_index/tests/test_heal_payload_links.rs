@@ -312,7 +312,7 @@ fn build_index<R: Rng + ?Sized>(
     let full_scan_threshold_kb = 256 * DIM * size_of::<f32>() / 1024;
     let hnsw_config = HnswConfig {
         m,
-        ef_construct: 64,
+        ef_construct: Some(64),
         full_scan_threshold: full_scan_threshold_kb,
         max_indexing_threads: 2,
         payload_m: Some(16),

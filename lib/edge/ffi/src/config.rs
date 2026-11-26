@@ -9,7 +9,8 @@ use segment::types::{
     BinaryQuantizationEncoding as SegmentBinaryQuantizationEncoding,
     BinaryQuantizationQueryEncoding as SegmentBinaryQuantizationQueryEncoding,
     CompressionRatio as SegmentCompressionRatio, Distance as SegmentDistance,
-    HnswConfig as SegmentHnswConfig, Indexes, Memory as SegmentMemory,
+    HnswConfig as SegmentHnswConfig, Indexes, IndexingAlgorithm as SegmentIndexingAlgorithm,
+    IndexingEffort as SegmentIndexingEffort, Memory as SegmentMemory,
     MultiVectorComparator as SegmentMultiVectorComparator,
     MultiVectorConfig as SegmentMultiVectorConfig, PayloadStorageType, ProductQuantization,
     ProductQuantizationConfig, QuantizationConfig as SegmentQuantizationConfig, ScalarQuantization,
@@ -378,6 +379,68 @@ impl From<SegmentMemory> for Memory {
     }
 }
 
+/// Algorithm that builds the HNSW graph.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum IndexingAlgorithm {
+    /// PiPNN for the main graph of large segments with vectors it supports,
+    /// HNSW otherwise.
+    Auto,
+    /// Insert the points one by one into the graph. `ef_construct` controls
+    /// the quality.
+    Hnsw,
+}
+
+impl From<IndexingAlgorithm> for SegmentIndexingAlgorithm {
+    fn from(algorithm: IndexingAlgorithm) -> Self {
+        match algorithm {
+            IndexingAlgorithm::Auto => SegmentIndexingAlgorithm::Auto,
+            IndexingAlgorithm::Hnsw => SegmentIndexingAlgorithm::Hnsw,
+        }
+    }
+}
+
+impl From<SegmentIndexingAlgorithm> for IndexingAlgorithm {
+    fn from(algorithm: SegmentIndexingAlgorithm) -> Self {
+        match algorithm {
+            SegmentIndexingAlgorithm::Auto => IndexingAlgorithm::Auto,
+            SegmentIndexingAlgorithm::Hnsw => IndexingAlgorithm::Hnsw,
+        }
+    }
+}
+
+/// How much work the graph build may spend on quality. Sets the parameters of
+/// graphs built by PiPNN, and the default `ef_construct` of graphs built by
+/// HNSW. An `ef_construct` set explicitly takes precedence.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum IndexingEffort {
+    Low,
+    Medium,
+    High,
+    XHigh,
+}
+
+impl From<IndexingEffort> for SegmentIndexingEffort {
+    fn from(effort: IndexingEffort) -> Self {
+        match effort {
+            IndexingEffort::Low => SegmentIndexingEffort::Low,
+            IndexingEffort::Medium => SegmentIndexingEffort::Medium,
+            IndexingEffort::High => SegmentIndexingEffort::High,
+            IndexingEffort::XHigh => SegmentIndexingEffort::XHigh,
+        }
+    }
+}
+
+impl From<SegmentIndexingEffort> for IndexingEffort {
+    fn from(effort: SegmentIndexingEffort) -> Self {
+        match effort {
+            SegmentIndexingEffort::Low => IndexingEffort::Low,
+            SegmentIndexingEffort::Medium => IndexingEffort::Medium,
+            SegmentIndexingEffort::High => IndexingEffort::High,
+            SegmentIndexingEffort::XHigh => IndexingEffort::XHigh,
+        }
+    }
+}
+
 // ── Quantization configs ────────────────────────────────────────────────────
 
 /// Parameters for scalar quantization.
@@ -661,8 +724,10 @@ pub struct HnswIndexConfig {
     #[uniffi(default = 16)]
     pub m: u64,
     /// Neighbours considered while building. Higher = better index, slower build.
-    #[uniffi(default = 100)]
-    pub ef_construct: u64,
+    /// Derived from `indexing_effort` when unset: 64 for `Low`, 100 for
+    /// `Medium`, 200 for `High`, 400 for `XHigh`.
+    #[uniffi(default = None)]
+    pub ef_construct: Option<u64>,
     /// Below this size (KB) a full scan is preferred over HNSW traversal.
     #[uniffi(default = 10000)]
     pub full_scan_threshold: u64,
@@ -675,6 +740,13 @@ pub struct HnswIndexConfig {
     /// Custom `m` for the payload index graph; defaults to `m` when unset.
     #[uniffi(default = None)]
     pub payload_m: Option<u64>,
+    /// Algorithm that builds the graph. Defaults to `Auto` when unset.
+    #[uniffi(default = None)]
+    pub indexing_algorithm: Option<IndexingAlgorithm>,
+    /// Effort of the graph build: the parameters of PiPNN and the default
+    /// `ef_construct`. Defaults to `Medium` when unset.
+    #[uniffi(default = None)]
+    pub indexing_effort: Option<IndexingEffort>,
 }
 
 // The FFI surface only carries the `memory` placement; the deprecated
@@ -691,16 +763,20 @@ impl From<HnswIndexConfig> for SegmentHnswConfig {
             max_indexing_threads,
             memory,
             payload_m,
+            indexing_algorithm,
+            indexing_effort,
         } = c;
         SegmentHnswConfig {
             m: crate::error::clamp_usize(m),
-            ef_construct: crate::error::clamp_usize(ef_construct),
+            ef_construct: ef_construct.map(crate::error::clamp_usize),
             full_scan_threshold: crate::error::clamp_usize(full_scan_threshold),
             max_indexing_threads: crate::error::clamp_usize(max_indexing_threads),
             on_disk: None,
             memory: memory.map(SegmentMemory::from),
             payload_m: payload_m.map(crate::error::clamp_usize),
             inline_storage: None,
+            indexing_algorithm: indexing_algorithm.map(SegmentIndexingAlgorithm::from),
+            indexing_effort: indexing_effort.map(SegmentIndexingEffort::from),
         }
     }
 }
@@ -719,10 +795,12 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
             // Not exposed over FFI; requires quantization and is a
             // server-side disk/speed trade-off tuned at optimizer level.
             inline_storage: _,
+            indexing_algorithm,
+            indexing_effort,
         } = c;
         HnswIndexConfig {
             m: m as u64,
-            ef_construct: ef_construct as u64,
+            ef_construct: ef_construct.map(|v| v as u64),
             full_scan_threshold: full_scan_threshold as u64,
             max_indexing_threads: max_indexing_threads as u64,
             // None-preserving legacy resolution: unlike `memory_placement()`,
@@ -731,6 +809,8 @@ impl From<SegmentHnswConfig> for HnswIndexConfig {
             memory: SegmentMemory::resolve(memory, on_disk.map(SegmentMemory::from_on_disk))
                 .map(Memory::from),
             payload_m: payload_m.map(|v| v as u64),
+            indexing_algorithm: indexing_algorithm.map(IndexingAlgorithm::from),
+            indexing_effort: indexing_effort.map(IndexingEffort::from),
         }
     }
 }
@@ -1070,11 +1150,13 @@ pub(crate) fn validate_hnsw(scope: &str, hnsw: &HnswIndexConfig) -> crate::error
             "{scope}: hnsw payload_m ({payload_m}) exceeds the maximum of {MAX_HNSW_M}"
         )));
     }
-    if hnsw.ef_construct < MIN_HNSW_EF_CONSTRUCT || hnsw.ef_construct > MAX_HNSW_EF_CONSTRUCT {
+    // Unset is fine: derived from `indexing_effort`, always in range
+    if let Some(ef_construct) = hnsw.ef_construct
+        && !(MIN_HNSW_EF_CONSTRUCT..=MAX_HNSW_EF_CONSTRUCT).contains(&ef_construct)
+    {
         return Err(crate::error::EdgeError::invalid_argument(format!(
-            "{scope}: hnsw ef_construct ({}) is out of range \
-             {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}",
-            hnsw.ef_construct
+            "{scope}: hnsw ef_construct ({ef_construct}) is out of range \
+             {MIN_HNSW_EF_CONSTRUCT}..={MAX_HNSW_EF_CONSTRUCT}"
         )));
     }
     if hnsw.max_indexing_threads > MAX_HNSW_INDEXING_THREADS {

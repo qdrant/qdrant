@@ -123,16 +123,23 @@ pub(in crate::index::hnsw_index) struct PartitionParams {
     pub max_depth: usize,
 }
 
-impl Default for PartitionParams {
-    fn default() -> Self {
+impl PartitionParams {
+    /// The default parameters with `fanout`, which the build's effort sets.
+    pub fn with_fanout(fanout: Vec<usize>) -> Self {
         Self {
             max_leaf_size: DEFAULT_MAX_LEAF_SIZE,
             min_leaf_size: DEFAULT_MIN_LEAF_SIZE,
             leader_fraction: DEFAULT_LEADER_FRACTION,
             max_leaders: DEFAULT_MAX_LEADERS,
-            fanout: DEFAULT_FANOUT.to_vec(),
+            fanout,
             max_depth: DEFAULT_MAX_DEPTH,
         }
+    }
+}
+
+impl Default for PartitionParams {
+    fn default() -> Self {
+        Self::with_fanout(DEFAULT_FANOUT.to_vec())
     }
 }
 

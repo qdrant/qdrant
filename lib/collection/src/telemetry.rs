@@ -212,7 +212,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
         } = config;
         CollectionConfigTelemetry {
             params,
-            hnsw_config,
+            hnsw_config: hnsw_config.with_resolved_ef_construct(),
             optimizer_config,
             wal_config,
             quantization_config,

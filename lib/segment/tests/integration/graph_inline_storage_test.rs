@@ -42,13 +42,15 @@ fn indexed_config(
     #[expect(deprecated, reason = "HnswConfig still carries the on_disk flag")]
     let hnsw_config = HnswConfig {
         m: 16,
-        ef_construct: 64,
+        ef_construct: Some(64),
         full_scan_threshold: 1,
         max_indexing_threads: 2,
         on_disk: None,
         memory: None,
         payload_m: None,
         inline_storage: Some(inline_storage),
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
     #[expect(
         deprecated,

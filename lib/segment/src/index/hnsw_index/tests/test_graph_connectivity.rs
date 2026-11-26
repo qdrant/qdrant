@@ -55,12 +55,14 @@ fn test_graph_connectivity() {
     let hnsw_config = HnswConfig {
         memory: None,
         m,
-        ef_construct,
+        ef_construct: Some(ef_construct),
         full_scan_threshold,
         max_indexing_threads: 4,
         on_disk: Some(false),
         payload_m: None,
         inline_storage: None,
+        indexing_algorithm: None,
+        indexing_effort: None,
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);

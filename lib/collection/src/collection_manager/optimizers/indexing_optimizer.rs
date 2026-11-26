@@ -836,12 +836,14 @@ mod tests {
         let hnsw_config = HnswConfig {
             memory: None,
             m: 16,
-            ef_construct: 100,
+            ef_construct: Some(100),
             full_scan_threshold: 10,
             max_indexing_threads: 0,
             on_disk: None,
             payload_m: None,
             inline_storage: None,
+            indexing_algorithm: None,
+            indexing_effort: None,
         };
 
         {
@@ -1033,12 +1035,14 @@ mod tests {
             let hnsw_config = HnswConfig {
                 memory: None,
                 m: 16,
-                ef_construct: 16,
+                ef_construct: Some(16),
                 full_scan_threshold: 1,
                 max_indexing_threads: 1,
                 on_disk: params.hnsw_on_disk,
                 payload_m: None,
                 inline_storage: params.hnsw_inline_storage,
+                indexing_algorithm: None,
+                indexing_effort: None,
             };
             let quantization_config = params.quantized.map(|quantized| {
                 QuantizationConfig::Binary(BinaryQuantization {

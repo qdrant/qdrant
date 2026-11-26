@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use api::conversions::json::json_path_from_proto;
 use api::grpc::conversions::{
+    convert_indexing_algorithm_from_proto_lossy, convert_indexing_algorithm_to_proto,
+    convert_indexing_effort_from_proto_lossy, convert_indexing_effort_to_proto,
     convert_memory_from_proto, convert_memory_from_proto_lossy, convert_memory_to_proto,
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist,
@@ -249,6 +251,8 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = value;
         Self {
             m: m.map(|v| v as usize),
@@ -259,6 +263,8 @@ impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
             memory: convert_memory_from_proto_lossy(memory),
             payload_m: payload_m.map(|v| v as usize),
             inline_storage,
+            indexing_algorithm: convert_indexing_algorithm_from_proto_lossy(indexing_algorithm),
+            indexing_effort: convert_indexing_effort_from_proto_lossy(indexing_effort),
         }
     }
 }
@@ -274,6 +280,8 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = value;
         Self {
             m: m.map(|v| v as u64),
@@ -284,6 +292,8 @@ impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
             memory: convert_memory_to_proto(memory),
             payload_m: payload_m.map(|v| v as u64),
             inline_storage,
+            indexing_algorithm: convert_indexing_algorithm_to_proto(indexing_algorithm),
+            indexing_effort: convert_indexing_effort_to_proto(indexing_effort),
         }
     }
 }
@@ -482,6 +492,8 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             memory,
             payload_m,
             inline_storage,
+            indexing_algorithm,
+            indexing_effort,
         } = hnsw_config;
 
         let CollectionParams {
@@ -566,13 +578,15 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
-                    ef_construct: Some(ef_construct as u64),
+                    ef_construct: ef_construct.map(|v| v as u64),
                     full_scan_threshold: Some(full_scan_threshold as u64),
                     max_indexing_threads: Some(max_indexing_threads as u64),
                     on_disk,
                     memory: convert_memory_to_proto(memory),
                     payload_m: payload_m.map(|v| v as u64),
                     inline_storage,
+                    indexing_algorithm: convert_indexing_algorithm_to_proto(indexing_algorithm),
+                    indexing_effort: convert_indexing_effort_to_proto(indexing_effort),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
                     deleted_threshold: Some(deleted_threshold),

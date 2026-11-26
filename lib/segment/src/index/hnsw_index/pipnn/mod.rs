@@ -63,7 +63,8 @@
 //! Level 0 holds every point and reaches the peak, and the order of the levels hardly matters
 //! for it: each level above has about `1/m` of the points of the one below. From the bottom up,
 //! nothing else is held at the peak; top down, the upper levels' links would be. Per point, at
-//! level 0 with `m = 16` (32 links) and the default parameters:
+//! level 0 with `m = 16` (32 links) and the parameters of the `high` effort (leaf k 4,
+//! reservoir factor 2, fanout `[10, 3]`):
 //!
 //! | Buffer | Bytes per point | When |
 //! |---|---|---|
@@ -77,7 +78,9 @@
 //! | Backlinks, sorted | 8 per link | Backlinks, after the reservoirs are freed |
 //!
 //! That's a peak of about 0.9 GB at 1M points, during the leaf k-NN of level 0, on top of the
-//! vectors. A reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
+//! vectors. The reservoir factor of 3 of the `xhigh` effort adds half of the reservoirs, about
+//! 0.3 GB, and its fanout `[15, 3]` puts each point in about 45 leaves. The fanout `[7, 2]` of
+//! the `medium` effort puts it in about 14.
 
 mod backlinks;
 mod duplicates;
@@ -107,6 +110,7 @@ use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
 use super::HnswM;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::types::IndexingEffort;
 use crate::vector_storage::matrix_scorer::MatrixScorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{NotDeletedChecker, VectorStorageEnum, VectorStorageRead as _};
@@ -131,26 +135,88 @@ pub(super) struct PipnnParams {
     pub seed: u64,
 }
 
-/// Default [`PipnnParams::leaf_k`]. The paper's default is 2, and it finds that "3 or 4 would
-/// also suffice" (appendix A.3).
-const DEFAULT_LEAF_K: usize = 4;
+/// The build parameters that an [`IndexingEffort`] sets. The rest of [`PipnnParams`] is the same
+/// for every effort.
+pub(super) struct EffortParams {
+    /// [`PipnnParams::leaf_k`].
+    pub leaf_k: usize,
+    /// [`PipnnParams::reservoir_factor`].
+    pub reservoir_factor: usize,
+    /// [`PartitionParams::fanout`].
+    pub fanout: &'static [usize],
+}
 
-/// Default [`PipnnParams::reservoir_factor`]: reservoirs of twice the degree limit. The paper found
-/// reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final prune
-/// (appendix A.5).
-const DEFAULT_RESERVOIR_FACTOR: usize = 2;
+// The efforts were placed against HNSW's `ef_construct` on glove-100, cohere-wiki-1M and
+// dbpedia-openai-1M: each gives about the graph quality of HNSW at the
+// `IndexingEffort::default_ef_construct` of the same effort, at the same search `ef`. The fanout
+// sets the build time; a larger leaf k and reservoirs mainly make the graph denser.
+
+/// [`IndexingEffort::Low`]: each point in about 10 leaves instead of the 14 of [`MEDIUM_EFFORT`],
+/// builds in about 0.75x of its time. About the quality of HNSW at `ef_construct` 64.
+const LOW_EFFORT: EffortParams = EffortParams {
+    leaf_k: 4,
+    reservoir_factor: 2,
+    fanout: &[5, 2],
+};
+
+/// [`IndexingEffort::Medium`], the default. About the quality of HNSW at `ef_construct` 100, and
+/// builds in 0.56x of the time of [`HIGH_EFFORT`].
+///
+/// The paper's default leaf k is 2, and it finds that "3 or 4 would also suffice" (appendix A.3).
+/// It found reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final
+/// prune (appendix A.5).
+const MEDIUM_EFFORT: EffortParams = EffortParams {
+    leaf_k: 4,
+    reservoir_factor: 2,
+    fanout: &[7, 2],
+};
+
+/// [`IndexingEffort::High`]: the paper's fanout, "10 on the top level, 3 on the second level"
+/// (section 4.1). About the quality of HNSW at `ef_construct` 200.
+const HIGH_EFFORT: EffortParams = EffortParams {
+    leaf_k: 4,
+    reservoir_factor: 2,
+    fanout: &[10, 3],
+};
+
+/// [`IndexingEffort::XHigh`]: where the quality tops out, larger settings were within noise of
+/// it. The larger fanout adds quality, the larger leaf k and reservoirs add density. About the
+/// quality of HNSW at `ef_construct` 400, and builds in about 1.7x of the time of
+/// [`HIGH_EFFORT`].
+const XHIGH_EFFORT: EffortParams = EffortParams {
+    leaf_k: 6,
+    reservoir_factor: 3,
+    fanout: &[15, 3],
+};
+
+impl IndexingEffort {
+    /// The PiPNN parameters of this effort.
+    pub(super) fn pipnn_params(self) -> &'static EffortParams {
+        match self {
+            IndexingEffort::Low => &LOW_EFFORT,
+            IndexingEffort::Medium => &MEDIUM_EFFORT,
+            IndexingEffort::High => &HIGH_EFFORT,
+            IndexingEffort::XHigh => &XHIGH_EFFORT,
+        }
+    }
+}
 
 impl PipnnParams {
-    /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
-    /// limit, the default partitioning, and `seed`.
+    /// The leaf k, reservoir factor and fanout of `effort`, the default partitioning otherwise,
+    /// and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
-    pub fn new(seed: u64) -> Self {
+    pub fn new(effort: IndexingEffort, seed: u64) -> Self {
+        let EffortParams {
+            leaf_k,
+            reservoir_factor,
+            fanout,
+        } = effort.pipnn_params();
         Self {
-            partition: PartitionParams::default(),
-            leaf_k: DEFAULT_LEAF_K,
-            reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
+            partition: PartitionParams::with_fanout(fanout.to_vec()),
+            leaf_k: *leaf_k,
+            reservoir_factor: *reservoir_factor,
             seed,
         }
     }
@@ -689,7 +755,7 @@ mod orchestration_tests {
                 fanout: vec![10, 3],
                 max_depth: 16,
             },
-            ..PipnnParams::new(1)
+            ..PipnnParams::new(IndexingEffort::Medium, 1)
         }
     }
 

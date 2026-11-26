@@ -49,7 +49,9 @@ impl DenseVectorOptimizerConfig {
     /// Config for an indexed segment.
     pub fn indexed(&self) -> VectorDataConfig {
         self.vector_data_config(
-            Indexes::Hnsw(self.hnsw_config),
+            // Persisted with the segment: always with a value, so that versions where
+            // `ef_construct` is required can read the segment
+            Indexes::Hnsw(self.hnsw_config.with_resolved_ef_construct()),
             self.quantization_config.clone(),
         )
     }

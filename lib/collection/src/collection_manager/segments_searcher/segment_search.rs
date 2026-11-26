@@ -136,5 +136,5 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
             Indexes::Plain {} => None,
             Indexes::Hnsw(hnsw) => Some(hnsw),
         })
-        .map(|hnsw| hnsw.ef_construct)
+        .map(|hnsw| hnsw.ef_construct())
 }

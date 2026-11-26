@@ -38,6 +38,8 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::bm25::{PyBm25, PyBm25Config};
     #[pymodule_export]
+    use super::config::graph_indexing::{PyIndexingAlgorithm, PyIndexingEffort};
+    #[pymodule_export]
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
         PyBinaryQuantizationQueryEncoding, PyCompressionRatio, PyProductQuantizationConfig,
