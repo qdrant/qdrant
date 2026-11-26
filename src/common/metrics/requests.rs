@@ -14,6 +14,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// This array *must* be sorted.
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{collection_name}/index",
+    "/collections/{collection_name}/index/{field_name}",
     "/collections/{collection_name}/points",
     "/collections/{collection_name}/points/batch",
     "/collections/{collection_name}/points/count",
@@ -49,10 +50,13 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/ClearPayload",
     "/qdrant.Points/Count",
+    "/qdrant.Points/CreateFieldIndex",
     "/qdrant.Points/CreateVectorName",
     "/qdrant.Points/Delete",
+    "/qdrant.Points/DeleteFieldIndex",
     "/qdrant.Points/DeletePayload",
     "/qdrant.Points/DeleteVectorName",
+    "/qdrant.Points/DeleteVectors",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
     "/qdrant.Points/Facet",
@@ -68,6 +72,8 @@ const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/Search",
     "/qdrant.Points/SearchBatch",
     "/qdrant.Points/SearchGroups",
+    "/qdrant.Points/SearchMatrixOffsets",
+    "/qdrant.Points/SearchMatrixPairs",
     "/qdrant.Points/SetPayload",
     "/qdrant.Points/UpdateBatch",
     "/qdrant.Points/UpdateVectors",
