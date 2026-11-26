@@ -593,6 +593,11 @@ pub async fn run(
     );
     let nested_index_setup = fixture::nested_index_setup(seed);
     println!("model_testing: offers per-element indexes {nested_index_setup:?}");
+    let mut variation = fixture::FixtureVariation::from_seed(seed);
+    if common::flags::feature_flags().append_only_mutations {
+        variation.keep_searches_on_plain_scan();
+    }
+    println!("model_testing: {variation:?}");
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -602,6 +607,7 @@ pub async fn run(
         on_disk,
         text_params,
         nested_index_setup,
+        variation,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
