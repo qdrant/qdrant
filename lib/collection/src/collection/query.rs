@@ -2,6 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::rest::BatchErrorMode;
 use futures::future;
 use itertools::{Either, Itertools};
 use rand::RngExt;
@@ -16,9 +17,7 @@ use super::Collection;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::{batch_requests, empty_batch_results};
-use crate::common::fetch_vectors::{
-    build_vector_resolver_queries, resolve_referenced_vectors_batch,
-};
+use crate::common::fetch_vectors::{build_vector_resolver_query, resolve_referenced_vectors_batch};
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
@@ -452,6 +451,8 @@ impl Collection {
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
+    ///
+    /// Any error fails the whole batch, see [`Self::query_batch_with_error_mode`] for per-query errors.
     pub async fn query_batch<F, Fut>(
         &self,
         requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
@@ -464,14 +465,80 @@ impl Collection {
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<Arc<Collection>>>,
     {
+        self.query_batch_with_error_mode(
+            requests_batch,
+            collection_by_name,
+            read_consistency,
+            routing_token,
+            timeout,
+            BatchErrorMode::FailBatch,
+        )
+        .await?
+        .into_iter()
+        .collect()
+    }
+
+    /// Same as [`Self::query_batch`], but with configurable handling of per-query errors.
+    ///
+    /// With [`BatchErrorMode::FailBatch`] the first error fails the whole batch,
+    /// so all inner results are `Ok`.
+    ///
+    /// With [`BatchErrorMode::FailQuery`] errors caused by a single query
+    /// (invalid text query, referenced point not found, conversion into shard request)
+    /// are returned in place of that query's result, and the other queries are executed.
+    /// Errors not attributable to a single query (vector resolution, shard execution, timeout)
+    /// still fail the whole batch.
+    ///
+    /// The returned vector always has the same length and order as `requests_batch`.
+    pub async fn query_batch_with_error_mode<F, Fut>(
+        &self,
+        requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+        collection_by_name: F,
+        read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
+        timeout: Option<Duration>,
+        error_mode: BatchErrorMode,
+    ) -> CollectionResult<Vec<CollectionResult<Vec<ScoredPoint>>>>
+    where
+        F: Fn(String) -> Fut,
+        Fut: Future<Output = Option<Arc<Collection>>>,
+    {
         let start = Instant::now();
 
-        for (request, _) in &requests_batch {
-            self.check_text_queries(request)?;
+        // Per-query errors, indexed like `requests_batch`.
+        // In `FailBatch` mode the first error is returned immediately instead.
+        let mut query_errors: Vec<Option<CollectionError>> = vec![None; requests_batch.len()];
+        let fail_query = |query_errors: &mut [Option<CollectionError>],
+                          idx: usize,
+                          err: CollectionError|
+         -> CollectionResult<()> {
+            match error_mode {
+                BatchErrorMode::FailBatch => Err(err),
+                BatchErrorMode::FailQuery => {
+                    query_errors[idx] = Some(err);
+                    Ok(())
+                }
+            }
+        };
+
+        for (idx, (request, _)) in requests_batch.iter().enumerate() {
+            if let Err(err) = self.check_text_queries(request) {
+                fail_query(&mut query_errors, idx, err)?;
+            }
         }
 
-        // Lift nested prefetches to root queries for vector resolution
-        let resolver_requests = build_vector_resolver_queries(&requests_batch);
+        // Lift nested prefetches to root queries for vector resolution.
+        // Keep the index of the original request for each resolver request.
+        let (resolver_request_idxs, resolver_requests): (Vec<_>, Vec<_>) = requests_batch
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| query_errors[*idx].is_none())
+            .flat_map(|(idx, (request, shard_selector))| {
+                build_vector_resolver_query(request, shard_selector)
+                    .into_iter()
+                    .map(move |resolver_request| (idx, resolver_request))
+            })
+            .unzip();
 
         // Build referenced vectors
         let ids_to_vectors = resolve_referenced_vectors_batch(
@@ -488,55 +555,94 @@ impl Collection {
         let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
         // Check we actually fetched all referenced vectors from the resolver requests
-        for (resolver_req, _) in &resolver_requests {
-            for point_id in resolver_req.get_referenced_point_ids() {
-                let lookup_collection = resolver_req.get_lookup_collection();
-                if ids_to_vectors.get(lookup_collection, point_id).is_none() {
-                    return Err(CollectionError::PointNotFound {
-                        missed_point_id: point_id,
-                    });
-                }
+        for (&idx, (resolver_req, _)) in resolver_request_idxs.iter().zip(&resolver_requests) {
+            if query_errors[idx].is_some() {
+                continue;
+            }
+            let lookup_collection = resolver_req.get_lookup_collection();
+            let missed_point_id = resolver_req
+                .get_referenced_point_ids()
+                .into_iter()
+                .find(|&point_id| ids_to_vectors.get(lookup_collection, point_id).is_none());
+            if let Some(missed_point_id) = missed_point_id {
+                fail_query(
+                    &mut query_errors,
+                    idx,
+                    CollectionError::PointNotFound { missed_point_id },
+                )?;
             }
         }
 
-        let futures = batch_requests::<
-            (CollectionQueryRequest, ShardSelectorInternal),
+        // Convert into shard requests, skipping failed queries.
+        // Each entry: (index in `requests_batch`, shard request, shard selector)
+        let mut shard_requests = Vec::with_capacity(requests_batch.len());
+        for (idx, (request, shard_selection)) in requests_batch.into_iter().enumerate() {
+            if query_errors[idx].is_some() {
+                continue;
+            }
+            match request.try_into_shard_request(&self.id, &ids_to_vectors) {
+                Ok(shard_request) => shard_requests.push((idx, shard_request, shard_selection)),
+                Err(err) => fail_query(&mut query_errors, idx, err)?,
+            }
+        }
+
+        // Group consecutive requests with the same shard selector, remembering original indices
+        let groups = batch_requests::<
+            (usize, ShardQueryRequest, ShardSelectorInternal),
             ShardSelectorInternal,
-            Vec<ShardQueryRequest>,
+            (Vec<usize>, Vec<ShardQueryRequest>),
             Vec<_>,
         >(
-            requests_batch,
-            |(_req, shard)| shard,
-            |(req, _), acc| {
-                req.try_into_shard_request(&self.id, &ids_to_vectors)
-                    .map(|shard_req| {
-                        acc.push(shard_req);
-                    })
+            shard_requests,
+            |(_idx, _req, shard)| shard,
+            |(idx, req, _shard), (idxs, reqs)| {
+                idxs.push(idx);
+                reqs.push(req);
+                Ok(())
             },
-            |shard_selection, shard_requests, futures| {
-                if shard_requests.is_empty() {
-                    return Ok(());
+            |shard_selection, (idxs, reqs), groups| {
+                if !reqs.is_empty() {
+                    groups.push((shard_selection, idxs, reqs));
                 }
-
-                futures.push(self.do_query_batch(
-                    shard_requests,
-                    read_consistency,
-                    routing_token,
-                    shard_selection,
-                    timeout,
-                ));
-
                 Ok(())
             },
         )?;
 
-        let results = future::try_join_all(futures)
-            .await?
+        let (group_idxs, futures): (Vec<_>, Vec<_>) = groups
             .into_iter()
-            .flatten()
-            .collect();
+            .map(|(shard_selection, idxs, reqs)| {
+                let future = self.do_query_batch(
+                    reqs,
+                    read_consistency,
+                    routing_token,
+                    shard_selection,
+                    timeout,
+                );
+                (idxs, future)
+            })
+            .unzip();
 
-        Ok(results)
+        let group_results = future::try_join_all(futures).await?;
+
+        let mut results: Vec<Option<Vec<ScoredPoint>>> = vec![None; query_errors.len()];
+        for (idxs, group_result) in group_idxs.into_iter().zip(group_results) {
+            debug_assert_eq!(idxs.len(), group_result.len());
+            for (idx, points) in idxs.into_iter().zip(group_result) {
+                results[idx] = Some(points);
+            }
+        }
+
+        query_errors
+            .into_iter()
+            .zip(results)
+            .map(|(error, points)| match (error, points) {
+                (Some(err), _) => Ok(Err(err)),
+                (None, Some(points)) => Ok(Ok(points)),
+                (None, None) => Err(CollectionError::service_error(
+                    "Query batch result is missing for a query",
+                )),
+            })
+            .collect()
     }
 
     /// To be called on the remote instance. Only used for the internal service.

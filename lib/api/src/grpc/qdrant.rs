@@ -7541,6 +7541,9 @@ pub struct QueryBatchPoints {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
+    /// What to do if one of the queries in the batch fails. Default: `FailBatch`
+    #[prost(enumeration = "BatchErrorMode", optional, tag = "5")]
+    pub on_error: ::core::option::Option<i32>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
@@ -8118,6 +8121,25 @@ pub struct QueryGroupsResponse {
 pub struct BatchResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Error of this query, if it failed.
+    /// Only set in `QueryBatch` responses requested with `on_error: FailQuery`.
+    #[prost(message, optional, tag = "2")]
+    pub error: ::core::option::Option<QueryBatchError>,
+}
+/// Error of a single query in a batch
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct QueryBatchError {
+    /// Category of the error
+    #[prost(enumeration = "QueryBatchErrorCode", tag = "1")]
+    pub code: i32,
+    /// Human-readable description of the error
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+    /// ID of the point which was not found, if `code` is `PointNotFound`
+    #[prost(message, optional, tag = "3")]
+    pub point_id: ::core::option::Option<PointId>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -8688,6 +8710,41 @@ impl Sample {
         }
     }
 }
+/// Defines how an error in one of the queries of a batch affects the whole batch
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BatchErrorMode {
+    /// Default - an error in any query fails the whole batch request
+    FailBatch = 0,
+    /// An error caused by a query itself (e.g. a referenced point is not found)
+    /// fails only that query. Its result has the `error` field set,
+    /// other queries are executed normally.
+    /// Errors not related to a specific query (e.g. timeout, unavailable shards, strict mode)
+    /// still fail the whole batch.
+    FailQuery = 1,
+}
+impl BatchErrorMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::FailBatch => "FailBatch",
+            Self::FailQuery => "FailQuery",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "FailBatch" => Some(Self::FailBatch),
+            "FailQuery" => Some(Self::FailQuery),
+            _ => None,
+        }
+    }
+}
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -8725,6 +8782,45 @@ impl UpdateStatus {
             "Completed" => Some(Self::Completed),
             "ClockRejected" => Some(Self::ClockRejected),
             "WaitTimeout" => Some(Self::WaitTimeout),
+            _ => None,
+        }
+    }
+}
+/// Category of an error of a single query in a batch
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum QueryBatchErrorCode {
+    /// Any other error
+    Other = 0,
+    /// A point referenced by the query (e.g. as a recommend example) does not exist
+    PointNotFound = 1,
+    /// Some other object referenced by the query does not exist
+    NotFound = 2,
+    /// The query is invalid
+    BadRequest = 3,
+}
+impl QueryBatchErrorCode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Other => "Other",
+            Self::PointNotFound => "PointNotFound",
+            Self::NotFound => "NotFound",
+            Self::BadRequest => "BadRequest",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Other" => Some(Self::Other),
+            "PointNotFound" => Some(Self::PointNotFound),
+            "NotFound" => Some(Self::NotFound),
+            "BadRequest" => Some(Self::BadRequest),
             _ => None,
         }
     }

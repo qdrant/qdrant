@@ -625,11 +625,62 @@ pub struct QueryRequest {
 pub struct QueryRequestBatch {
     #[validate(nested)]
     pub searches: Vec<QueryRequest>,
+    /// What to do if one of the queries in the batch fails.
+    /// Default: `fail_batch`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_error: Option<BatchErrorMode>,
+}
+
+/// Defines how an error in one of the queries of a batch affects the whole batch
+///
+/// * `fail_batch` - default, an error in any query fails the whole batch request
+/// * `fail_query` - an error caused by a query itself (e.g. a referenced point is not found)
+///   fails only that query. Its result is returned with empty `points` and the `error` field set,
+///   other queries are executed normally.
+///   Errors not related to a specific query (e.g. timeout, unavailable shards, strict mode)
+///   still fail the whole batch.
+#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BatchErrorMode {
+    #[default]
+    FailBatch,
+    FailQuery,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct QueryResponse {
     pub points: Vec<ScoredPoint>,
+    /// Error of this query, if it failed.
+    /// Only set in batch responses requested with `on_error: fail_query`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<QueryBatchError>,
+}
+
+/// Error of a single query in a batch
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct QueryBatchError {
+    /// Category of the error
+    pub code: QueryBatchErrorCode,
+    /// Human-readable description of the error
+    pub message: String,
+    /// ID of the point which was not found, if `code` is `point_not_found`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub point_id: Option<PointIdType>,
+}
+
+/// Category of an error of a single query in a batch
+///
+/// * `point_not_found` - a point referenced by the query (e.g. as a recommend example) does not exist
+/// * `not_found` - some other object referenced by the query does not exist
+/// * `bad_request` - the query is invalid
+/// * `other` - any other error
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryBatchErrorCode {
+    PointNotFound,
+    NotFound,
+    BadRequest,
+    Other,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

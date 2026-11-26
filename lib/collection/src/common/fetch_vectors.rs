@@ -345,20 +345,6 @@ where
 ///
 /// For each request, one query is issue for the root request and one query for each nested prefetch.
 /// The resolver queries have no prefetches.
-pub fn build_vector_resolver_queries(
-    requests_batch: &Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
-) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
-    let mut resolve_prefetches = vec![];
-    for (request, shard_selector) in requests_batch {
-        build_vector_resolver_query(request, shard_selector)
-            .into_iter()
-            .for_each(|(resolve_request, shard_selector)| {
-                resolve_prefetches.push((resolve_request, shard_selector))
-            });
-    }
-    resolve_prefetches
-}
-
 pub fn build_vector_resolver_query(
     request: &CollectionQueryRequest,
     shard_selector: &ShardSelectorInternal,

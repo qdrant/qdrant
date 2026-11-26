@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use api::rest::SearchGroupsRequestInternal;
+use api::rest::{BatchErrorMode, SearchGroupsRequestInternal};
 use collection::collection::distance_matrix::*;
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
@@ -306,14 +306,16 @@ pub async fn do_query_batch_points(
     routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
-) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.query_batch(
+    error_mode: BatchErrorMode,
+) -> Result<Vec<CollectionResult<Vec<ScoredPoint>>>, StorageError> {
+    toc.query_batch_with_error_mode(
         collection_name,
         requests,
         read_consistency,
         routing_token,
         auth,
         timeout,
+        error_mode,
     )
     .await
 }

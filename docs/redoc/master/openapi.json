@@ -16267,8 +16267,27 @@
             "items": {
               "$ref": "#/components/schemas/QueryRequest"
             }
+          },
+          "on_error": {
+            "description": "What to do if one of the queries in the batch fails. Default: `fail_batch`",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BatchErrorMode"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "BatchErrorMode": {
+        "description": "Defines how an error in one of the queries of a batch affects the whole batch\n\n* `fail_batch` - default, an error in any query fails the whole batch request * `fail_query` - an error caused by a query itself (e.g. a referenced point is not found) fails only that query. Its result is returned with empty `points` and the `error` field set, other queries are executed normally. Errors not related to a specific query (e.g. timeout, unavailable shards, strict mode) still fail the whole batch.",
+        "type": "string",
+        "enum": [
+          "fail_batch",
+          "fail_query"
+        ]
       },
       "QueryResponse": {
         "type": "object",
@@ -16281,8 +16300,57 @@
             "items": {
               "$ref": "#/components/schemas/ScoredPoint"
             }
+          },
+          "error": {
+            "description": "Error of this query, if it failed. Only set in batch responses requested with `on_error: fail_query`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueryBatchError"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "QueryBatchError": {
+        "description": "Error of a single query in a batch",
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/QueryBatchErrorCode"
+          },
+          "message": {
+            "description": "Human-readable description of the error",
+            "type": "string"
+          },
+          "point_id": {
+            "description": "ID of the point which was not found, if `code` is `point_not_found`",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtendedPointId"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "QueryBatchErrorCode": {
+        "description": "Category of an error of a single query in a batch\n\n* `point_not_found` - a point referenced by the query (e.g. as a recommend example) does not exist * `not_found` - some other object referenced by the query does not exist * `bad_request` - the query is invalid * `other` - any other error",
+        "type": "string",
+        "enum": [
+          "point_not_found",
+          "not_found",
+          "bad_request",
+          "other"
+        ]
       },
       "QueryGroupsRequest": {
         "type": "object",

@@ -1122,3 +1122,177 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
         .unwrap();
     assert!(oversized_offset_page.is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_batch_error_mode() {
+    test_query_batch_error_mode_with_shards(1).await;
+    test_query_batch_error_mode_with_shards(N_SHARDS).await;
+}
+
+async fn test_query_batch_error_mode_with_shards(shard_number: u32) {
+    use api::rest::BatchErrorMode;
+    use collection::operations::types::CollectionError;
+    use collection::operations::universal_query::collection_query::{
+        CollectionPrefetch, CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
+    };
+    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
+    use segment::types::WithVector;
+
+    let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
+
+    let batch = BatchPersisted {
+        ids: vec![0, 1, 2, 3, 4].into_iter().map(u64::into).collect_vec(),
+        vectors: BatchVectorStructPersisted::Single(vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 0.0, 1.0],
+            // Closest to point 1, which is excluded from the results of a query by its id
+            vec![0.1, 0.9, 0.0, 0.0],
+        ]),
+        payloads: None,
+    };
+    let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::from(batch),
+    ));
+    collection
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+
+    let missing_id = PointIdType::from(100);
+
+    let nearest = |input: VectorInputInternal| Query::Vector(VectorQuery::Nearest(input));
+    let request = |query: Query, prefetch: Vec<CollectionPrefetch>| CollectionQueryRequest {
+        prefetch,
+        query: Some(query),
+        using: DEFAULT_VECTOR_NAME.into(),
+        filter: None,
+        score_threshold: None,
+        limit: 1,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+        lookup_from: None,
+    };
+    let by_vector =
+        |vector: Vec<f32>| nearest(VectorInputInternal::Vector(VectorInternal::from(vector)));
+
+    let make_batch = || {
+        vec![
+            // 0: by existing id (the point itself is excluded from results)
+            request(nearest(VectorInputInternal::Id(1.into())), vec![]),
+            // 1: by missing id in the root query
+            request(nearest(VectorInputInternal::Id(missing_id)), vec![]),
+            // 2: by raw vector
+            request(by_vector(vec![0.0, 0.0, 1.0, 0.0]), vec![]),
+            // 3: by missing id in a prefetch
+            request(
+                by_vector(vec![0.0, 0.0, 0.0, 1.0]),
+                vec![CollectionPrefetch {
+                    prefetch: vec![],
+                    query: Some(nearest(VectorInputInternal::Id(missing_id))),
+                    using: DEFAULT_VECTOR_NAME.into(),
+                    filter: None,
+                    score_threshold: None,
+                    limit: 10,
+                    params: None,
+                    lookup_from: None,
+                }],
+            ),
+            // 4: by raw vector, after failed queries
+            request(by_vector(vec![1.0, 0.0, 0.0, 0.0]), vec![]),
+        ]
+        .into_iter()
+        .map(|request| (request, ShardSelectorInternal::All))
+        .collect_vec()
+    };
+
+    // Default behavior: whole batch fails
+    let err = collection
+        .query_batch(
+            make_batch(),
+            |_name| async { unreachable!("Should not be called in this test") },
+            None,
+            None,
+            None,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        CollectionError::PointNotFound {
+            missed_point_id: missing_id
+        },
+    );
+
+    let err = collection
+        .query_batch_with_error_mode(
+            make_batch(),
+            |_name| async { unreachable!("Should not be called in this test") },
+            None,
+            None,
+            None,
+            BatchErrorMode::FailBatch,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err,
+        CollectionError::PointNotFound {
+            missed_point_id: missing_id
+        },
+    );
+
+    // Per-query errors: failed queries get their own error, others are executed
+    let results = collection
+        .query_batch_with_error_mode(
+            make_batch(),
+            |_name| async { unreachable!("Should not be called in this test") },
+            None,
+            None,
+            None,
+            BatchErrorMode::FailQuery,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 5);
+    let top_id = |idx: usize| results[idx].as_ref().unwrap()[0].id;
+    assert_eq!(top_id(0), 4.into());
+    assert_eq!(top_id(2), 2.into());
+    assert_eq!(top_id(4), 0.into());
+    for idx in [1, 3] {
+        assert_eq!(
+            results[idx].as_ref().unwrap_err(),
+            &CollectionError::PointNotFound {
+                missed_point_id: missing_id
+            },
+        );
+    }
+
+    // All queries failed: still a successful batch with only errors
+    let results = collection
+        .query_batch_with_error_mode(
+            vec![(
+                request(nearest(VectorInputInternal::Id(missing_id)), vec![]),
+                ShardSelectorInternal::All,
+            )],
+            |_name| async { unreachable!("Should not be called in this test") },
+            None,
+            None,
+            None,
+            BatchErrorMode::FailQuery,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(results[0].is_err());
+}

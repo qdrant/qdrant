@@ -3995,6 +3995,62 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
     }
 }
 
+impl From<rest::BatchErrorMode> for crate::grpc::BatchErrorMode {
+    fn from(value: rest::BatchErrorMode) -> Self {
+        match value {
+            rest::BatchErrorMode::FailBatch => crate::grpc::BatchErrorMode::FailBatch,
+            rest::BatchErrorMode::FailQuery => crate::grpc::BatchErrorMode::FailQuery,
+        }
+    }
+}
+
+impl From<crate::grpc::BatchErrorMode> for rest::BatchErrorMode {
+    fn from(value: crate::grpc::BatchErrorMode) -> Self {
+        match value {
+            crate::grpc::BatchErrorMode::FailBatch => rest::BatchErrorMode::FailBatch,
+            crate::grpc::BatchErrorMode::FailQuery => rest::BatchErrorMode::FailQuery,
+        }
+    }
+}
+
+impl TryFrom<i32> for rest::BatchErrorMode {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let mode = crate::grpc::BatchErrorMode::try_from(value)
+            .map_err(|_| Status::invalid_argument(format!("Unknown BatchErrorMode: {value}")))?;
+        Ok(Self::from(mode))
+    }
+}
+
+impl From<rest::QueryBatchErrorCode> for crate::grpc::QueryBatchErrorCode {
+    fn from(value: rest::QueryBatchErrorCode) -> Self {
+        match value {
+            rest::QueryBatchErrorCode::PointNotFound => {
+                crate::grpc::QueryBatchErrorCode::PointNotFound
+            }
+            rest::QueryBatchErrorCode::NotFound => crate::grpc::QueryBatchErrorCode::NotFound,
+            rest::QueryBatchErrorCode::BadRequest => crate::grpc::QueryBatchErrorCode::BadRequest,
+            rest::QueryBatchErrorCode::Other => crate::grpc::QueryBatchErrorCode::Other,
+        }
+    }
+}
+
+impl From<rest::QueryBatchError> for crate::grpc::QueryBatchError {
+    fn from(value: rest::QueryBatchError) -> Self {
+        let rest::QueryBatchError {
+            code,
+            message,
+            point_id,
+        } = value;
+        crate::grpc::QueryBatchError {
+            code: i32::from(crate::grpc::QueryBatchErrorCode::from(code)),
+            message,
+            point_id: point_id.map(PointId::from),
+        }
+    }
+}
+
 #[cfg(test)]
 mod text_scoring_tests {
     use segment::data_types::index::{
