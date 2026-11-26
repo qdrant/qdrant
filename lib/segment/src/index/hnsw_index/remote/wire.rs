@@ -328,6 +328,7 @@ impl WireGraph {
             |point: PointOffsetType| limits.deleted.get_bit(point as usize).unwrap_or(false);
 
         let mut lists = self.link_lists();
+        let mut sorted_links = Vec::new();
         for point in 0..limits.point_count as PointOffsetType {
             let level = self.levels[point as usize] as usize;
             if level > MAX_LEVEL {
@@ -347,6 +348,16 @@ impl WireGraph {
                         "point {point} has {} links on level {l}, at most {} allowed",
                         links.len(),
                         limits.max_degree(point, l),
+                    ));
+                }
+                // The degree is checked, so the list is short
+                sorted_links.clear();
+                sorted_links.extend_from_slice(links);
+                sorted_links.sort_unstable();
+                if let Some(pair) = sorted_links.windows(2).find(|pair| pair[0] == pair[1]) {
+                    return err(format!(
+                        "point {point} links to {} twice on level {l}",
+                        pair[0],
                     ));
                 }
                 for &link in links {
@@ -573,6 +584,14 @@ mod tests {
                 Box::new(|g| {
                     g.link_counts = vec![1, 1, 0, 0];
                     g.links = vec![2, 0];
+                }),
+            ),
+            (
+                // Within the degree of 4 on level 0
+                "duplicate link",
+                Box::new(|g| {
+                    g.link_counts = vec![1, 0, 2, 0];
+                    g.links = vec![2, 0, 0];
                 }),
             ),
             (
