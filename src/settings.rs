@@ -281,6 +281,10 @@ pub enum IndexingOnFailure {
 
 /// Remote indexing: build large HNSW graphs on an external indexing service. Absent: build
 /// everything locally (D3).
+///
+/// The indexer connects back to the internal gRPC port, so this needs `cluster.enabled`,
+/// `service.api_key` and `service.enforce_internal_auth`, and does not work with
+/// `cluster.p2p.enable_tls`. Otherwise it stays off, with an error in the log.
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct IndexingServiceConfig {
     /// Where tasks are submitted, with gRPC `IndexingService.SubmitTask`: an indexing service,

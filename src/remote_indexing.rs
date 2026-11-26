@@ -34,19 +34,8 @@ pub fn init_remote_indexing(settings: &Settings) -> bool {
         return false;
     };
 
-    // The indexer reaches the internal port. Without auth there, it could reach Raft too.
-    if settings
-        .service
-        .api_key
-        .as_deref()
-        .is_none_or(str::is_empty)
-        || !settings.service.enforce_internal_auth()
-    {
-        log::error!(
-            "Remote indexing is configured but disabled: it requires `service.api_key` and \
-             `service.enforce_internal_auth`, so that the indexer cannot reach other internal \
-             services",
-        );
+    if let Err(reason) = indexer_can_call_back(settings) {
+        log::error!("Remote indexing is configured but disabled: {reason}");
         set_remote_indexer(None);
         return false;
     }
@@ -68,6 +57,42 @@ pub fn init_remote_indexing(settings: &Settings) -> bool {
             false
         }
     }
+}
+
+/// Whether an indexer can call back with `IndexingTask`, and can do nothing else there.
+/// Otherwise every task would wait out `queue_timeout_sec` before the local build.
+fn indexer_can_call_back(settings: &Settings) -> Result<(), &'static str> {
+    // `IndexingTask` is served on the internal port, which is open in cluster mode only.
+    if !settings.cluster.enabled {
+        return Err(
+            "it requires `cluster.enabled`, the indexer connects back to the internal gRPC port",
+        );
+    }
+
+    // The internal port then requires a client certificate of the cluster CA, which the
+    // indexer does not have.
+    if settings.cluster.p2p.enable_tls {
+        return Err(
+            "it does not work with `cluster.p2p.enable_tls`, the indexer has no client \
+             certificate for the internal gRPC port",
+        );
+    }
+
+    // The indexer reaches the internal port. Without auth there, it could reach Raft too.
+    if settings
+        .service
+        .api_key
+        .as_deref()
+        .is_none_or(str::is_empty)
+        || !settings.service.enforce_internal_auth()
+    {
+        return Err(
+            "it requires `service.api_key` and `service.enforce_internal_auth`, so that the \
+             indexer cannot reach other internal services",
+        );
+    }
+
+    Ok(())
 }
 
 /// Collection and shard of a segment under construction, from its vector index path:
@@ -265,6 +290,33 @@ impl RemoteIndexer for RemoteIndexingClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enabled_only_where_the_indexer_can_call_back() {
+        let mut settings = Settings::new(None).unwrap();
+        settings.cluster.enabled = true;
+        settings.cluster.p2p.enable_tls = false;
+        settings.service.api_key = Some("secret".to_string());
+        settings.service.enforce_internal_auth = Some(true);
+        assert_eq!(indexer_can_call_back(&settings), Ok(()));
+
+        // Nothing listens on the internal port of a single node.
+        settings.cluster.enabled = false;
+        assert!(indexer_can_call_back(&settings).is_err());
+        settings.cluster.enabled = true;
+
+        // The internal port asks for a client certificate.
+        settings.cluster.p2p.enable_tls = true;
+        assert!(indexer_can_call_back(&settings).is_err());
+        settings.cluster.p2p.enable_tls = false;
+
+        // The task token must be the only way in.
+        settings.service.api_key = None;
+        assert!(indexer_can_call_back(&settings).is_err());
+        settings.service.api_key = Some("secret".to_string());
+        settings.service.enforce_internal_auth = Some(false);
+        assert!(indexer_can_call_back(&settings).is_err());
+    }
 
     #[test]
     fn refusal_kinds() {
