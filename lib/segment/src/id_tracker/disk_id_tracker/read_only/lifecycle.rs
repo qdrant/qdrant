@@ -10,11 +10,25 @@ use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, U
 use super::ReadOnlyDiskIdTracker;
 use super::versions::ReadOnlyVersions;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog};
+use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog, delete_log_path};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
+    /// Statically known files that [`try_open`](Self::try_open) may read.
+    pub fn static_paths(segment_path: &Path) -> Vec<PathBuf> {
+        let mut paths = Vec::with_capacity(7);
+        paths.extend(DiskMappingReader::<S>::static_paths(segment_path));
+        paths.extend(ReadOnlyVersions::<S>::static_paths(segment_path));
+        paths.extend(Self::live_reload_paths(segment_path));
+        paths
+    }
+
+    /// Files that may change between [`live_reload`](Self::live_reload) calls.
+    pub fn live_reload_paths(segment_path: &Path) -> [PathBuf; 2] {
+        [deleted_path(segment_path), delete_log_path(segment_path)]
+    }
+
     /// No commit mark: the format is fully committed once present.
     pub fn commit_mark_path(_segment_path: &Path) -> Option<PathBuf> {
         None

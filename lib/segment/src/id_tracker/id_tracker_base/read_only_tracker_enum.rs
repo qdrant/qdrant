@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
@@ -75,6 +76,47 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             max_committed_offset,
             gating,
         )?))
+    }
+
+    /// Deduplicated statically known files across every id-tracker format that
+    /// [`detect_and_load`](Self::detect_and_load) may read.
+    pub fn static_paths(segment_path: &Path) -> Vec<PathBuf> {
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        for kind in ReadOnlyIdTrackerKind::iter() {
+            let kind_paths: Vec<PathBuf> = match kind {
+                ReadOnlyIdTrackerKind::Appendable => {
+                    Vec::from(ReadOnlyAppendableIdTracker::<S>::static_paths(segment_path))
+                }
+                ReadOnlyIdTrackerKind::Immutable => {
+                    Vec::from(ReadOnlyImmutableIdTracker::<S>::static_paths(segment_path))
+                }
+                ReadOnlyIdTrackerKind::DiskResident => {
+                    ReadOnlyDiskIdTracker::<S>::static_paths(segment_path)
+                }
+            };
+            for path in kind_paths {
+                if seen.insert(path.clone()) {
+                    paths.push(path);
+                }
+            }
+        }
+        paths
+    }
+
+    /// Files that need a snapshot refresh before [`Self::live_reload`] for the active format.
+    pub fn live_reload_paths(&self, segment_path: &Path) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(_) => Vec::from(ReadOnlyAppendableIdTracker::<S>::live_reload_paths(
+                segment_path,
+            )),
+            Self::Immutable(_) => Vec::from(ReadOnlyImmutableIdTracker::<S>::live_reload_paths(
+                segment_path,
+            )),
+            Self::DiskResident(_) => {
+                Vec::from(ReadOnlyDiskIdTracker::<S>::live_reload_paths(segment_path))
+            }
+        }
     }
 
     /// Files whose size bounds the committed points, across every format that

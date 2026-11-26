@@ -39,6 +39,14 @@ fn compact_open_options(populate: Populate) -> OpenOptions {
 }
 
 impl<S: UniversalRead> ReadOnlyVersions<S> {
+    /// Statically known files that [`open`](Self::open) may read.
+    pub fn static_paths(segment_path: &Path) -> [PathBuf; 2] {
+        [
+            compact_versions_path(segment_path),
+            version_mapping_path(segment_path),
+        ]
+    }
+
     /// Schedule background prefetch of the file [`open`](Self::open) will read.
     pub fn schedule_preopen(
         fs: &impl CachedReadFs<File = S>,

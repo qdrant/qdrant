@@ -12,7 +12,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{CachedFs, UniversalReadFsAsync};
 
-pub(super) use self::lifecycle::{WRITER_POPULATE, build_cached_fs};
+pub(super) use self::lifecycle::WRITER_POPULATE;
 use super::WriterIdTrackerState;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;

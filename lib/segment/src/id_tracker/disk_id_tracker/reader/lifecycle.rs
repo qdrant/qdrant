@@ -1,7 +1,7 @@
 //! Opening and preopening (prefetch scheduling) of the mapping files.
 
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use common::generic_consts::Random;
@@ -59,6 +59,15 @@ impl<S: UniversalRead> DiskMappingReader<S> {
             populate: Populate::Blocking,
             advice: AdviceSetting::Global,
         }
+    }
+
+    /// Statically known files that [`try_open`](Self::try_open) may read.
+    pub fn static_paths(segment_path: &Path) -> [PathBuf; 3] {
+        [
+            i2e_path(segment_path),
+            e2i_path(segment_path),
+            is_uuid_path(segment_path),
+        ]
     }
 
     /// Schedule background prefetch of every file [`try_open`](Self::try_open)

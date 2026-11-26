@@ -20,6 +20,18 @@ use crate::id_tracker::mutable_id_tracker::versions_storage::{
 use crate::id_tracker::point_mappings::PointMappings;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    /// Statically known files that [`open`](Self::open) may read.
+    pub fn static_paths(segment_path: &Path) -> [PathBuf; 2] {
+        [mappings_path(segment_path), versions_path(segment_path)]
+    }
+
+    /// Files that need a snapshot refresh before [`live_reload`](Self::live_reload).
+    /// Empty: [`probe_committed`](Self::probe_committed) refreshes the tracker's handles directly
+    /// on the inner filesystem.
+    pub fn live_reload_paths(_segment_path: &Path) -> [PathBuf; 0] {
+        []
+    }
+
     /// The versions file: its size is the writer's commit mark.
     pub fn commit_mark_path(segment_path: &Path) -> Option<PathBuf> {
         Some(versions_path(segment_path))
