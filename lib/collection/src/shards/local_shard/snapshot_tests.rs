@@ -433,3 +433,176 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
         "a WAL acknowledge pin must hold back the acknowledge only, not clock persistence",
     );
 }
+
+/// A flush pass must respect a WAL acknowledge pin taken while it runs.
+///
+/// Snapshots and queue proxy shards take their pin under the WAL lock. The flush pass used to read
+/// the pins before taking the WAL lock to acknowledge, so a pin taken in between was ignored and
+/// the WAL was acknowledged past it.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_flush_pass_respects_wal_ack_pin_taken_while_it_runs() {
+    use std::time::Duration;
+
+    use common::ambient::AmbientContext;
+    use common::budget::ResourceBudget;
+    use segment::data_types::vectors::VectorStructInternal;
+    use shard::operations::CollectionUpdateOperations;
+    use shard::operations::point_ops::{
+        PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+    };
+    use shard::segment_holder::FlushMode;
+    use tokio::runtime::Handle;
+    use tokio::sync::RwLock;
+
+    use crate::common::adaptive_handle::AdaptiveSearchHandle;
+    use crate::shards::local_shard::LocalShard;
+    use crate::shards::shard_trait::{ShardOperation, WaitUntil};
+    use crate::tests::fixtures::create_collection_config;
+    use crate::update_workers::UpdateWorkers;
+
+    /// How long to give the flush pass to reach the next lock.
+    const WAIT: Duration = Duration::from_millis(100);
+
+    init_test_feature_flags();
+
+    let collection_dir = Builder::new().prefix("wal_ack_pin_race").tempdir().unwrap();
+    let config = create_collection_config();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema = Arc::new(
+        SaveOnDisk::load_or_init_default(
+            payload_index_schema_dir.path().join("payload-schema.json"),
+        )
+        .unwrap(),
+    );
+
+    let shard = LocalShard::build(
+        0,
+        "test".to_string(),
+        collection_dir.path(),
+        Arc::new(RwLock::new(config.clone())),
+        Arc::new(Default::default()),
+        payload_index_schema,
+        Handle::current(),
+        AdaptiveSearchHandle::current_for_tests(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    // Keep flushing and WAL acknowledging under the test's control
+    shard.stop_flush_worker().await;
+
+    let ctx = AmbientContext::new();
+    let upsert_points = async |ids: std::ops::Range<u64>| {
+        for id in ids {
+            let point = PointStructPersisted {
+                id: id.into(),
+                vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+                payload: None,
+            };
+            let op = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![point]),
+            ));
+            shard
+                .update(op.into(), WaitUntil::Visible, None)
+                .measured(AmbientContext::clone(&ctx))
+                .await
+                .unwrap();
+        }
+    };
+
+    let (segments, wal, wal_ack_pins, clocks, applied_seq_handler) = {
+        let update_handler = shard.update_handler.lock().await;
+        (
+            shard.segments().clone(),
+            shard.wal.wal.clone(),
+            update_handler.wal_ack_pins.clone(),
+            update_handler.clocks.clone(),
+            shard.applied_seq_handler.clone(),
+        )
+    };
+    let shard_path = shard.path.clone();
+
+    let flush_pass = {
+        let segments = segments.clone();
+        let wal = wal.clone();
+        let wal_ack_pins = wal_ack_pins.clone();
+        move || {
+            let segments = segments.clone();
+            let wal = wal.clone();
+            let wal_ack_pins = wal_ack_pins.clone();
+            let clocks = clocks.clone();
+            let shard_path = shard_path.clone();
+            let applied_seq_handler = applied_seq_handler.clone();
+            std::thread::spawn(move || {
+                UpdateWorkers::flush_worker_internal(
+                    segments,
+                    wal,
+                    wal_ack_pins,
+                    clocks,
+                    shard_path,
+                    applied_seq_handler,
+                )
+            })
+        }
+    };
+
+    // Acknowledge a first batch, so the WAL doesn't start at 0
+    upsert_points(0..10).await;
+    segments.read().flush_all(FlushMode::Sync, true).unwrap();
+    flush_pass().join().unwrap();
+
+    // A second batch that the next flush pass wants to acknowledge
+    upsert_points(10..20).await;
+    segments.read().flush_all(FlushMode::Sync, true).unwrap();
+
+    let (pinned_version, first_index_after_pass) = tokio::task::spawn_blocking({
+        let segments = segments.clone();
+        let wal = wal.clone();
+        let wal_ack_pins = wal_ack_pins.clone();
+        let flush_pass = flush_pass.clone();
+        move || {
+            // Stop the flush pass after it flushed the WAL, before it reads the pins
+            let segments_lock = segments.write();
+            let pass = flush_pass();
+            std::thread::sleep(WAIT);
+
+            // Hold the WAL lock and let the flush pass run up to acknowledging
+            let wal_lock = wal.blocking_lock();
+            drop(segments_lock);
+            std::thread::sleep(WAIT);
+
+            // Pin under the WAL lock, as snapshots and queue proxy shards do
+            let pinned_version = wal_lock.first_index();
+            let pin = wal_ack_pins.pin(pinned_version);
+            drop(wal_lock);
+
+            pass.join().unwrap();
+            let first_index_after_pass = wal.blocking_lock().first_index();
+            drop(pin);
+
+            (pinned_version, first_index_after_pass)
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        pinned_version > 0,
+        "the first batch must be acknowledged, or this proves nothing",
+    );
+    assert!(
+        first_index_after_pass <= pinned_version,
+        "WAL was acknowledged to {first_index_after_pass}, past the pin at {pinned_version}",
+    );
+
+    // Without the pin, the same flush pass does acknowledge past it
+    flush_pass().join().unwrap();
+    let first_index = wal.lock().await.first_index();
+    assert!(
+        first_index > pinned_version,
+        "control: without the pin the WAL must be acknowledged past {pinned_version}, but is at {first_index}",
+    );
+}
