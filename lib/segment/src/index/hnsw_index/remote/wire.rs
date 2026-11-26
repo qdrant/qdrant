@@ -258,6 +258,15 @@ impl<'a> GraphLimits<'a> {
 /// corrupted upload.
 const MAX_LEVEL: usize = 64;
 
+/// The most levels above 0 a graph may have, summed over its points.
+///
+/// A point has `1 / (m - 1)` of them on average, which is 1 at `m = 2`, the smallest `m` the
+/// levels are drawn for. `MAX_LEVEL` alone would let an upload claim 64 for every point, and
+/// each level costs a link container in the builder, linked or not.
+pub fn max_upper_levels(point_count: usize) -> usize {
+    2 * point_count + MAX_LEVEL
+}
+
 impl WireGraph {
     /// Check the shape of the graph (§4.7). The graph replaces a locally built one, so it must
     /// keep the invariants the local build keeps.
@@ -277,7 +286,14 @@ impl WireGraph {
                 limits.point_count,
             ));
         }
-        let expected_counts: usize = self.levels.iter().map(|&l| l as usize + 1).sum();
+        let upper_levels: usize = self.levels.iter().map(|&l| l as usize).sum();
+        if upper_levels > max_upper_levels(limits.point_count) {
+            return err(format!(
+                "graph has {upper_levels} levels above 0, at most {} allowed",
+                max_upper_levels(limits.point_count),
+            ));
+        }
+        let expected_counts = self.levels.len() + upper_levels;
         if self.link_counts.len() != expected_counts {
             return err(format!(
                 "graph has {} link lists, levels require {expected_counts}",
@@ -548,6 +564,16 @@ mod tests {
                 Box::new(|g| {
                     g.link_counts = vec![1, 0, 1, 1];
                     g.links = vec![2, 0, 0];
+                }),
+            ),
+            (
+                // Every level is in range, and there is nothing else to check in a graph
+                // with no links
+                "too many levels",
+                Box::new(|g| {
+                    g.levels = vec![50, 0, 50];
+                    g.link_counts = vec![0; 103];
+                    g.links = vec![];
                 }),
             ),
             ("entry level", Box::new(|g| g.entry_points[0].level = 5)),

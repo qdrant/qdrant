@@ -14,6 +14,7 @@ use segment::index::hnsw_index::remote::registry::{
 };
 use segment::index::hnsw_index::remote::wire::{
     HnswBuildParams, RemoteGraphParams, RemoteIndexParams, VectorSource, WireGraph,
+    max_upper_levels,
 };
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
@@ -389,9 +390,9 @@ pub fn graph_to_grpc(graph: &WireGraph) -> Vec<UploadIndexingGraphRequest> {
 }
 
 /// Assembles an uploaded graph from its stream. Rejects malformed streams early, and bounds
-/// memory: at most `max_points` points and `max_links` links in total, with every chunk
-/// self-consistent (counts match levels, links match counts) before it is kept. The shape is
-/// validated afterwards, by the registry.
+/// memory: at most `max_points` points, `max_links` links and [`max_upper_levels`] levels
+/// above 0 in total, with every chunk self-consistent (counts match levels, links match
+/// counts) before it is kept. The shape is validated afterwards, by the registry.
 pub struct GraphAssembler {
     graph: Option<WireGraph>,
     max_points: usize,
@@ -476,7 +477,10 @@ impl GraphAssembler {
                         links.len()
                     ));
                 }
+                // A link list per point and per level above 0
+                let max_link_counts = self.max_points + max_upper_levels(self.max_points);
                 if graph.levels.len() + levels.len() > self.max_points
+                    || graph.link_counts.len() + link_counts.len() > max_link_counts
                     || graph.links.len() + links.len() > self.max_links
                 {
                     return Err("graph larger than the task allows".to_string());
@@ -628,6 +632,8 @@ mod tests {
             chunk(vec![0], vec![2], vec![1]),
             // Level too high
             chunk(vec![200], vec![0; 201], vec![]),
+            // More levels than the task allows, with no links at all
+            chunk(vec![64; 4], vec![0; 4 * 65], vec![]),
             // More links than the task allows
             chunk(vec![0, 0], vec![20, 20], vec![1; 40]),
         ];
