@@ -34,8 +34,12 @@ impl UniversalReadFs for MmapFs {
         Ok(MmapFs)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        local_file_ops::local_list_files(prefix_path)
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        local_file_ops::local_list_files(dir)
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        local_file_ops::local_prefix_list_files(prefix_path)
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {

@@ -297,6 +297,13 @@ mod tests {
 
         fn list_files(
             &self,
+            _dir: &Path,
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
+        }
+
+        fn prefix_list_files(
+            &self,
             _prefix: &Path,
         ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
             std::future::ready(Ok(vec![]))
@@ -441,6 +448,13 @@ mod tests {
         }
 
         fn list_files(
+            &self,
+            _dir: &Path,
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
+        }
+
+        fn prefix_list_files(
             &self,
             _prefix: &Path,
         ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
@@ -797,6 +811,13 @@ mod tests {
         }
 
         fn list_files(
+            &self,
+            _dir: &Path,
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
+        }
+
+        fn prefix_list_files(
             &self,
             _prefix: &Path,
         ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {

@@ -134,6 +134,30 @@ impl AsyncRead for UioGrpcSource {
 
     fn list_files(
         &self,
+        dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        let inner = self.inner.clone();
+        let dir_path = dir.to_path_buf();
+        let prefix = path_to_string(dir);
+        async move {
+            let client = inner.client().await?;
+            let files = client
+                .list_files(&inner.collection, inner.shard_id, &prefix)
+                .await?;
+            Ok(files
+                .into_iter()
+                .filter(|entry| {
+                    entry
+                        .path
+                        .strip_prefix(&dir_path)
+                        .is_ok_and(|rel| rel.components().next().is_some())
+                })
+                .collect())
+        }
+    }
+
+    fn prefix_list_files(
+        &self,
         prefix: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         let inner = self.inner.clone();
