@@ -77,6 +77,7 @@ mod tests {
             dense_vectors,
             sparse_vectors: Default::default(),
             live_vector_names: None,
+            payload_schema: None,
             cache_after_build: CacheAfterBuild::Drop,
         }
     }

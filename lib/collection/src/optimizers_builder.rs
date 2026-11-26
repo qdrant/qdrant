@@ -260,6 +260,7 @@ pub fn build_segment_optimizer_config(
         dense_vectors,
         sparse_vectors,
         live_vector_names: None,
+        payload_schema: None,
         cache_after_build: CacheAfterBuild::Drop,
     }
 }

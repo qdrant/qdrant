@@ -884,3 +884,4 @@ fn live_reload_follows_an_index_recreated_with_the_same_schema() {
     assert_eq!(exact_count(&follower), 40);
     assert_eq!(tag_facet_total(&follower), 30);
 }
+mod optimize_payload_schema;

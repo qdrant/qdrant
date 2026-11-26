@@ -211,6 +211,11 @@ impl SegmentBuilder {
         self.indexed_fields.insert(field, schema);
     }
 
+    /// Replaces the indexes gathered from the source segments.
+    pub fn set_indexed_fields(&mut self, fields: HashMap<PayloadKeyType, PayloadFieldSchema>) {
+        self.indexed_fields = fields;
+    }
+
     /// Get ordering value from the payload index
     ///
     /// Ordering value is used to sort points to keep points with the same payload together

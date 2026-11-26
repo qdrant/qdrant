@@ -3,7 +3,7 @@
 //! Core optimization execution logic that is agnostic to collection-level policies.
 //! The collection layer provides the strategy via `OptimizationStrategy`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::debug_assert_matches;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -32,7 +32,7 @@ use segment::common::operation_time_statistics::{
 use segment::entry::{ReadSegmentEntry as _, StorageSegmentEntry as _};
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
-use segment::types::{PointIdType, VectorNameBuf};
+use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType, VectorNameBuf};
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
@@ -83,6 +83,9 @@ pub trait OptimizationStrategy: Send {
     /// genuinely deleted vector (safe to prune) from the CreateVectorName-vs-optimizer race (must
     /// cancel). See [`SegmentBuilder::set_live_vector_names`].
     fn live_vector_names(&self) -> Option<HashSet<VectorNameBuf>>;
+
+    /// See `SegmentOptimizerConfig::payload_schema`.
+    fn payload_schema(&self) -> Option<HashMap<PayloadKeyType, PayloadFieldSchema>>;
 }
 
 /// Restores original segments from proxies
@@ -277,6 +280,10 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
                 segment_builder.remove_index_field_if_incompatible(field_name, schema);
             }
         }
+    }
+
+    if let Some(payload_schema) = factory.payload_schema() {
+        segment_builder.set_indexed_fields(payload_schema);
     }
 
     // Before switching from IO to CPU, make sure that vectors cache is heated up,

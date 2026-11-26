@@ -17,7 +17,9 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswGlobalConfig, Memory, VectorNameBuf, VectorStorageType};
+use segment::types::{
+    HnswGlobalConfig, Memory, PayloadFieldSchema, PayloadKeyType, VectorNameBuf, VectorStorageType,
+};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -67,6 +69,13 @@ impl<O: SegmentOptimizer + ?Sized> OptimizationStrategy for ShardOptimizationStr
         self.optimizer
             .segment_optimizer_config()
             .live_vector_names()
+    }
+
+    fn payload_schema(&self) -> Option<HashMap<PayloadKeyType, PayloadFieldSchema>> {
+        self.optimizer
+            .segment_optimizer_config()
+            .payload_schema
+            .clone()
     }
 }
 

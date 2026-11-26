@@ -26,6 +26,7 @@ impl UpdateMetering {
             dense_vectors,
             sparse_vectors: _,
             live_vector_names: _,
+            payload_schema: _,
             cache_after_build: _,
         } = optimizer_config;
         let indexed = SegmentConfig {
