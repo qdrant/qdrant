@@ -4,11 +4,10 @@ use std::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 use std::borrow::Cow;
-use std::iter::repeat_with;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 
 use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
@@ -19,12 +18,12 @@ use fs_err as fs;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
     EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::kmeans::kmeans;
-use crate::{ConditionalVariable, EncodingError};
 
 pub const KMEANS_SAMPLE_SIZE: usize = 10_000;
 pub const KMEANS_MAX_ITERATIONS: usize = 100;
@@ -291,22 +290,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     ) -> Result<(), EncodingError> {
         let storage_builder = Arc::new(Mutex::new(storage_builder));
 
-        // Synchronization between threads. Use conditional variable for
-        // each thread. Each condvar is blocked instead of first.
-        // While encoding, thread `N` after `storage_builder` usage blocks themself and
-        // unblock thread `N+1`.
-        // In summary, access to `storage_builder` is ordered by `thread_index` below.
-        let mut condvars: Vec<ConditionalVariable> =
-            repeat_with(Default::default).take(max_threads).collect();
-        condvars[0].notify(); // Allow first thread to use storage
+        // Synchronization between threads: a ring of channels passes a "turn" token, so thread
+        // `N` pushes to `storage_builder` after thread `N-1` and before thread `N+1`.
+        // A thread that exits early (stopped, error or panic) drops its sender, so the next
+        // thread's `recv` fails instead of blocking forever.
+        let (mut senders, receivers): (Vec<_>, Vec<_>) =
+            (0..max_threads).map(|_| mpsc::channel::<()>()).unzip();
+        senders[0].send(()).unwrap(); // Allow first thread to use storage
+        senders.rotate_left(1); // Thread `N` sends to thread `N + 1`
 
         let error = Arc::new(Mutex::new(None));
-        for thread_index in 0..max_threads {
+        for (thread_index, (turn, next_turn)) in receivers.into_iter().zip(senders).enumerate() {
             // Thread process vectors `N` that `(N + thread_index) % max_threads == 0`.
             let data = data.clone().skip(thread_index);
             let storage_builder = storage_builder.clone();
-            let condvar = condvars[thread_index].clone();
-            let next_condvar = condvars[(thread_index + 1) % max_threads].clone();
             let error = error.clone();
 
             scope.spawn(move |_| {
@@ -323,7 +320,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                         &mut encoded_vector,
                     );
                     // wait for permission from prev thread to use storage
-                    let is_disconnected = condvar.wait();
+                    if turn.recv().is_err() {
+                        return;
+                    }
                     // push encoded vector to storage
                     let insert_result = storage_builder.lock().push_vector_data(&encoded_vector);
 
@@ -333,21 +332,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                         *error = Some(EncodingError::EncodingError(format!(
                             "Failed to push encoded vector: {e}",
                         )));
-                        // Notify next thread to allow them to exit
-                        next_condvar.notify();
                         return;
                     }
 
-                    // Notify next thread to use storage
-                    next_condvar.notify();
-                    if is_disconnected {
-                        return;
-                    }
+                    // Notify next thread to use storage (fails if it has no vectors left)
+                    let _ = next_turn.send(());
                 }
             });
         }
-        // free condvars to allow threads to exit when panicking
-        condvars.clear();
 
         if let Some(error) = error.lock().take() {
             Err(error)
