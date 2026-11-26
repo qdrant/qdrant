@@ -55,3 +55,32 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         })
     }
 }
+
+impl<H: ReadSegmentHandle> EdgeReadView<H> {
+    pub(crate) fn fully_indexed_fields(
+        &self,
+    ) -> OperationResult<HashMap<PayloadKeyType, PayloadIndexInfo>> {
+        self.check_stopped()?;
+        let mut common: Option<HashMap<PayloadKeyType, PayloadIndexInfo>> = None;
+        for segment in &self.segments {
+            self.check_stopped()?;
+            let schema = segment.read_segment().info()?.index_schema;
+            common = Some(match common {
+                None => schema,
+                Some(mut fields) => {
+                    fields.retain(|key, total| match schema.get(key) {
+                        Some(info)
+                            if info.data_type == total.data_type && info.params == total.params =>
+                        {
+                            total.points += info.points;
+                            true
+                        }
+                        Some(_) | None => false,
+                    });
+                    fields
+                }
+            });
+        }
+        Ok(common.unwrap_or_default())
+    }
+}

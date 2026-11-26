@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use rayon::ThreadPool;
-use segment::types::PointIdType;
+use segment::types::{PayloadIndexInfo, PayloadKeyType, PointIdType};
 use shard::retrieve::record_internal::RecordInternal;
 
 use super::EdgeReadView;
@@ -124,6 +125,9 @@ pub trait EdgeShardRead: sealed::Sealed {
     fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>>;
 
     fn info(&self) -> OperationResult<ShardInfo>;
+
+    /// Unlike [`ShardInfo::payload_schema`], only the fields every segment indexes with one schema.
+    fn fully_indexed_fields(&self) -> OperationResult<HashMap<PayloadKeyType, PayloadIndexInfo>>;
 }
 
 impl<T: ScopedReadViewProvider + ?Sized> EdgeShardRead for T {
@@ -186,6 +190,10 @@ impl<T: ScopedReadViewProvider + ?Sized> EdgeShardRead for T {
 
     fn info(&self) -> OperationResult<ShardInfo> {
         run(self, |view| view.info())
+    }
+
+    fn fully_indexed_fields(&self) -> OperationResult<HashMap<PayloadKeyType, PayloadIndexInfo>> {
+        run(self, |view| view.fully_indexed_fields())
     }
 }
 
