@@ -396,6 +396,9 @@ impl ShardReplicaSet {
 
         match restore.await {
             Ok(new_local) => {
+                // The snapshot may hold unoptimized or deferred points. Loading does not trigger
+                // the optimizers, so without this the shard stays grey until the next write.
+                new_local.trigger_optimizers();
                 local.replace(Shard::Local(new_local));
 
                 if recovery_type.is_partial() {
