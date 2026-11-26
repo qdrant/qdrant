@@ -161,9 +161,15 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         let non_excluded_values_count = self
             .get_values_count()
             .saturating_sub(total_excluded_value_count);
+        // Only the excluded values the index holds take away from its unique values: the list
+        // may also name values no point of this segment has.
+        let excluded_unique_values_count = excluded_value_counts
+            .iter()
+            .filter(|count| **count > 0)
+            .count();
         let max_values_per_point = self
             .get_unique_values_count()
-            .saturating_sub(excluded_value_counts.len());
+            .saturating_sub(excluded_unique_values_count);
 
         if max_values_per_point == 0 {
             debug_assert_eq!(non_excluded_values_count, 0);

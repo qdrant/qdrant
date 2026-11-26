@@ -250,6 +250,29 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
     );
 }
 
+/// An `except` list may name values the index does not hold. Those must not count against the
+/// index's unique values, or the estimate collapses to zero while points still match.
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_except_cardinality_with_absent_values(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
+    let data = vec![vec![1], vec![2], vec![3]];
+
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+    let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+
+    // Excludes one of the three points, with as many absent values as the index has unique ones.
+    let estimation = index.except_cardinality([1, 100, 200, 300].iter());
+    let matching = 2;
+    assert!(
+        estimation.min <= matching && matching <= estimation.max,
+        "{matching} points match, estimated {estimation:?}",
+    );
+}
+
 #[rstest]
 #[case(IndexType::MutableGridstore)]
 #[case(IndexType::Mmap)]
