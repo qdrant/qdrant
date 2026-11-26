@@ -25,6 +25,7 @@ use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::TempDir;
 use tonic::Code;
 
+use super::limits::{MAX_READ_BATCH_RANGES, MAX_READ_BYTES_PER_REQUEST};
 use super::*;
 
 #[cfg(unix)]
@@ -538,6 +539,150 @@ async fn read_batch_returns_each_requested_slice() {
     );
 
     drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn read_bytes_rejects_length_over_limit() {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "limit/data.bin", b"tiny");
+
+    let err = service
+        .read_bytes(Request::new(ReadBytesRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
+            path: "limit/data.bin".to_string(),
+            byte_offset: 0,
+            length: MAX_READ_BYTES_PER_REQUEST + 1,
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::ResourceExhausted);
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn read_whole_rejects_file_over_limit() {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    let path = write_shard_file(&shard_dir, "limit/large.bin", b"");
+    // Sparse file, so the test doesn't write the whole limit to disk
+    fs_err::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(MAX_READ_BYTES_PER_REQUEST + 1)
+        .unwrap();
+
+    let err = service
+        .read_whole(Request::new(ReadWholeRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
+            path: "limit/large.bin".to_string(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), Code::ResourceExhausted);
+    assert!(
+        err.message().contains("ReadBytesStream"),
+        "unexpected error message: {}",
+        err.message(),
+    );
+
+    drop_service(service, storage_dir).await;
+}
+
+#[tokio::test]
+async fn read_batch_returns_slices_in_request_order() {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "batch/data.bin", b"0123456789");
+
+    let response = service
+        .read_batch(Request::new(ReadBatchRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
+            path: "batch/data.bin".to_string(),
+            ranges: vec![
+                ReadBatchRange {
+                    byte_offset: 7,
+                    length: 3,
+                },
+                ReadBatchRange {
+                    byte_offset: 0,
+                    length: 2,
+                },
+                ReadBatchRange {
+                    byte_offset: 2,
+                    length: 1,
+                },
+            ],
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(
+        response.data,
+        vec![b"789".to_vec(), b"01".to_vec(), b"2".to_vec()]
+    );
+
+    drop_service(service, storage_dir).await;
+}
+
+async fn read_batch_error(ranges: &[(u64, u64)]) -> Status {
+    let (service, storage_dir, shard_dir) = create_service_async().await;
+    write_shard_file(&shard_dir, "batch/data.bin", b"0123456789");
+
+    let err = service
+        .read_batch(Request::new(ReadBatchRequest {
+            collection_name: TEST_COLLECTION_NAME.to_string(),
+            shard_id: TEST_SHARD_ID,
+            path: "batch/data.bin".to_string(),
+            ranges: ranges
+                .iter()
+                .map(|&(byte_offset, length)| ReadBatchRange {
+                    byte_offset,
+                    length,
+                })
+                .collect(),
+        }))
+        .await
+        .unwrap_err();
+
+    drop_service(service, storage_dir).await;
+    err
+}
+
+#[tokio::test]
+async fn read_batch_rejects_duplicate_ranges() {
+    let err = read_batch_error(&[(0, 4), (6, 2), (0, 4)]).await;
+    assert_eq!(err.code(), Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn read_batch_rejects_overlapping_ranges() {
+    let err = read_batch_error(&[(0, 4), (3, 2)]).await;
+    assert_eq!(err.code(), Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn read_batch_rejects_too_many_ranges() {
+    let ranges = (0..=MAX_READ_BATCH_RANGES as u64)
+        .map(|byte_offset| (byte_offset, 0))
+        .collect::<Vec<_>>();
+    let err = read_batch_error(&ranges).await;
+    assert_eq!(err.code(), Code::ResourceExhausted);
+}
+
+#[tokio::test]
+async fn read_batch_rejects_too_many_bytes() {
+    let err = read_batch_error(&[
+        (0, MAX_READ_BYTES_PER_REQUEST),
+        (MAX_READ_BYTES_PER_REQUEST, 1),
+    ])
+    .await;
+    assert_eq!(err.code(), Code::ResourceExhausted);
 }
 
 #[tokio::test]

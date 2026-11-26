@@ -18,6 +18,9 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 // Qdrant (e.g. replica bootstrap) rather than typical user queries. It is
 // considered internal: the request/response shape may change between
 // releases.
+//
+// ReadBytes, ReadWhole and ReadBatch return at most 128 MiB per request, and
+// fail with RESOURCE_EXHAUSTED otherwise. Use ReadBytesStream for larger reads.
 service StorageRead {
   // List files in the shard.
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {}
@@ -26,12 +29,15 @@ service StorageRead {
   // Get the length of a file in the shard.
   rpc FileLength(FileLengthRequest) returns (FileLengthResponse) {}
   // Maps to UniversalRead::read() — single range from a single file.
+  // The length is limited to 128 MiB.
   rpc ReadBytes(ReadBytesRequest) returns (ReadBytesResponse) {}
   // Streaming variant of ReadBytes for large files, sends ~1MB chunks.
   rpc ReadBytesStream(ReadBytesStreamRequest) returns (stream ReadBytesStreamResponse) {}
   // Maps to UniversalRead::read_whole() — read an entire file.
+  // Only files up to 128 MiB can be read, use ReadBytesStream for larger files.
   rpc ReadWhole(ReadWholeRequest) returns (ReadWholeResponse) {}
   // Maps to UniversalRead::read_batch() — multiple ranges from a single file.
+  // Ranges must not overlap. At most 1024 ranges and 128 MiB in total per request.
   rpc ReadBatch(ReadBatchRequest) returns (ReadBatchResponse) {}
 }
 

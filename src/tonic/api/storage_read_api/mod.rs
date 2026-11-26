@@ -9,7 +9,7 @@ use api::grpc::qdrant::{
     ReadBytesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse, ReadWholeRequest,
     ReadWholeResponse,
 };
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     ListedFile, MmapFile, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
@@ -20,10 +20,14 @@ use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status, async_trait};
 
 use crate::tonic::api::storage_read_api::helpers::{io_error_to_status, validate_range};
+use crate::tonic::api::storage_read_api::limits::{
+    check_read_batch_ranges, check_read_bytes_length, check_read_whole_length,
+};
 use crate::tonic::api::validate;
 use crate::tonic::auth::extract_auth;
 
 mod helpers;
+mod limits;
 #[cfg(test)]
 mod tests;
 
@@ -172,6 +176,7 @@ where
             byte_offset,
             length,
         } = request.into_inner();
+        check_read_bytes_length(length)?;
 
         let (base, collections_root) = self
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_bytes")
@@ -273,7 +278,7 @@ where
         Ok(Response::new(Box::pin(stream)))
     }
 
-    // Maps to UniversalRead::read_whole() — read an entire file.
+    // Like UniversalRead::read_whole() — read an entire file, if it is within the size limit.
     async fn read_whole(
         &self,
         mut request: Request<ReadWholeRequest>,
@@ -301,7 +306,13 @@ where
             let storage = fs
                 .open(&path, open_options, Default::default())
                 .map_err(io_error_to_status)?;
-            let cow = storage.read_whole::<u8>().map_err(io_error_to_status)?;
+            // Read exactly the checked length, not `read_whole()`, which looks up the length
+            // again: a file that grows in between could otherwise bypass the limit
+            let length = storage.len::<u8>().map_err(io_error_to_status)?;
+            check_read_whole_length(length)?;
+            let cow = storage
+                .read(ReadRange::new(0, length), Sequential)
+                .map_err(io_error_to_status)?;
             Ok::<_, Status>(cow.into_owned())
         })
         .await
@@ -323,6 +334,12 @@ where
             path,
             ranges,
         } = request.into_inner();
+        let ranges = ranges
+            .iter()
+            .map(|r| ReadRange::new(r.byte_offset, r.length))
+            .collect::<Vec<_>>();
+        check_read_batch_ranges(&ranges)?;
+
         let (base, collections_root) = self
             .check_and_resolve_shard(&auth, &collection_name, shard_id, "read_batch")
             .await?;
@@ -334,10 +351,6 @@ where
             populate: Populate::No,
             advice: AdviceSetting::Advice(Advice::Normal),
         };
-        let ranges = ranges
-            .iter()
-            .map(|r| ReadRange::new(r.byte_offset, r.length))
-            .collect::<Vec<_>>();
 
         let fs = Arc::clone(&self.fs);
         let data = tokio::task::spawn_blocking(move || {
