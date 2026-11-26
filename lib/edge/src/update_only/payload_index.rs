@@ -86,7 +86,8 @@ where
         Ok((self, outcome))
     }
 
-    /// Also removes files a crashed call left behind; an error loses the writer.
+    /// Files a crashed call leaves behind stay unloaded without a config entry, and the next
+    /// create removes them; an error loses the writer.
     pub fn delete_payload_index(
         mut self,
         field: &JsonPath,
@@ -102,19 +103,13 @@ where
             }
             let config_path = Self::config_path(&segment.path);
             let mut config = self.load_config(&config_path)?;
-            let indexed = config.indices.remove(field).is_some();
-            let files = self.field_files(&segment.path, field)?;
-            if !indexed && files.is_empty() {
+            if config.indices.remove(field).is_none() {
                 continue;
             }
 
             self.close_writer(segment);
-            if indexed {
-                self.save_config(&config_path, &config)?;
-            }
-            for file in files {
-                self.fs.remove(&file)?;
-            }
+            self.save_config(&config_path, &config)?;
+            self.remove_field_files(&segment.path, field)?;
             self.reopen_writer(segment)?;
             outcome.changed += 1;
         }
