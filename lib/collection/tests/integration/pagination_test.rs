@@ -195,4 +195,28 @@ async fn test_collection_query_huge_limit_with_offset_with_shards(shard_number: 
 
     // Everything after the offset: an oversized limit means "all remaining points".
     assert_eq!(result.len(), 98);
+
+    // The legacy search path must behave the same.
+    let search_request = SearchRequestInternal {
+        vector: vec![1.0, 0.0, 0.0, 0.0].into(),
+        filter: None,
+        limit: usize::MAX,
+        offset: Some(2),
+        with_payload: None,
+        with_vector: None,
+        params: None,
+        score_threshold: None,
+    };
+    let search_result = collection
+        .search(
+            search_request.into(),
+            None,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+    assert_eq!(search_result.len(), 98);
 }
