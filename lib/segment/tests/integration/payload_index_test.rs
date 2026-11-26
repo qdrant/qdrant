@@ -1500,6 +1500,85 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
     Ok(())
 }
 
+#[rstest::rstest]
+#[case::integer(Integer, serde_json::json!(1), serde_json::json!(2))]
+#[case::keyword(Keyword, serde_json::json!("a"), serde_json::json!("b"))]
+fn test_match_except_mixed_payload(
+    #[case] schema: PayloadSchemaType,
+    #[case] excluded: serde_json::Value,
+    #[case] allowed: serde_json::Value,
+) -> Result<()> {
+    let _scope = ambient::test_guard();
+    let dir = TempDir::new()?;
+    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot)?;
+    let key = JsonPath::new("value");
+    segment.create_field_index(1, &key, Some(&schema.into()))?;
+
+    for (id, payload) in [
+        (1, payload_json! {"value": excluded}),
+        (2, payload_json! {"value": allowed}),
+        (3, payload_json! {"value": excluded}),
+        (4, payload_json! {"value": [excluded, {"nested": true}]}),
+        (5, payload_json! {"value": [excluded, allowed]}),
+        (6, payload_json! {"value": null}),
+        (7, payload_json! {"value": []}),
+        (8, payload_json! {}),
+        (9, payload_json! {"value": allowed}),
+        (10, payload_json! {"value": allowed}),
+        (11, payload_json! {"value": 1.5}),
+    ] {
+        segment.upsert_point(2, id.into(), only_default_vector(&[1.0; DIM]))?;
+        segment.set_full_payload(2, id.into(), &payload)?;
+    }
+    segment.set_payload(
+        3,
+        3.into(),
+        &payload_json! {"nested": true},
+        &Some(key.clone()),
+    )?;
+
+    for indexed in [true, false] {
+        if !indexed {
+            segment.delete_field_index(4, &key)?;
+        }
+
+        for (clause, except, expected) in [
+            (
+                "should",
+                vec![excluded.clone()],
+                vec![2, 3, 4, 5, 9, 10, 11],
+            ),
+            ("must_not", vec![excluded.clone()], vec![1, 6, 7, 8]),
+            ("must", vec![], vec![1, 2, 3, 4, 5, 9, 10, 11]),
+        ] {
+            let filter: Filter = serde_json::from_value(serde_json::json!({
+                (clause): [{"key": "value", "match": {"except": except}}],
+            }))?;
+            let ids = segment.read_filtered(
+                None,
+                Some(10),
+                Some(&filter),
+                &AtomicBool::default(),
+                DeferredBehavior::VisibleOnly,
+            )?;
+            let expected: Vec<_> = expected.into_iter().map(Into::into).collect();
+            assert_eq!(ids, expected, "{schema:?}, indexed={indexed}, {clause}");
+
+            let ids = segment.read_filtered(
+                Some(3.into()),
+                Some(1),
+                Some(&filter),
+                &AtomicBool::default(),
+                DeferredBehavior::VisibleOnly,
+            )?;
+            let first = expected.into_iter().find(|&id| id >= 3.into());
+            assert_eq!(ids, first.into_iter().collect::<Vec<_>>());
+        }
+    }
+
+    Ok(())
+}
+
 /// Prefix match must return identical results on the plain segment (payload
 /// fallback), the appendable struct segment (mutable prefix structure) and
 /// the mmap segment (on-disk prefix index).
