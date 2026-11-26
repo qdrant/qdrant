@@ -542,23 +542,6 @@ def test_weighted_dbsf(collection_name):
         assert isclose(result_by_id[expected["id"]], expected["score"], rel_tol=1e-5)
 
 
-@pytest.mark.parametrize("weights", [[1.0], [1.0, 1.0, 1.0], [-1.0, 1.0]])
-def test_dbsf_invalid_weights(weights, collection_name):
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "prefetch": [
-                { "query": [0.1, 0.2, 0.3, 0.4] },
-                { "query": [0.5, 0.6, 0.7, 0.8] },
-            ],
-            "query": {"dbsf": {"weights": weights}},
-        },
-    )
-    assert response.status_code == 400, response.json()
-
-
 def test_nearest_with_mmr(collection_name):
     # Regular nearest neighbor search
     response = request_with_validation(

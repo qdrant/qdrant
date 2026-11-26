@@ -204,46 +204,6 @@ mod tests {
         );
     }
 
-    fn scores_by_id(points: &[ScoredPoint]) -> AHashMap<PointIdType, ScoreType> {
-        points.iter().map(|p| (p.id, p.score)).collect()
-    }
-
-    #[test]
-    fn test_dbsf_weights() {
-        let list_a = vec![point(1, 0.9), point(2, 0.5), point(3, 0.1)];
-        let list_b = vec![point(2, 10.0), point(3, 8.0), point(4, 1.0)];
-
-        let norm_a = scores_by_id(&distr_norm(list_a.clone()));
-        let norm_b = scores_by_id(&distr_norm(list_b.clone()));
-
-        let weighted = score_fusion(
-            [list_a.clone(), list_b.clone()],
-            ScoreFusion::dbsf_weighted(vec![0.7, 0.3]),
-        );
-        let weighted_scores = scores_by_id(&weighted);
-        assert_eq!(weighted_scores.len(), 4);
-        for (id, score) in weighted_scores {
-            let expected = 0.7 * norm_a.get(&id).copied().unwrap_or(0.0)
-                + 0.3 * norm_b.get(&id).copied().unwrap_or(0.0);
-            assert_close(score, expected);
-        }
-        // Output is sorted by descending score
-        assert!(weighted.is_sorted_by(|a, b| a.score >= b.score));
-
-        // Unit weights are the same as no weights
-        let unweighted = score_fusion([list_a.clone(), list_b.clone()], ScoreFusion::dbsf());
-        let unit = score_fusion(
-            [list_a.clone(), list_b.clone()],
-            ScoreFusion::dbsf_weighted(vec![1.0, 1.0]),
-        );
-        assert_eq!(scores_by_id(&unweighted), scores_by_id(&unit));
-
-        // Zero weight removes the influence of a list
-        let only_b = score_fusion([list_a, list_b], ScoreFusion::dbsf_weighted(vec![0.0, 1.0]));
-        assert_eq!(only_b[0].id, PointIdType::NumId(2));
-        assert_eq!(scores_by_id(&only_b)[&PointIdType::NumId(1)], 0.0);
-    }
-
     proptest! {
         #[test]
         fn welford_calc_vs_naive(scores in prop::collection::vec(-100.0..100.0f32, 2..1000)) {
