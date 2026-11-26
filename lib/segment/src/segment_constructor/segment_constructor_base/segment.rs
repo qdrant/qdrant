@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use common::ambient;
 use common::defaults::log_load_timing;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
+use common::reason::reason;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFs;
@@ -94,7 +96,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
                 "Segment name is not a valid UUID: {}. Renaming to {segment_uuid}",
                 path.display(),
             );
-            fs::rename(path, &new_path)?;
+            common::fs::rename_while_held(path, &new_path)?;
             sync_parent_dir(&new_path)?;
             Ok(Some((new_path, segment_uuid)))
         }
@@ -118,6 +120,7 @@ pub fn load_segment(
     stopped: &AtomicBool,
     ignore_missing_version: bool,
 ) -> OperationResult<Segment> {
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
     let total_started = Instant::now();
 
     let stored_version = SegmentVersion::load_universal(&MmapFs, path)?;

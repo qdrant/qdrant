@@ -4,8 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-#[cfg(feature = "testing")]
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Sequential;
 use common::storage_version::StorageVersion as _;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFs};
@@ -153,7 +151,7 @@ fn build_ram_index(
             ram_index_builder.add(id, vector);
         }
         tick_progress();
-    });
+    })?;
     result?;
 
     Ok((ram_index_builder.build(), indices_tracker))
@@ -335,7 +333,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         use sparse::index::posting_list_common::PostingListIter as _;
 
         // For tests only
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = common::ambient::test_guard();
 
         let mut unique_record_ids = std::collections::HashSet::new();
         let arena = blink_alloc::Blink::new();
@@ -344,7 +342,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             .iter()
             .filter_map(|dim_id| Some(((), self.indices_tracker.remap_index(*dim_id)?)));
         self.inverted_index
-            .get_batch(ids, &arena, &hw_counter, |(), posting_list_iter| {
+            .get_batch(ids, &arena, |(), posting_list_iter| {
                 for element in posting_list_iter.into_std_iter() {
                     unique_record_ids.insert(element.record_id);
                 }

@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -128,10 +127,9 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
-        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
+            let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id as PointOffsetType, other_deleted);
         }
         let end_index = self.vectors.len() as PointOffsetType;
@@ -152,8 +150,8 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -171,7 +169,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let keys = keys
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
@@ -182,7 +180,6 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
                 callback(user_data, point_offset, vector);
                 Ok(())
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -213,16 +210,11 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors
-            .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
+            .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false);
         Ok(())
     }
@@ -351,6 +343,7 @@ pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<
 mod tests {
     use std::collections::HashSet;
 
+    use common::ambient;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -377,7 +370,7 @@ mod tests {
         .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {
@@ -385,7 +378,7 @@ mod tests {
                 .take(DIM)
                 .collect::<Vec<_>>();
             storage
-                .insert_vector(internal_id, VectorRef::from(&point), &hw_counter)
+                .insert_vector(internal_id, VectorRef::from(&point))
                 .unwrap();
         }
         for internal_id in 0..POINT_COUNT {

@@ -14,7 +14,7 @@ use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::simple_disk_cache::fs::DiskCacheFs;
 use crate::universal_io::simple_disk_cache::pipeline::DiskCachePipeline;
-use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote};
+use crate::universal_io::simple_disk_cache::{BLOCK_SIZE, DiskCacheRemote, to_block_range};
 use crate::universal_io::{
     Item, ReadPipeline, ReadRange, UioResult, UniversalKind, UniversalRead, UserData,
 };
@@ -69,16 +69,16 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
         let mut future = self.live_preload_impl(get_file_info)?;
 
         // Poll once so that actual async work begins right away
         let future = match (&mut future).now_or_never() {
-            Some(()) => ready(()).left_future(),
+            Some(result) => ready(result).left_future(),
             None => future.right_future(),
         };
 
-        Ok(future)
+        Ok(future.map(|result| result.map_err(|err| err.duplicate())))
     }
 
     fn read_bytes<P: AccessPattern>(
@@ -111,11 +111,22 @@ where
         false
     }
 
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        // Only fetched blocks of an already-live mirror: the rest are fetched
+        // on read anyway.
+        if let Some(ready) = self.maybe_ready() {
+            let local = ready.local;
+            local.mmap().will_need(
+                byte_ranges.filter(|range| local.contains(to_block_range(range.clone()))),
+            );
+        }
+    }
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         // Only touch an already-live mirror; don't force initialization just to
         // clear a cache that may not exist yet.
-        if self.is_ready() {
-            self.state()?.local.mmap().clear_ram_cache()?;
+        if let Some(ready) = self.maybe_ready() {
+            ready.local.mmap().clear_ram_cache()?;
         }
         Ok(())
     }

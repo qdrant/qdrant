@@ -11,6 +11,7 @@ use collection::shards::shard::PeerId;
 use common::fs::safe_delete_in_tmp;
 
 use super::TableOfContent;
+use super::temp_directories::DELETED_SUBDIR_NAME;
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
@@ -46,11 +47,6 @@ impl CollectionContainer for TableOfContent {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            // Validation:
-            // 1. Check that we are not removing some unique shards (removed)
-
-            // Validation passed
-
             self.remove_shards_at_peer(peer_id).await?;
 
             if self.this_peer_id == peer_id {
@@ -77,6 +73,32 @@ impl CollectionContainer for TableOfContent {
 
     fn peer_has_shards(&self, peer_id: PeerId) -> bool {
         self.general_runtime.block_on(self.peer_has_shards(peer_id))
+    }
+
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        // Remove addresses before dropping pools, or new requests can look them up and
+        // recreate a pool after cleanup. Keep the removed URIs until their pools are dropped.
+        // Requests that already copied a URI can still recreate its pool.
+        let addresses = {
+            let mut peers = self.channel_service.id_to_address.write();
+            if peer_id == self.this_peer_id {
+                // A detached node must stop new requests from resolving other peers' addresses
+                peers
+                    .drain()
+                    .map(|(_, address)| address)
+                    .collect::<Vec<_>>()
+            } else {
+                peers.remove(&peer_id).into_iter().collect()
+            }
+        };
+
+        self.general_runtime.block_on(async {
+            for address in addresses {
+                self.channel_service.channel_pool.drop_pool(&address).await;
+            }
+        });
+
+        Ok(())
     }
 
     fn quota_config(&self) -> QuotaConfig {
@@ -188,7 +210,15 @@ impl TableOfContent {
                 if let Some(collection) = &existing_collection {
                     let collection_uuid = collection.uuid().await;
 
-                    let recreate_collection = if collection_uuid != state.config.uuid {
+                    // A missing UUID means the collection was created outside of consensus and
+                    // has not been assigned an identity yet. It doesn't mean it's a different
+                    // collection, so only two different UUIDs require recreation.
+                    let is_different_collection = match (collection_uuid, state.config.uuid) {
+                        (Some(existing), Some(snapshot)) => existing != snapshot,
+                        (None, _) | (_, None) => false,
+                    };
+
+                    let recreate_collection = if is_different_collection {
                         log::warn!(
                             "Recreating collection {id}, because collection UUID is different: \
                              existing collection UUID: {collection_uuid:?}, \
@@ -282,7 +312,7 @@ impl TableOfContent {
                         drop(existing_collection);
 
                         let path = self.get_collection_path(id);
-                        let deleted_dir = self.storage_config.storage_path.join(".deleted");
+                        let deleted_dir = self.storage_config.storage_path.join(DELETED_SUBDIR_NAME);
 
                         let to_delete =
                             safe_delete_in_tmp(&path, &deleted_dir).map_err(|cleanup_error| {
@@ -392,6 +422,14 @@ impl TableOfContent {
 
     async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
+
+        // A later collection can reject a resharding abort. Check every collection before
+        // cleanup writes, so rejection leaves earlier collections unchanged.
+        // Consensus serializes resharding and transfer changes between these two passes.
+        for collection in collections.values() {
+            collection.check_remove_shards_at_peer(peer_id).await?;
+        }
+
         for collection in collections.values() {
             collection.remove_shards_at_peer(peer_id).await?;
         }

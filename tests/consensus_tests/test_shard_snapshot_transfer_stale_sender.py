@@ -118,6 +118,8 @@ def test_restarted_sender_replaying_aborted_transfer_start_leaves_receiver_intac
         )
     )
     start_commit = get_cluster_info(source_uri)["raft_info"]["commit"]
+    sender_log = pathlib.Path(init_pytest_log_folder()) / "peer_sender_delayed.log"
+    wait_for(lambda: "Staging: pausing shard transfer start" in sender_log.read_text())
 
     def sender_paused_in_apply():
         raft_info = get_cluster_info(peer_api_uris[sender])["raft_info"]
@@ -132,10 +134,17 @@ def test_restarted_sender_replaying_aborted_transfer_start_leaves_receiver_intac
     # consensus first.
     upsert_random_points(source_uri, 100, offset=N_POINTS, batch_size=100)
     baseline = _count_points(source_uri)
-    wait_for(
-        lambda: (_local_shard(receiver_uri) or {}).get("state") == "Partial",
-        wait_for_timeout=60,
-    )
+
+    def receiver_is_partial():
+        try:
+            return (_local_shard(receiver_uri) or {}).get("state") == "Partial"
+        except requests.exceptions.ReadTimeout:
+            # Snapshot restore holds the local shard write lock, so cluster info can
+            # exceed its request timeout while waiting to read the shard. Retry until
+            # the polling deadline instead of failing before recovery finishes.
+            return False
+
+    wait_for(receiver_is_partial, wait_for_timeout=60)
 
     # Restart the sender without the delay. It replays the `Start` before rejoining consensus and
     # spawns the driver of the aborted transfer, while the receiver is `Partial` in another one.

@@ -2,7 +2,6 @@
 
 use std::num::NonZeroUsize;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType, SeqNumberType};
@@ -20,7 +19,6 @@ pub fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
 
@@ -28,13 +26,12 @@ pub fn set_payload(
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             chunk,
-            |id, write_segment| write_segment.set_payload(op_num, id, payload, key, hw_counter),
+            |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
             |_, _, _, old_payload| match key {
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
 
         check_unprocessed_points(chunk, &updated_points)?;
@@ -57,9 +54,8 @@ pub fn set_payload_by_filter(
     filter: &Filter,
     key: &Option<JsonPath>,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let affected_points = points_by_filter(segments, filter, hw_counter)?;
+    let affected_points = points_by_filter(segments, filter)?;
     let points_updated = set_payload(
         segments,
         op_num,
@@ -67,7 +63,6 @@ pub fn set_payload_by_filter(
         &affected_points,
         key,
         max_segment_size_bytes,
-        hw_counter,
     )?;
 
     if points_updated == 0 {
@@ -85,7 +80,6 @@ pub fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -96,7 +90,7 @@ pub fn delete_payload(
             |id, write_segment| {
                 let mut res = true;
                 for key in keys {
-                    res &= write_segment.delete_payload(op_num, id, key, hw_counter)?;
+                    res &= write_segment.delete_payload(op_num, id, key)?;
                 }
                 Ok(res)
             },
@@ -106,7 +100,6 @@ pub fn delete_payload(
                 }
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
 
         check_unprocessed_points(batch, &updated_points)?;
@@ -128,16 +121,14 @@ pub fn delete_payload_by_filter(
     filter: &Filter,
     keys: &[PayloadKeyType],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let affected_points = points_by_filter(segments, filter, hw_counter)?;
+    let affected_points = points_by_filter(segments, filter)?;
     let points_updated = delete_payload(
         segments,
         op_num,
         &affected_points,
         keys,
         max_segment_size_bytes,
-        hw_counter,
     )?;
 
     if points_updated == 0 {
@@ -154,7 +145,6 @@ pub fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
 
@@ -162,10 +152,9 @@ pub fn clear_payload(
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             batch,
-            |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
+            |id, write_segment| write_segment.clear_payload(op_num, id),
             |_, _, _, payload| payload.0.clear(),
             max_segment_size_bytes,
-            hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
@@ -186,16 +175,9 @@ pub fn clear_payload_by_filter(
     op_num: SeqNumberType,
     filter: &Filter,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-    let points_cleared = clear_payload(
-        segments,
-        op_num,
-        &points_to_clear,
-        max_segment_size_bytes,
-        hw_counter,
-    )?;
+    let points_to_clear = points_by_filter(segments, filter)?;
+    let points_cleared = clear_payload(segments, op_num, &points_to_clear, max_segment_size_bytes)?;
 
     if points_cleared == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -212,7 +194,6 @@ pub fn overwrite_payload(
     payload: &Payload,
     points: &[PointIdType],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
 
@@ -220,12 +201,11 @@ pub fn overwrite_payload(
         let updated_points = segments.apply_points_with_conditional_move(
             op_num,
             batch,
-            |id, write_segment| write_segment.set_full_payload(op_num, id, payload, hw_counter),
+            |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
             |_, _, _, old_payload| {
                 *old_payload = payload.clone();
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
 
         total_updated_points += updated_points.len();
@@ -247,16 +227,14 @@ pub fn overwrite_payload_by_filter(
     payload: &Payload,
     filter: &Filter,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
-    let affected_points = points_by_filter(segments, filter, hw_counter)?;
+    let affected_points = points_by_filter(segments, filter)?;
     let points_updated = overwrite_payload(
         segments,
         op_num,
         payload,
         &affected_points,
         max_segment_size_bytes,
-        hw_counter,
     )?;
 
     if points_updated == 0 {

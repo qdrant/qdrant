@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -94,15 +94,14 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
         id_tracker_memory: None,
     };
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     let (mut segment, _) = build_segment(segment_dir.path(), &segment_config, None, true).unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();
         let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, named_vectors)
             .unwrap();
     }
 

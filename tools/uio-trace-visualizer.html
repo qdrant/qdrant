@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
 
-Visualizer for traces written by the `uio_trace` module.
+Visualizer for traces written by the `ambient::trace` module.
 See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
 
 Requests are grouped into lanes by the file tree of their paths; click a tree node
@@ -203,6 +203,11 @@ function build(text, name) {
   const all = [];
   const cpu = [];
   let dropped = 0, bad = 0;
+  // Older traces count nanoseconds from the trace start (`start_ns`, `at_ns`, `phase`
+  // records). Newer ones write epoch nanoseconds (`started`, `timestamp`,
+  // `span_start`/`span_end`, one columnar `cpu` record): those are rebased on the
+  // earliest one, so both read as microseconds from the start.
+  const open = new Map();  // span id -> phase, until its `span_end`
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let ev;
@@ -210,21 +215,47 @@ function build(text, name) {
     if (ev.kind === "sections") {
       layouts.set(ev.path, ev.sections);
     } else if (ev.kind === "cpu") {
-      cpu.push({at: ev.at_ns / 1000, cpu: ev.cpu_ns / 1000});
+      if (Array.isArray(ev.timestamps)) {
+        ev.timestamps.forEach((at, i) => cpu.push({at, cpu: ev.cpu_ns[i]}));
+      } else {
+        cpu.push({at: ev.at_ns, cpu: ev.cpu_ns});
+      }
     } else if (ev.kind === "dropped") {
       dropped += ev.count;
     } else if (ev.kind === "phase") {
-      phases.push({id: ev.id, name: ev.name, s: ev.start_ns / 1000, e: ev.end_ns / 1000, depth: 0});
+      phases.push({id: ev.id, name: ev.name, s: ev.start_ns, e: ev.end_ns, depth: 0});
+    } else if (ev.kind === "span_start") {
+      const phase = {id: ev.id, name: ev.name, s: ev.timestamp, e: null, depth: 0};
+      open.set(ev.id, phase);
+      phases.push(phase);
+    } else if (ev.kind === "span_end") {
+      const phase = open.get(ev.id);
+      if (phase) { phase.e = ev.timestamp; open.delete(ev.id); }
     } else if (ev.kind === "mark") {
-      marks.push({at: ev.at_ns / 1000, text: ev.text});
+      marks.push({at: ev.at_ns ?? ev.timestamp, text: ev.text});
     } else if (ev.kind === "request") {
       all.push({
         // Requests are not numbered in the trace; the file order names them.
-        id: all.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
+        id: all.length, parent: ev.parent, s: ev.start_ns ?? ev.started, e: ev.end_ns ?? ev.ended,
         op: ev.op, path: ev.path, off: Number(ev.offset), len: Number(ev.length), outcome: ev.outcome,
       });
     }
   }
+  // Raw nanoseconds so far. A span never ended (the trace was cut) ends at the last event.
+  const times = [
+    ...all.flatMap(req => [req.s, req.e]), ...phases.flatMap(p => [p.s, p.e]),
+    ...marks.map(m => m.at), ...cpu.map(c => c.at),
+  ].filter(t => t != null);
+  const last = times.reduce((a, t) => Math.max(a, t), 0);
+  for (const phase of phases) if (phase.e == null) phase.e = last;
+  // Epoch nanoseconds are past 1e15; trace-relative ones never get there.
+  const first = times.reduce((a, t) => Math.min(a, t), Infinity);
+  const base = first > 1e15 ? first : 0;
+  const us = t => (t - base) / 1000;
+  for (const req of all) { req.s = us(req.s); req.e = us(req.e); }
+  for (const phase of phases) { phase.s = us(phase.s); phase.e = us(phase.e); }
+  for (const mark of marks) mark.at = us(mark.at);
+  for (const sample of cpu) { sample.at = us(sample.at); sample.cpu /= 1000; }
   if (!all.length && !phases.length) throw new Error("no spans in " + name);
 
   for (const req of all) req.spans = sections(layouts, req);

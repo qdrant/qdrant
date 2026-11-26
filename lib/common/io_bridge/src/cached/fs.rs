@@ -39,7 +39,17 @@ impl<A: AsyncRead + Clone> CachedBlobFs<A> {
     /// Build both halves around one shared backend handle, reporting their
     /// remote requests into one shared observer.
     pub fn new(remote: A, runtime: BridgeRuntime, disk_cache: Arc<DiskCacheConfig>) -> Self {
-        let stats = RemoteIoStats::default();
+        Self::new_with_stats(remote, runtime, disk_cache, RemoteIoStats::default())
+    }
+
+    /// [`new`](Self::new), reporting into `stats` instead of a fresh observer,
+    /// e.g. one already shared with another filesystem over the same backend.
+    pub fn new_with_stats(
+        remote: A,
+        runtime: BridgeRuntime,
+        disk_cache: Arc<DiskCacheConfig>,
+        stats: RemoteIoStats,
+    ) -> Self {
         let remote_fs = BlobFs::new(remote.clone(), runtime.clone()).with_stats(stats.clone());
         Self {
             cache_fs: DiskCacheFs::new(disk_cache, remote_fs),

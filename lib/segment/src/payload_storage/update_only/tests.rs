@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFile, MmapFs, Populate, ReadOnly, UniversalRead, UniversalReadFs as _,
@@ -31,10 +31,9 @@ fn read_back(
     let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
         ReadOnlyPayloadStorage::open(&fs, segment_path.to_path_buf(), Populate::No).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
     slots
         .into_iter()
-        .map(|slot| storage.get(slot, &hw_counter).unwrap())
+        .map(|slot| storage.get(slot).unwrap())
         .collect()
 }
 
@@ -43,30 +42,18 @@ fn read_back(
 #[test]
 fn batches_are_durable_and_resume() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let first: Vec<Payload> = (0..3).map(payload).collect();
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
-    writer
-        .append_many(
-            &MmapFs,
-            first.iter().enumerate().map(|(i, p)| (i as u32, p)),
-            &hw_counter,
-        )
-        .unwrap();
+    writer.append_many(&MmapFs, 0, &first).unwrap();
     drop(writer);
 
     assert_eq!(read_back(dir.path(), 0..3), first);
 
     let second: Vec<Payload> = (10..13).map(payload).collect();
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
-    writer
-        .append_many(
-            &MmapFs,
-            second.iter().enumerate().map(|(i, p)| (i as u32 + 3, p)),
-            &hw_counter,
-        )
-        .unwrap();
+    writer.append_many(&MmapFs, 3, &second).unwrap();
     drop(writer);
 
     assert_eq!(
@@ -75,20 +62,19 @@ fn batches_are_durable_and_resume() {
     );
 }
 
-/// Slots with an empty payload are not written at all, and read back empty,
-/// including a gap the batch skips entirely.
+/// Slots with an empty payload are not written at all, and read back empty.
 #[test]
-fn empty_payloads_and_gaps_read_back_empty() {
+fn empty_payloads_read_back_empty() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let empty = Payload::default();
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
         .append_many(
             &MmapFs,
-            [(0, &payload(0)), (1, &empty), (4, &payload(4))],
-            &hw_counter,
+            0,
+            [&payload(0), &empty, &empty, &empty, &payload(4)],
         )
         .unwrap();
     drop(writer);
@@ -111,11 +97,11 @@ fn empty_payloads_and_gaps_read_back_empty() {
 #[test]
 fn first_payload_may_land_on_a_high_slot() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
-        .append_many(&MmapFs, [(1_000, &payload(1_000))], &hw_counter)
+        .append_many(&MmapFs, 1_000, [&payload(1_000)])
         .unwrap();
     drop(writer);
 
@@ -125,33 +111,21 @@ fn first_payload_may_land_on_a_high_slot() {
     );
 }
 
-/// The storage is append-only: a slot it already holds a payload for cannot be
-/// written a second time, whether within one batch or by a later writer.
+/// The storage is append-only: a slot a previous writer already holds a
+/// payload for cannot be written a second time.
 #[test]
 fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
-        .append_many(&MmapFs, [(0, &payload(0)), (1, &payload(1))], &hw_counter)
+        .append_many(&MmapFs, 0, [&payload(0), &payload(1)])
         .unwrap();
-
-    // Out of order within a batch
-    assert!(
-        writer
-            .append_many(&MmapFs, [(3, &payload(3)), (2, &payload(2))], &hw_counter)
-            .is_err(),
-    );
     drop(writer);
 
-    // And a slot a previous writer already used
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
-    assert!(
-        writer
-            .append_many(&MmapFs, [(0, &payload(0))], &hw_counter)
-            .is_err()
-    );
+    assert!(writer.append_many(&MmapFs, 0, [&payload(0)]).is_err());
 }
 
 /// A payload storage created in mutable mode is refused rather than opened.

@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 
 use ahash::{AHashMap, AHashSet};
 use api::rest::RecommendStrategy;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderValue};
@@ -24,8 +24,9 @@ use shard::scroll::ScrollRequestInternal;
 use shard::segment_holder::SegmentId;
 
 use super::super::op::{
-    FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, canonical_sparse, dense_diff,
-    dense_matches, has_num, match_has_id_filter, match_has_vector_filter,
+    FusionKind, ModelFilter, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter,
+    canonical_sparse, dense_diff, dense_matches, has_num, is_empty_filter, is_empty_matches,
+    is_null_filter, is_null_matches, match_has_id_filter, match_has_vector_filter,
     match_num_and_slice_filter, match_num_filter, match_slice_filter, match_tag_filter,
     match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
     url_prefix_matches,
@@ -140,8 +141,8 @@ pub(super) async fn apply_retrieve(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"));
     let returned: AHashSet<PointIdType> = records.iter().map(|r| r.id).collect();
@@ -193,8 +194,8 @@ pub(super) async fn apply_retrieve_selective(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("RetrieveSelective failed");
 
@@ -407,8 +408,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let retrieved_summary = match probe_retrieve {
         Ok(records) => records
@@ -444,8 +445,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let count_summary = match probe_count {
         Ok(c) => format!("{}", c.count),
@@ -468,8 +469,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let scroll_summary = match probe_scroll {
         Ok(s) => {
@@ -556,8 +557,8 @@ pub(super) async fn apply_search(
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("search failed")
             .iter()
@@ -638,8 +639,8 @@ pub(super) async fn apply_query(
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("query failed")
             .iter()
@@ -737,8 +738,8 @@ pub(super) async fn apply_query_fusion(
             None,
             ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("query fusion failed");
     // Collect ids as a Vec first so we can assert fusion actually deduplicated overlapping prefetch
@@ -806,8 +807,8 @@ pub(super) async fn apply_count_by_num(collection: &Collection, model: &Model, n
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by filter failed")
         .count;
@@ -834,8 +835,8 @@ pub(super) async fn apply_count_by_slice(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by slice failed")
         .count;
@@ -884,8 +885,8 @@ pub(super) async fn apply_facet(
             None,
             None,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("facet failed");
 
@@ -931,8 +932,8 @@ pub(super) async fn apply_scroll_filtered_by_num(collection: &Collection, model:
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(filtered) failed");
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
@@ -955,8 +956,8 @@ pub(super) async fn apply_count_by_tag(collection: &Collection, model: &Model, t
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by tag failed")
         .count;
@@ -986,8 +987,8 @@ pub(super) async fn apply_scroll_filtered_by_tag(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(filtered by tag) failed");
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
@@ -999,44 +1000,44 @@ pub(super) async fn apply_scroll_filtered_by_tag(
     assert_id_sets_eq(&returned, &expected, &format!("scroll(tag=={tag:?})"));
 }
 
-pub(super) async fn apply_count_by_url_prefix(
+pub(super) async fn apply_count_matching(
     collection: &Collection,
     model: &Model,
-    prefix: &str,
+    model_filter: &impl ModelFilter,
 ) {
     let actual = collection
         .count(
             CountRequestInternal {
-                filter: Some(match_url_prefix_filter(prefix)),
+                filter: Some(model_filter.filter()),
                 exact: true,
             },
             None,
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
-        .expect("count by url prefix failed")
+        .unwrap_or_else(|e| panic!("count({model_filter:?}) failed: {e:?}"))
         .count;
     let expected = model
         .values()
-        .filter(|entry| url_prefix_matches(&entry.payload, prefix))
+        .filter(|entry| model_filter.matches(&entry.payload))
         .count();
-    assert_eq!(actual, expected, "count(url prefix={prefix:?}) mismatch");
+    assert_eq!(actual, expected, "count({model_filter:?}) mismatch");
 }
 
-pub(super) async fn apply_scroll_filtered_by_url_prefix(
+pub(super) async fn apply_scroll_matching(
     collection: &Collection,
     model: &Model,
-    prefix: &str,
+    model_filter: &impl ModelFilter,
 ) {
     let scroll = collection
         .scroll_by(
             ScrollRequestInternal {
                 offset: None,
                 limit: Some(usize::MAX),
-                filter: Some(match_url_prefix_filter(prefix)),
+                filter: Some(model_filter.filter()),
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: WithVector::Bool(false),
                 order_by: None,
@@ -1045,21 +1046,17 @@ pub(super) async fn apply_scroll_filtered_by_url_prefix(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
-        .expect("scroll(filtered by url prefix) failed");
+        .unwrap_or_else(|e| panic!("scroll({model_filter:?}) failed: {e:?}"));
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
     let expected: AHashSet<PointIdType> = model
         .iter()
-        .filter(|(_, entry)| url_prefix_matches(&entry.payload, prefix))
+        .filter(|(_, entry)| model_filter.matches(&entry.payload))
         .map(|(id, _)| *id)
         .collect();
-    assert_id_sets_eq(
-        &returned,
-        &expected,
-        &format!("scroll(url prefix={prefix:?})"),
-    );
+    assert_id_sets_eq(&returned, &expected, &format!("scroll({model_filter:?})"));
 }
 
 pub(super) async fn apply_scroll_paged(
@@ -1079,6 +1076,8 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::NumAndSlice { num, total, index } => {
             Some(match_num_and_slice_filter(*num, *total, *index))
         }
+        ScrollFilter::IsEmpty(key) => Some(is_empty_filter(key)),
+        ScrollFilter::IsNull(key) => Some(is_null_filter(key)),
     };
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
@@ -1089,7 +1088,9 @@ pub(super) async fn apply_scroll_paged(
         | ScrollFilter::UrlPrefix(_)
         | ScrollFilter::HasVector(_)
         | ScrollFilter::Slice { .. }
-        | ScrollFilter::NumAndSlice { .. } => AHashSet::new(),
+        | ScrollFilter::NumAndSlice { .. }
+        | ScrollFilter::IsEmpty(_)
+        | ScrollFilter::IsNull(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()
@@ -1113,6 +1114,8 @@ pub(super) async fn apply_scroll_paged(
                     }
                     .check(**id)
             }
+            ScrollFilter::IsEmpty(key) => is_empty_matches(&entry.payload, key),
+            ScrollFilter::IsNull(key) => is_null_matches(&entry.payload, key),
         })
         .map(|(id, _)| *id)
         .collect();
@@ -1139,8 +1142,8 @@ pub(super) async fn apply_scroll_paged(
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("scroll(paged) failed");
 
@@ -1199,8 +1202,8 @@ pub(super) async fn apply_scroll_ordered(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(ordered) failed");
 
@@ -1287,8 +1290,8 @@ pub(super) async fn apply_recommend(
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
     )
+    .measured(AmbientContext::new())
     .await
     .expect("recommend failed");
 
@@ -1407,7 +1410,8 @@ fn scores_match(a: f32, b: f32) -> bool {
 /// is the merge of the shards'. With `no_proxies` (the optimizer off, and no snapshot proxying
 /// segments) they must agree, and the statistics are exactly the model's: no segment keeps
 /// deleted points in its postings, and no proxy counts a moved point twice. So there every score
-/// is also checked against BM25 by definition, over the model's documents in that shard.
+/// is also checked against BM25 by definition, over the model's documents in that shard, unless
+/// append-only mutations left tombstones the index still counts.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn apply_query_text(
     collection: &Collection,
@@ -1423,7 +1427,7 @@ pub(super) async fn apply_query_text(
     // Query terms count once: the scorer deduplicates them. Tokenized as the shard does.
     let tokenizer = text_tokenizer(collection);
     let mut terms: Vec<String> = Vec::new();
-    tokenizer.tokenize_query(text, |token| terms.push(token.into_owned()));
+    tokenizer.tokenize_ranking_query(text, |token| terms.push(token.into_owned()));
     terms.sort();
     terms.dedup();
     let docs: AHashMap<PointIdType, TextDoc> = model
@@ -1459,8 +1463,8 @@ pub(super) async fn apply_query_text(
                 None,
                 shards,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("text query {text:?} failed: {e:?}"))
     };
@@ -1476,10 +1480,10 @@ pub(super) async fn apply_query_text(
         .shard_number
         .get();
 
-    let mut layouts_before = Vec::with_capacity(shard_count as usize);
+    let mut exact_stats_before = Vec::with_capacity(shard_count as usize);
     let mut before = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
-        layouts_before.push(exact_stats_layout(collection, shard_id).await);
+        exact_stats_before.push(exact_stats_layout(collection, shard_id).await);
         before.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
     }
     let points = run(ShardSelectorInternal::All, limit).await;
@@ -1499,10 +1503,10 @@ pub(super) async fn apply_query_text(
         tops.push(shard_tops);
     }
     let mut after = Vec::with_capacity(shard_count as usize);
-    let mut layouts_after = Vec::with_capacity(shard_count as usize);
+    let mut exact_stats_after = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
         after.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
-        layouts_after.push(exact_stats_layout(collection, shard_id).await);
+        exact_stats_after.push(exact_stats_layout(collection, shard_id).await);
     }
 
     // Across the collection. Exactly the matches only below the undersampling threshold: from
@@ -1547,11 +1551,11 @@ pub(super) async fn apply_query_text(
                 check_top_k(top, full, *cut, &shard_ctx);
             }
         }
-        // Exact with the optimizer running too, while the shard's layout allows it, which is
-        // what reaches the immutable and on-disk indexes: they only exist once it has run.
-        let layout = &layouts_before[shard_id as usize];
-        let exact_layout = layout.is_some() && *layout == layouts_after[shard_id as usize];
-        if no_proxies || (exact_layout && shard_stable) {
+        // Check exact scores only if the statistics match the model and did not change during the
+        // queries: either nothing can change them, or segments and scores are the same at both ends.
+        let exact_stats = &exact_stats_before[shard_id as usize];
+        let unchanged = *exact_stats == exact_stats_after[shard_id as usize];
+        if exact_stats.is_some() && (no_proxies || (unchanged && shard_stable)) {
             let shard_docs = shard_point_ids(collection, shard_id).await;
             check_scores_by_definition(full, &docs, &shard_docs, &terms, params, &shard_ctx);
         }
@@ -1832,8 +1836,10 @@ fn check_merge(points: &[ScoredPoint], shards: &[Vec<ScoredPoint>], limit: usize
 /// One shard's segments as `(id, appendable, available points)`, when its text statistics are
 /// exactly the model's: no proxy (which would count a moved point twice), and no deleted point in
 /// an immutable or on-disk segment (which masks the point but keeps its postings, so `df` counts
-/// it). `None` otherwise. Compared before and after the queries, so a layout that changed in
-/// between does not count.
+/// it), nor, under append-only mutations, in any segment (a tombstone never reaches the text
+/// index, so `N`, `df` and the token total keep counting it until the segment is rebuilt). `None`
+/// otherwise. Compared before and after the queries, so a layout that changed in between does not
+/// count.
 async fn exact_stats_layout(
     collection: &Collection,
     shard_id: u32,
@@ -1844,6 +1850,7 @@ async fn exact_stats_layout(
         .local_segments_for_test()
         .await?;
     let segments = segments.read();
+    let append_only = common::flags::feature_flags().append_only_mutations;
     let mut layout = Vec::new();
     for (id, segment) in segments.iter() {
         let segment = segment.get();
@@ -1852,7 +1859,7 @@ async fn exact_stats_layout(
             return None;
         }
         let appendable = segment.is_appendable();
-        if !appendable && segment.deleted_point_count() > 0 {
+        if (!appendable || append_only) && segment.deleted_point_count() > 0 {
             return None;
         }
         layout.push((id, appendable, segment.available_point_count()));
@@ -1877,8 +1884,8 @@ async fn shard_point_ids(collection: &Collection, shard_id: u32) -> Vec<PointIdT
             None,
             &ShardSelectorInternal::ShardId(shard_id),
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("scrolling shard {shard_id} failed: {e:?}"))
         .points

@@ -3,16 +3,18 @@
 #![allow(deprecated)]
 
 use std::borrow::Cow;
-use std::sync::Arc;
 mod ascii_folding;
+mod code;
 mod japanese;
 mod multilingual;
 mod stemmer;
 pub mod tokens_processor;
 
+use code::CodeTokenizer;
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
+use tokens_processor::truncate_to_max_token_chars;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::inverted_index::ARRAY_BOUNDARY_SENTINEL;
@@ -109,8 +111,10 @@ impl PrefixTokenizer {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
+                let word_cow = truncate_to_max_token_chars(Cow::Borrowed(word));
+
                 // Apply ASCII folding if enabled
-                let mut word_cow = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+                let mut word_cow = tokens_processor.fold_if_enabled(word_cow);
 
                 // Handle lowercase
                 if tokens_processor.lowercase {
@@ -165,8 +169,13 @@ pub struct Tokenizer {
 }
 
 pub enum TokenizerTextKind {
+    /// A filter query: every token must be in a matching document.
     Query,
+    /// A ranking query: tokens add score, so it may have tokens a matching document lacks.
+    RankingQuery,
     Document,
+    /// A phrase query: tokens that must appear in this order in a document.
+    Phrase,
 }
 
 impl Tokenizer {
@@ -185,11 +194,12 @@ impl Tokenizer {
             stemmer,
             enable_hnsw: _,
             scoring: _,
+            nested: _,
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
         let ascii_folding = ascii_folding.unwrap_or(false);
-        let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
+        let stopwords_filter = StopwordsFilter::shared(stopwords, lowercase);
 
         let tokens_processor = TokensProcessor::new(
             lowercase,
@@ -210,11 +220,31 @@ impl Tokenizer {
         }
     }
 
+    /// Query tokens never include [`ARRAY_BOUNDARY_SENTINEL`], even if the text contains it, so a
+    /// query can't match across the elements of an array.
     pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
         &self,
         kind: TokenizerTextKind,
         text: &'a str,
-        callback: C,
+        mut callback: C,
+    ) {
+        match kind {
+            TokenizerTextKind::Document => self.tokenize_unfiltered(kind, text, callback),
+            TokenizerTextKind::Query
+            | TokenizerTextKind::RankingQuery
+            | TokenizerTextKind::Phrase => self.tokenize_unfiltered(kind, text, |token| {
+                if token != ARRAY_BOUNDARY_SENTINEL {
+                    callback(token)
+                }
+            }),
+        }
+    }
+
+    fn tokenize_unfiltered<'a, C: FnMut(Cow<'a, str>)>(
+        &self,
+        kind: TokenizerTextKind,
+        text: &'a str,
+        mut callback: C,
     ) {
         let Self {
             tokenizer_type,
@@ -225,8 +255,23 @@ impl Tokenizer {
             TokenizerType::Word => WordTokenizer::tokenize(text, tp, callback),
             TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, tp, callback),
             TokenizerType::Prefix => match kind {
-                TokenizerTextKind::Document => PrefixTokenizer::tokenize(text, tp, callback),
-                TokenizerTextKind::Query => PrefixTokenizer::tokenize_query(text, tp, callback),
+                TokenizerTextKind::Document | TokenizerTextKind::Phrase => {
+                    PrefixTokenizer::tokenize(text, tp, callback)
+                }
+                TokenizerTextKind::Query | TokenizerTextKind::RankingQuery => {
+                    PrefixTokenizer::tokenize_query(text, tp, callback)
+                }
+            },
+            TokenizerType::Code => match kind {
+                // A ranking query gets the joined identifiers too, so an exact identifier ranks first
+                TokenizerTextKind::Document | TokenizerTextKind::RankingQuery => {
+                    CodeTokenizer::tokenize_with_joined(text, tp, |token, _| callback(token))
+                }
+                // Joined identifiers are not in a document's token sequence, see
+                // `tokenize_doc_detached`
+                TokenizerTextKind::Query | TokenizerTextKind::Phrase => {
+                    CodeTokenizer::tokenize_subwords(text, tp, callback)
+                }
             },
         }
     }
@@ -235,18 +280,47 @@ impl Tokenizer {
         self.tokenize(TokenizerTextKind::Document, text, callback);
     }
 
-    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, mut callback: C) {
-        self.tokenize(TokenizerTextKind::Query, text, |token| {
-            if token != ARRAY_BOUNDARY_SENTINEL {
-                callback(token)
+    /// Same tokens as [`Self::tokenize_doc`], each with whether it is detached: not part of the
+    /// document's token sequence, so phrase matching must not see it next to other tokens. Only
+    /// the code tokenizer has them: its joined identifiers, which stand for subwords that are in
+    /// the sequence already.
+    pub fn tokenize_doc_detached<'a, C: FnMut(Cow<'a, str>, bool)>(
+        &'a self,
+        text: &'a str,
+        mut callback: C,
+    ) {
+        match self.tokenizer_type {
+            TokenizerType::Code => {
+                CodeTokenizer::tokenize_with_joined(text, &self.tokens_processor, callback)
             }
-        });
+            TokenizerType::Prefix
+            | TokenizerType::Whitespace
+            | TokenizerType::Word
+            | TokenizerType::Multilingual => {
+                self.tokenize_doc(text, |token| callback(token, false))
+            }
+        }
+    }
+
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
+        self.tokenize(TokenizerTextKind::Query, text, callback);
+    }
+
+    /// Query tokens for ranking: [`Self::tokenize_query`], plus the code tokenizer's joined
+    /// identifiers. Filters don't use them, as they need every token.
+    pub fn tokenize_ranking_query<'a, C: FnMut(Cow<'a, str>)>(
+        &'a self,
+        text: &'a str,
+        callback: C,
+    ) {
+        self.tokenize(TokenizerTextKind::RankingQuery, text, callback);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::default::Default;
+    use std::sync::Arc;
 
     use itertools::Itertools;
 
@@ -433,6 +507,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -468,6 +543,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -514,6 +590,7 @@ mod tests {
                 stemmer: None,
                 enable_hnsw: None,
                 scoring: None,
+                nested: None,
             };
 
             let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -553,6 +630,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -592,6 +670,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -634,6 +713,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -676,6 +756,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -721,6 +802,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -772,6 +854,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
         let tokenizer_disabled = Tokenizer::new_from_text_index_params(&params_disabled);
         let mut tokens_disabled = Vec::new();
@@ -793,6 +876,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
         let tokenizer_enabled = Tokenizer::new_from_text_index_params(&params_enabled);
         let mut tokens_enabled = Vec::new();
@@ -864,5 +948,26 @@ mod tests {
         tokens_processor.max_token_len = Some(4);
         PrefixTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
+    }
+
+    #[test]
+    fn test_prefix_tokenizer_max_token_chars() {
+        use tokens_processor::MAX_TOKEN_CHARS;
+
+        // Counted in characters, not bytes: `β` takes two
+        let cut = "β".repeat(MAX_TOKEN_CHARS);
+        let text = format!("{cut}βββ");
+        let tokens_processor =
+            TokensProcessor::new(true, false, Default::default(), None, None, None);
+
+        let mut doc = Vec::new();
+        PrefixTokenizer::tokenize(&text, &tokens_processor, |t| doc.push(t.into_owned()));
+        assert_eq!(doc.len(), MAX_TOKEN_CHARS);
+        assert_eq!(doc.last(), Some(&cut));
+
+        // The query path doesn't go through `process_token`, but cuts the same way
+        let mut query = Vec::new();
+        PrefixTokenizer::tokenize_query(&text, &tokens_processor, |t| query.push(t.into_owned()));
+        assert_eq!(query, [cut]);
     }
 }

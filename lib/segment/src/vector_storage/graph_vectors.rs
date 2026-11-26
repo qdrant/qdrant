@@ -5,7 +5,6 @@ use std::mem::{align_of, size_of};
 use std::path::PathBuf;
 
 use common::generic_consts::AccessPattern;
-use common::mmap::Flusher;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UniversalRead;
 use quantization::turboquant::EncodedQueryTQ;
@@ -119,10 +118,6 @@ impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
         Vec::new()
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
     fn score_query_batch(
         &self,
         quantizer: &TurboQuantizer,
@@ -130,12 +125,10 @@ impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
-        self.graph
-            .for_each_base_vector_in_batch(ids, |idx, bytes| {
-                scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
-            })
-            .expect("score TQ vectors");
+        self.graph.for_each_base_vector_in_batch(ids, |idx, bytes| {
+            scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
+        })
     }
 }

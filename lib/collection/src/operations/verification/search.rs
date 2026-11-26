@@ -1,7 +1,7 @@
 use api::rest::{SearchGroupsRequestInternal, SearchRequestInternal};
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
-use super::{StrictModeVerification, check_grouping_field};
+use super::{ReadScope, StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
 use crate::operations::types::{CollectionResult, CoreSearchRequest, SearchRequestBatch};
 
@@ -16,6 +16,10 @@ impl StrictModeVerification for SearchRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
@@ -38,6 +42,10 @@ impl StrictModeVerification for CoreSearchRequest {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -82,6 +90,10 @@ impl StrictModeVerification for SearchRequestBatch {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -121,5 +133,9 @@ impl StrictModeVerification for SearchGroupsRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 }

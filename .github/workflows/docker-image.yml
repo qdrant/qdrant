@@ -11,6 +11,7 @@ jobs:
   build:
     # Run build on our self-hosted runner, we had trouble with shared runners
     runs-on: [self-hosted, linux, x64]
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -18,7 +19,7 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install cosign
-      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -40,7 +41,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
@@ -79,6 +80,7 @@ jobs:
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -86,7 +88,7 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install cosign
-      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
     - name: Get current tag
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
@@ -108,7 +110,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build GPU NVIDIA image for Docker Hub

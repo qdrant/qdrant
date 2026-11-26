@@ -17,7 +17,7 @@ use crate::generic_consts::AccessPattern;
 use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
     ChunkSink, ListedFile, OpenOptions, UioResult, UniversalRead, UniversalReadAsync,
-    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync,
+    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync, local_file_ops,
 };
 
 impl UniversalReadFsAsync for MmapFs {
@@ -35,6 +35,13 @@ impl UniversalReadFsAsync for MmapFs {
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
         ready(self.list_files(prefix_path))
+    }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, P> {
+        ready(local_file_ops::local_select_files(paths))
     }
 }
 
@@ -57,6 +64,10 @@ impl UniversalReadAsync for MmapFile {
         W: ChunkSink + Send + 'static,
     {
         read_from_via_read_bytes(self, from, init)
+    }
+
+    fn populate_range_async(&self, _range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        std::future::ready(Ok(()))
     }
 }
 

@@ -64,7 +64,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
@@ -93,7 +93,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_multi_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let multivectors: Vec<MultiDenseVectorInternal> = (0..POINT_COUNT)
             .map(|_| {
@@ -123,7 +123,7 @@ mod tests {
                 .unwrap();
             for (id, multivec) in multivectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                     .unwrap();
             }
             for id in 0..POINT_COUNT {
@@ -170,7 +170,7 @@ mod tests {
         const DIM: usize = 48;
         let dir = Builder::new().prefix("ro_multi_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(11);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let rand_multi = |rng: &mut StdRng| -> MultiDenseVectorInternal {
             let inner = rng.random_range(1..=3);
@@ -198,7 +198,7 @@ mod tests {
         .unwrap();
         for (id, multivec) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -221,7 +221,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(multivec),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -239,7 +238,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -265,7 +263,7 @@ mod tests {
             .prefix("ro_multi_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let multi = |value: VectorElementType| {
             MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()
@@ -281,7 +279,7 @@ mod tests {
         )
         .unwrap();
         writer
-            .insert_vector(0, VectorRef::from(&multi(1.0)), &hw)
+            .insert_vector(0, VectorRef::from(&multi(1.0)))
             .unwrap();
         writer.flusher()().unwrap();
 
@@ -298,7 +296,7 @@ mod tests {
             .unwrap();
 
         writer
-            .insert_vector(1, VectorRef::from(&multi(0.0)), &hw)
+            .insert_vector(1, VectorRef::from(&multi(0.0)))
             .unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
@@ -310,7 +308,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

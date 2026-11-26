@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Filter, ScoredPoint, WithPayload, WithVector};
 use shard::common::stopping_guard::StoppingGuard;
-use shard::query::text::{TextScoringQuery, TextSearchRequestInternal};
+use shard::query::text::{TextScoringQuery, TextSearchRequestInternal, cut_at_threshold};
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -15,17 +14,18 @@ impl LocalShard {
     ///
     /// The text is tokenized here, with the tokenizer of the field's index in
     /// this shard's payload schema, and scored against statistics gathered
-    /// over this shard's segments only.
+    /// over this shard's segments only, among the points matching
+    /// `idf_corpus` (all of them when `None`).
     #[allow(clippy::too_many_arguments)]
     pub async fn score_bm25(
         &self,
         query: &TextScoringQuery,
         filter: Option<Filter>,
+        idf_corpus: Option<&Filter>,
         limit: usize,
         with_payload: WithPayload,
         with_vector: WithVector,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let terms = query.tokenize(&self.payload_index_schema.read())?;
         let stopping_guard = StoppingGuard::new();
@@ -36,12 +36,12 @@ impl LocalShard {
             terms,
             query.params,
             filter,
+            idf_corpus,
             limit,
             with_payload,
             with_vector,
             &self.search_runtime,
             &stopping_guard,
-            hw_measurement_acc,
             timeout,
         );
 
@@ -56,36 +56,30 @@ impl LocalShard {
         &self,
         texts: Vec<TextSearchRequestInternal>,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let searches = texts.into_iter().map(|text| {
             let TextSearchRequestInternal {
                 query,
                 filter,
+                idf_corpus,
                 limit,
                 score_threshold,
                 with_vector,
                 with_payload,
             } = text;
-            let hw_measurement_acc = hw_measurement_acc.clone();
             async move {
                 let mut points = self
                     .score_bm25(
                         &query,
                         filter,
+                        idf_corpus.as_ref(),
                         limit,
                         WithPayload::from(with_payload),
                         with_vector,
                         timeout,
-                        hw_measurement_acc,
                     )
                     .await?;
-                // Best first, so the threshold cuts a suffix. Strict, as the
-                // threshold of a search over a larger-is-better distance.
-                if let Some(threshold) = score_threshold {
-                    let keep = points.partition_point(|point| point.score > threshold);
-                    points.truncate(keep);
-                }
+                cut_at_threshold(&mut points, score_threshold);
                 Ok(points)
             }
         });

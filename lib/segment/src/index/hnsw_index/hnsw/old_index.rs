@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::bitvec::BitSliceExt as _;
@@ -10,6 +10,7 @@ use log::debug;
 use super::HNSWIndex;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::VectorIndexEnum;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
@@ -38,6 +39,9 @@ pub(in crate::index::hnsw_index) struct OldIndex<'a> {
     /// The same graph as `index.graph`, but opened as direct/mmap.
     /// None if `index.graph` is already direct.
     reopened_graph: Option<GraphLayers>,
+    /// Guards reading the links of `reopened_graph` into the page cache, see
+    /// [`Self::populate_links`].
+    links_populated: Once,
     /// Mapping from old index to new index.
     /// `old_to_new[old_idx] == Some(new_idx)`.
     pub old_to_new: Vec<Option<PointOffsetType>>,
@@ -71,15 +75,17 @@ impl<'a> OldIndexCandidate<'a> {
             .as_ref()
             .map(|qv| &qv.config().quantization_config);
 
-        let no_main_graph = config.m == 0;
         let configuration_mismatch = config.m != old_index.config.m
             || config.m0 != old_index.config.m0
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
+        // Without a main graph, only payload links can be reused.
+        let nothing_to_reuse =
+            config.m == 0 && !payload_links_reusable(payload_hnsw_m(config), &old_index.config);
         // If old graph has vectors, reusing it will cause a lot of random reads,
         // making it slower than building from scratch.
         let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
-        if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
+        if configuration_mismatch || nothing_to_reuse || old_graph_is_with_vectors {
             return None;
         }
         drop(old_quantized_vectors_ref);
@@ -109,6 +115,8 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Rough check whether the point is included in the old graph.
         // If it's included, it almost certainly has at least one outgoing link at level 0.
+        // Without a main graph, points outside every payload block have none: they are left out
+        // of the mapping and inserted as new points.
         let old_graph_has_point = |id: PointOffsetType| !old_graph.links.links_empty(id, 0);
 
         // Build old_to_new mapping.
@@ -206,12 +214,6 @@ impl<'a> OldIndexCandidate<'a> {
     }
 
     pub(super) fn reuse(self, total_vector_count: usize) -> OldIndex<'a> {
-        if let Some(graph) = &self.reopened_graph
-            && let Err(err) = graph.links.populate()
-        {
-            log::debug!("Failed to populate the old HNSW graph links: {err}");
-        }
-
         let mut new_to_old = vec![None; total_vector_count];
         for (old_offset, new_offset) in self.old_to_new.iter().copied().enumerate() {
             if let Some(new_offset) = new_offset {
@@ -228,6 +230,7 @@ impl<'a> OldIndexCandidate<'a> {
         OldIndex {
             index: self.index,
             reopened_graph: self.reopened_graph,
+            links_populated: Once::new(),
             old_to_new: self.old_to_new,
             new_to_old,
         }
@@ -235,6 +238,20 @@ impl<'a> OldIndexCandidate<'a> {
 }
 
 impl OldIndex<'_> {
+    /// Read the links of the old graph into the page cache, the first time it is called. Call it
+    /// before reading them in random order, as healing and seeding blocks do. Taking the levels
+    /// of points does not need it. A graph `evaluate` had to reopen is cold; a graph that was
+    /// open already is used as it is.
+    pub(super) fn populate_links(&self) {
+        self.links_populated.call_once(|| {
+            if let Some(graph) = &self.reopened_graph
+                && let Err(err) = graph.links.populate()
+            {
+                log::debug!("Failed to populate the old HNSW graph links: {err}");
+            }
+        });
+    }
+
     pub(super) fn point_level(&self, new_id: PointOffsetType) -> Option<usize> {
         let old_id = self.new_to_old[new_id as usize]?;
         Some(self.graph().links.point_level(old_id))
@@ -246,4 +263,18 @@ impl OldIndex<'_> {
             None => self.index.graph.as_direct().expect("opened in `evaluate`"),
         }
     }
+}
+
+/// `m` of the payload links of a graph built with `config`.
+pub(super) fn payload_hnsw_m(config: &HnswGraphConfig) -> HnswM {
+    HnswM::new(
+        config.payload_m.unwrap_or(config.m),
+        config.payload_m0.unwrap_or(config.m0),
+    )
+}
+
+/// Whether payload blocks built with `payload_m` can start from the payload links of a graph
+/// built with `old`: there must be some, and of the same size.
+pub(super) fn payload_links_reusable(payload_m: HnswM, old: &HnswGraphConfig) -> bool {
+    payload_m.m > 0 && payload_m == payload_hnsw_m(old)
 }

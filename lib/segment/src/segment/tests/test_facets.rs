@@ -8,19 +8,26 @@
 //! | `sampling_unfiltered_*`                | tag    | none       | sampling → counts     |
 //! | `sampling_selective_filter_*`          | tag    | seq <  9%  | sampling → filter iter|
 //! | `sampling_broad_filter_*`              | tag    | seq < 95%  | sampling → facet iter |
+//! | `sampling_veto_multi_valued_*`         | tag ×2 | seq <  1%  | full → filter iter    |
+//! | `sampling_filter_matching_nothing_*`   | tag    | unindexed  | sampling → no cands   |
+//! | `all_points_deleted_*`                 | tag    | any        | empty segment         |
 //!
-//! The sampling → filter iter plan needs more points than the others: a filter
-//! selective enough to prefer filter iter (< 10% of candidate mass) is also
-//! selective enough for the strategy veto to fall back to full, *unless* the
-//! segment is much larger than the sampling budget — the veto keeps sampling
-//! only while selectivity ≥ √(sample_target / available_points). That window
-//! opens around 150k points here (see `N_FILTER_ITER`), so that one test uses a
-//! larger fixture.
+//! Each test asserts the [`FacetPlan`] it actually executed, not just the
+//! counts: every plan returns identical counts, so a threshold change could
+//! otherwise silently route a test down a different path.
+//!
+//! The sampling → filter iter plan needs the segment to be much larger than the
+//! sampling budget: a filter selective enough to prefer filter iter (< 10% of
+//! candidate mass) is also selective enough for the strategy veto to fall back
+//! to full, unless selectivity ≥ √(sample_target / available_points). With the
+//! production budget (1000) that window opens around 150k points; that test
+//! instead shrinks the budget (see `FILTER_ITER_SAMPLE_TARGET`) so the same
+//! window opens on a 10× smaller fixture.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use tempfile::{Builder, TempDir};
@@ -30,10 +37,12 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef};
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
+    StorageSegmentEntry as _,
 };
 use crate::json_path::JsonPath;
 use crate::payload_json;
 use crate::segment::Segment;
+use crate::segment::read_view::{FacetPlan, default_sample_target};
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
@@ -58,7 +67,13 @@ fn build_segment() -> (TempDir, Segment) {
 /// Build a fixture of `n` points, each with a `colour` (3 uniques), a unique
 /// `tag`, and a `seq` equal to its index (for filters of exact selectivity).
 fn build_segment_n(n: usize) -> (TempDir, Segment) {
-    let hw_counter = HardwareCounterCell::new();
+    build_segment_tags(n, 1)
+}
+
+/// Like [`build_segment_n`], but each point carries `tags_per_point` unique
+/// tags (as an array when > 1), so `tag` has `n * tags_per_point` uniques.
+fn build_segment_tags(n: usize, tags_per_point: usize) -> (TempDir, Segment) {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
 
     let dim = 2;
@@ -69,19 +84,24 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
     let mut op = 0u64;
     for i in 0..n {
         let point_id = PointIdType::from(i as u64 + 1);
-        segment
-            .insert_new_vectors(point_id, op, &vectors, &hw_counter)
-            .unwrap();
+        segment.insert_new_vectors(point_id, op, &vectors).unwrap();
         op += 1;
 
+        let tag = if tags_per_point == 1 {
+            serde_json::json!(format!("tag_{i}"))
+        } else {
+            serde_json::json!(
+                (0..tags_per_point)
+                    .map(|t| format!("tag_{i}_{t}"))
+                    .collect::<Vec<_>>()
+            )
+        };
         let payload = payload_json! {
             COLOUR_KEY: COLOURS[i % 3],
-            TAG_KEY: format!("tag_{i}"),
+            TAG_KEY: tag,
             SEQ_KEY: i as f64,
         };
-        segment
-            .set_full_payload(op, point_id, &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
         op += 1;
     }
 
@@ -95,7 +115,6 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
                 op,
                 &JsonPath::new(key),
                 Some(&PayloadFieldSchema::FieldType(schema)),
-                &hw_counter,
             )
             .unwrap();
         op += 1;
@@ -115,20 +134,59 @@ fn seq_below(n: usize) -> Filter {
     )))
 }
 
-fn run_facet(segment: &Segment, key: &str, filter: Option<Filter>) -> HashMap<FacetValue, usize> {
-    let request = FacetParams {
+fn facet_request(key: &str, filter: Option<Filter>) -> FacetParams {
+    FacetParams {
         key: JsonPath::new(key),
         limit: LIMIT,
         filter,
         exact: false,
-    };
-    segment
-        .facet(
-            &request,
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap()
+    }
+}
+
+/// Run the facet with the production sampling budget and assert it executed
+/// the `expected` plan.
+fn run_facet(
+    segment: &Segment,
+    key: &str,
+    filter: Option<Filter>,
+    expected: FacetPlan,
+) -> HashMap<FacetValue, usize> {
+    let request = facet_request(key, filter);
+    run_planned(segment, &request, default_sample_target(&request), expected)
+}
+
+/// Like [`run_facet`], but with an explicit per-segment sampling budget instead
+/// of the production `max(LIMIT * 10, 1000)`.
+fn run_facet_with_sample_target(
+    segment: &Segment,
+    key: &str,
+    filter: Option<Filter>,
+    sample_target: usize,
+    expected: FacetPlan,
+) -> HashMap<FacetValue, usize> {
+    run_planned(
+        segment,
+        &facet_request(key, filter),
+        sample_target,
+        expected,
+    )
+}
+
+fn run_planned(
+    segment: &Segment,
+    request: &FacetParams,
+    sample_target: usize,
+    expected: FacetPlan,
+) -> HashMap<FacetValue, usize> {
+    // Lazy filter probes read payload storage, which bumps ambient hw counters.
+    let _scope = ambient::test_guard();
+    let (hits, plan) = segment
+        .with_view(|view| {
+            view.approximate_facet_planned(request, sample_target, &AtomicBool::new(false))
+        })
+        .unwrap();
+    assert_eq!(plan, expected, "unexpected facet plan");
+    hits
 }
 
 /// Independently recompute the exact count for every returned value and assert
@@ -141,7 +199,6 @@ fn assert_counts_exact(
     filter: Option<&Filter>,
     hits: &HashMap<FacetValue, usize>,
 ) {
-    let hw_counter = HardwareCounterCell::new();
     for (value, &count) in hits {
         let value_match = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(key),
@@ -154,7 +211,6 @@ fn assert_counts_exact(
                 None,
                 exact_filter.as_ref(),
                 &AtomicBool::new(false),
-                &hw_counter,
                 DeferredBehavior::VisibleOnly,
             )
             .unwrap()
@@ -168,7 +224,7 @@ fn assert_counts_exact(
 fn full_unfiltered_counts_every_value() {
     let (_dir, segment) = build_segment();
 
-    let hits = run_facet(&segment, COLOUR_KEY, None);
+    let hits = run_facet(&segment, COLOUR_KEY, None, FacetPlan::FullCounts);
 
     // Full strategy enumerates every value exactly.
     assert_eq!(hits.len(), COLOURS.len());
@@ -183,7 +239,12 @@ fn full_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 5 / 100);
 
-    let hits = run_facet(&segment, COLOUR_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        COLOUR_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFilterIter,
+    );
 
     assert!(!hits.is_empty());
     assert_counts_exact(&segment, COLOUR_KEY, Some(&filter), &hits);
@@ -196,7 +257,12 @@ fn full_broad_filter_walks_facet_index() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 90 / 100);
 
-    let hits = run_facet(&segment, COLOUR_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        COLOUR_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFacetIter,
+    );
 
     assert_eq!(hits.len(), COLOURS.len());
     assert_counts_exact(&segment, COLOUR_KEY, Some(&filter), &hits);
@@ -208,7 +274,7 @@ fn full_broad_filter_walks_facet_index() {
 fn sampling_unfiltered_samples_then_counts() {
     let (_dir, segment) = build_segment();
 
-    let hits = run_facet(&segment, TAG_KEY, None);
+    let hits = run_facet(&segment, TAG_KEY, None, FacetPlan::SamplingCounts);
 
     // Sampling returns a strict subset; the full strategy would return all
     // `N_POINTS` values.
@@ -228,33 +294,129 @@ fn sampling_broad_filter_walks_facet_index() {
     let (_dir, segment) = build_segment();
     let filter = seq_below(N_POINTS * 95 / 100);
 
-    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+    let hits = run_facet(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FacetPlan::SamplingFacetIter,
+    );
 
     assert!(!hits.is_empty());
     assert!(hits.len() < N_POINTS);
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
 }
 
+/// Sampling budget for the sampling → filter iter test, 10× below the
+/// production minimum (1000). Every decision on that path depends only on
+/// `sample_target / N` and on filter selectivity, so shrinking both by the
+/// same factor reaches the same plan with the same margins.
+const FILTER_ITER_SAMPLE_TARGET: usize = 100;
+
 /// Points for the sampling → filter iter test. The veto keeps sampling only
 /// while selectivity ≥ √(sample_target / N), so reaching filter iter (< 10%)
 /// needs N well above the sampling budget; an `f = 9%` filter lands in the
-/// [√(1000/N), 10%) window with margin (boundary ≈ 7.1% here). Verified
-/// empirically: the crossover first appears around N = 150k.
-#[cfg(not(windows))]
-const N_FILTER_ITER: usize = 200_000;
+/// [√(100/N), 10%) window with margin (boundary ≈ 7.1% here). Equivalent to
+/// 200k points with the production budget of 1000.
+const N_FILTER_ITER: usize = 20_000;
 
 /// sampling → filter iter — the plan only the bench otherwise reaches. `seq <
 /// 9%` is selective enough for phase 2 to prefer iterating the merged filter,
 /// yet broad enough to clear the sampling→full veto at this scale.
-#[cfg(not(windows))]
 #[test]
 fn sampling_selective_filter_iterates_filter() {
     let (_dir, segment) = build_segment_n(N_FILTER_ITER);
     let filter = seq_below(N_FILTER_ITER * 9 / 100);
 
-    let hits = run_facet(&segment, TAG_KEY, Some(filter.clone()));
+    let hits = run_facet_with_sample_target(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FILTER_ITER_SAMPLE_TARGET,
+        FacetPlan::SamplingFilterIter,
+    );
 
     assert!(!hits.is_empty());
     assert!(hits.len() < N_FILTER_ITER);
     assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
+}
+
+/// Multi-valued field with more unique values than points: the veto must still
+/// see that a selective filter makes random sampling expensive.
+///
+/// Expected draws to collect `sample_target` values is
+/// `sample_target * points / uniques` = 1000 * 2000 / 4000 = 500. Truncating
+/// `points / uniques` to 0 instead disabled the veto, so a 1% filter (20
+/// points) went down the sampling path despite needing ~48k random draws.
+#[test]
+fn sampling_veto_multi_valued_selective_filter_falls_back_to_full() {
+    const TAGS_PER_POINT: usize = 2;
+    let (_dir, segment) = build_segment_tags(N_POINTS, TAGS_PER_POINT);
+    let filter = seq_below(N_POINTS / 100);
+
+    let hits = run_facet(
+        &segment,
+        TAG_KEY,
+        Some(filter.clone()),
+        FacetPlan::FullFilterIter,
+    );
+
+    // Full strategy reports every matching value: 20 points × 2 tags.
+    assert_eq!(hits.len(), N_POINTS / 100 * TAGS_PER_POINT);
+    assert_counts_exact(&segment, TAG_KEY, Some(&filter), &hits);
+}
+
+/// Unindexed key that no point has: filters on it match nothing, but without
+/// an index its cardinality is estimated as unknown (`exp = N/2`, `max = N`).
+const ABSENT_KEY: &str = "absent";
+
+/// Sampling budget for [`sampling_filter_matching_nothing_returns_empty`]. The
+/// veto keeps sampling while `sample_target / (exp / N) ≤ max`, i.e. here
+/// `100 / 0.5 = 200 ≤ 2000`: a 10× margin. With the production budget (1000)
+/// it is `2000 ≤ 2000`, too close to the boundary to rely on.
+const NO_CANDIDATES_SAMPLE_TARGET: usize = 100;
+
+/// sampling → no candidates. The filter's estimate is broad enough to keep
+/// sampling, but no drawn point passes it, so phase 1 returns no candidates
+/// and phase 2 is skipped.
+#[test]
+fn sampling_filter_matching_nothing_returns_empty() {
+    let (_dir, segment) = build_segment();
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new(ABSENT_KEY),
+        Match::from("x".to_string()),
+    )));
+
+    let hits = run_facet_with_sample_target(
+        &segment,
+        TAG_KEY,
+        Some(filter),
+        NO_CANDIDATES_SAMPLE_TARGET,
+        FacetPlan::SamplingNoCandidates,
+    );
+
+    assert!(hits.is_empty());
+}
+
+/// Empty segment shortcut: once every point is deleted, nothing is counted
+/// even though the facet index still holds (now invisible) postings.
+#[test]
+fn all_points_deleted_returns_empty() {
+    let (_dir, mut segment) = build_segment();
+    {
+        let _scope = ambient::test_guard();
+        let mut op = segment.version();
+        for i in 0..N_POINTS {
+            op += 1;
+            assert!(
+                segment
+                    .delete_point(op, PointIdType::from(i as u64 + 1))
+                    .unwrap()
+            );
+        }
+    }
+
+    for filter in [None, Some(seq_below(N_POINTS))] {
+        let hits = run_facet(&segment, TAG_KEY, filter, FacetPlan::EmptySegment);
+        assert!(hits.is_empty());
+    }
 }

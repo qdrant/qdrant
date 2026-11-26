@@ -196,8 +196,6 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     env["QDRANT__LOG_LEVEL"] = "TRACE,raft::raft=info,actix_http=info,tonic=info,want=info,mio=info"
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
-    # Fail peer when consensus state machine diverges from operation handlers
-    env["QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE"] = "panic"
 
     if is_coverage_mode():
         env["LLVM_PROFILE_FILE"] = get_llvm_profile_file()
@@ -864,9 +862,9 @@ def wait_for_uniform_collection_existence(collection_name: str, peer_api_uris: [
 
 
 def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
-                                              expected_shard_transfer_count: int, headers={}):
+                                              expected_shard_transfer_count: int, headers={}, **kwargs):
     try:
-        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count, headers=headers)
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count, headers=headers, **kwargs)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e

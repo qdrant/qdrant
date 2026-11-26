@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use criterion::{Criterion, criterion_group, criterion_main};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
@@ -18,6 +18,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut payload: Map<String, Value> = Map::default();
 
+    let _scope = ambient::test_guard();
     for i in 0..3 {
         let key = format!("key{i}");
         payload.insert(key.clone(), "value".to_string().into());
@@ -26,20 +27,17 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 100,
                 &JsonPath::new(&key),
                 Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
     }
     let payload = Payload::from(payload);
 
-    let hw_counter = HardwareCounterCell::new();
-
     for id in 0..100000u64 {
         segment
-            .upsert_point(100, id.into(), only_default_vector(&vector), &hw_counter)
+            .upsert_point(100, id.into(), only_default_vector(&vector))
             .unwrap();
         segment
-            .set_payload(100, id.into(), &payload, &None, &hw_counter)
+            .set_payload(100, id.into(), &payload, &None)
             .unwrap();
     }
 

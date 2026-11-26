@@ -25,6 +25,13 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
     async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         self.0.list_files_async(prefix_path).await
     }
+
+    async fn select_files_async<P: AsRef<Path> + Send + Sync>(
+        &self,
+        paths: &[P],
+    ) -> UioResult<Vec<ListedFile>> {
+        self.0.select_files_async(paths).await
+    }
 }
 
 impl<S> UniversalReadAsync for ReadOnly<S>
@@ -52,5 +59,10 @@ where
         W: ChunkSink + Send + 'static,
     {
         self.0.read_from_into_async(from, init)
+    }
+
+    #[inline]
+    fn populate_range_async(&self, range: Range<u64>) -> impl Future<Output = UioResult<()>> {
+        self.0.populate_range_async(range)
     }
 }

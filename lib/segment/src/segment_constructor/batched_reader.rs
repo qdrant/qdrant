@@ -902,6 +902,7 @@ fn read_sparse(
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -942,13 +943,15 @@ mod tests {
             VectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4,
-            VectorStorageDatatype::Turbo8
+            VectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16
         )]
         datatype: VectorStorageDatatype,
         #[values(false, true)] multi: bool,
         #[values(VectorStorageType::InRamMmap, VectorStorageType::ChunkedMmap)]
         storage_type: VectorStorageType,
     ) {
+        let _scope = ambient::test_guard();
         const DIM: usize = 4;
         const POINTS: PointOffsetType = 5;
 

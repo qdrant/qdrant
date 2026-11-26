@@ -1,5 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::VectorName;
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
@@ -12,6 +13,27 @@ pub fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> St
     } else {
         prefix.to_owned()
     }
+}
+
+/// Check that `vector_name` stays inside the segment directory when used in
+/// [`get_vector_storage_path`] and [`get_vector_index_path`].
+///
+/// Vector names may come from untrusted snapshots (`segment.json`, WAL, pending changes).
+/// Only parent, root and prefix components are rejected, so names that were accepted
+/// before `validate_vector_name` existed (e.g. `a/b`) still load.
+pub fn check_vector_name_path(vector_name: &VectorName) -> OperationResult<()> {
+    let escapes = Path::new(vector_name)
+        .components()
+        .any(|component| match component {
+            Component::Normal(_) | Component::CurDir => false,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => true,
+        });
+    if escapes {
+        return Err(OperationError::validation_error(format!(
+            "invalid vector name {vector_name:?}: it must not escape the segment directory"
+        )));
+    }
+    Ok(())
 }
 
 pub fn get_vector_storage_path(segment_path: &Path, vector_name: &VectorName) -> PathBuf {

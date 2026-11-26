@@ -2,7 +2,7 @@ use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::flags::FeatureFlags;
 use common::generic_consts::Random;
 use common::types::DeferredBehavior;
@@ -91,7 +91,8 @@ fn random_vectors(count: usize, datatype: Option<VectorStorageDatatype>) -> Vec<
             VectorStorageDatatype::Float32
             | VectorStorageDatatype::Float16
             | VectorStorageDatatype::Turbo4
-            | VectorStorageDatatype::Turbo8,
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16,
         ) => rng.random_range(-1.0..1.0),
     };
     (0..count)
@@ -122,7 +123,7 @@ fn plain_segment(
         payload_storage_type: PayloadStorageType::default(),
         id_tracker_memory: None,
     };
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let (mut segment, _) = build_segment(dir, &config, None, true).unwrap();
     for (idx, vector) in vectors.iter().enumerate() {
         segment
@@ -130,7 +131,6 @@ fn plain_segment(
                 idx as u64 + offset + 1,
                 (idx as u64 + offset).into(),
                 only_default_vector(vector),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -146,13 +146,7 @@ fn build_indexed(dir: &std::path::Path, sources: &[&Segment], config: &SegmentCo
         FeatureFlags::default(),
     )
     .unwrap();
-    builder
-        .update(
-            sources,
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap();
+    builder.update(sources, &AtomicBool::new(false)).unwrap();
     builder.build_for_test(dir)
 }
 
@@ -200,8 +194,7 @@ fn search_with(
 }
 
 fn stored_vector(segment: &impl ReadSegmentEntry, id: u64) -> Vec<f32> {
-    let vector = segment
-        .vector(DEFAULT_VECTOR_NAME, id.into(), &HardwareCounterCell::new())
+    let vector = ambient::test(|| segment.vector(DEFAULT_VECTOR_NAME, id.into()))
         .unwrap()
         .unwrap();
     match vector {
@@ -227,10 +220,16 @@ fn stored_vector(segment: &impl ReadSegmentEntry, id: u64) -> Vec<f32> {
     Some(VectorStorageDatatype::Turbo8),
     VectorStorageType::InRamChunkedMmap
 )]
+#[case::turbo16(Some(VectorStorageDatatype::Turbo16), VectorStorageType::Mmap)]
+#[case::turbo16_chunked(
+    Some(VectorStorageDatatype::Turbo16),
+    VectorStorageType::InRamChunkedMmap
+)]
 fn test_graph_inline_storage_contract(
     #[case] datatype: Option<VectorStorageDatatype>,
     #[case] storage_type: VectorStorageType,
 ) {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let vectors = random_vectors(NUM_VECTORS, datatype);
@@ -290,28 +289,28 @@ fn test_graph_inline_storage_contract(
         );
     }
 
-    let scrolled = graph_backed
-        .retrieve(
+    let scrolled = ambient::test(|| {
+        graph_backed.retrieve(
             &[0.into(), 7.into(), 99.into()],
             &WithPayload::default(),
             &WithVector::Bool(true),
-            &HardwareCounterCell::new(),
             &AtomicBool::new(false),
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
+    })
+    .unwrap();
     assert_eq!(scrolled.len(), 3);
 
-    let ids = graph_backed
-        .read_filtered(
+    let ids = ambient::test(|| {
+        graph_backed.read_filtered(
             None,
             Some(NUM_VECTORS),
             None,
             &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
+    })
+    .unwrap();
     assert_eq!(ids.len(), NUM_VECTORS);
 
     graph_inline_lookup_segment_opens(&graph_backed);
@@ -339,11 +338,10 @@ fn graph_inline_deletes_and_remerge(
     datatype: Option<VectorStorageDatatype>,
     storage_type: VectorStorageType,
 ) {
-    let hw_counter = HardwareCounterCell::new();
     let deleted: Vec<u64> = vec![3, 17, 200];
     for &id in &deleted {
         assert_matches!(
-            graph_backed.delete_point(NUM_VECTORS as u64 + 10, id.into(), &hw_counter),
+            graph_backed.delete_point(NUM_VECTORS as u64 + 10, id.into()),
             Ok(true)
         );
     }
@@ -358,16 +356,16 @@ fn graph_inline_deletes_and_remerge(
     let has_vector = Filter::new_must(Condition::HasVector(HasVectorCondition::from(
         DEFAULT_VECTOR_NAME.to_owned(),
     )));
-    let with_vector = graph_backed
-        .read_filtered(
+    let with_vector = ambient::test(|| {
+        graph_backed.read_filtered(
             None,
             Some(NUM_VECTORS),
             Some(&has_vector),
             &AtomicBool::new(false),
-            &hw_counter,
             DeferredBehavior::VisibleOnly,
         )
-        .unwrap();
+    })
+    .unwrap();
     assert_eq!(with_vector.len(), NUM_VECTORS - deleted.len());
 
     let extra_dir = Builder::new().prefix("extra_dir").tempdir().unwrap();
@@ -405,6 +403,7 @@ fn graph_inline_deletes_and_remerge(
 
 #[test]
 fn test_graph_inline_storage_flag_off() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let vectors = random_vectors(NUM_VECTORS, None);
@@ -418,13 +417,7 @@ fn test_graph_inline_storage_flag_off() {
         FeatureFlags::default().tap_mut(|flags| flags.combined_vector_storage = false),
     )
     .unwrap();
-    builder
-        .update(
-            &[&source],
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
     let built = builder.build_for_test(dir.path());
 
     assert_eq!(

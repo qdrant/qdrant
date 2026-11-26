@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
@@ -43,7 +45,14 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Option<Self>> {
+    ///
+    /// The flags of `deleted` points are cleared, like the writable immutable index does,
+    /// when the bitmaps are materialized.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
         let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
@@ -52,14 +61,19 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.
             (None, None) => Ok(None),
-            (Some(trues_flags), Some(falses_flags)) => Ok(Some(Self {
-                _base_dir: path.to_path_buf(),
-                storage: ReadOnlyStorage {
-                    trues_flags,
-                    falses_flags,
-                },
-                counts: OnceLock::new(),
-            })),
+            (Some(mut trues_flags), Some(mut falses_flags)) => {
+                let deleted = deleted.iter_ones().map(|point| point as PointOffsetType);
+                trues_flags.remove(deleted.clone());
+                falses_flags.remove(deleted);
+                Ok(Some(Self {
+                    _base_dir: path.to_path_buf(),
+                    storage: ReadOnlyStorage {
+                        trues_flags,
+                        falses_flags,
+                    },
+                    counts: OnceLock::new(),
+                }))
+            }
             // Exactly one directory exists: partial/corrupt storage.
             (trues, falses) => Err(OperationError::service_error(format!(
                 "inconsistent bool index at {path:?}: exactly one flag directory exists \

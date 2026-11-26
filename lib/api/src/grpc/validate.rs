@@ -481,6 +481,14 @@ impl Validate for super::qdrant::expression::Variant {
     }
 }
 
+impl Validate for grpc::text_query::Scoring {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::text_query::Scoring::Bm25(params) => params.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::feedback_strategy::Variant {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
@@ -489,6 +497,27 @@ impl Validate for grpc::feedback_strategy::Variant {
             }
         }
     }
+}
+
+/// Reject `exact` together with `max_sparse_dims`, as the REST API does.
+pub fn validate_search_params(params: &grpc::SearchParams) -> Result<(), ValidationError> {
+    let grpc::SearchParams {
+        hnsw_ef: _,
+        exact,
+        quantization: _,
+        indexed_only: _,
+        acorn: _,
+        idf: _,
+        max_sparse_dims,
+    } = params;
+    if exact.unwrap_or(false) && max_sparse_dims.is_some() {
+        return Err(
+            ValidationError::new("exact_with_max_sparse_dims").with_message(Cow::Borrowed(
+                "`max_sparse_dims` cannot be used together with `exact`",
+            )),
+        );
+    }
+    Ok(())
 }
 
 /// Validate that GeoLineString has at least 4 points and is closed.
@@ -537,6 +566,9 @@ pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
     if *datatype == grpc::Datatype::Turbo8 as i32 {
         return Err(common::validation::sparse_turbo8_unsupported_error());
     }
+    if *datatype == grpc::Datatype::Turbo16 as i32 {
+        return Err(common::validation::sparse_turbo16_unsupported_error());
+    }
     Ok(())
 }
 
@@ -580,6 +612,7 @@ impl Validate for super::qdrant::IntegerIndexParams {
             on_disk: _,
             enable_hnsw: _,
             memory: _,
+            nested: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }
@@ -600,6 +633,7 @@ impl Validate for super::qdrant::TextIndexParams {
             enable_hnsw: _,
             memory: _,
             scoring: _,
+            nested: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }
@@ -633,8 +667,8 @@ mod tests {
     use crate::grpc::qdrant::{
         CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
-        GeoPolygon, GeoRadius, PayloadIndexParams, SearchPoints, TextIndexParams, UpdateCollection,
-        create_vector_name_request, payload_index_params, vector,
+        GeoPolygon, GeoRadius, PayloadIndexParams, SearchParams, SearchPoints, TextIndexParams,
+        UpdateCollection, create_vector_name_request, payload_index_params, vector,
     };
 
     #[test]
@@ -1038,5 +1072,36 @@ mod tests {
             ..Default::default()
         };
         assert!(good_request.validate().is_ok());
+    }
+
+    /// `exact` and `max_sparse_dims` contradict each other, so they are rejected together.
+    #[test]
+    fn test_search_params_exact_with_max_sparse_dims() {
+        let rejected = SearchParams {
+            exact: Some(true),
+            max_sparse_dims: Some(4),
+            ..Default::default()
+        };
+        let error = rejected.validate().unwrap_err().to_string();
+        assert!(error.contains("max_sparse_dims"), "{error}");
+
+        // Each one is fine on its own, and `exact = false` does not conflict.
+        for params in [
+            SearchParams {
+                exact: Some(true),
+                ..Default::default()
+            },
+            SearchParams {
+                max_sparse_dims: Some(4),
+                ..Default::default()
+            },
+            SearchParams {
+                exact: Some(false),
+                max_sparse_dims: Some(4),
+                ..Default::default()
+            },
+        ] {
+            assert!(params.validate().is_ok());
+        }
     }
 }

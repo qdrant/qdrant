@@ -1,7 +1,6 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::types::SeqNumberType;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
@@ -19,6 +18,7 @@ impl CollectionUpdater {
         segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
         operation_result: &CollectionResult<usize>,
+        replay: bool,
     ) {
         match operation_result {
             Ok(_) => {
@@ -32,6 +32,8 @@ impl CollectionUpdater {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
                     log::error!("Update operation failed: {collection_error}")
+                } else if replay && collection_error.is_missing_point() {
+                    // Expected on replay, see `Self::replay`. The caller reports these.
                 } else {
                     log::warn!("Update operation declined: {collection_error}")
                 }
@@ -39,6 +41,7 @@ impl CollectionUpdater {
         }
     }
 
+    /// Apply a new update operation.
     pub fn update(
         segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
@@ -46,7 +49,50 @@ impl CollectionUpdater {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         max_segment_size_bytes: Option<NonZeroUsize>,
-        hw_counter: &HardwareCounterCell,
+    ) -> CollectionResult<usize> {
+        Self::apply(
+            segments,
+            op_num,
+            operation,
+            update_operation_lock,
+            update_tracker,
+            max_segment_size_bytes,
+            false,
+        )
+    }
+
+    /// Re-apply an operation read back from the WAL during shard recovery.
+    ///
+    /// Same as [`Self::update`], except that a missing point is not logged: replay may start
+    /// before the persisted state of some segments, so replayed operations can target points
+    /// that a later operation already deleted. The caller handles that error instead.
+    pub fn replay(
+        segments: &LockedSegmentHolder,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) -> CollectionResult<usize> {
+        Self::apply(
+            segments,
+            op_num,
+            operation,
+            update_operation_lock,
+            update_tracker,
+            max_segment_size_bytes,
+            true,
+        )
+    }
+
+    fn apply(
+        segments: &LockedSegmentHolder,
+        op_num: SeqNumberType,
+        operation: CollectionUpdateOperations,
+        update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+        update_tracker: UpdateTracker,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+        replay: bool,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -69,7 +115,6 @@ impl CollectionUpdater {
                         op_num,
                         point_operation,
                         max_segment_size_bytes,
-                        hw_counter,
                     )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
@@ -78,7 +123,6 @@ impl CollectionUpdater {
                         op_num,
                         vector_operation,
                         max_segment_size_bytes,
-                        hw_counter,
                     )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
@@ -87,16 +131,10 @@ impl CollectionUpdater {
                         op_num,
                         payload_operation,
                         max_segment_size_bytes,
-                        hw_counter,
                     )
                 }
                 CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                    process_field_index_operation(
-                        &segments_guard,
-                        op_num,
-                        &index_operation,
-                        hw_counter,
-                    )
+                    process_field_index_operation(&segments_guard, op_num, &index_operation)
                 }
                 CollectionUpdateOperations::VectorNameOperation(vector_name_operation) => {
                     process_vector_name_operation(&segments_guard, op_num, &vector_name_operation)
@@ -113,7 +151,7 @@ impl CollectionUpdater {
         });
 
         let operation_result = operation_result.map_err(CollectionError::from);
-        CollectionUpdater::handle_update_result(segments, op_num, &operation_result);
+        CollectionUpdater::handle_update_result(segments, op_num, &operation_result, replay);
         operation_result
     }
 }
@@ -123,7 +161,7 @@ mod tests {
     use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::ambient;
     use common::types::DeferredBehavior;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
@@ -189,18 +227,10 @@ mod tests {
             },
         ];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
-        let (num_deleted, num_new, num_updated) = sync_points(
-            &segments.read(),
-            100,
-            Some(10.into()),
-            None,
-            &points,
-            None,
-            &hw_counter,
-        )
-        .unwrap();
+        let (num_deleted, num_new, num_updated) =
+            sync_points(&segments.read(), 100, Some(10.into()), None, &points, None).unwrap();
 
         assert_eq!(num_deleted, 1); // delete point 15
         assert_eq!(num_new, 1); // insert point 500
@@ -227,9 +257,9 @@ mod tests {
             },
         ];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
-        let res = upsert_points(&segments.read(), 100, &points, None, &hw_counter);
+        let res = upsert_points(&segments.read(), 100, &points, None);
         assert_matches!(res, Ok(1));
 
         let records = retrieve_blocking(
@@ -239,7 +269,6 @@ mod tests {
             &true.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -268,7 +297,6 @@ mod tests {
                 ids: vec![500.into()],
             },
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -279,7 +307,6 @@ mod tests {
             &true.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -301,7 +328,7 @@ mod tests {
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         process_payload_operation(
             &segments.read(),
@@ -313,7 +340,6 @@ mod tests {
                 key: None,
             }),
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -324,7 +350,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -353,7 +378,6 @@ mod tests {
                 filter: None,
             }),
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -364,7 +388,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -383,7 +406,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -400,7 +422,6 @@ mod tests {
                 points: vec![2.into()],
             },
             None,
-            &hw_counter,
         )
         .unwrap();
         let res = retrieve_blocking(
@@ -410,7 +431,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -429,7 +449,7 @@ mod tests {
         let meta_key_path = JsonPath::new("meta");
         let nested_key_path: JsonPath = JsonPath::new("meta.color");
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut segment1 = build_segment_1(path);
         segment1
@@ -437,7 +457,6 @@ mod tests {
                 100,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
-                &hw_counter,
             )
             .unwrap();
 
@@ -447,7 +466,6 @@ mod tests {
                 101,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
-                &hw_counter,
             )
             .unwrap();
 
@@ -473,7 +491,6 @@ mod tests {
                 key: Some(meta_key_path.clone()),
             }),
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -484,7 +501,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()
@@ -538,7 +554,6 @@ mod tests {
                 key: Some(meta_key_path.clone()),
             }),
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -549,7 +564,6 @@ mod tests {
             &false.into(),
             TEST_TIMEOUT,
             &is_stopped,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
         .unwrap()

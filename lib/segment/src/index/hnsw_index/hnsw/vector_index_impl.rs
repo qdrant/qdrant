@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -9,7 +8,9 @@ use super::HNSWIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::{VectorIndex, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -25,6 +26,16 @@ impl VectorIndexRead for HNSWIndex {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.with_view(|view| view.search(vectors, filter, top, params, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        self.with_view(|view| Ok(view.filter_checks(query_vectors, cardinality, top, params)))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -62,7 +73,6 @@ impl VectorIndexRead for HNSWIndex {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // HNSW (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {
@@ -94,7 +104,6 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<VectorRef>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
@@ -103,7 +112,6 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<&[u8]>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }

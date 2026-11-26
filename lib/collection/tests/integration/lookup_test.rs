@@ -10,7 +10,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, RngExt, SeedableRng};
@@ -70,16 +70,11 @@ async fn setup() -> Resources {
         PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
     );
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     collection
-        .update_from_client_simple(
-            upsert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(upsert_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -133,8 +128,8 @@ async fn happy_lookup_ids() {
         None,
         &shard_selection,
         None,
-        HwMeasurementAcc::new(),
     )
+    .measured(AmbientContext::new())
     .await;
 
     assert!(result.is_ok());
@@ -224,8 +219,8 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         None,
         &shard_selection,
         None,
-        HwMeasurementAcc::new(),
     )
+    .measured(AmbientContext::new())
     .await;
 
     assert!(result.is_ok());
@@ -259,7 +254,6 @@ async fn err_when_collection_by_name_returns_none() {
         None,
         &shard_selection,
         None,
-        HwMeasurementAcc::new(),
     )
     .await;
 

@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 
 use edge::{
-    JsonPath, Payload, PayloadIndexInfo, PayloadSchemaType, PointId, PointStructPersisted,
-    SparseVector, VectorPersisted, VectorStructPersisted,
+    EdgeShard, JsonPath, Payload, PayloadIndexInfo, PayloadSchemaType, PointId,
+    PointStructPersisted, ShardInfo, SparseVector, VectorPersisted, VectorStructPersisted,
 };
 use rand::RngExt as _;
 use rand::rngs::StdRng;
@@ -43,6 +43,23 @@ impl Schema {
             sparse,
             payload,
         }
+    }
+
+    /// The schema of `shard`, whose `info` the caller already read. A shard
+    /// without vectors has no point shape to generate.
+    pub fn of_shard(shard: &EdgeShard, info: &ShardInfo) -> anyhow::Result<Self> {
+        let config = shard.config();
+        let dense = config
+            .vectors
+            .iter()
+            .map(|(name, params)| (name.clone(), params.size))
+            .collect();
+        let sparse = config.sparse_vectors.keys().cloned();
+        let schema = Self::new(dense, sparse, &info.payload_schema);
+        if schema.dense.is_empty() && schema.sparse.is_empty() {
+            anyhow::bail!("collection has no vectors configured");
+        }
+        Ok(schema)
     }
 }
 
@@ -90,7 +107,7 @@ pub fn random_point(id: PointId, schema: &Schema, rng: &mut StdRng) -> PointStru
 /// Wrap `value` in the objects and arrays `path` walks through, so an index on
 /// a nested or array field actually sees it — a flat `"a.b"` key leaves that
 /// index empty. Paths sharing a prefix merge rather than overwrite.
-fn set_at_path(
+pub fn set_at_path(
     payload: &mut serde_json::Map<String, serde_json::Value>,
     path: &JsonPath,
     value: serde_json::Value,

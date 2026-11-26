@@ -1,4 +1,5 @@
 mod generators;
+mod nested;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -11,9 +12,11 @@ use generators::{
     random_existing_ids, random_flush_interval_sec, random_num, random_partial_named_vectors,
     random_payload, random_payload_key, random_payload_keys, random_point, random_prefetch,
     random_query_for_name, random_recommend_strategy, random_scroll_filter, random_slice,
-    random_tag, random_text_query, random_update_mode, random_url_prefix_probe, random_vector_name,
-    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
+    random_tag, random_text_query, random_update_mode, random_url_prefix_probe,
+    random_url_substring_probe, random_vector_name, random_vector_name_subset, random_with_payload,
+    random_with_vector, upsert_fallback,
 };
+pub(super) use nested::{NestedFilter, nested_indexes};
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
 use rand::seq::{IndexedRandom, IteratorRandom};
@@ -29,12 +32,13 @@ use segment::data_types::vectors::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, Match,
-    MultiVectorConfig, Payload, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-    PointIdType, Slice, SliceCondition, VectorNameBuf, VectorStorageDatatype, WithPayloadInterface,
-    WithVector,
+    Condition, FieldCondition, Filter, HasIdCondition, HasVectorCondition, IsEmptyCondition,
+    IsNullCondition, Match, MultiVectorConfig, Payload, PayloadField, PayloadFieldSchema,
+    PayloadSchemaParams, PayloadSchemaType, PointIdType, Slice, SliceCondition, VectorNameBuf,
+    VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::turbo::{tq_bits, turbo_storage_roundtrip};
+use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::{
@@ -272,6 +276,15 @@ pub(super) enum Op {
         filter_num: Option<i64>,
         filter_url_prefix: Option<String>,
     },
+    /// Verification op: count points whose `url` contains the given substring. With the `url`
+    /// index present the match is a scan of its key dictionary, without it a payload read.
+    CountByUrlSubstring(String),
+    /// Verification op: scroll all points whose `url` contains the given substring.
+    ScrollFilteredByUrlSubstring(String),
+    /// Verification op: count points matching a `nested` filter over `offers`, see [`nested`].
+    CountByNested(NestedFilter),
+    /// Verification op: scroll all points matching a `nested` filter over `offers`.
+    ScrollFilteredByNested(NestedFilter),
 }
 
 /// `QueryText` limit meaning "every match": above any id pool the tester is normally run with.
@@ -327,6 +340,13 @@ pub(super) enum ScrollFilter {
         total: NonZeroU32,
         index: u32,
     },
+    /// `is_empty` on a top-level key: the key is missing, `null` or `[]`. The key is the
+    /// never-indexed `e` (payload fallback), `tag` (keyword index toggled on and off) or `num`
+    /// (always indexed, missing only after payload mutations).
+    IsEmpty(String),
+    /// `is_null` on a top-level key: the value is `null` or an array holding a `null`. Same keys
+    /// as [`ScrollFilter::IsEmpty`].
+    IsNull(String),
 }
 
 /// Per-point named-vector payload — used by Upsert/UpsertBatch/UpdateVectors/UpsertConditional.
@@ -345,7 +365,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 41;
+    const N: usize = 45;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -390,6 +410,10 @@ impl Swarm {
         "CountBySlice",
         "SetFlushInterval",
         "QueryText",
+        "CountByUrlSubstring",
+        "ScrollFilteredByUrlSubstring",
+        "CountByNested",
+        "ScrollFilteredByNested",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -449,6 +473,10 @@ impl Swarm {
         // it rare enough that the workload isn't dominated by worker churn.
         1, // SetFlushInterval
         4, // QueryText
+        3, // CountByUrlSubstring
+        3, // ScrollFilteredByUrlSubstring
+        3, // CountByNested
+        3, // ScrollFilteredByNested
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -573,25 +601,33 @@ impl Op {
                 Op::ClearPayload(ids)
             }
             8 => {
-                // Randomly toggle one of two keyword indices, preserving coverage of both the
-                // plain keyword-equality path (`tag`) and the prefix path (`url`):
+                // Randomly toggle one of the optional indices, preserving coverage of:
                 // - `tag`: plain keyword index, exercised by exact match ops;
-                // - `url`: prefix-enabled keyword index, exercised by prefix match ops.
+                // - `url`: prefix-enabled keyword index, exercised by prefix and substring match
+                //   ops;
+                // - `offers[].price` / `offers[].shop`: per-element indexes, exercised by nested
+                //   ops, which take the per-element path when every field they use is indexed.
                 // When the index is absent, the corresponding filters fall back to full-scan;
                 // when present, the index path is exercised across segment variants.
-                let (field, schema) = if rng.random_bool(0.5) {
-                    (
+                let (field, schema) = match rng.random_range(0..3) {
+                    0 => (
                         "tag".parse().unwrap(),
                         PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-                    )
-                } else {
-                    ("url".parse().unwrap(), url_prefix_index_schema())
+                    ),
+                    1 => ("url".parse().unwrap(), url_prefix_index_schema()),
+                    2 => nested::random_nested_index(rng),
+                    _ => unreachable!(),
                 };
                 Op::CreateIndex(field, schema)
             }
             9 => {
-                let field = if rng.random_bool(0.5) { "tag" } else { "url" };
-                Op::DropIndex(field.parse().unwrap())
+                let field = match rng.random_range(0..3) {
+                    0 => "tag".parse().unwrap(),
+                    1 => "url".parse().unwrap(),
+                    2 => nested::random_nested_index_field(rng),
+                    _ => unreachable!(),
+                };
+                Op::DropIndex(field)
             }
             10 => Op::RetrieveRandom(random_distinct_ids(rng, 3..=10, id_space)),
             11 => Op::CountByNum(random_num(rng)),
@@ -831,6 +867,10 @@ impl Op {
                         .then(|| random_url_prefix_probe(rng).to_string()),
                 }
             }
+            41 => Op::CountByUrlSubstring(random_url_substring_probe(rng).to_string()),
+            42 => Op::ScrollFilteredByUrlSubstring(random_url_substring_probe(rng).to_string()),
+            43 => Op::CountByNested(NestedFilter::random(rng)),
+            44 => Op::ScrollFilteredByNested(NestedFilter::random(rng)),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -880,6 +920,10 @@ impl Op {
             Op::CreateSnapshot => "CreateSnapshot",
             Op::SetFlushInterval(_) => "SetFlushInterval",
             Op::QueryText { .. } => "QueryText",
+            Op::CountByUrlSubstring(_) => "CountByUrlSubstring",
+            Op::ScrollFilteredByUrlSubstring(_) => "ScrollFilteredByUrlSubstring",
+            Op::CountByNested(_) => "CountByNested",
+            Op::ScrollFilteredByNested(_) => "ScrollFilteredByNested",
         }
     }
 }
@@ -949,6 +993,44 @@ pub(super) fn match_num_and_slice_filter(num: i64, total: NonZeroU32, index: u32
     match_num_filter(num).merge(&match_slice_filter(total, index))
 }
 
+pub(super) fn is_empty_filter(key: &str) -> Filter {
+    Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+        is_empty: PayloadField {
+            key: key.parse().unwrap(),
+        },
+    }))
+}
+
+pub(super) fn is_null_filter(key: &str) -> Filter {
+    Filter::new_must(Condition::IsNull(IsNullCondition {
+        is_null: PayloadField {
+            key: key.parse().unwrap(),
+        },
+    }))
+}
+
+/// Model of `is_empty` on a top-level key: missing, `null` and `[]` are empty. Any other value is
+/// not, including `[null]` and `{}`.
+pub(super) fn is_empty_matches(payload: &Payload, key: &str) -> bool {
+    match payload.0.get(key) {
+        None | Some(Value::Null) => true,
+        Some(Value::Array(values)) => values.is_empty(),
+        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => false,
+    }
+}
+
+/// Model of `is_null` on a top-level key: `null`, or an array holding a `null`. A missing key is
+/// not null.
+pub(super) fn is_null_matches(payload: &Payload, key: &str) -> bool {
+    match payload.0.get(key) {
+        Some(Value::Null) => true,
+        Some(Value::Array(values)) => values.iter().any(Value::is_null),
+        None | Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_)) => {
+            false
+        }
+    }
+}
+
 pub(super) fn num_matches(payload: &Payload, target: i64) -> bool {
     payload
         .0
@@ -971,6 +1053,42 @@ pub(super) fn url_prefix_matches(payload: &Payload, prefix: &str) -> bool {
         .get("url")
         .and_then(|v| v.as_str())
         .is_some_and(|url| url.starts_with(prefix))
+}
+
+/// A filter for the count and scroll verifiers: the engine filter and the model predicate it must
+/// agree with.
+pub(super) trait ModelFilter: std::fmt::Debug {
+    fn filter(&self) -> Filter;
+    fn matches(&self, payload: &Payload) -> bool;
+}
+
+/// A string match on `url`.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum UrlMatch<'a> {
+    Prefix(&'a str),
+    Substring(&'a str),
+}
+
+impl ModelFilter for UrlMatch<'_> {
+    fn filter(&self) -> Filter {
+        match *self {
+            UrlMatch::Prefix(prefix) => match_url_prefix_filter(prefix),
+            UrlMatch::Substring(substring) => Filter::new_must(Condition::Field(
+                FieldCondition::new_match("url".parse().unwrap(), Match::new_substring(substring)),
+            )),
+        }
+    }
+
+    fn matches(&self, payload: &Payload) -> bool {
+        match *self {
+            UrlMatch::Prefix(prefix) => url_prefix_matches(payload, prefix),
+            UrlMatch::Substring(substring) => payload
+                .0
+                .get("url")
+                .and_then(|v| v.as_str())
+                .is_some_and(|url| url.contains(substring)),
+        }
+    }
 }
 
 pub(super) fn passes_read_filters(
@@ -1021,9 +1139,13 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
         (VectorKind::Dense(_), VectorValue::Dense(v)) => {
             let stored = metric_preprocess(candidate, v);
             match candidate.datatype {
-                Some(datatype @ (Datatype::Turbo4 | Datatype::Turbo8)) => VectorValue::Dense(
-                    turbo_storage_roundtrip(&stored, candidate.distance, tq_bits(datatype.into())),
-                ),
+                Some(datatype @ (Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)) => {
+                    VectorValue::Dense(turbo_storage_roundtrip(
+                        &stored,
+                        candidate.distance,
+                        tq_bits(datatype.into()),
+                    ))
+                }
                 datatype => match scalar_storage_roundtrip(datatype) {
                     Some(roundtrip) => VectorValue::Dense(roundtrip(&stored)),
                     None => VectorValue::Dense(stored),
@@ -1065,7 +1187,8 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
 fn metric_preprocess(candidate: &VectorCandidate, v: &[f32]) -> Vec<f32> {
     let v = v.to_vec();
     match candidate.datatype {
-        None | Some(Datatype::Float32 | Datatype::Turbo4 | Datatype::Turbo8) => {
+        None
+        | Some(Datatype::Float32 | Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
             candidate.distance.preprocess_vector::<VectorElementType>(v)
         }
         Some(Datatype::Float16) => candidate
@@ -1088,7 +1211,7 @@ fn scalar_storage_roundtrip(datatype: Option<Datatype>) -> Option<SliceRoundtrip
         Some(Datatype::Float16) => Some(primitive_storage_roundtrip::<VectorElementTypeHalf>),
         Some(Datatype::Uint8) => Some(primitive_storage_roundtrip::<VectorElementTypeByte>),
         Some(Datatype::Float32) | None => None,
-        Some(Datatype::Turbo4 | Datatype::Turbo8) => {
+        Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
             panic!("TurboQuant datatypes have no per-component scalar round-trip")
         }
     }
@@ -1117,10 +1240,12 @@ pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> boo
         return false;
     }
     match candidate_of(name).datatype {
-        Some(Datatype::Turbo4 | Datatype::Turbo8) => actual.iter().zip(expected).all(|(&a, &e)| {
-            let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
-            (a - e).abs() <= tol
-        }),
+        Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
+            actual.iter().zip(expected).all(|(&a, &e)| {
+                let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
+                (a - e).abs() <= tol
+            })
+        }
         // Float16 / Uint8 read-backs are exact: `model_vector` records the storage
         // round-trip, and re-storing a read-back reproduces it bit-for-bit.
         Some(Datatype::Float16 | Datatype::Uint8 | Datatype::Float32) | None => actual == expected,

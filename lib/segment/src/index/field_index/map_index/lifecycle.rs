@@ -56,7 +56,7 @@ where
 
     pub fn builder_immutable(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
         prefix_index: bool,
     ) -> MapIndexMmapBuilder<N> {
@@ -64,7 +64,7 @@ where
             path: path.to_owned(),
             point_to_values: Default::default(),
             values_to_points: Default::default(),
-            is_on_disk,
+            memory,
             deleted_points: deleted_points.to_owned(),
             prefix_index,
         }

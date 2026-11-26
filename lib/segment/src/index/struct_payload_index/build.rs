@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::StructPayloadIndex;
@@ -15,7 +14,6 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         // A build must start from a clean slate: files can be left behind by a build
         // that crashed before its config entry was written, or by an index that
@@ -33,19 +31,15 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);
-        let mut builders = selector.index_builder(
-            field,
-            payload_schema,
-            id_tracker_borrow.deleted_point_bitslice(),
-        )?;
+        let deleted = id_tracker_borrow.deleted_point_bitslice();
+        let mut builders = selector.index_builder(field, payload_schema, deleted)?;
 
         // Special null index complements every index. Seed it with the segment's total
         // point count so `iter_falses()` returns points that are missing from payload
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
-        let total_point_count = self.id_tracker.borrow().total_point_count();
-        let null_index = selector.null_builder(field, total_point_count)?;
-        builders.push(null_index);
+        let total_point_count = id_tracker_borrow.total_point_count();
+        builders.push(selector.null_builder(field, payload_schema, total_point_count)?);
 
         for index in &mut builders {
             index.init()?;
@@ -54,16 +48,16 @@ impl StructPayloadIndex {
             }
         }
 
-        payload_storage.iter(
-            |point_id, point_payload| {
-                let field_value = &point_payload.get_value(field);
-                for builder in builders.iter_mut() {
-                    builder.add_point(point_id, field_value, hw_counter)?;
-                }
-                Ok(true)
-            },
-            hw_counter,
-        )?;
+        payload_storage.iter(|point_id, point_payload| {
+            if id_tracker_borrow.is_deleted_point(point_id) {
+                return Ok(true);
+            }
+            for builder in &mut builders {
+                let values = point_payload.get_value(builder.input_path(field));
+                builder.add_point(point_id, &values)?;
+            }
+            Ok(true)
+        })?;
 
         builders
             .into_iter()
@@ -79,8 +73,15 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
+        // Per-element indexes keep an element map next to the inner index, rebuilding
+        // is simpler than reopening both in another mode
+        if payload_schema.nested().is_some() {
+            return Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            ));
+        }
+
         let loaded = {
             let selector = self.selector(payload_schema);
             let id_tracker = self.id_tracker.borrow();
@@ -90,7 +91,8 @@ impl StructPayloadIndex {
                     if let Some(null_index) = selector.new_null_index(
                         field,
                         false,
-                        &id_tracker,
+                        id_tracker.total_point_count(),
+                        deleted_points,
                         selector.default_mutability(),
                     )? {
                         indexes.push(null_index);
@@ -103,11 +105,9 @@ impl StructPayloadIndex {
 
         match loaded {
             Some(indexes) => Ok(BuildIndexResult::Built(indexes)),
-            None => Ok(BuildIndexResult::Built(self.build_field_indexes(
-                field,
-                payload_schema,
-                hw_counter,
-            )?)),
+            None => Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            )),
         }
     }
 

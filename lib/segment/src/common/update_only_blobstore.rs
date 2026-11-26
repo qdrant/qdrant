@@ -4,7 +4,7 @@ use std::path::Path;
 
 use blobstore::config::LogstoreConfig;
 use blobstore::{Blob, Logstore};
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalAppend, UniversalAppendFs};
 
@@ -60,9 +60,9 @@ impl<V: Blob, S: UniversalAppend + 'static> UpdateOnlyBlobstore<V, S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> OperationResult<()> {
-        self.storage.put_value(fs, slot, value, hw_counter)?;
+        self.storage.put_value(fs, slot, value, hw_metric)?;
         self.buffered = true;
         Ok(())
     }

@@ -31,6 +31,16 @@ fn insert(
     tracker.set_internal_version(internal, version).unwrap();
 }
 
+/// Live-reload and publish, as a reload whose components all succeed does.
+fn reload(
+    read_only: &mut ReadOnlyTracker,
+    max_committed_id: Option<PointOffsetType>,
+) -> LiveReloadResult {
+    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    read_only.publish_staged();
+    result
+}
+
 /// Assert that the read-only tracker exposes the same live points and versions as the mutable one.
 ///
 /// Note `total_point_count` is not compared: a point inserted and deleted before its version was
@@ -72,7 +82,7 @@ fn test_open_matches_mutable_tracker() {
     insert(&mut mutable, 100.into(), 0, 10);
     insert(&mut mutable, 200.into(), 1, 11);
     insert(&mut mutable, 300.into(), 2, 12);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
@@ -134,18 +144,15 @@ fn test_live_reload_reports_inserts_and_deletes() {
     assert_in_sync(&read_only, &mutable);
 
     // A reload with no new changes reports nothing
-    assert_eq!(
-        read_only.live_reload(&MmapFs, None).unwrap(),
-        LiveReloadResult::default(),
-    );
+    assert_eq!(reload(&mut read_only, None), LiveReloadResult::default(),);
 
     // Append more changes: insert two new points, delete one existing point
     insert(&mut mutable, 400.into(), 3, 13);
     insert(&mut mutable, 500.into(), 4, 14);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result.inserted, vec![3, 4]);
     assert_eq!(result.deleted, vec![1]);
     assert_in_sync(&read_only, &mutable);
@@ -170,10 +177,10 @@ fn test_live_reload_insert_then_delete_within_batch() {
 
     // Insert a brand-new point and delete it again, all before the read-only view reloads.
     insert(&mut mutable, 200.into(), 1, 11);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_in_sync(&read_only, &mutable);
@@ -210,7 +217,7 @@ fn test_live_reload_upsert_relinks_to_new_offset() {
     mutable.set_internal_version(1, 20).unwrap();
     flush(&mutable);
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, vec![0]);
     assert_eq!(
@@ -244,7 +251,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
 
     // The version is not flushed yet, so the point is withheld from the result and, crucially, is
     // not present in the mapping at all (its data may be partially written).
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only
@@ -257,7 +264,7 @@ fn test_live_reload_withholds_insert_until_version_present() {
     // the insert, links it into the mapping, and reconciles the version.
     mutable.versions_flusher()().unwrap();
 
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
     assert_eq!(
@@ -267,6 +274,203 @@ fn test_live_reload_withholds_insert_until_version_present() {
     );
     assert_eq!(read_only.internal_version(1), Some(11));
     assert_in_sync(&read_only, &mutable);
+}
+
+/// An update whose version lands in the same reload that reads a newer, still unversioned update
+/// of the same point is served, rather than the copy before both.
+#[test]
+fn test_live_reload_serves_update_versioned_alongside_newer_pending_one() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // An update to slot 1: its mapping is flushed, its version is not.
+    insert(&mut mutable, 100.into(), 1, 11);
+    mutable.mapping_flusher()().unwrap();
+    assert_eq!(reload(&mut read_only, None), LiveReloadResult::default());
+
+    // Its version lands, and the mapping of a newer update to slot 2 is flushed without a version.
+    mutable.versions_flusher()().unwrap();
+    insert(&mut mutable, 100.into(), 2, 12);
+    mutable.mapping_flusher()().unwrap();
+
+    let result = reload(&mut read_only, None);
+    assert_eq!(result.inserted, vec![1]);
+    assert_eq!(result.deleted, vec![0]);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1)
+    );
+}
+
+#[test]
+fn test_live_reload_relink_restores_an_unpublished_committed_slot() {
+    use crate::id_tracker::mutable_id_tracker::update_only::MappingOperation::Insert;
+    use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker as Writer;
+    let dir = Builder::new().prefix("reload_relink").tempdir().unwrap();
+    let resume = || {
+        let view = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+        Writer::new(
+            &MmapFs,
+            dir.path(),
+            view.max_claimed_internal_id(),
+            view.pending_inserts(),
+            view.mappings_read_to(),
+        )
+        .unwrap()
+    };
+    let mut writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[0], &[100]).unwrap();
+    let mut reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[1], &[101]).unwrap();
+    // The first reload reports slot 1, but a component fails, preventing publication.
+    let mut pending = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(pending.inserted, vec![1]);
+    assert_eq!(pending.deleted, vec![0]);
+
+    // A store at slot 2 fails. Recovery relinks 1 and commits another point at 3.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(200.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[3], &[103]).unwrap();
+    let fresh = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(fresh.inserted, vec![1, 3]);
+    assert_eq!(
+        fresh.deleted,
+        vec![0],
+        "slot 1 survived recovery: {fresh:?}"
+    );
+    pending.merge(fresh);
+    assert_eq!(pending.inserted, vec![1, 3]);
+    reader.publish_staged();
+    assert_eq!(
+        reader.internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1),
+    );
+}
+
+#[test]
+fn test_live_reload_repeated_relinks_keep_the_published_slot() {
+    use crate::id_tracker::mutable_id_tracker::update_only::MappingOperation::Insert;
+    use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker as Writer;
+
+    let dir = Builder::new().prefix("reload_relink").tempdir().unwrap();
+    let resume = || {
+        let view = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+        Writer::new(
+            &MmapFs,
+            dir.path(),
+            view.max_claimed_internal_id(),
+            view.pending_inserts(),
+            view.mappings_read_to(),
+        )
+        .unwrap()
+    };
+    let mut writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[0], &[100]).unwrap();
+    let mut reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+
+    // A failed update to point 100, followed by recovery and a successful other insert.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(200.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[2], &[102]).unwrap();
+    let mut pending = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(pending.inserted, vec![2]);
+    assert!(pending.deleted.is_empty());
+    // A component failed during the reload: leave its inserts unpublished.
+
+    // Another failed update to 100, recovery, and successful insert of a third point.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(300.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[4], &[104]).unwrap();
+    let fresh = reader.live_reload(&MmapFs, None).unwrap();
+    assert!(
+        !fresh.deleted.contains(&0),
+        "slot 0 is still the committed copy of point 100, but delta is {fresh:?}",
+    );
+    pending.merge(fresh);
+    assert_eq!(pending.inserted, vec![2, 4]);
+    assert!(pending.deleted.is_empty());
+    reader.publish_staged();
+    assert_eq!(
+        reader.internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0),
+    );
+}
+
+/// A re-insert whose version is not flushed yet must not hide the earlier insert of the same point
+/// whose version is: the point resolves to the earlier offset until the re-insert's version lands.
+/// A reload that read the versions before the earlier insert's version landed reads both inserts
+/// as pending, and must still stage the earlier one once its version is read. A fresh open reads
+/// both inserts in one go.
+#[test]
+fn test_unversioned_reinsert_keeps_earlier_versioned_insert() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let resolve = |read_only: &ReadOnlyTracker| {
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly)
+    };
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    let mut reloaded = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // Point 100 is inserted at offset 0 and re-inserted at offset 1, and the reload reads both
+    // inserts before either version
+    insert(&mut mutable, 100.into(), 0, 10);
+    mutable.set_link(100.into(), 1).unwrap();
+    mutable.mapping_flusher()().unwrap();
+    assert_eq!(reload(&mut reloaded, None), LiveReloadResult::default());
+    assert_eq!(resolve(&reloaded), None);
+
+    // The first insert's version lands, the re-insert has none yet
+    mutable.versions_flusher()().unwrap();
+    let result = reload(&mut reloaded, None);
+    assert_eq!(result.inserted, vec![0]);
+    assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+    assert_eq!(resolve(&reloaded), Some(0));
+    assert_eq!(reloaded.internal_version(0), Some(10));
+
+    let mut opened = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(resolve(&opened), Some(0), "fresh open");
+
+    // The re-insert's version lands: the point moves to the new offset
+    mutable.set_internal_version(1, 20).unwrap();
+    mutable.versions_flusher()().unwrap();
+    for read_only in [&mut reloaded, &mut opened] {
+        let result = reload(read_only, None);
+        assert_eq!(result.inserted, vec![1]);
+        assert_eq!(result.deleted, vec![0]);
+        assert_eq!(resolve(read_only), Some(1));
+        assert_in_sync(read_only, &mutable);
+    }
 }
 
 /// A partially-written trailing mapping entry (e.g. a flush observed mid-append) must be ignored,
@@ -300,7 +504,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
     }
 
     // The partial entry is ignored and we don't advance past it.
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result, LiveReloadResult::default());
     assert_eq!(
         read_only.mappings_read_to, complete_len,
@@ -316,7 +520,7 @@ fn test_live_reload_ignores_partial_trailing_mapping_entry() {
         insert(&mut mutable, 300.into(), 2, 12);
         flush(&mutable);
 
-        let result = read_only.live_reload(&MmapFs, None).unwrap();
+        let result = reload(&mut read_only, None);
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
         assert_in_sync(&read_only, &mutable);
@@ -377,7 +581,7 @@ fn test_live_reload_withholds_partially_written_version() {
     }
 
     // Only part of the version is written, so the point is withheld.
-    let result = read_only.live_reload(&MmapFs, None).unwrap();
+    let result = reload(&mut read_only, None);
     assert_eq!(result.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(read_only.internal_version(2), None);
 
@@ -389,7 +593,7 @@ fn test_live_reload_withholds_partially_written_version() {
     {
         mutable.versions_flusher()().unwrap();
 
-        let result = read_only.live_reload(&MmapFs, None).unwrap();
+        let result = reload(&mut read_only, None);
         assert_eq!(result.inserted, vec![2]);
         assert_eq!(
             read_only.internal_id_with_behavior(
@@ -454,6 +658,133 @@ fn test_merge_empty_is_noop() {
 }
 
 #[test]
+fn test_inserts_invisible_until_publish() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    insert(&mut mutable, 200.into(), 1, 11);
+    flush(&mutable);
+
+    // Reported, but not reachable before it is published
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+    assert_eq!(read_only.available_point_count(), 1);
+    assert!(read_only.is_deleted_point(1));
+    assert_eq!(read_only.external_id(1), None);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(200.into(), common::types::DeferredBehavior::VisibleOnly),
+        None,
+    );
+    // Fully written, so a resuming writer must not retire it
+    assert_eq!(read_only.pending_inserts().count(), 0);
+
+    // An unpublished insert is reported again by a retried reload
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+
+    read_only.publish_staged();
+    assert_in_sync(&read_only, &mutable);
+}
+
+#[test]
+fn test_upsert_keeps_old_offset_until_publish() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // Move point 100 from offset 0 to offset 1
+    mutable.drop(100.into(), None).unwrap();
+    insert(&mut mutable, 100.into(), 1, 11);
+    flush(&mutable);
+
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+    assert_eq!(delta.deleted, vec![0]);
+
+    read_only.publish_staged();
+    assert_in_sync(&read_only, &mutable);
+}
+
+#[test]
+fn test_upsert_without_delete_keeps_old_offset_until_publish() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // Re-link point 100 to offset 1 without an explicit delete: the displaced offset is reported
+    insert(&mut mutable, 100.into(), 1, 11);
+    flush(&mutable);
+
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+    assert_eq!(delta.deleted, vec![0]);
+
+    // The old offset keeps serving the point until published
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0),
+    );
+    assert!(!read_only.is_deleted_point(0));
+
+    read_only.publish_staged();
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1),
+    );
+    assert!(read_only.is_deleted_point(0));
+}
+
+#[test]
+fn test_retry_after_unpublished_insert_was_deleted() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    insert(&mut mutable, 200.into(), 1, 11);
+    flush(&mutable);
+
+    // Attempted reload whose components fail: not published
+    let mut pending = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(pending.inserted, vec![1]);
+
+    // The writer deletes the point before the retry
+    mutable.drop(200.into(), None).unwrap();
+    flush(&mutable);
+
+    // The staged offset is reported as deleted, so a component that already ingested it drops it
+    let fresh = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(fresh.inserted, Vec::<PointOffsetType>::new());
+    assert_eq!(fresh.deleted, vec![1]);
+
+    pending.merge(fresh);
+    assert_eq!(pending.inserted, Vec::<PointOffsetType>::new());
+    assert_eq!(pending.deleted, vec![1]);
+
+    read_only.publish_staged();
+    assert_in_sync(&read_only, &mutable);
+}
+
+#[test]
 fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
@@ -494,7 +825,7 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
 
     // Reload is clamped to the probed max_committed_id passed as argument (2 points, internal_id 1),
     // so point 300 (offset 2) is NOT committed yet!
-    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    let result = reload(&mut read_only, max_committed_id);
     assert_eq!(result.inserted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
     assert_eq!(
@@ -511,14 +842,12 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
             max_committed_id: 3
         }
     );
-    let result = read_only
-        .live_reload(&MmapFs, probe.max_committed_id())
-        .unwrap();
+    let result = reload(&mut read_only, probe.max_committed_id());
     assert_eq!(result.inserted, vec![2]);
     assert_eq!(read_only.available_point_count(), 3);
 
     // 3. Pure delete without inserts: versions.dat does not grow, but mappings.dat changed
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();
@@ -529,15 +858,14 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
         },
         "probe must detect pure delete via mappings change"
     );
-    let result = read_only
-        .live_reload(&MmapFs, probe.max_committed_id())
-        .unwrap();
+    let result = reload(&mut read_only, probe.max_committed_id());
     assert_eq!(result.deleted, vec![1]);
     assert_eq!(read_only.available_point_count(), 2);
 }
 
 #[test]
 fn test_probe_committed_over_disk_cache() {
+    let _scope = common::ambient::test_guard();
     use std::sync::Arc;
 
     use common::universal_io::{
@@ -590,4 +918,85 @@ fn test_probe_committed_over_disk_cache() {
         },
         "probe_committed over DiskCache must report changed after inserts"
     );
+}
+
+/// A writer that recovers an abandoned relocation (its mappings flushed, its version not) must
+/// leave the point on its previous copy for every reader of the log, also once a later version
+/// write covers the abandoned slots. Writing a version past them extends the versions file with
+/// zero-filled gaps, after which those slots look committed to a reader of the log.
+#[test]
+fn recovered_relocation_survives_covered_abandoned_slots() {
+    use common::types::DeferredBehavior;
+
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let relocated = PointIdType::NumId(203);
+    let resolve = |tracker: &dyn Fn(PointIdType) -> Option<PointOffsetType>| tracker(relocated);
+
+    {
+        let mut writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        insert(&mut writer, relocated, 0, 53);
+        insert(&mut writer, PointIdType::NumId(7), 1, 54);
+        flush(&writer);
+
+        // Relocate twice, then crash after flushing mappings only
+        insert(&mut writer, relocated, 2, 600);
+        insert(&mut writer, relocated, 3, 601);
+        writer.mapping_flusher()().unwrap();
+    }
+
+    // A follower that was live across the crash holds the abandoned inserts as pending
+    let mut live_follower = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(
+        live_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+    );
+
+    {
+        // Writer restarts and recovers
+        let mut writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+        writer.fix_inconsistencies().unwrap();
+        assert_eq!(
+            resolve(&|id| writer.internal_id_with_behavior(id, DeferredBehavior::WithDeferred)),
+            Some(0),
+        );
+
+        // A new point lands above the abandoned slots: their versions become zero-filled gaps
+        assert_eq!(writer.total_point_count(), 4);
+        insert(&mut writer, PointIdType::NumId(8), 4, 700);
+        flush(&writer);
+    }
+    assert_eq!(
+        fs::metadata(versions_path(segment_dir.path()))
+            .unwrap()
+            .len(),
+        5 * size_of::<SeqNumberType>() as u64,
+        "the abandoned slots must be covered for this test to mean anything",
+    );
+
+    let writer = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    assert_eq!(
+        writer.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "writer reopened over covered abandoned slots",
+    );
+    assert_eq!(writer.internal_version(0), Some(53));
+
+    let fresh_follower = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(
+        fresh_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "follower opened over covered abandoned slots",
+    );
+
+    let result = reload(&mut live_follower, None);
+    assert_eq!(
+        live_follower.internal_id_with_behavior(relocated, DeferredBehavior::WithDeferred),
+        Some(0),
+        "live follower reloaded over covered abandoned slots",
+    );
+    assert!(
+        !result.inserted.contains(&2) && !result.inserted.contains(&3),
+        "abandoned slots must never be reported as inserted: {result:?}",
+    );
+    assert_in_sync(&live_follower, &writer);
 }

@@ -1,22 +1,20 @@
 mod handle;
 mod ops;
 mod shard_read;
-mod shard_read_with_cancellation;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::uio_trace;
+use common::ambient::{self, Handoff};
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::common::operation_error::check_process_stopped;
 
 pub use self::handle::ReadSegmentHandle;
 pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
-pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
-use crate::EdgeConfig;
+use crate::{EdgeConfig, EdgeScope, OperationError, OperationResult};
 
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,
 /// non-appendable first then appendable) plus an immutable config snapshot.
@@ -33,15 +31,23 @@ pub struct EdgeReadView<H: ReadSegmentHandle> {
     pub(crate) pool: Arc<ThreadPool>,
     /// Shared by every stage and segment of this read. Never reset or set by the read itself.
     pub(crate) is_stopped: Arc<AtomicBool>,
+    /// The scope this read is measured in.
+    pub(crate) handoff: Handoff,
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
-    pub(crate) fn new(segments: Vec<H>, config: Arc<EdgeConfig>, pool: Arc<ThreadPool>) -> Self {
+    pub(crate) fn new(
+        segments: Vec<H>,
+        config: Arc<EdgeConfig>,
+        pool: Arc<ThreadPool>,
+        scope: &EdgeScope,
+    ) -> Self {
         Self {
             segments,
             config,
             pool,
-            is_stopped: Arc::new(AtomicBool::new(false)),
+            is_stopped: scope.is_stopped().clone(),
+            handoff: scope.handoff(),
         }
     }
 
@@ -72,26 +78,28 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         R: Send,
     {
         self.check_stopped()?;
-        let ctx = uio_trace::Context::current();
-        let checked = |segment: &H| {
-            self.check_stopped()?;
-            let result = ctx.in_scope(|| f(segment));
-            self.check_stopped()?;
-            result
-        };
-        let result = if self.pool.current_num_threads() <= 1 {
-            self.segments.iter().map(checked).collect()
-        } else {
-            self.pool
-                .install(|| self.segments.par_iter().map(checked).collect())
-        };
+        let result = ambient::parallel(|handoff| {
+            let checked = |segment: &H| {
+                self.check_stopped()?;
+                let _scope = handoff.enter_guard();
+                let result = f(segment);
+                self.check_stopped()?;
+                result
+            };
+            if self.pool.current_num_threads() <= 1 {
+                self.segments.iter().map(checked).collect()
+            } else {
+                self.pool
+                    .install(|| self.segments.par_iter().map(checked).collect())
+            }
+        });
         self.check_stopped()?;
         result
     }
 }
 
 /// Build a shard's per-segment thread pool with `num_threads` worker threads, its threads named
-/// `{thread_name_prefix}-{idx}`. Shards build one at open and keep it for their lifetime, so
+/// `{thread_name_prefix}-{idx}`. Shards build their pools at open and keep them for their lifetime, so
 /// per-segment work doesn't spawn fresh threads per operation.
 ///
 /// `num_threads` is the already-resolved thread count (see [`EdgeConfig::search_thread_count`]);

@@ -106,7 +106,7 @@ impl EdgeVectorParams {
             distance: *distance,
             // Report both: `memory` is the preferred knob; `on_disk` keeps
             // legacy readers working when deriving from a segment.
-            on_disk: Some(v.is_on_disk()),
+            on_disk: Some(v.is_cold()),
             memory: v.storage_type.memory(),
             multivector_config: *multivector_config,
             datatype: *datatype,
@@ -193,7 +193,7 @@ impl EdgeSparseVectorParams {
         } = index;
         Self {
             full_scan_threshold: *full_scan_threshold,
-            on_disk: Some(index_type.is_on_disk()),
+            on_disk: Some(index_type.is_mmap()),
             // Only the explicitly stored `memory` field — not the resolved
             // placement — so re-persisting does not invent a `memory` key for
             // legacy on_disk-only configs.

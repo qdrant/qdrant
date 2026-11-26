@@ -3,6 +3,13 @@
 //!
 //! Both write paths, [`store_version_changes`] here and the append-only writer in
 //! [`super::update_only`], go through the format definitions in this module.
+//!
+//! The file's length is the commit mark: a slot inside it is treated as committed, by read-only
+//! followers and by [`MutableIdTracker::open`](super::MutableIdTracker::open) when it replays the
+//! mappings log. The file must therefore never grow ahead of the slots whose data is fully written,
+//! e.g. by preallocating it. Slots skipped over when it grows are filled with zeros, which reads as
+//! [`DELETED_POINT_VERSION`](crate::id_tracker::DELETED_POINT_VERSION), not as "no version". See
+//! <https://github.com/qdrant/qdrant/pull/11633>.
 
 use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Seek, Write};

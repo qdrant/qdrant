@@ -1,8 +1,9 @@
 mod build;
+mod nested;
 mod payload_index;
 mod read_view;
 
-pub use read_view::{IdsConditionChecker, StructPayloadIndexReadView};
+pub use read_view::{IdsConditionChecker, MaterializationHint, StructPayloadIndexReadView};
 
 pub mod read_only;
 #[cfg(test)]
@@ -15,20 +16,21 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::defaults::log_load_timing;
+use common::reason::reason;
 use fs_err as fs;
 
-use super::field_index::FieldIndex;
 use super::field_index::index_selector::IndexSelector;
+use super::field_index::{FieldIndex, FieldIndexRead as _};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::payload_config::{self, PayloadConfig};
+use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
+use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
 /// Desired storage type for payload indices of a segment.
@@ -136,7 +138,13 @@ impl StructPayloadIndex {
         let mut load_error = None;
         let mut is_dirty = false;
 
-        let mut indexes = if payload_schema.types.is_empty() {
+        let nested = payload_schema.schema.nested();
+
+        let mut indexes = if nested.is_some() && payload_schema.types.is_empty() {
+            // No exact index types to open per element
+            rebuild = true;
+            vec![]
+        } else if payload_schema.types.is_empty() {
             let selector = self.selector(&payload_schema.schema);
             let indexes = selector.new_index(
                 field,
@@ -157,7 +165,8 @@ impl StructPayloadIndex {
                 if let Some(null_index) = selector.new_null_index(
                     field,
                     create_if_missing,
-                    &id_tracker_borrow,
+                    id_tracker_borrow.total_point_count(),
+                    deleted_points,
                     selector.default_mutability(),
                 )? {
                     indexes.push(null_index);
@@ -179,14 +188,25 @@ impl StructPayloadIndex {
                 // Load each index
                 .map(|index| {
                     let selector = self.selector_with_type(index, &payload_schema.schema);
-                    selector.new_index_with_type(
-                        field,
-                        &payload_schema.schema,
-                        index,
-                        create_if_missing,
-                        &id_tracker_borrow,
-                        deleted_points,
-                    )
+                    match nested {
+                        Some(array_key) => self.open_nested_index(
+                            &selector,
+                            field,
+                            array_key,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            &id_tracker_borrow,
+                        ),
+                        None => selector.new_index_with_type(
+                            field,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            id_tracker_borrow.total_point_count(),
+                            deleted_points,
+                        ),
+                    }
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load
@@ -215,11 +235,9 @@ impl StructPayloadIndex {
             // Close any partially-loaded index storages first: the rebuild wipes
             // their directories before building fresh.
             indexes.clear();
-            indexes = self.build_field_indexes(
-                field,
-                &payload_schema.schema,
-                &HardwareCounterCell::disposable(), // Internal operation
-            )?;
+            indexes = ambient::unmeasured(reason("Internal operation"), || {
+                self.build_field_indexes(field, &payload_schema.schema)
+            })?;
 
             // The durable config keeps listing this field: persist the rebuilt data
             // now, or a crash before the next flush cycle would leave the config
@@ -335,25 +353,15 @@ impl StructPayloadIndex {
         index_type: &FullPayloadIndexType,
         payload_schema: &PayloadFieldSchema,
     ) -> IndexSelector<'_> {
-        match index_type.storage_type {
-            payload_config::StorageType::Gridstore => IndexSelector::Appendable { dir: &self.path },
-            payload_config::StorageType::Mmap { is_on_disk } => {
-                // The persisted flag records the structural variant (heap wrapper vs mmap) the
-                // index was built with; the schema's requested placement refines cold vs cached
-                // for the mmap variant.
-                let memory = if is_on_disk {
-                    match payload_schema.memory_placement() {
-                        Memory::Cached => Memory::Cached,
-                        Memory::Cold | Memory::Pinned => Memory::Cold,
-                    }
-                } else {
-                    Memory::Pinned
-                };
-                IndexSelector::NonAppendable {
-                    dir: &self.path,
-                    memory,
-                }
-            }
+        match index_type
+            .storage_type
+            .immutable_memory(payload_schema.memory_placement())
+        {
+            None => IndexSelector::Appendable { dir: &self.path },
+            Some(memory) => IndexSelector::NonAppendable {
+                dir: &self.path,
+                memory,
+            },
         }
     }
 
@@ -378,7 +386,7 @@ impl StructPayloadIndex {
     pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                if index.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
             }

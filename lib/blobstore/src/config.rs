@@ -38,6 +38,26 @@ impl Compression {
             Compression::LZ4 => decompress_lz4(&value).map(Cow::Owned),
         }
     }
+
+    /// Leading bytes of a stored value that hold its decompressed length; `None` when the
+    /// stored length already is.
+    pub(crate) fn len_prefix(self) -> Option<u32> {
+        match self {
+            Compression::None => None,
+            Compression::LZ4 => Some(LZ4_LEN_PREFIX),
+        }
+    }
+}
+
+/// [`compress_prepend_size`] prepends the decompressed length as a little-endian `u32`.
+const LZ4_LEN_PREFIX: u32 = 4;
+
+/// The decompressed length from a value's first [`Compression::len_prefix`] bytes.
+pub(crate) fn decompressed_len(prefix: &[u8]) -> Result<usize> {
+    let prefix = prefix
+        .first_chunk::<{ LZ4_LEN_PREFIX as usize }>()
+        .ok_or_else(|| BlobstoreError::decode_error("LZ4 value shorter than its length prefix"))?;
+    Ok(u32::from_le_bytes(*prefix) as usize)
 }
 
 #[inline]

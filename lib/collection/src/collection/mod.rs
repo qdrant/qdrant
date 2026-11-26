@@ -45,6 +45,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::OperationWithClockTag;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
@@ -587,6 +588,41 @@ impl Collection {
         Ok(())
     }
 
+    /// Apply a replica state already checked by the consensus state machine
+    pub async fn apply_replica_state(
+        &self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        replica_set
+            .ensure_replica_with_state(peer_id, state)
+            .await?;
+
+        if !self.is_initialized.check_ready() {
+            let is_ready = self
+                .shards_holder
+                .read()
+                .await
+                .all_shards()
+                .all(|replica_set| replica_set.check_peers_state_all(ReplicaState::is_active));
+
+            if is_ready {
+                self.is_initialized.make_ready();
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<RecoveryPoint> {
         let shard_holder_read = self.shards_holder.read().await;
 
@@ -642,21 +678,37 @@ impl Collection {
         replica_set.local_optimizations(options).await
     }
 
+    /// Select shards and map each selected shard to an owned value.
+    ///
+    /// The `shards_holder` read lock is only held while selecting. It is released before
+    /// returning, so callers don't hold it while awaiting shard requests, which would block
+    /// writers such as `apply_state`. `map` can't return borrows of the shards holder.
+    pub(crate) async fn select_shards<T>(
+        &self,
+        shard_selection: &ShardSelectorInternal,
+        mut map: impl FnMut(&Arc<ShardReplicaSet>, Option<&ShardKey>) -> T,
+    ) -> CollectionResult<Vec<T>> {
+        let shards_holder = self.shards_holder.read().await;
+        let shards = shards_holder
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, shard_key)| map(shard, shard_key))
+            .collect();
+        Ok(shards)
+    }
+
     /// Collect memory report across all shards (local + remote).
     pub async fn memory_report(
         &self,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(
-            &crate::operations::shard_selector_internal::ShardSelectorInternal::All,
-        )?;
+        let shards = self
+            .select_shards(&ShardSelectorInternal::All, |shard, _| Arc::clone(shard))
+            .await?;
 
-        let mut futures: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
-            .map(|(shard, _shard_key)| shard.memory_report())
-            .collect();
+        let mut futures: futures::stream::FuturesUnordered<_> =
+            shards.iter().map(|shard| shard.memory_report()).collect();
 
         let mut reports = Vec::new();
         while let Some(result) = futures::StreamExt::next(&mut futures).await {
@@ -670,11 +722,14 @@ impl Collection {
         &self,
         shard_id: ShardId,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
-        let shard_holder_read = self.shards_holder.read().await;
-
-        let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set =
-            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+        // Don't hold the shards holder lock while awaiting the shard
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.local_memory_report().await
     }
@@ -701,7 +756,33 @@ impl Collection {
         }
     }
 
+    /// Check whether removing this peer requires a resharding abort that would reject
+    pub async fn check_remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+        let Some(resharding) = shard_holder.resharding_state() else {
+            return Ok(());
+        };
+
+        // Removing the driver force-aborts resharding before cleaning up transfers
+        if resharding.peer_id == peer_id {
+            return Ok(());
+        }
+
+        let transfers = shard_holder.get_transfers(|transfer| {
+            transfer.is_resharding() && (transfer.from == peer_id || transfer.to == peer_id)
+        });
+
+        if !transfers.is_empty() {
+            shard_holder.check_abort_resharding(&resharding.key())?;
+        }
+
+        Ok(())
+    }
+
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        // Reject before aborting any ordinary transfers or removing replicas
+        self.check_remove_shards_at_peer(peer_id).await?;
+
         // Abort resharding, if shards are removed from peer driving resharding
         // (which *usually* means the *peer* is being removed from consensus)
         let resharding_state = self
@@ -1128,3 +1209,29 @@ mod recreate_optimizers_state_tests {
         assert!(!state.finish_run(), "no further requests, so it stops");
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see the macro's docs.
+common::impl_send_sync_checked!(Collection {
+    id,
+    shards_holder,
+    collection_config,
+    shared_storage_config,
+    payload_index_schema,
+    optimizers_overwrite,
+    this_peer_id,
+    path,
+    snapshots_path,
+    channel_service,
+    transfer_tasks,
+    request_shard_transfer_cb,
+    notify_peer_failure_cb,
+    abort_shard_transfer_cb,
+    init_time,
+    is_initialized,
+    update_runtime,
+    search_runtime,
+    optimizer_resource_budget,
+    collection_stats_cache,
+    shard_clean_tasks,
+    recreate_optimizers_state,
+});

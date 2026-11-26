@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
 use edge::Filter;
 
-use crate::parse::{build_kv_filter, read_data_arg};
+use crate::parse::{build_kv_filter, parse_filter_arg};
 
 /// Storage backend to read the shard from.
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -23,7 +23,7 @@ pub enum Backend {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search)"
+    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search/text/count/facet)"
 )]
 pub struct Cli {
     /// Object-storage connection and shard-location options. Must be given
@@ -194,11 +194,17 @@ pub enum Command {
     Search(SearchArgs),
     /// Nearest-neighbour search for a sparse query vector, optionally filtered.
     SearchSparse(SearchSparseArgs),
+    /// BM25 search over the text index of a payload field, optionally filtered.
+    Text(TextArgs),
+    /// Count points matching an optional filter.
+    Count(CountArgs),
+    /// Count points per unique value of a payload key.
+    Facet(FacetArgs),
 }
 
-/// Filter and result options shared by every sub-command.
+/// Payload-filter options shared by every sub-command.
 #[derive(ClapArgs, Debug)]
-pub struct CommonReadArgs {
+pub struct CommonFilterArgs {
     /// Payload filter as JSON, in Qdrant's filter DSL (the `filter` field of a
     /// REST request). Accepts a literal JSON string, `@path` to read the JSON
     /// from a file, or `@-` to read it from stdin. Mutually exclusive with the
@@ -215,6 +221,26 @@ pub struct CommonReadArgs {
     /// or boolean when it looks like one, otherwise as a string.
     #[arg(long, requires = "filter_key")]
     pub filter_value: Option<String>,
+}
+
+impl CommonFilterArgs {
+    /// Resolve the effective filter from either `--filter` (JSON) or the
+    /// `--filter-key`/`--filter-value` shortcut. Returns `None` when neither is
+    /// given (operate over all points). `clap` already guarantees the two
+    /// sources are mutually exclusive and that key/value come as a pair.
+    pub fn resolve_filter(&self) -> Result<Option<Filter>> {
+        if let Some(raw) = &self.filter {
+            return parse_filter_arg("--filter", raw).map(Some);
+        }
+        build_kv_filter(self.filter_key.as_deref(), self.filter_value.as_deref())
+    }
+}
+
+/// Filter and result options shared by scroll / search sub-commands.
+#[derive(ClapArgs, Debug)]
+pub struct CommonReadArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
 
     /// Maximum number of points to return.
     #[arg(long, default_value_t = 10)]
@@ -226,18 +252,9 @@ pub struct CommonReadArgs {
 }
 
 impl CommonReadArgs {
-    /// Resolve the effective filter from either `--filter` (JSON) or the
-    /// `--filter-key`/`--filter-value` shortcut. Returns `None` when neither is
-    /// given (operate over all points). `clap` already guarantees the two
-    /// sources are mutually exclusive and that key/value come as a pair.
+    /// Resolve the effective filter — see [`CommonFilterArgs::resolve_filter`].
     pub fn resolve_filter(&self) -> Result<Option<Filter>> {
-        if let Some(raw) = &self.filter {
-            let json = read_data_arg(raw)?;
-            let filter = serde_json::from_str(&json)
-                .with_context(|| format!("failed to parse --filter as a JSON filter: {json}"))?;
-            return Ok(Some(filter));
-        }
-        build_kv_filter(self.filter_key.as_deref(), self.filter_value.as_deref())
+        self.filter.resolve_filter()
     }
 }
 
@@ -318,6 +335,79 @@ pub struct SearchSparseArgs {
     pub score_threshold: Option<f32>,
 
     /// Search exhaustively without the sparse index (slow, exact).
+    #[arg(long, default_value_t = false)]
+    pub exact: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct TextArgs {
+    #[command(flatten)]
+    pub common: CommonReadArgs,
+
+    /// Payload field to score. Its text index must have `scoring` set.
+    #[arg(long)]
+    pub field: String,
+
+    /// Query text, tokenized as the field's text index tokenizes a query.
+    /// Taken literally: a query may start with `@`.
+    #[arg(long)]
+    pub query: String,
+
+    /// BM25 term frequency saturation, non-negative. Default: 1.2.
+    #[arg(long)]
+    pub k1: Option<f32>,
+
+    /// BM25 document length normalization, within `[0, 1]`. Default: 0.75.
+    #[arg(long)]
+    pub b: Option<f32>,
+
+    /// Gather the BM25 statistics over the points matching this filter only,
+    /// independent of `--filter`. Same forms as `--filter`. Omit to gather them
+    /// over every point.
+    #[arg(long)]
+    pub idf_corpus: Option<String>,
+
+    /// Number of results to skip before collecting `--limit` results.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Only return results scoring above this value.
+    #[arg(long)]
+    pub score_threshold: Option<f32>,
+
+    /// Leave payloads out of the results, so the load profile keeps the
+    /// payload storage cold: the read cost of the BM25 query alone.
+    #[arg(long, default_value_t = false)]
+    pub no_payload: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct CountArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
+
+    /// Return a fast approximate count instead of visiting every matching
+    /// point. Approximate counts can be unreliable while segments are being
+    /// optimized. Exact is the default.
+    #[arg(long, default_value_t = false)]
+    pub approx: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct FacetArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
+
+    /// Payload key to facet on (e.g. `city`).
+    #[arg(long)]
+    pub key: String,
+
+    /// Maximum number of facet hits to return.
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
+
+    /// Count each value exactly (slower) instead of approximately. Approximate
+    /// is the default.
     #[arg(long, default_value_t = false)]
     pub exact: bool,
 }

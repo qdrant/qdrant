@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
@@ -46,7 +45,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
             MmapFs,
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
-            Populate::from(!graph.is_on_disk()),
+            Populate::from(!graph.is_cold()),
         )?;
         let deleted_count = deleted.count_trues();
         Ok(Self {
@@ -137,8 +136,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.graph().is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.graph().is_cold()
     }
 
     fn io_backend(&self) -> Option<IoBackend> {
@@ -157,14 +156,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
-        self.vectors
-            .for_each_in_batch(&keys, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
-                callback(user_data[idx], keys[idx], vector);
-            })
-            .expect("read vectors");
+        self.vectors.for_each_in_batch(&keys, |idx, vector| {
+            let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+            callback(user_data[idx], keys[idx], vector);
+        })
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -197,12 +194,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorage
     for GraphInlineDenseVectorStorage<T, S>
 {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
 

@@ -21,7 +21,7 @@ pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs};
     use rstest::rstest;
     use tempfile::TempDir;
@@ -39,7 +39,7 @@ mod tests {
         #[values(Populate::No, Populate::PreferBackground)] populate: Populate,
     ) {
         let dir = TempDir::with_prefix("read_only_payload").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let payload = payload_json! {
             "a": "some text",
@@ -50,7 +50,7 @@ mod tests {
             let mut storage: PayloadStorageImpl =
                 PayloadStorageImpl::open_or_create(dir.path().to_path_buf(), false).unwrap();
             for i in 0..5 {
-                storage.set(i, &payload, &hw_counter).unwrap();
+                storage.set(i, &payload).unwrap();
             }
             // Flush so the reader observes the data on disk.
             storage.flusher()().unwrap();
@@ -64,11 +64,19 @@ mod tests {
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
             ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
 
-        assert_eq!(storage.is_on_disk(), !populate.to_bool::<MmapFile>());
+        assert_eq!(storage.is_cold(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {
-            assert_eq!(storage.get(i, &hw_counter).unwrap(), payload);
+            assert_eq!(storage.get(i).unwrap(), payload);
         }
         // An unwritten point reads back as an empty payload.
-        assert_eq!(storage.get(99, &hw_counter).unwrap(), payload_json! {});
+        assert_eq!(storage.get(99).unwrap(), payload_json! {});
+
+        // A single field reads back alone, with the value of the full payload.
+        for key in ["a", "n", "missing"] {
+            let partial = storage.payload_ref_field(0, key).unwrap();
+            assert_eq!(partial.get(key), payload.0.get(key), "{key}");
+            assert!(partial.len() <= 1, "{key}");
+        }
+        assert!(storage.payload_ref_field(99, "a").unwrap().is_empty());
     }
 }

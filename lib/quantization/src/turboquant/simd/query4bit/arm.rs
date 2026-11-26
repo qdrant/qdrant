@@ -1,7 +1,8 @@
 //! NEON kernels for the symmetric 4-bit paths (`score_4bit_internal*`) on
 //! aarch64.  The codebook is stored as signed i8 (`CODEBOOK_I8`).
 
-use super::{CODEBOOK_I8, CODEBOOK_SCALE};
+use super::super::{BLOCK_BYTES, BlockedFactors};
+use super::{CODEBOOK_I8, FOLDED_MAX_DIM, centroid_dot};
 
 /// NEON implementation of [`super::score_4bit_internal`].  Both PQ-encoded
 /// vectors are unpacked into i8 codebook values via `vqtbl1q_s8`, multiplied
@@ -52,7 +53,7 @@ pub unsafe fn score_4bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_full * 8;
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
@@ -119,49 +120,47 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_pairs * 16;
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
 // ------------------------------------------------------------------
-// score_4bit_internal_weighted — TQ+ symmetric path with per-coord
-// `D'²` weighting. `weights[i]` is `i16` (non-negative, capped at
-// `i16::MAX − 1` — see `ErrorCorrection::d_prime_sq_i16` doc), which
-// matches the SIMD load directly. Same overflow story as the x64
-// path: per-coord product up to ~5.28e8, sum at dim=64 K reaches
-// ~1.7e10 — must accumulate into i64 lanes. We pair-sum i32 → i64
-// every iteration via `vpaddlq_s32`.
+// score_4bit_internal_folded — TQ+ symmetric path. Each side's signed
+// codebook value is scaled by its coordinate's Q15 factor with
+// `vqrdmulhq_s16`, the same rounding as `fold_q15`, which keeps it within
+// i8; `vmlal_s16` then sums the products into i32 lanes:
+//   per product:   |q_a · q_b| ≤ 127 · 127 = 16 129
+//   total:         < 2¹⁶ · 16 384 = 2³⁰ at `FOLDED_MAX_DIM` ✓
 // ------------------------------------------------------------------
 
-/// NEON weighted variant of [`super::score_4bit_internal`]. 16 coords per
-/// iteration; products go through `vmull_s8` (i8 → i16) then per-pair
-/// multiply by i16 weights via `vmull_s16` (i16 → i32), pair-summed into
-/// an i64 accumulator.
+/// NEON implementation of [`super::score_4bit_internal_folded`]. 16 coords
+/// per iteration.
 ///
 /// # Safety
 /// CPU must support `neon`.
 #[target_feature(enable = "neon")]
-pub unsafe fn score_4bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
+pub unsafe fn score_4bit_internal_folded_neon(a: &[u8], b: &[u8], factors: &[i16]) -> i64 {
     use core::arch::aarch64::*;
 
     assert_eq!(
         a.len(),
         b.len(),
-        "score_4bit_internal_weighted_neon: vector length mismatch ({} vs {})",
+        "score_4bit_internal_folded_neon: vector length mismatch ({} vs {})",
         a.len(),
         b.len(),
     );
     assert_eq!(
-        weights.len(),
+        factors.len(),
         2 * a.len(),
-        "score_4bit_internal_weighted_neon: weights length {} != 2 · a.len() {}",
-        weights.len(),
+        "score_4bit_internal_folded_neon: factors length {} != 2 · a.len() {}",
+        factors.len(),
         2 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
-        let mut acc = vdupq_n_s64(0); // 2 i64 lanes
+        let mut acc = vdupq_n_s32(0);
         let nibble_mask = vdup_n_u8(0x0F);
 
         // 8 bytes per source = 16 coords per iter.
@@ -179,37 +178,240 @@ pub unsafe fn score_4bit_internal_weighted_neon(a: &[u8], b: &[u8], weights: &[i
 
             let c_a = vqtbl1q_s8(codebook, a_idx);
             let c_b = vqtbl1q_s8(codebook, b_idx);
+            let f_lo = vld1q_s16(factors.as_ptr().add(16 * i));
+            let f_hi = vld1q_s16(factors.as_ptr().add(16 * i + 8));
 
-            // c_a × c_b in i16 (max 16129 fits — same bound as the unweighted kernel).
-            let prod_lo = vmull_s8(vget_low_s8(c_a), vget_low_s8(c_b)); // i16×8
-            let prod_hi = vmull_high_s8(c_a, c_b); // i16×8
+            let q_a_lo = vqrdmulhq_s16(vmovl_s8(vget_low_s8(c_a)), f_lo);
+            let q_a_hi = vqrdmulhq_s16(vmovl_high_s8(c_a), f_hi);
+            let q_b_lo = vqrdmulhq_s16(vmovl_s8(vget_low_s8(c_b)), f_lo);
+            let q_b_hi = vqrdmulhq_s16(vmovl_high_s8(c_b), f_hi);
 
-            // Load 16 i16 weights = 2 q regs.
-            let w_lo = vld1q_s16(weights.as_ptr().add(16 * i));
-            let w_hi = vld1q_s16(weights.as_ptr().add(16 * i + 8));
-
-            // Multiply each i16 pair → i32. Each `vmull_s16` produces 4 i32 from
-            // the low 4 i16 lanes; `vmull_high_s16` does the upper 4.
-            let pw_a = vmull_s16(vget_low_s16(prod_lo), vget_low_s16(w_lo)); // i32×4
-            let pw_b = vmull_high_s16(prod_lo, w_lo); // i32×4
-            let pw_c = vmull_s16(vget_low_s16(prod_hi), vget_low_s16(w_hi)); // i32×4
-            let pw_d = vmull_high_s16(prod_hi, w_hi); // i32×4
-
-            // Pair-sum each i32×4 → i64×2 and accumulate.
-            acc = vaddq_s64(acc, vpaddlq_s32(pw_a));
-            acc = vaddq_s64(acc, vpaddlq_s32(pw_b));
-            acc = vaddq_s64(acc, vpaddlq_s32(pw_c));
-            acc = vaddq_s64(acc, vpaddlq_s32(pw_d));
+            acc = vmlal_s16(acc, vget_low_s16(q_a_lo), vget_low_s16(q_b_lo));
+            acc = vmlal_high_s16(acc, q_a_lo, q_b_lo);
+            acc = vmlal_s16(acc, vget_low_s16(q_a_hi), vget_low_s16(q_b_hi));
+            acc = vmlal_high_s16(acc, q_a_hi, q_b_hi);
         }
 
-        let simd_sum = vaddvq_s64(acc);
         let simd_bytes = n_full * 8;
-        let tail = super::score_4bit_internal_weighted_scalar(
-            &a[simd_bytes..],
-            &b[simd_bytes..],
-            &weights[2 * simd_bytes..],
-        );
-        simd_sum + tail
+        i64::from(vaddvq_s32(acc))
+            + super::score_4bit_internal_folded_scalar(
+                &a[simd_bytes..],
+                &b[simd_bytes..],
+                &factors[2 * simd_bytes..],
+            )
+    }
+}
+
+// ------------------------------------------------------------------
+// Block order — the TQ+ symmetric score of `super::super::BlockedFactors` and
+// `super::super::FoldedQuery`, the same sum as `score_4bit_internal_folded`. A
+// block of `BLOCK_BYTES` code bytes is read as its 32 low nibbles, then its 32
+// high nibbles (its even, then its odd dimensions), not interleaved back into
+// dimension order: the factors and a folded query are stored in that order.
+// Same instructions as `score_4bit_internal_folded_neon`: `tbl` looks the codes
+// up, `sqrdmulh` folds them widened to i16 (`(2·c·f + 2¹⁵) >> 16`, which equals
+// `fold_q15`'s `(c·f + 2¹⁴) >> 15`), `smlal` sums the products in i32 lanes:
+//   per product:   |q_a · q_b| ≤ 127 · 127 = 16 129
+//   total:         < 2¹⁶ · 2¹⁴ = 2³⁰ at `FOLDED_MAX_DIM` ✓
+// ------------------------------------------------------------------
+
+/// 16-bit lanes of a 128-bit vector.
+const LANES: usize = 8;
+/// Codes per lookup: the bytes of a 128-bit vector.
+const PART: usize = 16;
+
+/// The 16 values of `values` from `position` on.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn load_i16_part(values: &[i16], position: usize) -> [core::arch::aarch64::int16x8_t; 2] {
+    use core::arch::aarch64::*;
+    debug_assert!(position + PART <= values.len());
+    unsafe {
+        let ptr = values.as_ptr().add(position);
+        [vld1q_s16(ptr), vld1q_s16(ptr.add(LANES))]
+    }
+}
+
+/// Stores the 16 values `folded` at `position` of `values`.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn store_i16_part(
+    values: &mut [i16],
+    position: usize,
+    folded: [core::arch::aarch64::int16x8_t; 2],
+) {
+    use core::arch::aarch64::*;
+    debug_assert!(position + PART <= values.len());
+    unsafe {
+        let ptr = values.as_mut_ptr().add(position);
+        vst1q_s16(ptr, folded[0]);
+        vst1q_s16(ptr.add(LANES), folded[1]);
+    }
+}
+
+/// The 32 bytes of block `block` of `codes`.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn load_block(codes: &[u8], block: usize) -> [core::arch::aarch64::uint8x16_t; 2] {
+    use core::arch::aarch64::*;
+    debug_assert!((block + 1) * BLOCK_BYTES <= codes.len());
+    unsafe {
+        let ptr = codes.as_ptr().add(block * BLOCK_BYTES);
+        [vld1q_u8(ptr), vld1q_u8(ptr.add(PART))]
+    }
+}
+
+/// `q` of 16 codebook values with their factors: widened to i16, then scaled by `sqrdmulh`.
+#[inline]
+#[target_feature(enable = "neon")]
+fn fold_part(
+    values: core::arch::aarch64::int8x16_t,
+    factors: [core::arch::aarch64::int16x8_t; 2],
+) -> [core::arch::aarch64::int16x8_t; 2] {
+    use core::arch::aarch64::*;
+    [
+        vqrdmulhq_s16(vmovl_s8(vget_low_s8(values)), factors[0]),
+        vqrdmulhq_s16(vmovl_high_s8(values), factors[1]),
+    ]
+}
+
+/// Two sets of four accumulators: the even and the odd vectors of 16 codes of a block.
+type Accumulators = [[core::arch::aarch64::int32x4_t; 4]; 2];
+
+#[inline]
+#[target_feature(enable = "neon")]
+fn zero_accumulators() -> Accumulators {
+    use core::arch::aarch64::*;
+    [[vdupq_n_s32(0); 4]; 2]
+}
+
+/// Adds the products of the 16 lanes of `a` and `b` to four accumulators, so that no `smlal`
+/// waits for the one before.
+#[inline]
+#[target_feature(enable = "neon")]
+fn multiply_add(
+    acc: &mut [core::arch::aarch64::int32x4_t; 4],
+    a: [core::arch::aarch64::int16x8_t; 2],
+    b: [core::arch::aarch64::int16x8_t; 2],
+) {
+    use core::arch::aarch64::*;
+    acc[0] = vmlal_s16(acc[0], vget_low_s16(a[0]), vget_low_s16(b[0]));
+    acc[1] = vmlal_high_s16(acc[1], a[0], b[0]);
+    acc[2] = vmlal_s16(acc[2], vget_low_s16(a[1]), vget_low_s16(b[1]));
+    acc[3] = vmlal_high_s16(acc[3], a[1], b[1]);
+}
+
+#[inline]
+#[target_feature(enable = "neon")]
+fn reduce_accumulators(accumulators: &Accumulators) -> i64 {
+    use core::arch::aarch64::*;
+    let mut sum = vdupq_n_s32(0);
+    for &acc in accumulators.as_flattened() {
+        sum = vaddq_s32(sum, acc);
+    }
+    i64::from(vaddvq_s32(sum))
+}
+
+/// Signed codebook values of the codes of block `block` of `codes`: the low nibbles, then the
+/// high ones, 16 per vector.
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn unpack_blocked_neon(
+    codebook: core::arch::aarch64::int8x16_t,
+    codes: &[u8],
+    block: usize,
+) -> [core::arch::aarch64::int8x16_t; 4] {
+    use core::arch::aarch64::*;
+    let [bytes_0, bytes_1] = unsafe { load_block(codes, block) };
+    let mask = vdupq_n_u8(0x0F);
+    [
+        vqtbl1q_s8(codebook, vandq_u8(bytes_0, mask)),
+        vqtbl1q_s8(codebook, vandq_u8(bytes_1, mask)),
+        vqtbl1q_s8(codebook, vshrq_n_u8(bytes_0, 4)),
+        vqtbl1q_s8(codebook, vshrq_n_u8(bytes_1, 4)),
+    ]
+}
+
+/// [`super::fold_4bit_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `codes`, `values` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn fold_4bit_blocked_neon(
+    factors: &BlockedFactors,
+    codes: &[u8],
+    values: &mut [i16],
+) {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_neon(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (4 * block + part) * PART;
+                let folded = fold_part(code, load_i16_part(&factors.factors, position));
+                store_i16_part(values, position, folded);
+            }
+        }
+    }
+}
+
+/// [`super::score_4bit_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `codes`, `query` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn score_4bit_blocked_neon(
+    query: &[i16],
+    factors: &BlockedFactors,
+    codes: &[u8],
+) -> i64 {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
+        let mut acc = zero_accumulators();
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_neon(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (4 * block + part) * PART;
+                let folded = fold_part(code, load_i16_part(&factors.factors, position));
+                multiply_add(&mut acc[part % 2], load_i16_part(query, position), folded);
+            }
+        }
+        reduce_accumulators(&acc)
+    }
+}
+
+/// [`super::score_4bit_internal_blocked`] on NEON.
+///
+/// # Safety
+///
+/// The CPU must support NEON; `a`, `b` and the factors must cover the factors' blocks.
+#[target_feature(enable = "neon")]
+pub(super) unsafe fn score_4bit_internal_blocked_neon(
+    factors: &BlockedFactors,
+    a: &[u8],
+    b: &[u8],
+) -> i64 {
+    use core::arch::aarch64::*;
+    unsafe {
+        let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());
+        let mut acc = zero_accumulators();
+        for block in 0..factors.layout.blocks() {
+            let codes_a = unpack_blocked_neon(codebook, a, block);
+            let codes_b = unpack_blocked_neon(codebook, b, block);
+            for part in 0..4 {
+                let factor = load_i16_part(&factors.factors, (4 * block + part) * PART);
+                multiply_add(
+                    &mut acc[part % 2],
+                    fold_part(codes_a[part], factor),
+                    fold_part(codes_b[part], factor),
+                );
+            }
+        }
+        reduce_accumulators(&acc)
     }
 }
 
@@ -220,14 +422,14 @@ mod tests {
 
     use super::super::super::shared::pack_codes;
     use super::super::shared::{PARITY_DIMS, random_inputs};
-    use super::super::{score_4bit_internal_scalar, score_4bit_internal_weighted_scalar};
+    use super::super::{score_4bit_internal_folded_scalar, score_4bit_internal_scalar};
     use super::{
-        score_4bit_internal_neon, score_4bit_internal_neon_sdot, score_4bit_internal_weighted_neon,
+        score_4bit_internal_folded_neon, score_4bit_internal_neon, score_4bit_internal_neon_sdot,
     };
 
-    /// Build deterministic non-negative i16 weights of length `2 · vec_bytes`
-    /// for parity tests of the weighted kernel.
-    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
+    /// Build deterministic non-negative Q15 factors of length `2 · vec_bytes`
+    /// for parity tests of the folded kernel.
+    fn random_factors(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
         use rand::RngExt;
         (0..2 * vec_bytes)
             .map(|_| rng.random_range(0..=i16::MAX))
@@ -262,39 +464,38 @@ mod tests {
         }
     }
 
-    /// Parity for the weighted kernel: NEON must match the scalar reference
+    /// Parity for the folded kernel: NEON must match the scalar reference
     /// bit-exactly across our matryoshka corner-case dims.
     #[test]
-    fn test_score_weighted_neon_matches_scalar() {
+    fn test_score_folded_neon_matches_scalar() {
         let mut rng = StdRng::seed_from_u64(0xBEEF);
         for &dim in PARITY_DIMS {
             let (_, vec_a) = random_inputs(&mut rng, dim);
             let (_, vec_b) = random_inputs(&mut rng, dim);
-            let weights = random_weights(&mut rng, vec_a.len());
-            let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
-            let neon = unsafe { score_4bit_internal_weighted_neon(&vec_a, &vec_b, &weights) };
+            let factors = random_factors(&mut rng, vec_a.len());
+            let scalar = score_4bit_internal_folded_scalar(&vec_a, &vec_b, &factors);
+            let neon = unsafe { score_4bit_internal_folded_neon(&vec_a, &vec_b, &factors) };
             assert_eq!(
                 scalar, neon,
-                "weighted: scalar {scalar} != neon {neon} at dim {dim}"
+                "folded: scalar {scalar} != neon {neon} at dim {dim}"
             );
         }
     }
 
-    /// Saturation-safety for the weighted NEON kernel at 64K dims: must
-    /// match i64 scalar reference under worst-case inputs.
+    /// Saturation-safety for the folded NEON kernel at 64K dims: must
+    /// match the i64 scalar reference under worst-case inputs.
     #[test]
-    fn test_score_weighted_saturation_safety_64k() {
+    fn test_score_folded_saturation_safety_64k() {
         let dim = 65_536;
         let indices: Vec<u8> = vec![15; dim];
         let vec_a = pack_codes(&indices, 4);
         let vec_b = pack_codes(&indices, 4);
-        let max_weight: i16 = i16::MAX;
-        let weights: Vec<i16> = vec![max_weight; dim];
+        let factors: Vec<i16> = vec![i16::MAX; dim];
 
-        let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+        let scalar = score_4bit_internal_folded_scalar(&vec_a, &vec_b, &factors);
         unsafe {
-            let neon = score_4bit_internal_weighted_neon(&vec_a, &vec_b, &weights);
-            assert_eq!(scalar, neon, "weighted score neon overflow at dim={dim}");
+            let neon = score_4bit_internal_folded_neon(&vec_a, &vec_b, &factors);
+            assert_eq!(scalar, neon, "folded score neon overflow at dim={dim}");
         }
     }
 

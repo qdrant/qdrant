@@ -1,5 +1,4 @@
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use serde_json::{Number, Value};
@@ -19,14 +18,9 @@ use crate::types::{IntPayloadType, UuidIntType, UuidPayloadType};
 impl ValueIndexer for MapIndex<str> {
     type ValueType = String;
 
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<String>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -55,10 +49,9 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -84,10 +77,9 @@ impl ValueIndexer for MapIndex<UuidIntType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -114,29 +106,20 @@ impl ValueIndexer for MapIndex<UuidIntType> {
 // `ReadOnlyFieldIndex::value_retriever` dispatch here per variant.
 
 impl MapIndex<str> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_str(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_str(self)
     }
 }
 
 impl MapIndex<IntPayloadType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_int(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_int(self)
     }
 }
 
 impl MapIndex<UuidIntType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_uuid(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_uuid(self)
     }
 }
 
@@ -144,11 +127,8 @@ impl<S: UniversalRead> ReadOnlyMapIndex<str, S>
 where
     Vec<<str as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_str(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_str(self)
     }
 }
 
@@ -156,11 +136,8 @@ impl<S: UniversalRead> ReadOnlyMapIndex<IntPayloadType, S>
 where
     Vec<<IntPayloadType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_int(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_int(self)
     }
 }
 
@@ -168,24 +145,18 @@ impl<S: UniversalRead> ReadOnlyMapIndex<UuidIntType, S>
 where
     Vec<<UuidIntType as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
-        value_retriever_uuid(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
+        value_retriever_uuid(self)
     }
 }
 
 // Shared per-K bodies, parameterized over `T: MapIndexRead<N>` so a single
 // implementation serves both `MapIndex<N>` and `ReadOnlyMapIndex<N, S>`.
 
-fn value_retriever_str<'a, T: MapIndexRead<'a, str> + 'a>(
-    index: &'a T,
-    hw_counter: &'a HardwareCounterCell,
-) -> VariableRetrieverFn<'a> {
+fn value_retriever_str<'a, T: MapIndexRead<'a, str> + 'a>(index: &'a T) -> VariableRetrieverFn<'a> {
     Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
         index
-            .get_values(point_id, hw_counter)
+            .get_values(point_id)
             .into_iter()
             .flatten()
             .filter_map(|v| serde_json::to_value(v).ok())
@@ -195,11 +166,10 @@ fn value_retriever_str<'a, T: MapIndexRead<'a, str> + 'a>(
 
 fn value_retriever_int<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     index: &'a T,
-    hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {
     Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
         index
-            .get_values(point_id, hw_counter)
+            .get_values(point_id)
             .into_iter()
             .flatten()
             .map(|v| Value::Number(Number::from(*v)))
@@ -209,11 +179,10 @@ fn value_retriever_int<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
 
 fn value_retriever_uuid<'a, T: MapIndexRead<'a, UuidIntType> + 'a>(
     index: &'a T,
-    hw_counter: &'a HardwareCounterCell,
 ) -> VariableRetrieverFn<'a> {
     Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
         index
-            .get_values(point_id, hw_counter)
+            .get_values(point_id)
             .into_iter()
             .flatten()
             .map(|value| Value::String(UuidPayloadType::from_u128(*value).to_string()))

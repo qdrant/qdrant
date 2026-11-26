@@ -2,25 +2,27 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, ErrorCorrectionMetadata};
     use quantization::turboquant::simd::{
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
-        score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
-        score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
-        score_8bit_internal_scalar,
+        score_2bit_internal_folded_scalar, score_2bit_internal_scalar,
+        score_4bit_internal_folded_scalar, score_4bit_internal_scalar, score_8bit_internal_scalar,
+        score_16bit_internal_scalar,
     };
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     const VECTORS_COUNT: usize = 513;
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
     const BITS: &[TQBits] = &[
+        TQBits::Bits16,
         TQBits::Bits8,
         TQBits::Bits4,
         TQBits::Bits2,
@@ -28,9 +30,9 @@ mod tests {
         TQBits::Bits1,
     ];
 
-    /// Bits8 has no TQ+ mode.
+    /// The grid widths (Bits8, Bits16) have no TQ+ mode.
     fn supported(bits: TQBits, mode: TQMode) -> bool {
-        !(bits == TQBits::Bits8 && mode == TQMode::Plus)
+        !(matches!(bits, TQBits::Bits8 | TQBits::Bits16) && mode == TQMode::Plus)
     }
 
     /// Absolute tolerance for an approximate score: an empirical per-bit
@@ -46,6 +48,7 @@ mod tests {
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.9,
             TQBits::Bits8 => 0.1,
+            TQBits::Bits16 => 0.01,
         };
         coef * signal_std
     }
@@ -85,6 +88,7 @@ mod tests {
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.7,
             TQBits::Bits8 => 0.08,
+            TQBits::Bits16 => 0.01,
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -99,7 +103,7 @@ mod tests {
             TQBits::Bits1_5 => 48,
             TQBits::Bits2 => 32,
             TQBits::Bits4 => 8,
-            TQBits::Bits8 => 1,
+            TQBits::Bits8 | TQBits::Bits16 => 1,
         };
         dim >= min_dim
     }
@@ -138,30 +142,31 @@ mod tests {
         read_f32(extra, extra.len() - size_of::<f32>())
     }
 
-    fn tq_plus_weight_scale(ec: &ErrorCorrectionMetadata) -> (Vec<i16>, f32) {
-        let d_prime_sq_f32: Vec<f32> = ec
+    /// The Q15 factors of `ErrorCorrection::d_prime_q15`, and the scale that
+    /// undoes their division by 2¹⁵.
+    fn tq_plus_factors(ec: &ErrorCorrectionMetadata) -> (Vec<i16>, f32) {
+        let d_prime_f32: Vec<f32> = ec
             .scale
             .iter()
             .map(|&s| {
                 if s.abs() > f32::EPSILON {
-                    (s * s).recip()
+                    s.abs().recip()
                 } else {
                     0.0
                 }
             })
             .collect();
-        let max_d_prime_sq = d_prime_sq_f32.iter().copied().fold(0.0f32, f32::max);
-        const QUANT_CAP: i16 = i16::MAX - 1;
-        let weight_scale = if max_d_prime_sq > f32::EPSILON {
-            f32::from(QUANT_CAP) / max_d_prime_sq
+        let max_d_prime = d_prime_f32.iter().copied().fold(0.0f32, f32::max);
+        let q15_scale = if max_d_prime > f32::EPSILON {
+            f32::from(i16::MAX) / max_d_prime
         } else {
             1.0
         };
-        let weights: Vec<i16> = d_prime_sq_f32
+        let factors: Vec<i16> = d_prime_f32
             .iter()
-            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
+            .map(|&x| (x * q15_scale).round().clamp(0.0, f32::from(i16::MAX)) as i16)
             .collect();
-        (weights, weight_scale)
+        (factors, q15_scale / 32768.0)
     }
 
     fn score_scalar_reference(
@@ -178,26 +183,29 @@ mod tests {
         let raw_dot = match (mode, bits) {
             (TQMode::Plus, TQBits::Bits2) => {
                 let ec = ec.expect("TQ+ reference requires error correction metadata");
-                let (weights, weight_scale) = tq_plus_weight_scale(ec);
-                let raw_int = score_2bit_internal_weighted_scalar(data_v1, data_v2, &weights);
+                let (factors, factor_scale) = tq_plus_factors(ec);
+                let raw_int = score_2bit_internal_folded_scalar(data_v1, data_v2, &factors);
                 let xm_a = ec_correction(extra_v1);
                 let xm_b = ec_correction(extra_v2);
                 let mm: f32 = ec.shift.iter().map(|&s| s * s).sum();
-                raw_int as f32 / (weight_scale * CODEBOOK_SCALE_SQ_2BIT) + xm_a + xm_b - mm
+                let div = CODEBOOK_SCALE_SQ_2BIT * factor_scale * factor_scale;
+                raw_int as f32 / div + xm_a + xm_b - mm
             }
             (TQMode::Plus, TQBits::Bits4) => {
                 let ec = ec.expect("TQ+ reference requires error correction metadata");
-                let (weights, weight_scale) = tq_plus_weight_scale(ec);
-                let raw_int = score_4bit_internal_weighted_scalar(data_v1, data_v2, &weights);
+                let (factors, factor_scale) = tq_plus_factors(ec);
+                let raw_int = score_4bit_internal_folded_scalar(data_v1, data_v2, &factors);
                 let xm_a = ec_correction(extra_v1);
                 let xm_b = ec_correction(extra_v2);
                 let mm: f32 = ec.shift.iter().map(|&s| s * s).sum();
-                raw_int as f32 / (weight_scale * CODEBOOK_SCALE_SQ_4BIT) + xm_a + xm_b - mm
+                let div = CODEBOOK_SCALE_SQ_4BIT * factor_scale * factor_scale;
+                raw_int as f32 / div + xm_a + xm_b - mm
             }
             (_, TQBits::Bits1 | TQBits::Bits1_5) => score_1bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits2) => score_2bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits4) => score_4bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits8) => score_8bit_internal_scalar(data_v1, data_v2),
+            (_, TQBits::Bits16) => score_16bit_internal_scalar(data_v1, data_v2),
         };
         let v1_scale = read_f32(extra_v1, 0);
         let v2_scale = read_f32(extra_v2, 0);
@@ -216,7 +224,7 @@ mod tests {
     fn test_tq_internal_score_matches_reference() {
         let dim = 128;
         let vectors_count = 32;
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for &bits in BITS {
             for &distance in &[DistanceType::Dot, DistanceType::Cosine, DistanceType::L2] {
@@ -249,9 +257,9 @@ mod tests {
                     );
                     let encoded = EncodedVectorsTQ::encode(
                         vector_data.iter(),
+                        std::iter::repeat_n(true, vectors_count),
                         TestEncodedStorageBuilder::new(None, quantized_vector_size),
                         &vector_parameters,
-                        vectors_count,
                         bits,
                         mode,
                         TQRotation::Padded,
@@ -266,7 +274,7 @@ mod tests {
                     for i in 1..vectors_count {
                         let v1 = encoded.get_quantized_vector(0);
                         let v2 = encoded.get_quantized_vector(i as u32);
-                        let optimized = encoded.score_internal(0, i as u32, &counter);
+                        let optimized = encoded.score_internal(0, i as u32);
                         let reference = score_scalar_reference(&v1, &v2, bits, distance, mode, ec);
                         let tolerance = 1e-5 * reference.abs().max(1.0);
 
@@ -275,6 +283,85 @@ mod tests {
                             "bits={bits:?}, mode={mode:?}, distance={distance:?}, i={i}: \
                              optimized={optimized}, reference={reference}, tolerance={tolerance}"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A stored vector as a query scores every point exactly as `score_internal` does, in runs of
+    /// consecutive ids and in scattered ones.
+    #[test]
+    fn test_tq_internal_query_matches_score_internal() {
+        let dim = 100;
+        let vectors_count = 64;
+        let _scope = ambient::test_guard();
+        let distances = [
+            (DistanceType::Dot, false),
+            (DistanceType::Cosine, false),
+            (DistanceType::L2, true),
+            (DistanceType::L1, true),
+        ];
+
+        for &bits in BITS {
+            for (distance, invert) in distances {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+                    .map(|_| {
+                        let vector: Vec<f32> =
+                            (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                        match distance {
+                            DistanceType::Cosine => normalize(&vector),
+                            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => vector,
+                        }
+                    })
+                    .collect();
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: distance,
+                    invert,
+                };
+                for mode in [TQMode::Normal, TQMode::Plus] {
+                    if !supported(bits, mode) {
+                        continue;
+                    }
+                    let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
+                        &vector_parameters,
+                        bits,
+                        mode,
+                    );
+                    let encoded = EncodedVectorsTQ::encode(
+                        vector_data.iter(),
+                        std::iter::repeat_n(true, vectors_count),
+                        TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                        &vector_parameters,
+                        bits,
+                        mode,
+                        TQRotation::Padded,
+                        false,
+                        1,
+                        None,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
+
+                    let consecutive: Vec<u32> = (0..vectors_count as u32).collect();
+                    let scattered: Vec<u32> = (0..vectors_count as u32).rev().step_by(3).collect();
+                    for point in [0, 17] {
+                        let query = encoded.encode_internal_vector(point).unwrap();
+                        for ids in [&consecutive, &scattered] {
+                            let mut scores = vec![0.0; ids.len()];
+                            encoded.score_points(&query, ids, &mut scores).unwrap();
+                            for (&id, &score) in ids.iter().zip(&scores) {
+                                assert_eq!(
+                                    score.to_bits(),
+                                    encoded.score_internal(point, id).to_bits(),
+                                    "bits={bits:?}, mode={mode:?}, distance={distance:?}, \
+                                     point={point}, id={id}",
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -315,9 +402,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -329,9 +416,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = dot_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -374,9 +461,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -388,9 +475,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = cosine_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -430,9 +517,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -443,9 +530,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = dot_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -486,9 +573,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -499,9 +586,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = cosine_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -547,9 +634,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -561,8 +648,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _scope = ambient::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -603,9 +690,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -617,9 +704,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -668,9 +755,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -682,8 +769,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _scope = ambient::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -726,9 +813,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -740,9 +827,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -781,9 +868,9 @@ mod tests {
                 encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
             let encoded = EncodedVectorsTQ::encode(
                 vector_data.iter(),
+                std::iter::repeat_n(true, VECTORS_COUNT),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
-                VECTORS_COUNT,
                 bits,
                 mode,
                 TQRotation::Padded,
@@ -795,9 +882,9 @@ mod tests {
             .unwrap();
             let query_u8 = encoded.encode_query(&query);
 
-            let counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             for index in 0..VECTORS_COUNT {
-                let score = encoded.score_point(&query_u8, index as u32, &counter);
+                let score = encoded.score_point(&query_u8, index as u32);
                 assert!(
                     score.is_finite() && score.abs() < 10.0,
                     "bits={bits:?}, index={index}, score={score}"
@@ -840,9 +927,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -854,9 +941,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l2_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -896,9 +983,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -909,9 +996,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l2_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -952,9 +1039,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -966,9 +1053,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l1_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -1008,9 +1095,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -1021,9 +1108,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l1_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -1076,9 +1163,9 @@ mod tests {
             let qsize = encoded_vectors_tq::get_quantized_vector_size(&vp, bits, mode);
             let encoded = EncodedVectorsTQ::encode(
                 vectors.iter(),
+                std::iter::repeat_n(true, n),
                 TestEncodedStorageBuilder::new(None, qsize),
                 &vp,
-                n,
                 bits,
                 mode,
                 TQRotation::Padded,
@@ -1088,7 +1175,7 @@ mod tests {
                 &AtomicBool::new(false),
             )
             .unwrap();
-            let counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             let mut total = 0.0;
             for q in &queries {
                 let mut truth: Vec<(usize, f32)> = vectors
@@ -1101,7 +1188,7 @@ mod tests {
 
                 let qq = encoded.encode_query(q);
                 let mut q_scores: Vec<(usize, f32)> = (0..n)
-                    .map(|i| (i, encoded.score_point(&qq, i as u32, &counter)))
+                    .map(|i| (i, encoded.score_point(&qq, i as u32)))
                     .collect();
                 q_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
                 let q_top: Vec<usize> = q_scores.iter().take(topk).map(|x| x.0).collect();
@@ -1165,9 +1252,9 @@ mod tests {
                         );
                         let encoded = EncodedVectorsTQ::encode(
                             vector_data.iter(),
+                            std::iter::repeat_n(true, vectors_count),
                             TestEncodedStorageBuilder::new(None, quantized_vector_size),
                             &vector_parameters,
-                            vectors_count,
                             bits,
                             mode,
                             TQRotation::Padded,
@@ -1226,9 +1313,9 @@ mod tests {
                     encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
                 let encoded = EncodedVectorsTQ::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
-                    VECTORS_COUNT,
                     bits,
                     mode,
                     TQRotation::Padded,
@@ -1239,7 +1326,7 @@ mod tests {
                 )
                 .unwrap();
                 let encoded_query = encoded.encode_query(&query);
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
 
                 let sequential: Vec<u32> = (0..VECTORS_COUNT as u32).collect();
                 let scattered: Vec<u32> = (0..VECTORS_COUNT as u32).step_by(3).collect();
@@ -1248,10 +1335,12 @@ mod tests {
                 for ids in [&sequential, &scattered, &descending] {
                     let expected: Vec<f32> = ids
                         .iter()
-                        .map(|&id| encoded.score_point(&encoded_query, id, &counter))
+                        .map(|&id| encoded.score_point(&encoded_query, id))
                         .collect();
                     let mut batched = vec![0.0f32; ids.len()];
-                    encoded.score_points(&encoded_query, ids, &mut batched, &counter);
+                    encoded
+                        .score_points(&encoded_query, ids, &mut batched)
+                        .unwrap();
                     assert_eq!(
                         expected, batched,
                         "score_points mismatch for bits={bits:?}, mode={mode:?}, distance={distance_type:?}",

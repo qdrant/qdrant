@@ -10,25 +10,28 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
+use common::ambient;
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
 use common::fs::safe_delete_with_suffix;
 use common::progress_tracker::ProgressTracker;
+use common::reason::reason;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockReadGuard, RwLockUpgradableReadGuard};
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::{ReadSegmentEntry as _, StorageSegmentEntry as _};
 use segment::segment::{Segment, SegmentVersion};
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
 use segment::types::{PointIdType, VectorNameBuf};
 use uuid::Uuid;
 
@@ -201,7 +204,6 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
     stopped: &AtomicBool,
-    hw_counter: &HardwareCounterCell,
     progress: ProgressTracker,
     segments_path: &Path,
 ) -> OperationResult<Segment> {
@@ -255,7 +257,6 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         segment_builder.update(
             &segment_guards.iter().map(Deref::deref).collect_vec(),
             stopped,
-            hw_counter,
         )?;
         drop(progress_copy_data);
     }
@@ -333,7 +334,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         })?;
     drop(progress_wait_permit);
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(INDEX_BUILD_SEED);
     segment_builder.build(
         segments_path,
         output_segment_uuid,
@@ -344,7 +345,6 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         indexing_permit,
         stopped,
         &mut rng,
-        hw_counter,
         progress,
     )
 }
@@ -369,7 +369,6 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
     stopped: &AtomicBool,
-    hw_counter: &HardwareCounterCell,
     progress: ProgressTracker,
     segments_path: &Path,
 ) -> OperationResult<(Segment, ProxyChanges)> {
@@ -384,7 +383,6 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
         permit,
         resource_budget,
         stopped,
-        hw_counter,
         progress,
         segments_path,
     )?;
@@ -420,7 +418,6 @@ fn finish_optimization(
     proxy_ids: &[SegmentId],
     cow_segment_id_opt: Option<SegmentId>,
     stopped: &AtomicBool,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     // This block locks all write operations with collection. It should be fast.
 
@@ -526,7 +523,7 @@ fn finish_optimization(
         // which are still visible for optimized segment.
         deferred_points
             .chunks(CHUNK_SIZE)
-            .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk, hw_counter))?;
+            .try_for_each(|chunk| read_segment_holder.deduplicate_points(chunk))?;
     }
 
     // It is important to update manifest before we retire proxy data,
@@ -700,7 +697,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     on_successful_start();
 
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
     // the holder, and before the slow build can route writes into it.
@@ -717,7 +714,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         // Wrapped segment is fresh, so it has no operations
         // Operation with number 0 will be applied
         if let Some(extra_cow_segment) = &extra_cow_segment_opt {
-            proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?;
+            proxy.replicate_field_indexes(0, extra_cow_segment)?;
         }
         proxies.push(proxy);
     }
@@ -770,7 +767,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             // The probability is small, though,
             // so we can afford this operation under the full collection write lock
             if let Some(extra_cow_segment) = &extra_cow_segment_opt {
-                proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?;
+                proxy.replicate_field_indexes(0, extra_cow_segment)?;
             }
 
             let locked_proxy = LockedSegment::from(proxy);
@@ -800,7 +797,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         permit,
         resource_budget,
         stopped,
-        &hw_counter,
         progress,
         &paths.segments_path,
     );
@@ -832,7 +828,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         &proxy_ids,
         cow_segment_id_opt,
         stopped,
-        &hw_counter,
     ) {
         Ok(points_count) => points_count,
         Err(err) => {
@@ -860,8 +855,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::flags::{FeatureFlags, init_feature_flags};
     use common::types::DeferredBehavior;
     use segment::entry::NonAppendableSegmentEntry as _;
     use tempfile::Builder;
@@ -878,7 +871,6 @@ mod tests {
     #[test]
     fn unwrap_proxy_propagates_deletes_to_wrapped_segment() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let wrapped = LockedSegment::new(build_segment_1(dir.path()));
         let mut holder = SegmentHolder::default();
@@ -887,7 +879,7 @@ mod tests {
         // Wrap it the way an optimization does, then delete a point through the proxy: the
         // deletion is recorded on the proxy, the wrapped segment still has the point.
         let mut proxy = ProxySegment::new(wrapped.clone());
-        proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
+        proxy.delete_point(100, 1.into()).unwrap();
         let holder = LockedSegmentHolder::new(holder);
         holder
             .write()
@@ -921,13 +913,7 @@ mod tests {
     fn unwrap_proxy_removes_pending_changes_log_after_flush() {
         use crate::segment_holder::FlushMode;
 
-        init_feature_flags(FeatureFlags {
-            persist_proxy_segments: true,
-            ..Default::default()
-        });
-
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let wrapped = LockedSegment::new(build_segment_1(dir.path()));
         let mut holder = SegmentHolder::default();
@@ -937,7 +923,7 @@ mod tests {
         // persisted to its log file on disk; otherwise there is nothing to clean up.
         let mut proxy = ProxySegment::new(wrapped.clone());
         let log_path = proxy.pending_changes_log_path().to_path_buf();
-        proxy.delete_point(100, 1.into(), &hw_counter).unwrap();
+        proxy.delete_point(100, 1.into()).unwrap();
         proxy.flush(false).unwrap();
         assert!(log_path.is_file(), "log file must exist once flushed");
 
@@ -977,7 +963,6 @@ mod tests {
         use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
 
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let wrapped = LockedSegment::new(build_segment_1(dir.path()));
         let mut holder = SegmentHolder::default();
@@ -995,7 +980,7 @@ mod tests {
         let field_name: PayloadKeyType = "color".parse().unwrap();
         let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
         proxy
-            .create_field_index(10, &field_name, Some(&field_schema), &hw_counter)
+            .create_field_index(10, &field_name, Some(&field_schema))
             .unwrap();
 
         let vector_config = VectorNameConfig::dense(DenseVectorConfig {
@@ -1008,7 +993,7 @@ mod tests {
             .create_vector_name(20, "extra_vector", &vector_config)
             .unwrap();
 
-        proxy.delete_point(30, 1.into(), &hw_counter).unwrap();
+        proxy.delete_point(30, 1.into()).unwrap();
 
         let holder = LockedSegmentHolder::new(holder);
         let locked_proxy = LockedSegment::from(proxy);
@@ -1025,7 +1010,6 @@ mod tests {
             &[segment_id],
             None,
             &AtomicBool::new(false),
-            &hw_counter,
         )
         .unwrap();
 
@@ -1063,7 +1047,6 @@ mod tests {
         use segment::types::{Distance, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
 
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let wrapped = LockedSegment::new(build_segment_1(dir.path()));
         let mut holder = SegmentHolder::default();
@@ -1084,7 +1067,7 @@ mod tests {
         proxy
             .create_vector_name(10, "extra_vector", &vector_config)
             .unwrap();
-        proxy.delete_point(20, 1.into(), &hw_counter).unwrap();
+        proxy.delete_point(20, 1.into()).unwrap();
 
         let holder = LockedSegmentHolder::new(holder);
         let locked_proxy = LockedSegment::from(proxy);
@@ -1107,9 +1090,9 @@ mod tests {
             let proxy = locked_proxy.get();
             let mut proxy = proxy.write();
             proxy
-                .create_field_index(30, &field_name, Some(&field_schema), &hw_counter)
+                .create_field_index(30, &field_name, Some(&field_schema))
                 .unwrap();
-            proxy.delete_point(40, 2.into(), &hw_counter).unwrap();
+            proxy.delete_point(40, 2.into()).unwrap();
         }
 
         finish_optimization(
@@ -1120,7 +1103,6 @@ mod tests {
             &[segment_id],
             None,
             &AtomicBool::new(false),
-            &hw_counter,
         )
         .unwrap();
 
@@ -1182,13 +1164,7 @@ mod tests {
 
         use crate::segment_holder::FlushMode;
 
-        init_feature_flags(FeatureFlags {
-            persist_proxy_segments: true,
-            ..Default::default()
-        });
-
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let wrapped_segment = build_segment_1(dir.path());
         let wrapped_path = wrapped_segment.segment_path.clone();
@@ -1202,11 +1178,11 @@ mod tests {
 
         let mut proxy = ProxySegment::new(wrapped.clone());
 
-        proxy.delete_point(10, 1.into(), &hw_counter).unwrap();
+        proxy.delete_point(10, 1.into()).unwrap();
         proxy.flush(false).unwrap();
         assert_eq!(proxy.persistent_version(), 10);
 
-        proxy.delete_point(20, 2.into(), &hw_counter).unwrap();
+        proxy.delete_point(20, 2.into()).unwrap();
         assert_eq!(proxy.version(), 20);
 
         let holder = LockedSegmentHolder::new(holder);
@@ -1239,7 +1215,6 @@ mod tests {
             &[segment_id],
             None,
             &AtomicBool::new(false),
-            &hw_counter,
         );
         POST_SWAP_FAILURE_HOOK.with(|hook| *hook.borrow_mut() = None);
         assert!(result.is_err(), "the injected failure must surface");

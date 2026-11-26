@@ -6,7 +6,6 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::UpdateResult;
 use collection::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 
 use super::TableOfContent;
@@ -20,12 +19,11 @@ impl TableOfContent {
         requests: Vec<ShardQueryRequest>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ShardQueryResponse>> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 
         let res = collection
-            .query_batch_internal(requests, &shard_selection, timeout, hw_measurement_acc)
+            .query_batch_internal(requests, &shard_selection, timeout)
             .await?;
 
         Ok(res)
@@ -37,7 +35,6 @@ impl TableOfContent {
         request: FacetParams,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<FacetResponse> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 
@@ -52,7 +49,6 @@ impl TableOfContent {
                 // Internal node-to-node call: routing already resolved by the coordinator.
                 None,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 

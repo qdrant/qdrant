@@ -14,8 +14,6 @@
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::numeric_index_read::NumericIndexRead;
@@ -29,6 +27,7 @@ use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PayloadFieldIndexRead,
 };
+use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{FieldCondition, PayloadKeyType, RangeInterface};
 
 impl<T: NumericIndexValue> PayloadFieldIndex for NumericIndexInner<T>
@@ -67,17 +66,23 @@ where
     fn filter<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        query::filter(self, condition, hw_counter)
+        query::filter(self, condition)
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        Ok(push_filtered(self.filter(condition)?, sink))
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        query::estimate_cardinality(self, condition, hw_counter)
+        query::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -92,9 +97,8 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(query::condition_checker(self, condition, hw_acc).map(T::condition_checker_writable))
+        Ok(query::condition_checker(self, condition).map(T::condition_checker_writable))
     }
 }
 

@@ -1,5 +1,4 @@
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{ScoredPoint, WithVector};
 pub use shard::grouping::Group;
@@ -63,7 +62,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 vec![bare_points.into_values().collect()],
                 with_payload,
                 with_vector,
-                HwMeasurementAcc::disposable_edge(),
             )?
             .try_into()
             .map_err(|unconverted: Vec<_>| {

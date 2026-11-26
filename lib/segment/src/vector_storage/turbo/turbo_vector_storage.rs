@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
@@ -57,8 +56,8 @@ pub struct TurboVectorStorageImpl<B: TurboVectorBlob> {
     deleted: BitvecFlags<MmapFile>,
     /// Number of vectors currently flagged as deleted.
     deleted_count: usize,
-
-    on_disk: bool,
+    /// Whether the vectors were opened without populating.
+    cold: bool,
 
     /// Distance used for scoring / query preprocessing.
     distance: Distance,
@@ -138,7 +137,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, !populate)
     }
 }
 
@@ -159,7 +158,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, !populate)
     }
 }
 
@@ -171,10 +170,10 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
         distance: Distance,
         bits: TQBits,
     ) -> OperationResult<Self> {
-        let on_disk = graph.is_on_disk();
+        let cold = graph.is_cold();
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
-        Self::finalize(storage, quantizer, path, dim, distance, !on_disk, on_disk)
+        Self::finalize(storage, quantizer, path, dim, distance, cold)
     }
 
     pub fn io_backend(&self) -> Option<IoBackend> {
@@ -189,21 +188,23 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
 impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
+    ///
+    /// `cold` is whether `storage` was opened without populating, which the
+    /// deletion flags follow and [`VectorStorage::is_cold`] reports.
     fn finalize(
         storage: B,
         quantizer: TurboQuantizer,
         path: &Path,
         dim: usize,
         distance: Distance,
-        populate: bool,
-        on_disk: bool,
+        cold: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::open_or_create(
             MmapFs,
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
-            Populate::from(populate),
+            Populate::from(!cold),
         )?;
         let deleted_count = deleted.count_trues();
 
@@ -212,7 +213,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
             quantizer,
             deleted,
             deleted_count,
-            on_disk,
+            cold,
             distance,
             dim,
         })
@@ -242,7 +243,6 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
         &self,
         _key: PointOffsetType,
         _bytes: &[u8],
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
@@ -311,8 +311,8 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.on_disk
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {
@@ -331,7 +331,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.storage
@@ -339,7 +339,6 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
                 let vector = shared::dequantize_vector(&self.quantizer, self.dim, bytes);
                 callback(user_data[idx], point_offsets[idx], vector);
             })
-            .expect("read TQ vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -369,24 +368,13 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
 }
 
 impl<B: TurboVectorBlob> VectorStorage for TurboVectorStorageImpl<B> {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(error_immutable_insert())
     }
 
     fn flusher(&self) -> Flusher {
-        let storage_flusher = self.storage.flusher();
-        let deleted_flusher = self.deleted.flusher();
-
-        Box::new(move || {
-            storage_flusher()?;
-            deleted_flusher()?;
-            Ok(())
-        })
+        // The vector blob is immutable, only deletions change.
+        self.deleted.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -418,9 +406,9 @@ impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         self.storage
-            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
+            .score_query_batch(&self.quantizer, self.distance, query, ids, scores)
     }
 
     fn score_internal_encoded(
@@ -433,6 +421,9 @@ impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         Self::get_quantized_vector(self, key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }
 

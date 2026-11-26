@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use common::uio_trace::{self, Op, Outcome};
+use common::ambient::hw::HwMetric;
+use common::ambient::trace::{IoRequest, Op, Outcome};
 use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
 use strum::{EnumCount as _, IntoEnumIterator as _};
 
@@ -33,9 +34,10 @@ impl RemoteIoStats {
     /// payload the request transfers; its length is counted as bytes on success.
     pub(crate) fn request(&self, op: Op, path: &Path, range: Range<u64>) -> RequestObserver {
         RequestObserver {
-            trace: uio_trace::Request::new(op, path, range.clone()),
+            trace: IoRequest::new(op, path, range.clone()),
             stats: self.op(op).clone(),
             guard: None,
+            op,
             range,
         }
     }
@@ -89,13 +91,14 @@ impl RemoteIoStatsSnapshot {
     }
 }
 
-/// One remote request under observation. Mirrors the [`uio_trace::Request`] lifecycle so
+/// One remote request under observation. Mirrors the [`IoRequest`] lifecycle so
 /// both the trace and the statistics see the same start, outcome and payload length; a
 /// started request dropped without an outcome counts as abandoned.
 pub(crate) struct RequestObserver {
-    trace: uio_trace::Request,
+    trace: IoRequest,
     stats: OpStats,
     guard: Option<OpGuard>,
+    op: Op,
     range: Range<u64>,
 }
 
@@ -114,12 +117,25 @@ impl RequestObserver {
     }
 
     pub fn set(&mut self, outcome: Outcome) {
-        self.trace.set(outcome);
+        self.trace.finish(outcome);
         let Some(guard) = self.guard.take() else {
             return;
         };
         match outcome {
-            Outcome::Ok => guard.complete(self.range.end.saturating_sub(self.range.start) as usize),
+            Outcome::Ok => {
+                let bytes = self.range.end.saturating_sub(self.range.start) as usize;
+                match self.op {
+                    Op::Read | Op::ReadFrom => HwMetric::RemoteIoNonCachedRead.bump(bytes),
+                    Op::List
+                    | Op::Exists
+                    | Op::Len
+                    | Op::Create
+                    | Op::Remove
+                    | Op::Save
+                    | Op::Append => (),
+                }
+                guard.complete(bytes);
+            }
             Outcome::NotFound => guard.not_found(),
             Outcome::Err => guard.failed(),
             Outcome::Cancelled => drop(guard),

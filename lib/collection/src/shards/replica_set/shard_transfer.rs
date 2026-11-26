@@ -52,12 +52,6 @@ impl ShardReplicaSet {
                     self.shard_id, remote_shard.peer_id,
                 )));
             }
-            Some(Shard::Proxy(_)) => {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot queue proxify local shard {} to peer {} because it already is a proxy",
-                    self.shard_id, remote_shard.peer_id,
-                )));
-            }
             Some(Shard::Dummy(_)) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot proxify local dummy shard {} to peer {}",
@@ -142,12 +136,6 @@ impl ShardReplicaSet {
                     self.shard_id, remote_shard.peer_id, proxy.remote_shard.peer_id
                 )));
             }
-            Some(Shard::Proxy(_)) => {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot queue proxify local shard {} to peer {} because it already is a proxy",
-                    self.shard_id, remote_shard.peer_id,
-                )));
-            }
             Some(Shard::Dummy(_)) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot proxify local dummy shard {} to peer {}",
@@ -172,6 +160,10 @@ impl ShardReplicaSet {
 
         let wal_ack_pins = local_shard.update_handler.lock().await.wal_ack_pins.clone();
 
+        // Lock WAL before taking the local shard, queue proxy creation needs it
+        let wal = Arc::clone(&local_shard.wal.wal);
+        let wal_lock = wal.lock().await;
+
         // Proxify local shard
         //
         // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
@@ -183,19 +175,21 @@ impl ShardReplicaSet {
 
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
-            None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, &wal_ack_pins, progress).await)
-            }
-            Some(from_version) => {
-                QueueProxyShard::new_from_version(
-                    local_shard,
-                    remote_shard,
-                    &wal_ack_pins,
-                    from_version,
-                    progress,
-                )
-                .await
-            }
+            None => Ok(QueueProxyShard::new(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                progress,
+            )),
+            Some(from_version) => QueueProxyShard::new_from_version(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                from_version,
+                progress,
+            ),
         };
 
         // Insert queue proxy shard on success or revert to local shard on failure
@@ -238,15 +232,7 @@ impl ShardReplicaSet {
                 return Ok(());
             }
 
-            // Unexpected states, error
-            Some(shard @ Shard::Proxy(_)) => {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot un-proxify local shard {} because it has unexpected type - {}",
-                    self.shard_id,
-                    shard.variant_name(),
-                )));
-            }
-
+            // Unexpected state, error
             None => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot un-proxify local shard {} on peer {} because it is not active",
@@ -322,7 +308,7 @@ impl ShardReplicaSet {
     /// # Warning
     ///
     /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
-    /// The remote shard may therefore therefore be left in an inconsistent state, which should be
+    /// The remote shard may therefore be left in an inconsistent state, which should be
     /// resolved separately.
     ///
     /// # Cancel safety
@@ -381,10 +367,6 @@ impl ShardReplicaSet {
                 let (local_shard, _) = proxy.forget_updates_and_finalize();
                 Shard::Local(local_shard)
             }
-            Shard::Proxy(proxy) => {
-                log::debug!("Discarding proxy and reverting to local shard");
-                Shard::Local(proxy.wrapped_shard)
-            }
         };
 
         let _ = local.insert(shard);
@@ -392,8 +374,9 @@ impl ShardReplicaSet {
 
     /// Read a transfer batch without sending it yet.
     ///
-    /// Returns a [`PreparedTransferBatch`] that holds the update lock. The caller can then drop
-    /// other locks (e.g. the shard holder lock) before calling [`PreparedTransferBatch::send`].
+    /// Returns a [`PreparedTransferBatch`] that holds a shared guard on the update lock. The caller
+    /// can then drop other locks (e.g. the shard holder lock) before calling
+    /// [`PreparedTransferBatch::send`].
     ///
     /// # Cancel safety
     ///
@@ -572,3 +555,6 @@ impl ShardReplicaSet {
         local_shard.wal_version().await
     }
 }
+
+#[cfg(test)]
+mod tests;

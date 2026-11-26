@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -237,7 +237,7 @@ fn test_multivector_quantization_hnsw(
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();
@@ -247,26 +247,17 @@ fn test_multivector_quantization_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_multi_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_multi_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     segment
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let quantization_config = match quantization_variant {

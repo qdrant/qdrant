@@ -44,8 +44,8 @@ use collection::operations::types::{SparseIndexParams, SparseVectorParams};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -226,6 +226,7 @@ fn shard_with(
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let payload_index_schema = Arc::new(
@@ -249,15 +250,16 @@ fn shard_with(
 
     handle
         .block_on(
-            shard.update(
-                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-                    PointInsertOperationsInternal::PointsList(points),
-                ))
-                .into(),
-                WaitUntil::Visible,
-                None,
-                HwMeasurementAcc::new(),
-            ),
+            shard
+                .update(
+                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                        PointInsertOperationsInternal::PointsList(points),
+                    ))
+                    .into(),
+                    WaitUntil::Visible,
+                    None,
+                )
+                .measured(AmbientContext::new()),
         )
         .unwrap();
 
@@ -289,8 +291,8 @@ fn run_batch(
                     }),
                     search_handle,
                     None,
-                    HwMeasurementAcc::new(),
                 )
+                .measured(AmbientContext::new())
                 .await
                 .unwrap();
             results.push(batch.remove(0));

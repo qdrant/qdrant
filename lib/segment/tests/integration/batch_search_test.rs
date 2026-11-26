@@ -5,8 +5,8 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use rand::SeedableRng;
@@ -44,14 +44,13 @@ fn test_batch_and_single_request_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
-            &hw_counter,
         )
         .unwrap();
 
@@ -63,15 +62,10 @@ fn test_batch_and_single_request_equivalency() {
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -10,6 +9,8 @@ use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::index::VectorIndexRead;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
@@ -19,14 +20,9 @@ impl PlainVectorIndex {
         &self,
         search_optimized_threshold_kb: usize,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         self.with_view(|view| {
-            view.is_small_enough_for_unindexed_search(
-                search_optimized_threshold_kb,
-                filter,
-                hw_counter,
-            )
+            view.is_small_enough_for_unindexed_search(search_optimized_threshold_kb, filter)
         })
     }
 }
@@ -41,6 +37,17 @@ impl VectorIndexRead for PlainVectorIndex {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.with_view(|view| view.search(query_vectors, filter, top, params, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        _query_vectors: &[QueryVector],
+        _cardinality: &CardinalityEstimation,
+        _top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        // Evaluates the filter on every candidate, once for all query vectors
+        Ok(FilterChecks::Full)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -80,7 +87,6 @@ impl VectorIndexRead for PlainVectorIndex {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // Plain (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {

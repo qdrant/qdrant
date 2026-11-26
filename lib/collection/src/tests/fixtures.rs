@@ -53,6 +53,7 @@ pub fn create_collection_config_with_dim(dim: usize) -> CollectionConfigInternal
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     }
 }
 
@@ -133,7 +134,6 @@ pub fn filter_single_id(id: impl Into<PointIdType>) -> Filter {
 pub fn init_test_feature_flags() {
     init_feature_flags(FeatureFlags {
         write_segment_manifest: true,
-        persist_proxy_segments: true,
         ..Default::default()
     });
 }

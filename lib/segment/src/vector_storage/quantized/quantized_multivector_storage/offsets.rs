@@ -1,7 +1,6 @@
 use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, Flusher, MmapSlice};
 use common::types::PointOffsetType;
@@ -12,7 +11,7 @@ use common::universal_io::{
 use fs_err as fs;
 use memmap2::MmapMut;
 
-use super::{MultivectorOffset, MultivectorOffsetsStorage};
+use super::{MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageWrite};
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
@@ -108,11 +107,25 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         self.offsets.len()
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self { offsets, path: _ } = self;
+        offsets.capacity() * std::mem::size_of::<MultivectorOffset>()
+    }
+}
+
+impl MultivectorOffsetsStorageWrite for MultivectorOffsetsStorageRam {
     fn upsert_offset(
         &mut self,
         id: PointOffsetType,
         offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         if id as usize >= self.len() {
@@ -125,19 +138,6 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
 
     fn flusher(&self) -> Flusher {
         Box::new(|| Ok(()))
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self { offsets, path: _ } = self;
-        offsets.capacity() * std::mem::size_of::<MultivectorOffset>()
     }
 }
 
@@ -248,23 +248,6 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
             .expect("multi-vector offsets length read") as _
     }
 
-    fn upsert_offset(
-        &mut self,
-        _id: PointOffsetType,
-        _offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert offset in mmap storage",
-        ))
-    }
-
-    fn flusher(&self) -> Flusher {
-        // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
-        Box::new(|| Ok(()))
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
@@ -297,10 +280,9 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         offsets: impl Iterator<Item = MultivectorOffset>,
         in_ram: bool,
     ) -> OperationResult<Self> {
-        let hw_counter = HardwareCounterCell::disposable();
         let mut offsets_storage = Self::load(fs, path, in_ram)?;
         for (id, offset) in offsets.enumerate() {
-            offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
+            offsets_storage.upsert_offset(id as PointOffsetType, offset)?;
         }
         offsets_storage.flusher()()?;
         Ok(offsets_storage)
@@ -362,27 +344,6 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
         self.data.len()
     }
 
-    fn flusher(&self) -> Flusher {
-        let flusher = ChunkedVectors::flusher(&self.data);
-        Box::new(move || {
-            flusher().map_err(|e| {
-                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
-            })?;
-            Ok(())
-        })
-    }
-
-    fn upsert_offset(
-        &mut self,
-        id: PointOffsetType,
-        offset: MultivectorOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        self.data
-            .insert(id as VectorOffsetType, &[offset], hw_counter)
-            .map_err(std::io::Error::other)
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         self.data.files()
     }
@@ -397,6 +358,30 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
     }
 }
 
+impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageWrite
+    for MultivectorOffsetsStorageChunked<S>
+{
+    fn upsert_offset(
+        &mut self,
+        id: PointOffsetType,
+        offset: MultivectorOffset,
+    ) -> std::io::Result<()> {
+        self.data
+            .insert(id as VectorOffsetType, &[offset])
+            .map_err(std::io::Error::other)
+    }
+
+    fn flusher(&self) -> Flusher {
+        let flusher = ChunkedVectors::flusher(&self.data);
+        Box::new(move || {
+            flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))
+            })?;
+            Ok(())
+        })
+    }
+}
+
 /// Read-only counterpart of [`MultivectorOffsetsStorageChunked`], generic over
 /// the [`UniversalRead`] backend `S`.
 pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
@@ -404,6 +389,12 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    pub fn get_offset_opt(&self, idx: PointOffsetType) -> Option<MultivectorOffset> {
+        self.data
+            .get::<Random>(idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first().copied())
+    }
+
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// `populate` warms the parked chunks for the `cached` memory placement;
@@ -443,10 +434,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
 
 impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedRead<S> {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self.data
-            .get::<Random>(idx as VectorOffsetType)
-            .and_then(|offsets| offsets.first().copied())
-            .unwrap_or_default()
+        self.get_offset_opt(idx).unwrap_or_default()
     }
 
     fn for_each_offset(
@@ -473,22 +461,6 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
 
     fn len(&self) -> usize {
         self.data.len()
-    }
-
-    fn upsert_offset(
-        &mut self,
-        _id: PointOffsetType,
-        _offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert offset in read-only chunked storage",
-        ))
-    }
-
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
     }
 
     fn files(&self) -> Vec<PathBuf> {

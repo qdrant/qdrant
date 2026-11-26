@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -175,6 +175,7 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &gen_sampler);
 
+        let _scope = ambient::test_guard();
         let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,
@@ -187,14 +188,17 @@ fn scoring_equivalency(
             quantized_vectors.as_ref(),
             None,
             id_tracker.deleted_point_bitslice(),
-            HardwareCounterCell::new(),
         )?;
 
         let points = (0..other_storage.total_vector_count() as _).sample(&mut rng, SAMPLE_SIZE);
 
-        let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
+        let scores = scorer
+            .score_points(&mut points.clone(), 0)
+            .unwrap()
+            .collect_vec();
         let other_scores = other_scorer
             .score_points(&mut points.clone(), 0)
+            .unwrap()
             .collect_vec();
 
         // Compare scores

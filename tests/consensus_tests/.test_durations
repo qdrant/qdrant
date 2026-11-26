@@ -299,7 +299,7 @@
     "consensus_tests/test_resharding_deferred.py::test_resharding_transfer_deferred_points[down]": 30.0,
     "consensus_tests/test_resharding_deferred.py::test_resharding_transfer_deferred_points[up]": 30.0,
     "consensus_tests/test_resharding_down_abort_converges_after_crash.py::test_resharding_down_abort_converges_when_killed_mid_abort": 60.0,
-    "consensus_tests/test_resharding_down_revert_crash_orphans_state.py::test_scale_down_revert_crash_orphans_resharding_state": 60.0,
+    "consensus_tests/test_resharding_down_abort_replay_after_crash.py::test_scale_down_abort_replays_after_state_clear_crash": 60.0,
     "consensus_tests/test_resharding_extras.py::test_fix_reshard_down_without_shard_key": 20.0,
     "consensus_tests/test_resharding_extras.py::test_reshard_down_preconditions": 20.0,
     "consensus_tests/test_resharding_extras.py::test_reshard_down_preconditions_custom_sharding": 20.0,

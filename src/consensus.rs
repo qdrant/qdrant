@@ -14,7 +14,9 @@ use api::HTTP_HEADER_API_KEY;
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{
+    DEFAULT_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_TIMEOUT, TransportChannelPool,
+};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
@@ -41,6 +43,13 @@ type Node = RawNode<ConsensusStateRef>;
 
 const RECOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_MAX_RETRY_COUNT: usize = 3;
+
+/// How many times a new peer retries joining the cluster through its bootstrap peer.
+///
+/// Raft can drop the `AddPeer` conf change, e.g. right after a leader election or while another
+/// conf change is still unapplied. The bootstrap peer then times out waiting for it.
+const BOOTSTRAP_MAX_RETRY_COUNT: u32 = 3;
+const BOOTSTRAP_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Initial delay before restarting the consensus thread after a failure
 const CONSENSUS_RESTART_INITIAL_BACKOFF: Duration = Duration::from_secs(1);
@@ -368,6 +377,18 @@ impl Consensus {
         // This might happen if Qdrant was stopped or crashed before or while applying an operation.
         // Applying during startup allows us to catch service errors early,
         // before starting consensus thread.
+        let (unapplied, first_unapplied) = {
+            let persistent = state_ref.persistent.read();
+            let unapplied = persistent.unapplied_entities_count();
+            let first_unapplied = persistent.current_unapplied_entry();
+            (unapplied, first_unapplied)
+        };
+        if let Some(first_unapplied) = first_unapplied {
+            log::info!(
+                "Applying {unapplied} consensus entries, starting at index={first_unapplied}, \
+                 that were committed but not applied before Qdrant or the consensus thread stopped",
+            );
+        }
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
 
         // Node was created with older `applied` index, and `apply_entries` does *not* update it.
@@ -471,6 +492,8 @@ impl Consensus {
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
             tls_config,
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create timeout channel")?;
@@ -574,16 +597,35 @@ impl Consensus {
         api_key: Option<&str>,
     ) -> anyhow::Result<()> {
         let this_peer_id = state_ref.this_peer_id();
-        let all_peers = Self::add_peer_to_known_for(
-            this_peer_id,
-            bootstrap_peer,
-            uri.clone(),
-            p2p_port,
-            config,
-            tls_config,
-            api_key,
-        )
-        .await?;
+
+        // Retrying is safe: re-adding an existing learner is a no-op in Raft, and this peer can't
+        // have been promoted to voter yet, because it doesn't run consensus until bootstrap is done.
+        let mut attempt = 0;
+        let all_peers = loop {
+            let result = Self::add_peer_to_known_for(
+                this_peer_id,
+                bootstrap_peer.clone(),
+                uri.clone(),
+                p2p_port,
+                config,
+                tls_config.clone(),
+                api_key,
+            )
+            .await;
+
+            match result {
+                Ok(all_peers) => break all_peers,
+                Err(err) if attempt < BOOTSTRAP_MAX_RETRY_COUNT => {
+                    attempt += 1;
+                    let delay = BOOTSTRAP_RETRY_DELAY * attempt;
+                    log::warn!(
+                        "Failed to join cluster through {bootstrap_peer}: {err:#}, retrying in {delay:?} (retry {attempt}/{BOOTSTRAP_MAX_RETRY_COUNT})",
+                    );
+                    sleep(delay).await;
+                }
+                Err(err) => return Err(err),
+            }
+        };
 
         // Although peer addresses are synchronized with consensus, addresses need to be pre-fetched in the case of a new peer
         // or it will not know how to answer the Raft leader
@@ -593,7 +635,7 @@ impl Consensus {
                     peer.id,
                     peer.uri
                         .parse()
-                        .context(format!("Failed to parse peer URI: {}", peer.uri))?,
+                        .with_context(|| format!("Failed to parse peer URI: {}", peer.uri))?,
                 )
                 .context("Failed to add peer")?
         }
@@ -635,25 +677,17 @@ impl Consensus {
 
             // Calculate how many ticks we should *report* to Raft node.
             //
-            // If last iteration of the loop took too long to complete, and we report all elapsed
-            // ticks to Raft node, it might trigger unnecessary leader election.
+            // If the last iteration of the loop took too long (e.g., applying a slow operation),
+            // reporting all elapsed ticks at once would immediately trigger a leader election,
+            // even if the leader is alive. So we cap how many ticks we report per iteration.
+            // If the leader is really gone, the election is triggered a few iterations later.
             //
-            // To prevent this, we check if we received new Raft messages (i.e., we are still
-            // connected to Raft leader), and cap how many ticks we report to Raft node.
-            //
-            // By default, election is triggered if no Raft messages were received for 20 ticks,
-            // so we report at most 15 ticks.
+            // Election is triggered after `election_tick` ticks without Raft messages (20 by
+            // default), so we report at most `election_tick - 5` ticks (15 by default).
             //
             // See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.
-            let report_ticks = if raft_messages > 0 {
-                // Default `election_tick` is 20, so expected value here is 15
-                let max_elapsed_ticks =
-                    cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
-
-                cmp::min(elapsed_ticks, max_elapsed_ticks as u32)
-            } else {
-                elapsed_ticks
-            };
+            let max_elapsed_ticks = cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+            let report_ticks = cmp::min(elapsed_ticks, max_elapsed_ticks as u32);
 
             // Report elapsed ticks to Raft node
             for _ in 0..report_ticks {
@@ -741,7 +775,7 @@ impl Consensus {
             let is_raft_message = matches!(message, Message::FromPeer(_));
 
             if let Err(err) = self.advance_node_impl(message) {
-                log::warn!("{err}");
+                log::warn!("{err:#}");
                 continue;
             }
 
@@ -794,11 +828,8 @@ impl Consensus {
                     existing_uris.get(&uri.parse::<Uri>().context("peer URI is not a valid URI")?)
                     && registered_peer_id != &peer_id
                 {
-                    log::warn!(
-                        "Rejected peer {peer_id} to join consensus, URI is already registered by peer {registered_peer_id} ({uri})",
-                    );
                     return Err(anyhow!(
-                        "peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
+                        "Rejected peer {peer_id} to join consensus: peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
                     ));
                 }
 
@@ -811,8 +842,8 @@ impl Consensus {
 
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
-                    .propose_conf_change(uri.into_bytes(), change)
-                    .context("failed to propose conf change")?;
+                    .propose_conf_change(uri.clone().into_bytes(), change)
+                    .with_context(|| format!("Failed to propose adding peer {peer_id} ({uri})"))?;
             }
 
             Message::FromClient(ConsensusOperations::RemovePeer(peer_id)) => {
@@ -826,7 +857,7 @@ impl Consensus {
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node
                     .propose_conf_change(vec![], change)
-                    .context("failed to propose conf change")?;
+                    .with_context(|| format!("Failed to propose removing peer {peer_id}"))?;
             }
 
             Message::FromClient(ConsensusOperations::RequestSnapshot) => {
@@ -846,7 +877,7 @@ impl Consensus {
                 log::trace!("Proposing entry from client with length: {}", data.len());
                 self.node
                     .propose(vec![], data)
-                    .context("failed to propose entry")?;
+                    .with_context(|| format!("Failed to propose {operation:?}"))?;
             }
 
             Message::FromPeer(message) => {
@@ -1079,7 +1110,12 @@ impl Consensus {
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             let snapshot = ready.snapshot().clone();
-            log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
+            let meta = snapshot.get_metadata();
+            log::info!(
+                "Applying Raft snapshot index={} term={}",
+                meta.index,
+                meta.term,
+            );
             is_idle = false;
 
             if let Err(err) = store.apply_snapshot(&snapshot)? {
@@ -1089,7 +1125,7 @@ impl Consensus {
 
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
-            log::debug!("Appending {} entries to raft log", ready.entries().len());
+            log::trace!("Appending {} entries to raft log", ready.entries().len());
             is_idle = false;
 
             store
@@ -1099,7 +1135,7 @@ impl Consensus {
 
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
-            log::debug!("Changing hard state. New hard state: {hs:?}");
+            log::trace!("Changing hard state. New hard state: {hs:?}");
             is_idle = false;
 
             store
@@ -1162,7 +1198,7 @@ impl Consensus {
 
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
-            log::debug!("Updating commit index to {commit}");
+            log::trace!("Updating commit index to {commit}");
             is_idle = false;
 
             store
@@ -1293,31 +1329,42 @@ impl RaftMessageBroker {
             };
 
             let failed_to_forward = |message: &RaftMessage, description: &str| {
-                let peer_id = message.to;
-
-                if log::max_level() >= log::Level::Debug {
-                    log::error!(
-                        "Failed to forward message {message:?} to message sender task {peer_id}: \
-                         {description}"
-                    );
-                } else {
-                    log::error!(
-                        "Failed to forward message to message sender task {peer_id}: {description}"
-                    );
-                }
+                log::error!(
+                    "Failed to forward {:?} message to message sender task {}: {description}",
+                    message.get_msg_type(),
+                    message.to,
+                );
+                log::trace!("Message not forwarded: {message:?}");
             };
 
-            match sender.send(message).map_err(|err| *err) {
+            // Resolve the peer address *now*, on the consensus thread, rather than later in the
+            // message sender task.
+            //
+            // Messages are forwarded to sender tasks *before* committed entries are applied. If a
+            // committed entry removes the peer (`RemoveNode`), its address is deleted from the
+            // address book while the messages to it may still sit in the sender queue. Those last
+            // messages carry the commit index that tells the removed peer about its own removal,
+            // so without the captured address they would be dropped and the removed peer would
+            // never learn that it should stop consensus.
+            let uri = self.consensus_state.peer_address(peer_id);
+
+            match sender.send(message, uri).map_err(|err| *err) {
                 Ok(()) => (),
 
-                Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Full(QueuedRaftMessage {
+                    message,
+                    ..
+                })) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is full. Message will be dropped.",
                     );
                 }
 
-                Err(tokio::sync::mpsc::error::TrySendError::Closed((_, message))) => {
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(QueuedRaftMessage {
+                    message,
+                    ..
+                })) => {
                     failed_to_forward(
                         &message,
                         "message sender task queue is closed. \
@@ -1333,7 +1380,8 @@ impl RaftMessageBroker {
 
     fn message_sender(&self) -> (RaftMessageSender, RaftMessageSenderHandle) {
         let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(128);
-        let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Default::default());
+        let (heartbeat_tx, heartbeat_rx) =
+            tokio::sync::watch::channel(QueuedRaftMessage::default());
 
         let task = RaftMessageSender {
             messages: messages_rx,
@@ -1356,25 +1404,42 @@ impl RaftMessageBroker {
     }
 }
 
+/// Raft message queued for a [`RaftMessageSender`] task.
+#[derive(Clone, Debug, Default)]
+struct QueuedRaftMessage {
+    /// Sequence number of the message, used to skip outdated heartbeats.
+    index: usize,
+    message: RaftMessage,
+    /// Address of the receiving peer, as known when the message was queued.
+    ///
+    /// Used if the peer address is no longer known when the message is actually sent
+    /// (e.g. the peer was removed from the cluster in the meantime).
+    uri: Option<Uri>,
+}
+
 #[derive(Debug)]
 struct RaftMessageSenderHandle {
-    messages: Sender<(usize, RaftMessage)>,
-    heartbeat: watch::Sender<(usize, RaftMessage)>,
+    messages: Sender<QueuedRaftMessage>,
+    heartbeat: watch::Sender<QueuedRaftMessage>,
     index: usize,
 }
 
 impl RaftMessageSenderHandle {
-    fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
-        if !is_heartbeat(&message) {
-            self.messages
-                .try_send((self.index, message))
-                .map_err(Box::new)?;
+    fn send(&mut self, message: RaftMessage, uri: Option<Uri>) -> RaftMessageSenderResult<()> {
+        let queued = QueuedRaftMessage {
+            index: self.index,
+            message,
+            uri,
+        };
+
+        if !is_heartbeat(&queued.message) {
+            self.messages.try_send(queued).map_err(Box::new)?;
         } else {
-            self.heartbeat.send((self.index, message)).map_err(
-                |watch::error::SendError(message)| {
+            self.heartbeat
+                .send(queued)
+                .map_err(|watch::error::SendError(message)| {
                     Box::new(tokio::sync::mpsc::error::TrySendError::Closed(message))
-                },
-            )?;
+                })?;
         }
 
         self.index += 1;
@@ -1384,11 +1449,11 @@ impl RaftMessageSenderHandle {
 }
 
 type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
-type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>>;
+type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<QueuedRaftMessage>>;
 
 struct RaftMessageSender {
-    messages: Receiver<(usize, RaftMessage)>,
-    heartbeat: watch::Receiver<(usize, RaftMessage)>,
+    messages: Receiver<QueuedRaftMessage>,
+    heartbeat: watch::Receiver<QueuedRaftMessage>,
     bootstrap_uri: Option<Uri>,
     tls_config: Option<ClientTlsConfig>,
     consensus_config: Arc<ConsensusConfig>,
@@ -1457,7 +1522,11 @@ impl RaftMessageSender {
         let mut prev_index = 0;
 
         loop {
-            let (index, message) = tokio::select! {
+            let QueuedRaftMessage {
+                index,
+                message,
+                uri,
+            } = tokio::select! {
                 biased;
                 Some(message) = self.messages.recv() => message,
                 Ok(()) = self.heartbeat.changed() => self.heartbeat.borrow_and_update().clone(),
@@ -1465,28 +1534,28 @@ impl RaftMessageSender {
             };
 
             if prev_index <= index {
-                self.send(&message).await;
+                self.send(&message, uri).await;
                 prev_index = index;
             }
         }
     }
 
-    async fn send(&self, message: &RaftMessage) {
-        if let Err(err) = self.try_send(message).await {
+    async fn send(&self, message: &RaftMessage, queued_uri: Option<Uri>) {
+        if let Err(err) = self.try_send(message, queued_uri).await {
             let peer_id = message.to;
 
-            if log::max_level() >= log::Level::Debug {
-                log::error!("Failed to send Raft message {message:?} to peer {peer_id}: {err}");
-            } else {
-                log::error!("Failed to send Raft message to peer {peer_id}: {err}");
-            }
+            log::error!(
+                "Failed to send {:?} Raft message to peer {peer_id}: {err}",
+                message.get_msg_type(),
+            );
+            log::trace!("Raft message not sent: {message:?}");
         }
     }
 
-    async fn try_send(&self, message: &RaftMessage) -> anyhow::Result<()> {
+    async fn try_send(&self, message: &RaftMessage, queued_uri: Option<Uri>) -> anyhow::Result<()> {
         let peer_id = message.to;
 
-        let uri = self.uri(peer_id).await?;
+        let uri = self.uri(peer_id, queued_uri).await?;
         let bytes = <RaftMessage as prost_for_raft::Message>::encode_to_vec(message);
         let grpc_message = GrpcRaftMessage { message: bytes };
 
@@ -1542,8 +1611,11 @@ impl RaftMessageSender {
         Ok(())
     }
 
-    async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
-        let uri = self.consensus_state.peer_address(peer_id);
+    async fn uri(&self, peer_id: PeerId, queued_uri: Option<Uri>) -> anyhow::Result<Uri> {
+        // Prefer the current address (it might have been updated since the message was queued),
+        // then the address known when the message was queued (the peer might have been removed
+        // since), and only then ask the bootstrap peer.
+        let uri = self.consensus_state.peer_address(peer_id).or(queued_uri);
 
         match uri {
             Some(uri) => Ok(uri),
@@ -1565,6 +1637,8 @@ impl RaftMessageSender {
             bootstrap_timeout,
             bootstrap_uri,
             self.tls_config.clone(),
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create who-is channel")?;
@@ -1724,6 +1798,7 @@ mod tests {
                                 strict_mode_config: None,
                                 uuid: None,
                                 metadata: None,
+                                created_at: None,
                             },
                         )
                         .unwrap(),

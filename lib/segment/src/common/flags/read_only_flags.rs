@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::types::PointOffsetType;
+use common::universal_io::{CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs};
 use roaring::RoaringBitmap;
 
 use super::mode::FlagsMode;
@@ -61,6 +61,15 @@ impl<S: UniversalRead> ReadOnlyFlags<S> {
         }
     }
 
+    /// Clear the flags of `points` in RAM, now if the bitmap is materialized, or when it
+    /// is. They stay cleared through [`Self::live_reload`].
+    pub fn remove(&mut self, points: impl IntoIterator<Item = PointOffsetType>) {
+        match self {
+            Self::Dynamic(flags) => flags.remove(points),
+            Self::Compact(flags) => flags.remove(points),
+        }
+    }
+
     /// Refresh to the current on-disk state; see the variants' impls for the
     /// respective reload semantics.
     pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
@@ -77,7 +86,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
             ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
@@ -85,12 +94,19 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
+    ) -> OperationResult<()> {
+        // The flag files are the source of truth, nothing here tracks deletions
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
         &mut self,
         fs: &Fs,
         _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
         _new_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
-        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs),

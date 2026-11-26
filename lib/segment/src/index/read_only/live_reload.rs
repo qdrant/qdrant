@@ -1,8 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use super::VectorIndexReadEnum;
 use crate::common::live_reload::LiveReload;
@@ -15,11 +13,19 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         // Nothing to stage: the persisted variants are immutable after build,
         // and the mutable-RAM sparse index ingests through the already-reloaded
         // vector storage.
         Ok(Vec::new())
+    }
+
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Deletions are served from the id tracker, nothing here tracks them
+        Ok(())
     }
 
     /// No-op for the persisted variants: read-only vector indexes are immutable —
@@ -38,7 +44,6 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
         _fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             Self::SparseMutableRam(index) => index.live_reload(new_points),

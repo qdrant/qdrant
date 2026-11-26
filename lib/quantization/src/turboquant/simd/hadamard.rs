@@ -800,6 +800,8 @@ pub(crate) fn scalar_wht(x: &mut [f64]) {
 /// path — no FMA, same pair order, single add/sub per butterfly.
 #[inline]
 pub fn wht_dispatch(x: &mut [f64]) {
+    assert_power_of_two_len(x);
+
     #[cfg(target_arch = "x86_64")]
     {
         if std::is_x86_feature_detected!("avx2") {
@@ -829,6 +831,8 @@ pub fn wht_dispatch(x: &mut [f64]) {
 /// sequence (single add/sub per butterfly, then one multiply).
 #[inline]
 pub fn wht_dispatch_scaled(x: &mut [f64], scale: f64) {
+    assert_power_of_two_len(x);
+
     #[cfg(target_arch = "x86_64")]
     if std::is_x86_feature_detected!("avx2") {
         // SAFETY: AVX2 confirmed by runtime detection above.
@@ -841,6 +845,17 @@ pub fn wht_dispatch_scaled(x: &mut [f64], scale: f64) {
     for v in x.iter_mut() {
         *v *= scale;
     }
+}
+
+/// Hard assert: the SIMD kernels write out of bounds on other lengths, so the
+/// safe dispatchers must not rely on their `debug_assert!`.
+#[inline]
+fn assert_power_of_two_len(x: &[f64]) {
+    assert!(
+        x.len().is_power_of_two(),
+        "WHT requires power-of-2 length, got {}",
+        x.len(),
+    );
 }
 
 #[cfg(test)]
@@ -1061,5 +1076,21 @@ mod tests {
 
             assert_bit_equal(&reference, &fallback, &format!("scalar_wht at n={n}"));
         }
+    }
+
+    /// Non-power-of-2 lengths must panic in the dispatcher, also in release
+    /// builds, instead of reaching the SIMD kernels which would write out of
+    /// bounds. The expected message is the dispatcher's own, not the kernels'
+    /// `debug_assert!`.
+    #[test]
+    #[should_panic(expected = "WHT requires power-of-2 length, got 17")]
+    fn wht_dispatch_rejects_non_power_of_two() {
+        wht_dispatch(&mut [1.0; 17]);
+    }
+
+    #[test]
+    #[should_panic(expected = "WHT requires power-of-2 length, got 24")]
+    fn wht_dispatch_scaled_rejects_non_power_of_two() {
+        wht_dispatch_scaled(&mut [1.0; 24], 0.5);
     }
 }

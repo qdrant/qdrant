@@ -4,6 +4,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
+#[cfg(feature = "testing")]
+pub use self::build::with_pipnn_min_points;
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
@@ -19,8 +21,6 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod build;
-#[cfg(feature = "gpu")]
-mod gpu_build;
 mod old_index;
 pub mod read_only;
 mod read_view;
@@ -58,7 +58,6 @@ pub struct HNSWIndex {
     path: PathBuf,
     graph: HnswGraph<HnswLinksStorage>,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 pub struct HnswIndexOpenArgs<'a> {
@@ -95,14 +94,13 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            is_on_disk: graph.is_on_disk(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+    pub fn is_cold(&self) -> bool {
+        self.graph.is_cold()
     }
 
     /// Heap RAM held by the graph links, in bytes.
@@ -139,7 +137,6 @@ impl HNSWIndex {
             path: _,
             graph,
             searches_telemetry: _,
-            is_on_disk: _,
         } = self;
         graph.clear_cache()?;
         Ok(())

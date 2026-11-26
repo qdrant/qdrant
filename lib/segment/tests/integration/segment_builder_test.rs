@@ -4,8 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::{ProgressTracker, ProgressTree, ProgressView, new_progress_tracker};
 use common::storage_version::VERSION_FILE;
@@ -22,10 +22,11 @@ use segment::entry::entry_point::{
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
+use segment::index::hnsw_index::hnsw::with_pipnn_min_points;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::normalize_segment_dir;
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
     Distance, HnswGlobalConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
@@ -59,20 +60,15 @@ fn test_building_new_segment() {
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(
-            100,
-            3.into(),
-            only_default_vector(&[0., 0., 0., 0.]),
-            &hw_counter,
-        )
+        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
         .unwrap();
 
     builder
-        .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
+        .update(&[&segment1, &segment2, &segment2], &stopped)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -118,18 +114,18 @@ fn test_building_new_defragmented_segment() {
 
     let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let mut segment1 = build_segment_1(dir.path());
     segment1
-        .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter)
+        .create_field_index(7, &defragment_key, Some(&payload_schema))
         .unwrap();
 
     let mut segment2 = build_segment_2(dir.path());
     segment2
-        .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter)
+        .create_field_index(17, &defragment_key, Some(&payload_schema))
         .unwrap();
 
     let mut builder = SegmentBuilder::new(
@@ -142,19 +138,12 @@ fn test_building_new_defragmented_segment() {
 
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(
-            100,
-            3.into(),
-            only_default_vector(&[0., 0., 0., 0.]),
-            &hw_counter,
-        )
+        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
         .unwrap();
 
     builder.set_defragment_keys(vec![defragment_key.clone()]);
 
-    builder
-        .update(&[&segment1, &segment2], &stopped, &hw_counter)
-        .unwrap();
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     // Check what happens if segment building fails here
 
@@ -208,11 +197,11 @@ fn check_points_defragmented(
     // keeps track of groups/values that have already been seen while iterating
     let mut seen_values: Vec<Value> = vec![];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
-        let payload = segment.payload(external_id, &hw_counter).unwrap();
+        let payload = segment.payload(external_id).unwrap();
         let values = payload.get_value(defragment_key);
 
         if values.is_empty() {
@@ -254,7 +243,7 @@ fn test_building_new_sparse_segment() {
 
     let stopped = AtomicBool::new(false);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let segment1 = build_segment_sparse_1(dir.path());
     let mut segment2 = build_segment_sparse_2(dir.path());
@@ -274,12 +263,11 @@ fn test_building_new_sparse_segment() {
             100,
             3.into(),
             NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec)),
-            &hw_counter,
         )
         .unwrap();
 
     builder
-        .update(&[&segment1, &segment2, &segment2], &stopped, &hw_counter)
+        .update(&[&segment1, &segment2, &segment2], &stopped)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -318,6 +306,7 @@ fn test_building_new_sparse_segment() {
 
 #[test]
 fn test_build_not_ready_defers_version_file() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
@@ -332,11 +321,10 @@ fn test_build_not_ready_defers_version_file() {
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-    builder.update(&[&segment1], &stopped, &hw_counter).unwrap();
+    builder.update(&[&segment1], &stopped).unwrap();
 
     let permit = ResourcePermit::dummy(get_num_indexing_threads(0) as u32);
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(INDEX_BUILD_SEED);
 
     let built_segment = builder
         .build(
@@ -347,7 +335,6 @@ fn test_build_not_ready_defers_version_file() {
             permit,
             &stopped,
             &mut rng,
-            &hw_counter,
             ProgressTracker::new_for_test(),
         )
         .unwrap();
@@ -390,31 +377,27 @@ fn test_building_new_segment_bug_5614() {
     let vector_100_high = only_default_vector(&[3., 3., 0., 0.]);
     let vector_101_high = only_default_vector(&[4., 4., 0., 0.]);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Insert point 100 and 101 in both segments
     // Do this in a specific order so that:
     // - the latter segment has a higher point version
     // - the internal point IDs don't match across segments
     segment1
-        .upsert_point(123, 100.into(), vector_100_low, &hw_counter)
+        .upsert_point(123, 100.into(), vector_100_low)
         .unwrap();
     segment1
-        .upsert_point(123, 101.into(), vector_101_low, &hw_counter)
+        .upsert_point(123, 101.into(), vector_101_low)
         .unwrap();
 
     segment2
-        .upsert_point(124, 101.into(), vector_101_high.clone(), &hw_counter)
+        .upsert_point(124, 101.into(), vector_101_high.clone())
         .unwrap();
     segment2
-        .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter)
+        .upsert_point(124, 100.into(), vector_100_high.clone())
         .unwrap();
 
-    builder
-        .update(&[&segment1, &segment2], &stopped, &hw_counter)
-        .unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let merged_segment: Segment = builder.build_for_test(dir.path());
 
@@ -425,11 +408,11 @@ fn test_building_new_segment_bug_5614() {
     // Assert correct vectors still belong to the point
     // This was broken before <https://github.com/qdrant/qdrant/pull/5543>
     assert_eq!(
-        merged_segment.all_vectors(100.into(), &hw_counter).unwrap(),
+        merged_segment.all_vectors(100.into()).unwrap(),
         vector_100_high,
     );
     assert_eq!(
-        merged_segment.all_vectors(101.into(), &hw_counter).unwrap(),
+        merged_segment.all_vectors(101.into()).unwrap(),
         vector_101_high,
     );
 }
@@ -440,11 +423,11 @@ const CANCELLATION_TEST_POINTS: u64 = 10_000;
 fn cancellation_test_segment(path: &Path) -> Segment {
     let mut rng = StdRng::seed_from_u64(42);
     let mut segment = empty_segment(path);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for idx in 0..CANCELLATION_TEST_POINTS {
         let vector = random_vector(&mut rng, 4);
         segment
-            .upsert_point(1, idx.into(), only_default_vector(&vector), &hw_counter)
+            .upsert_point(1, idx.into(), only_default_vector(&vector))
             .unwrap();
     }
     segment
@@ -478,13 +461,7 @@ fn hnsw_segment_builder(source: &Segment, temp_dir: &Path) -> SegmentBuilder {
         FeatureFlags::default(),
     )
     .unwrap();
-    builder
-        .update(
-            &[source],
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap();
+    builder.update(&[source], &AtomicBool::new(false)).unwrap();
     builder
 }
 
@@ -502,8 +479,7 @@ fn build_segment(
         true,
         permit,
         stopped,
-        &mut rand::rng(),
-        &HardwareCounterCell::new(),
+        &mut StdRng::seed_from_u64(INDEX_BUILD_SEED),
         progress,
     )
 }
@@ -555,6 +531,7 @@ fn phase_progress(progress: &ProgressView, phase: &str) -> Option<(u64, u64)> {
 /// before any vector index work.
 #[test]
 fn test_building_cancelled_before_start() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
@@ -582,6 +559,13 @@ fn test_building_cancelled_before_start() {
     assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
 
+/// Items an HNSW phase may complete after a cancel. Every item checks the stop flag first, so
+/// only the items already in flight may complete: one per build thread. Allow twice that to
+/// tolerate the flag becoming visible to other threads slightly later.
+fn hnsw_items_after_cancel() -> u64 {
+    2 * build_threads()
+}
+
 /// Builds `builder`, cancelling it once `phase` has processed a tenth of its work.
 ///
 /// Checks that the build stops right away rather than at the end of the phase. This is
@@ -591,6 +575,7 @@ fn build_cancelled_during_phase(
     builder: SegmentBuilder,
     segments_path: &Path,
     phase: &'static str,
+    max_items_after_cancel: u64,
 ) -> ProgressView {
     let stopped = Arc::new(AtomicBool::new(false));
     let build_finished = Arc::new(AtomicBool::new(false));
@@ -629,10 +614,6 @@ fn build_cancelled_during_phase(
         done_final < total,
         "{phase} was completed despite cancellation",
     );
-    // Every item checks the stop flag first, so only the items already in flight may
-    // complete: one per build thread. Allow twice that to tolerate the flag becoming
-    // visible to other threads slightly later.
-    let max_items_after_cancel = 2 * build_threads();
     assert!(
         done_final - done_at_cancel <= max_items_after_cancel,
         "{phase}: {} items were processed after cancellation (at {done_at_cancel} of {total}), \
@@ -646,6 +627,7 @@ fn build_cancelled_during_phase(
 /// Cancelling in the middle of the main HNSW graph must stop the build right away.
 #[test]
 fn test_building_cancelled_during_main_graph() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
@@ -654,8 +636,46 @@ fn test_building_cancelled_during_main_graph() {
     let builder = hnsw_segment_builder(&source, temp_dir.path());
 
     // At 10% of the points, past `SINGLE_THREADED_HNSW_BUILD_THRESHOLD`, so this cancels
-    // the parallel part of the phase.
-    build_cancelled_during_phase(builder, segments_dir.path(), "main_graph");
+    // the parallel part of the phase. HNSW explicitly: the bound counts points.
+    with_pipnn_min_points(usize::MAX, || {
+        build_cancelled_during_phase(
+            builder,
+            segments_dir.path(),
+            "main_graph",
+            hnsw_items_after_cancel(),
+        )
+    });
+
+    assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
+}
+
+/// Cancelling in the middle of a PiPNN main graph must stop the build right away.
+#[test]
+fn test_building_cancelled_during_pipnn_main_graph() {
+    let _scope = ambient::test_guard();
+    let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let source = cancellation_test_segment(source_dir.path());
+    let builder = hnsw_segment_builder(&source, temp_dir.path());
+
+    // PiPNN counts the points of each level once per phase, and adds them per piece of work.
+    // A piece adds at most the points of its level, 10,000 on level 0, so allow two of those
+    // per build thread.
+    let progress = with_pipnn_min_points(0, || {
+        build_cancelled_during_phase(
+            builder,
+            segments_dir.path(),
+            "main_graph",
+            2 * build_threads() * 16_384,
+        )
+    });
+
+    // PiPNN built it: every point counts once per phase, of which there are 3, where HNSW
+    // counts it once
+    let (_, total) = phase_progress(&progress, "main_graph").unwrap();
+    assert!(total >= 3 * CANCELLATION_TEST_POINTS, "total {total}");
 
     assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
@@ -664,6 +684,7 @@ fn test_building_cancelled_during_main_graph() {
 /// right away, instead of healing the whole graph first (#10426).
 #[test]
 fn test_building_cancelled_during_heal() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let old_segments_dir = Builder::new().prefix("old_segments_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -681,15 +702,17 @@ fn test_building_cancelled_during_heal() {
 
     // Delete a quarter of the points: below the default `healing_threshold` of 0.3, so the
     // build reuses the old graph and has to heal the links to the deleted points
-    let hw_counter = HardwareCounterCell::new();
     for idx in (0..CANCELLATION_TEST_POINTS).step_by(4) {
-        old_segment
-            .delete_point(2, idx.into(), &hw_counter)
-            .unwrap();
+        old_segment.delete_point(2, idx.into()).unwrap();
     }
 
     let builder = hnsw_segment_builder(&old_segment, temp_dir.path());
-    let progress = build_cancelled_during_phase(builder, segments_dir.path(), "migrate");
+    let progress = build_cancelled_during_phase(
+        builder,
+        segments_dir.path(),
+        "migrate",
+        hnsw_items_after_cancel(),
+    );
 
     // Stopped within healing, before inserting into the main graph
     assert_eq!(phase_progress(&progress, "main_graph"), None);
@@ -712,11 +735,11 @@ fn test_building_cancelled_during_heal() {
 /// optimization round.
 #[test]
 fn test_segment_builder_rejects_target_with_extra_vector_name() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
     let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
 
     let segment1 = build_segment_1(dir.path());
 
@@ -744,7 +767,7 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
     .unwrap();
 
     let err = builder
-        .update(&[&segment1], &stopped, &hw_counter)
+        .update(&[&segment1], &stopped)
         .expect_err("merge must reject sources missing a target vector");
     let msg = err.to_string();
     assert!(
@@ -759,7 +782,6 @@ fn test_segment_builder_rejects_target_with_extra_vector_name() {
 /// the duration of the test.
 fn build_source_with_extra_vector(
     extra_vector_name: &str,
-    hw_counter: &HardwareCounterCell,
 ) -> (Segment, SegmentConfig, Vec<TempDir>) {
     use segment::segment_constructor::build_segment;
 
@@ -789,7 +811,7 @@ fn build_source_with_extra_vector(
             (extra_vector_name.to_owned(), vec![1.0, 1.0, 1.0, 1.0]),
         ]);
         source
-            .upsert_point(10 + i, (100 + i).into(), vectors, hw_counter)
+            .upsert_point(10 + i, (100 + i).into(), vectors)
             .unwrap();
     }
 
@@ -807,11 +829,10 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
     // CreateVectorName-vs-optimizer race, where dropping the vector would corrupt the next round.
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
-    let (source, target_config, _dirs) =
-        build_source_with_extra_vector(extra_vector_name, &hw_counter);
+    let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
 
     let mut builder = SegmentBuilder::new(
         temp_dir.path(),
@@ -822,7 +843,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
     .unwrap();
 
     let err = builder
-        .update(&[&source], &stopped, &hw_counter)
+        .update(&[&source], &stopped)
         .expect_err("merge must reject a source carrying a vector not in target");
     let msg = err.to_string();
     assert!(
@@ -838,11 +859,10 @@ fn test_segment_builder_drops_deleted_source_vector_name() {
     let build_dir = Builder::new().prefix("segment_build").tempdir().unwrap();
     let out_dir = Builder::new().prefix("segment_out").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
-    let (source, target_config, _dirs) =
-        build_source_with_extra_vector(extra_vector_name, &hw_counter);
+    let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
 
     let mut builder = SegmentBuilder::new(
         build_dir.path(),
@@ -856,7 +876,7 @@ fn test_segment_builder_drops_deleted_source_vector_name() {
     builder.set_live_vector_names(HashSet::from([DEFAULT_VECTOR_NAME.to_owned()]));
 
     builder
-        .update(&[&source], &stopped, &hw_counter)
+        .update(&[&source], &stopped)
         .expect("merge should succeed by dropping the deleted source vector");
 
     let built = builder.build_for_test(out_dir.path());
@@ -877,11 +897,10 @@ fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
     // next round, so the merge must cancel even with a live schema set.
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
-    let (source, target_config, _dirs) =
-        build_source_with_extra_vector(extra_vector_name, &hw_counter);
+    let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
 
     let mut builder = SegmentBuilder::new(
         temp_dir.path(),
@@ -898,7 +917,7 @@ fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
     ]));
 
     let err = builder
-        .update(&[&source], &stopped, &hw_counter)
+        .update(&[&source], &stopped)
         .expect_err("merge must reject a source whose extra vector is still in the live schema");
     let msg = err.to_string();
     assert!(
@@ -925,16 +944,11 @@ fn test_building_new_segment_with_mmap_payload() {
         PayloadStorageType::Mmap
     );
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // add one point
     segment1
-        .upsert_point(
-            1,
-            1.into(),
-            only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
-            &hw_counter,
-        )
+        .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 1.0, 1.0]))
         .unwrap();
 
     let builder = SegmentBuilder::new(
@@ -970,14 +984,14 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Payloads, sparse vectors and a keyword index, all stored in a Gridstore
     let mut segment = build_segment_sparse_1(dir.path());
     let key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     segment
-        .create_field_index(100, &key, Some(&schema), &hw_counter)
+        .create_field_index(100, &key, Some(&schema))
         .unwrap();
 
     let mut builder = SegmentBuilder::new(
@@ -987,7 +1001,7 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
         FeatureFlags::default(),
     )
     .unwrap();
-    builder.update(&[&segment], &stopped, &hw_counter).unwrap();
+    builder.update(&[&segment], &stopped).unwrap();
     let mut built_segment = builder.build_for_test(dir.path());
 
     let files_named = |name: &str| {
@@ -1003,7 +1017,7 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
     // The loaded segment journals its writes
     let payload = serde_json::from_str(r#"{ "color": "blue" }"#).unwrap();
     built_segment
-        .set_full_payload(101, 1.into(), &payload, &hw_counter)
+        .set_full_payload(101, 1.into(), &payload)
         .unwrap();
     built_segment.flush(true).unwrap();
     assert!(

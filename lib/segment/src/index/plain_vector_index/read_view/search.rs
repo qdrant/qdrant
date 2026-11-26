@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 
 use super::PlainVectorIndexReadView;
@@ -28,7 +27,6 @@ where
         &self,
         search_optimized_threshold_kb: usize,
         filter: Option<&Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let available_vector_count = self.vector_storage.available_vector_count();
         if available_vector_count == 0 {
@@ -40,9 +38,7 @@ where
         let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
         if let Some(payload_filter) = filter {
-            let cardinality = self
-                .payload_index
-                .estimate_cardinality(payload_filter, hw_counter)?;
+            let cardinality = self.payload_index.estimate_cardinality(payload_filter)?;
             let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
             Ok(scan_size <= indexing_threshold_bytes)
         } else {
@@ -64,7 +60,6 @@ where
             && !self.is_small_enough_for_unindexed_search(
                 query_context.search_optimized_threshold_kb(),
                 filter,
-                &query_context.hardware_counter(),
             )?
         {
             return Ok(vec![vec![]; query_vectors.len()]);
@@ -74,8 +69,6 @@ where
         }
 
         let is_stopped = query_context.is_stopped();
-
-        let hw_counter = query_context.hardware_counter();
 
         let _timer = ScopeDurationMeasurer::new(if filter.is_some() {
             &self.filtered_searches_telemetry
@@ -97,14 +90,11 @@ where
             None,
             oversampled_top,
             deleted_points,
-            query_context.hardware_counter(),
         )?;
 
         let mut search_results = match filter {
             Some(filter) => {
-                let filtered_ids_vec =
-                    self.payload_index
-                        .query_points(filter, &hw_counter, &is_stopped)?;
+                let filtered_ids_vec = self.payload_index.query_points(filter, &is_stopped)?;
                 batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => {
@@ -123,7 +113,6 @@ where
                 query_vector,
                 params,
                 top,
-                query_context.hardware_counter(),
             )?;
         }
         Ok(search_results)

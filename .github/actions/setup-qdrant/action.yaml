@@ -13,7 +13,9 @@ runs:
     - name: Start Qdrant
       shell: bash
       run: |
-        QDRANT_DIR="$HOME/.cargo/bin"
+        # setup-crate puts qdrant on PATH; this is only the working dir for storage and logs
+        QDRANT_DIR="$RUNNER_TEMP/qdrant"
+        mkdir -p "$QDRANT_DIR"
         cd "$QDRANT_DIR"
         qdrant >> qdrant.log 2>&1 &
         curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://localhost:6333

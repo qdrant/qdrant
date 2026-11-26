@@ -30,6 +30,7 @@ pub struct EdgeConfigBuilder {
     quantization_config: Option<QuantizationConfig>,
     optimizers: Option<EdgeOptimizersConfig>,
     wal_options: Option<WalOptions>,
+    wal_enabled: Option<bool>,
     max_search_threads: Option<usize>,
     search_pool_core: Option<usize>,
 }
@@ -112,6 +113,13 @@ impl EdgeConfigBuilder {
         self
     }
 
+    /// Whether the shard writes updates to a WAL. Fixed when the shard is created. See
+    /// [`EdgeConfig::wal_enabled`].
+    pub fn wal_enabled(mut self, wal_enabled: bool) -> Self {
+        self.wal_enabled = Some(wal_enabled);
+        self
+    }
+
     /// Number of threads in the shard's search thread pool. `0` derives the count from the number
     /// of CPUs (matching the core search runtime). See [`EdgeConfig::max_search_threads`].
     pub fn max_search_threads(mut self, max_search_threads: usize) -> Self {
@@ -140,6 +148,7 @@ impl EdgeConfigBuilder {
             quantization_config,
             optimizers,
             wal_options,
+            wal_enabled,
             max_search_threads,
             search_pool_core,
         } = self;
@@ -153,6 +162,7 @@ impl EdgeConfigBuilder {
             quantization_config,
             optimizers,
             wal_options,
+            wal_enabled,
             max_search_threads,
             search_pool_core,
         }

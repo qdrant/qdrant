@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::Flusher;
 use common::prefetch::{
     MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
@@ -80,12 +79,7 @@ impl QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorageWrite for QuantizedRamStorage {
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         self.vectors
             .insert(id as usize, vector)
@@ -93,11 +87,17 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         Ok(())
     }
 
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedRamStorage {
     fn is_in_ram_or_mmap() -> bool {
         true
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -105,17 +105,11 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         self.vectors.len()
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self { vectors, path: _ } = self;
         vectors.heap_size_bytes()
     }
-}
 
-impl quantization::EncodedStorage for QuantizedRamStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
@@ -130,7 +124,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         // Tiny batches gain nothing from hints, cache-resident storages have
         // nothing to fetch, and dense-ascending batches stream — in all three
         // the hardware prefetcher already covers the access and software
@@ -140,8 +134,7 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
             || storage_bytes < MIN_PREFETCH_STORAGE_BYTES
             || is_read_with_prefetch_efficient(offsets)
         {
-            default_for_each_batch(self, offsets, callback);
-            return;
+            return default_for_each_batch(self, offsets, callback);
         }
 
         // Heap-resident vectors have the same random-access DRAM latency as
@@ -170,20 +163,22 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
                 Cow::Borrowed(self.vectors.get(offset as VectorOffsetType)),
             );
         }
+        Ok(())
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
                 .vectors
                 .get_many(run.start as VectorOffsetType, run.len)
-                .expect("vectors read");
+                .ok_or_else(|| run.unreadable())?;
             callback(run.first, run.len, bytes);
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -281,7 +276,7 @@ mod tests {
 
     #[test]
     fn loads_complete_vectors() {
-        use quantization::{EncodedStorage, EncodedStorageWrite};
+        use quantization::EncodedStorage;
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("quantized.bin");
@@ -323,19 +318,21 @@ mod tests {
 
         for ids in [&ascending, &scattered] {
             let mut visited = 0;
-            storage.for_each_run(ids, |first, run_len, bytes| {
-                assert_eq!(first, visited, "runs must cover `ids` in order");
-                assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
-                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
-                    assert_eq!(
-                        vector.as_slice(),
-                        storage.get_vector_data(ids[first + i]).as_ref(),
-                        "run bytes diverge at offset {}",
-                        ids[first + i],
-                    );
-                }
-                visited += run_len;
-            });
+            storage
+                .for_each_run(ids, |first, run_len, bytes| {
+                    assert_eq!(first, visited, "runs must cover `ids` in order");
+                    assert_eq!(bytes.len(), run_len * VECTOR_SIZE);
+                    for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                        assert_eq!(
+                            vector.as_slice(),
+                            storage.get_vector_data(ids[first + i]).as_ref(),
+                            "run bytes diverge at offset {}",
+                            ids[first + i],
+                        );
+                    }
+                    visited += run_len;
+                })
+                .unwrap();
             assert_eq!(visited, ids.len());
         }
     }

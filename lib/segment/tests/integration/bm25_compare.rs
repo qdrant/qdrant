@@ -22,8 +22,8 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use bm25::{Bm25, Bm25Params as SparseBm25Params};
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs};
 use rand::SeedableRng;
@@ -38,12 +38,13 @@ use segment::index::field_index::FieldIndexBuilderTrait;
 use segment::index::field_index::full_text_index::full_text_index_read::{
     fill_text_statistics, score_bm25,
 };
-use segment::index::field_index::full_text_index::{Bm25Params, FullTextIndex};
+use segment::index::field_index::full_text_index::{Bm25Accept, Bm25Params, FullTextIndex};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use segment::json_path::JsonPath;
+use segment::types::Memory;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -142,18 +143,17 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
         .prefix("bm25_compare_text")
         .tempdir()
         .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let empty_deleted = BitVec::new();
 
     fn fill<B: FieldIndexBuilderTrait<FieldIndexType = FullTextIndex>>(
         mut builder: B,
         documents: &[Vec<String>],
-        hw_counter: &HardwareCounterCell,
     ) -> FullTextIndex {
         builder.init().unwrap();
         for (id, document) in documents.iter().enumerate() {
             let value = serde_json::Value::String(document.join(" "));
-            builder.add_point(id as u32, &[&value], hw_counter).unwrap();
+            builder.add_point(id as u32, &[&value]).unwrap();
         }
         builder.finalize().unwrap()
     }
@@ -163,17 +163,14 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
         TextShape::Mutable => fill(
             FullTextIndex::builder_gridstore(path, text_config(), true),
             documents,
-            &hw_counter,
         ),
         TextShape::Immutable => fill(
-            FullTextIndex::builder_mmap(path, text_config(), false, &empty_deleted, true),
+            FullTextIndex::builder_mmap(path, text_config(), Memory::Pinned, &empty_deleted, true),
             documents,
-            &hw_counter,
         ),
         TextShape::OnDisk => fill(
-            FullTextIndex::builder_mmap(path, text_config(), true, &empty_deleted, true),
+            FullTextIndex::builder_mmap(path, text_config(), Memory::Cold, &empty_deleted, true),
             documents,
-            &hw_counter,
         ),
     };
     (index, dir)
@@ -184,15 +181,15 @@ fn text_search(
     field: &JsonPath,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut query_context = QueryContext::default();
-    query_context.init_text_stats(field, terms.iter().cloned());
+    query_context.init_text_stats(field, None, terms.iter().cloned());
     fill_text_statistics(
         index,
         query_context.mut_text_stats().get_mut(field).unwrap(),
+        None,
         &is_stopped,
-        &hw_counter,
     )
     .unwrap();
     let segment_context = query_context.get_segment_query_context();
@@ -202,10 +199,9 @@ fn text_search(
         terms,
         &context,
         Bm25Params::default(),
-        &|_| true,
+        &Bm25Accept::new(&|_| true, None),
         LIMIT,
         &is_stopped,
-        &hw_counter,
     )
     .unwrap()
 }
@@ -226,14 +222,14 @@ fn sparse_search<I: sparse::index::inverted_index::InvertedIndex>(
     bm25: &Bm25,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let tokens: Vec<_> = terms.iter().map(|t| t.as_str().into()).collect();
     let mut query = bm25.embed_query(&tokens);
 
     let mut df: HashMap<u32, usize> = query.indices.iter().map(|dim| (*dim, 0)).collect();
     let n = index
-        .fill_idf_statistics(&mut df, None, &is_stopped, &hw_counter)
+        .fill_idf_statistics(&mut df, None, &is_stopped)
         .unwrap() as ScoreType;
     for (weight, dim) in query.values.iter_mut().zip(&query.indices) {
         *weight *= fancy_idf(n, df[dim] as ScoreType);

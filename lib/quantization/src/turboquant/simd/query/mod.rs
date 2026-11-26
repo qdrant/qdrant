@@ -328,8 +328,14 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         let Some(last) = out.len().checked_sub(1) else {
             return;
         };
+        // Checked: the SIMD kernels read through raw pointers, so a wrapped
+        // bound must not pass
+        let required_len = last
+            .checked_mul(stride)
+            .and_then(|offset| offset.checked_add(self.vector_bytes));
         assert!(
-            stride >= self.vector_bytes && data.len() >= last * stride + self.vector_bytes,
+            stride >= self.vector_bytes
+                && required_len.is_some_and(|required_len| data.len() >= required_len),
             "QuerySimd<{PLANES}, {QUERY_BYTES}>::dotprod_batch: {} vectors of {} bytes at stride \
              {stride} don't fit into {} data bytes",
             out.len(),
@@ -650,5 +656,18 @@ mod tests {
         dotprod_batch_matches_dotprod::<4, 2>();
         dotprod_batch_matches_dotprod::<8, 1>();
         dotprod_batch_matches_dotprod::<8, 2>();
+    }
+
+    /// A `stride` for which `(count - 1) * stride` wraps to zero must be
+    /// rejected, not let through to the SIMD kernels.
+    #[test]
+    #[should_panic(expected = "don't fit into")]
+    fn test_dotprod_batch_rejects_overflowing_stride() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let (query, _) = random_inputs::<1, 2>(&mut rng, 64);
+        let data = random_bytes(&mut rng, query.vector_bytes());
+        // `2 * stride` wraps to zero, so an unchecked bound would be satisfied
+        let stride = 1 << (usize::BITS - 1);
+        query.dotprod_batch(&data, stride, &mut [0.0; 3]);
     }
 }

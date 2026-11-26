@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalWriteFs;
 use serde_json::Value;
@@ -44,12 +43,8 @@ impl UpdateOnlyNullIndex {
     }
 
     /// Persist both masks.
-    pub fn flush<Fs: UniversalWriteFs>(
-        &mut self,
-        fs: &Fs,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.has_values.flush(fs, hw_counter)?;
-        self.is_null.flush(fs, hw_counter)
+    pub fn flush<Fs: UniversalWriteFs>(&mut self, fs: &Fs) -> OperationResult<()> {
+        self.has_values.flush(fs)?;
+        self.is_null.flush(fs)
     }
 }

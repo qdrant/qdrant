@@ -3,13 +3,14 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
+use rstest::rstest;
 use segment::data_types::index::{KeywordIndexParams, KeywordIndexType};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
@@ -21,13 +22,15 @@ use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Match,
-    PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
+    AcornSearchParams, Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig,
+    Match, PayloadFieldSchema, PayloadSchemaParams, SearchParams, SeqNumberType,
 };
 use tempfile::Builder;
 
-#[test]
-fn test_tenant_graph_with_second_condition() {
+#[rstest]
+#[case::graph(false)]
+#[case::acorn(true)]
+fn test_tenant_graph_with_second_condition(#[case] acorn: bool) {
     let stopped = AtomicBool::new(false);
     let dim = 8;
     let num_vectors = 4_000;
@@ -38,7 +41,7 @@ fn test_tenant_graph_with_second_condition() {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
     for n in 0..num_vectors {
@@ -49,12 +52,10 @@ fn test_tenant_graph_with_second_condition() {
         };
         let vector = random_vector(&mut rng, dim);
         segment
-            .upsert_point(n, n.into(), only_default_vector(&vector), &hw_counter)
+            .upsert_point(n, n.into(), only_default_vector(&vector))
             .unwrap();
         let payload = payload_json! {"tenant": "A", "product": product};
-        segment
-            .set_full_payload(n, n.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(n, n.into(), &payload).unwrap();
     }
     for (seq, field, is_tenant) in [
         (num_vectors, "tenant", true),
@@ -68,14 +69,10 @@ fn test_tenant_graph_with_second_condition() {
                 memory: None,
                 enable_hnsw: Some(is_tenant),
                 prefix: None,
+                nested: None,
             }));
         segment
-            .create_field_index(
-                seq as SeqNumberType,
-                &JsonPath::new(field),
-                Some(&schema),
-                &hw_counter,
-            )
+            .create_field_index(seq as SeqNumberType, &JsonPath::new(field), Some(&schema))
             .unwrap();
     }
 
@@ -127,6 +124,10 @@ fn test_tenant_graph_with_second_condition() {
     };
     let params = SearchParams {
         hnsw_ef: Some(64),
+        acorn: Some(AcornSearchParams {
+            enable: acorn,
+            max_selectivity: None,
+        }),
         ..Default::default()
     };
     for _ in 0..attempts {
@@ -144,5 +145,10 @@ fn test_tenant_graph_with_second_condition() {
     }
 
     let telemetry = hnsw_index.get_telemetry_data(TelemetryDetail::default());
-    assert_eq!(telemetry.filtered_large_cardinality.count, attempts);
+    let routes = (
+        telemetry.filtered_large_cardinality.count,
+        telemetry.filtered_acorn.count,
+    );
+    let expected = if acorn { (0, attempts) } else { (attempts, 0) };
+    assert_eq!(routes, expected);
 }

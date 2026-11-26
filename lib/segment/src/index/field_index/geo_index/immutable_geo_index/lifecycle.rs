@@ -12,7 +12,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> ImmutableGeoIndex<S> {
@@ -318,7 +318,9 @@ impl<S: UniversalRead> ImmutableGeoIndex<S> {
     }
 
     pub fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Heap,
+        }
     }
 
     /// Approximate RAM usage in bytes (cached at construction).

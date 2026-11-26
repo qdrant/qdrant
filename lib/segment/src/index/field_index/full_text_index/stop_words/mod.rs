@@ -1,4 +1,7 @@
-use ahash::AHashSet;
+use std::sync::{Arc, LazyLock, Weak};
+
+use ahash::{AHashMap, AHashSet};
+use parking_lot::RwLock;
 
 use crate::data_types::index::{Language, StopwordsInterface};
 
@@ -100,7 +103,39 @@ impl StopwordsFilter {
         this
     }
 
+    /// Like [`new`](Self::new), but shared between all tokenizers with the same
+    /// configuration: a query builds a tokenizer per request, and filling this
+    /// set was most of that cost. Only weak references are kept, so a filter
+    /// lives as long as some text index using it, and dead entries are pruned
+    /// whenever a new filter is built.
+    pub fn shared(option: &Option<StopwordsInterface>, lowercase: bool) -> Arc<Self> {
+        type Shared = AHashMap<Option<StopwordsInterface>, Weak<StopwordsFilter>>;
+        // Two maps: index 0 holds the filters built with `lowercase = false`,
+        // index 1 those built with `lowercase = true`. Splitting on it instead
+        // of keying by `(configuration, lowercase)` lets a lookup borrow the
+        // configuration, so only an insert clones it.
+        static SHARED: LazyLock<[RwLock<Shared>; 2]> = LazyLock::new(Default::default);
+
+        // `false` -> 0, `true` -> 1
+        let shared = &SHARED[usize::from(lowercase)];
+        if let Some(filter) = shared.read().get(option).and_then(Weak::upgrade) {
+            return filter;
+        }
+        let mut shared = shared.write();
+        if let Some(filter) = shared.get(option).and_then(Weak::upgrade) {
+            return filter;
+        }
+        shared.retain(|_, filter| filter.strong_count() > 0);
+        let filter = Arc::new(Self::new(option, lowercase));
+        shared.insert(option.clone(), Arc::downgrade(&filter));
+        filter
+    }
+
     /// Check if a token is a stopword
+    pub fn is_empty(&self) -> bool {
+        self.stopwords.is_empty()
+    }
+
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords.contains(token)
     }
@@ -157,12 +192,46 @@ impl StopwordsFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::index::StopwordsSet;
 
     #[test]
     fn test_empty_stopwords() {
         let filter = StopwordsFilter::new(&None, true);
         assert!(!filter.is_stopword("the"));
         assert!(!filter.is_stopword("hello"));
+    }
+
+    #[test]
+    fn test_shared_filter_is_built_once_per_configuration() {
+        let english = Some(StopwordsInterface::Language(Language::English));
+        let a = StopwordsFilter::shared(&english, true);
+        assert!(Arc::ptr_eq(&a, &StopwordsFilter::shared(&english, true)));
+        assert!(a.is_stopword("the"));
+        assert!(!Arc::ptr_eq(&a, &StopwordsFilter::shared(&english, false)));
+
+        // The shape the gRPC API produces for one language.
+        let set = Some(StopwordsInterface::Set(StopwordsSet {
+            languages: Some([Language::English].into_iter().collect()),
+            custom: Some(["foo".to_string()].into_iter().collect()),
+        }));
+        let b = StopwordsFilter::shared(&set, true);
+        assert!(Arc::ptr_eq(&b, &StopwordsFilter::shared(&set, true)));
+        assert!(b.is_stopword("the") && b.is_stopword("foo"));
+        assert!(!Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn test_shared_filter_is_freed_with_its_last_user() {
+        // A configuration no other test uses, so nothing else keeps it alive.
+        let set = Some(StopwordsInterface::Set(StopwordsSet {
+            languages: None,
+            custom: Some(["freed".to_string()].into_iter().collect()),
+        }));
+        let filter = StopwordsFilter::shared(&set, true);
+        let weak = Arc::downgrade(&filter);
+        drop(filter);
+        assert!(weak.upgrade().is_none());
+        assert!(StopwordsFilter::shared(&set, true).is_stopword("freed"));
     }
 
     #[test]

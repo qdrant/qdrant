@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -13,7 +12,6 @@ pub trait ValueIndexer {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
@@ -55,15 +53,14 @@ pub trait ValueIndexer {
         flatten_values
     }
 
-    /// Add point with payload to index
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    /// Add point with payload to index. Returns whether the payload holds a value of
+    /// this index's type.
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         self.remove_point(id)?;
-        self.add_many(id, Self::flatten_values(payload), hw_counter)
+        let values = Self::flatten_values(payload);
+        let has_values = !values.is_empty();
+        self.add_many(id, values)?;
+        Ok(has_values)
     }
 
     /// remove a point from the index

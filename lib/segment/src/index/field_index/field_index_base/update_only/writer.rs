@@ -5,7 +5,7 @@ use std::path::Path;
 
 use blobstore::Blob;
 use blobstore::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use serde_json::Value;
@@ -71,18 +71,13 @@ impl<K: UpdateOnlyIndexKind, S: UniversalAppend + 'static> UpdateOnlyValueIndex<
         fs: &impl UniversalAppendFs<AppendFile = S>,
         slot: PointOffsetType,
         values: &[&Value],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(stored) = self.kind.extract(values)? else {
             return Ok(());
         };
 
-        self.storage.put(
-            fs,
-            slot,
-            &stored,
-            hw_counter.ref_payload_index_io_write_counter(),
-        )
+        self.storage
+            .put(fs, slot, &stored, HwMetric::PayloadIndexIoWrite)
     }
 
     /// Persist everything buffered since the last flush.

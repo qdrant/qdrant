@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -24,7 +23,6 @@ pub fn retrieve_blocking(
     with_vector: &WithVector,
     timeout: Duration,
     is_stopped: &AtomicBool,
-    hw_measurement_acc: HwMeasurementAcc,
     deferred_behavior: DeferredBehavior,
 ) -> OperationResult<AHashMap<PointIdType, RecordInternal>> {
     // Snapshot the segments (non-appendable first, then appendable) under a bounded read lock, then
@@ -45,7 +43,6 @@ pub fn retrieve_blocking(
         with_payload,
         with_vector,
         is_stopped,
-        hw_measurement_acc,
         deferred_behavior,
     )
 }
@@ -65,13 +62,10 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
     with_payload: &WithPayload,
     with_vector: &WithVector,
     is_stopped: &AtomicBool,
-    hw_measurement_acc: HwMeasurementAcc,
     deferred_behavior: DeferredBehavior,
 ) -> OperationResult<AHashMap<PointIdType, RecordInternal>> {
     let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
     let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
-
-    let hw_counter = hw_measurement_acc.get_counter_cell();
 
     SegmentHolder::read_points_over(
         segments,
@@ -83,8 +77,9 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
 
             let mut applied = 0;
 
+            let versions = segment.point_versions(ids)?;
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
+                let version = versions.get(&id).copied().ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
                 })?;
 
@@ -102,7 +97,6 @@ pub fn retrieve_over<R: ReadSegmentEntry + ?Sized>(
                 &newer_version_points,
                 with_payload,
                 with_vector,
-                &hw_counter,
                 is_stopped,
                 deferred_behavior,
             )? {
@@ -128,7 +122,6 @@ pub fn retrieve_raw_blocking(
     with_vector: &WithVector,
     timeout: Duration,
     is_stopped: &AtomicBool,
-    hw_measurement_acc: HwMeasurementAcc,
     deferred_behavior: DeferredBehavior,
 ) -> OperationResult<AHashMap<PointIdType, SegmentRecordRaw>> {
     let segments: Vec<_> = {
@@ -141,14 +134,7 @@ pub fn retrieve_raw_blocking(
             .collect()
     };
 
-    retrieve_raw_over(
-        segments,
-        points,
-        with_vector,
-        is_stopped,
-        hw_measurement_acc,
-        deferred_behavior,
-    )
+    retrieve_raw_over(segments, points, with_vector, is_stopped, deferred_behavior)
 }
 
 /// Byte-blob analogue of [`retrieve_over`]. See [`retrieve_raw_blocking`].
@@ -157,13 +143,10 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
     points: &[PointIdType],
     with_vector: &WithVector,
     is_stopped: &AtomicBool,
-    hw_measurement_acc: HwMeasurementAcc,
     deferred_behavior: DeferredBehavior,
 ) -> OperationResult<AHashMap<PointIdType, SegmentRecordRaw>> {
     let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
     let mut point_records: AHashMap<PointIdType, SegmentRecordRaw> = Default::default();
-
-    let hw_counter = hw_measurement_acc.get_counter_cell();
 
     SegmentHolder::read_points_over(
         segments,
@@ -175,8 +158,9 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
 
             let mut applied = 0;
 
+            let versions = segment.point_versions(ids)?;
             for &id in ids {
-                let version = segment.point_version(id).ok_or_else(|| {
+                let version = versions.get(&id).copied().ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
                 })?;
 
@@ -193,7 +177,6 @@ pub fn retrieve_raw_over<R: ReadSegmentEntry + ?Sized>(
             for (id, record) in segment.retrieve_raw(
                 &newer_version_points,
                 with_vector,
-                &hw_counter,
                 is_stopped,
                 deferred_behavior,
             )? {

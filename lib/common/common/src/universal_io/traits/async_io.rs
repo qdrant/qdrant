@@ -23,6 +23,11 @@ pub trait UniversalReadAsync: UniversalRead {
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
 
+    /// Warm the cache for a range of bytes.
+    /// No-op on backends without caching.
+    fn populate_range_async(&self, range: Range<u64>)
+    -> impl Future<Output = UioResult<()>> + Send;
+
     /// Read the file from byte `from` to its end into a sink: `init` receives the total length
     /// of the file as read and returns the sink, which then gets the bytes from `from` onwards
     /// as `(offset, bytes)` chunks at their absolute file offsets as they arrive, each byte
@@ -70,7 +75,7 @@ where
 /// either by an awaited barrier
 /// ([`CachedFs::resolve_prefetched`](crate::universal_io::CachedFs::resolve_prefetched))
 /// or lazily at consume time.
-pub trait UniversalReadFsAsync: UniversalReadFs {
+pub trait UniversalReadFsAsync: UniversalReadFs<File: UniversalReadAsync> {
     /// Open a file, and populate it asynchronously.
     ///
     /// Must not depend on ambient async context; capture any runtime by value.
@@ -86,6 +91,15 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
+
+    /// Select specific files asynchronously.
+    ///
+    /// Returns the same output format as [`Self::list_files_async`], but for an explicit
+    /// list of candidate files. Files that do not exist are omitted from the result.
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self, P>;
 }
 
 /// The async whole-file write surface, mirroring the same operations on

@@ -18,7 +18,6 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard_trait::WaitUntil;
 use collection::{discovery, recommendations};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -52,7 +51,6 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = auth.check_point_op(collection_name, &request, "recommend")?;
 
@@ -66,7 +64,6 @@ impl TableOfContent {
             routing_token,
             shard_selector,
             timeout,
-            hw_measurement_acc,
         )
         .await
         .map_err(|err| err.into())
@@ -91,7 +88,6 @@ impl TableOfContent {
         routing_token: Option<RoutingToken>,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -113,7 +109,6 @@ impl TableOfContent {
             read_consistency,
             routing_token,
             timeout,
-            hw_measurement_acc,
         )
         .await
         .map_err(|err| err.into())
@@ -143,7 +138,6 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for request in &mut request.searches {
@@ -162,7 +156,6 @@ impl TableOfContent {
                 routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(|err| err.into())
@@ -190,7 +183,6 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         auth: Auth,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<CountResult> {
         let collection_pass = auth.check_point_op(collection_name, &request, "count")?;
 
@@ -202,7 +194,6 @@ impl TableOfContent {
                 routing_token,
                 &shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(|err| err.into())
@@ -229,7 +220,6 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         auth: Auth,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<RecordInternal>> {
         let collection_pass = auth.check_point_op(collection_name, &request, "retrieve")?;
 
@@ -241,7 +231,6 @@ impl TableOfContent {
                 routing_token,
                 &shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(|err| err.into())
@@ -257,7 +246,6 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<GroupsResult> {
         let collection_pass = auth.check_point_op(collection_name, &request, "group")?;
 
@@ -266,7 +254,7 @@ impl TableOfContent {
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
-        let group_by = GroupBy::new(request, &collection, collection_by_name, hw_measurement_acc)
+        let group_by = GroupBy::new(request, &collection, collection_by_name)
             .set_read_consistency(read_consistency)
             .set_routing_token(routing_token)
             .set_shard_selection(shard_selection)
@@ -289,7 +277,6 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = auth.check_point_op(collection_name, &request, "discover")?;
 
@@ -302,7 +289,6 @@ impl TableOfContent {
             routing_token,
             shard_selector,
             timeout,
-            hw_measurement_acc,
         )
         .await
         .map_err(|err| err.into())
@@ -317,7 +303,6 @@ impl TableOfContent {
         routing_token: Option<RoutingToken>,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -337,7 +322,6 @@ impl TableOfContent {
             read_consistency,
             routing_token,
             timeout,
-            hw_measurement_acc,
         )
         .await
         .map_err(|err| err.into())
@@ -364,7 +348,6 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         auth: Auth,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<ScrollResult> {
         let collection_pass = auth.check_point_op(collection_name, &request, "scroll")?;
 
@@ -376,7 +359,6 @@ impl TableOfContent {
                 routing_token,
                 &shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(|err| err.into())
@@ -391,7 +373,6 @@ impl TableOfContent {
         routing_token: Option<RoutingToken>,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -414,7 +395,6 @@ impl TableOfContent {
                 read_consistency,
                 routing_token,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(|err| err.into())
@@ -431,7 +411,6 @@ impl TableOfContent {
         routing_token: Option<RoutingToken>,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<FacetResponse> {
         let collection_pass = auth.check_point_op(collection_name, &request, "facet")?;
 
@@ -444,7 +423,6 @@ impl TableOfContent {
                 read_consistency,
                 routing_token,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(StorageError::from)
@@ -460,7 +438,6 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         auth: Auth,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> Result<CollectionSearchMatrixResponse, StorageError> {
         let collection_pass =
             auth.check_point_op(collection_name, &request, "search_points_matrix")?;
@@ -474,7 +451,6 @@ impl TableOfContent {
                 read_consistency,
                 routing_token,
                 timeout,
-                hw_measurement_acc,
             )
             .await
             .map_err(StorageError::from)
@@ -493,7 +469,6 @@ impl TableOfContent {
         wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
@@ -506,7 +481,6 @@ impl TableOfContent {
                     timeout,
                     ordering,
                     Some(shard_key),
-                    hw_measurement_acc.clone(),
                 )
             })
             .collect();
@@ -533,7 +507,6 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         auth: Auth,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = auth.check_point_op(
             collection_name,
@@ -591,14 +564,7 @@ impl TableOfContent {
         let res = match shard_selector {
             ShardSelectorInternal::Empty => {
                 collection
-                    .update_from_client(
-                        operation.operation,
-                        wait,
-                        timeout,
-                        ordering,
-                        None,
-                        hw_measurement_acc.clone(),
-                    )
+                    .update_from_client(operation.operation, wait, timeout, ordering, None)
                     .await?
             }
 
@@ -623,7 +589,6 @@ impl TableOfContent {
                                     timeout,
                                     ordering,
                                     None,
-                                    hw_measurement_acc.clone(),
                                 )
                                 .await?
                         }
@@ -636,7 +601,6 @@ impl TableOfContent {
                         wait,
                         timeout,
                         ordering,
-                        hw_measurement_acc.clone(),
                     )
                     .await?
                 }
@@ -650,7 +614,6 @@ impl TableOfContent {
                         timeout,
                         ordering,
                         Some(shard_key),
-                        hw_measurement_acc.clone(),
                     )
                     .await?
             }
@@ -663,7 +626,6 @@ impl TableOfContent {
                     wait,
                     timeout,
                     ordering,
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -685,20 +647,12 @@ impl TableOfContent {
                     wait,
                     timeout,
                     ordering,
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
-                    .update_from_peer(
-                        operation,
-                        shard_selection,
-                        wait,
-                        timeout,
-                        ordering,
-                        hw_measurement_acc.clone(),
-                    )
+                    .update_from_peer(operation, shard_selection, wait, timeout, ordering)
                     .await?
             }
         };

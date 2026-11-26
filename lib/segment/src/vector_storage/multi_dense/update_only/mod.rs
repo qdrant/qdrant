@@ -4,7 +4,6 @@ mod tests;
 use std::borrow::Cow;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 
@@ -63,7 +62,6 @@ impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let batch_start = self.next_row;
         let mut rows: Vec<T> = Vec::new();
@@ -97,21 +95,19 @@ impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
             fs,
             batch_start as VectorOffsetType,
             rows.chunks_exact(self.dim),
-            hw_counter,
         )?;
 
         self.offsets.append_many(
             fs,
             start_slot as VectorOffsetType,
             offsets.iter().map(std::slice::from_ref),
-            hw_counter,
         )?;
 
         for slot in missing {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 
     fn flatten_decoded(&self, vector: VectorRef<'_>) -> OperationResult<Vec<T>> {

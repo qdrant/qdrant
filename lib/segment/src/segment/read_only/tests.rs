@@ -8,14 +8,19 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use ahash::{AHashMap, AHashSet};
+use common::ambient;
 use common::flags::FeatureFlags;
+use common::sorted_slice::SortedSlice;
 use common::types::DeferredBehavior;
 use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
+use ordered_float::OrderedFloat;
 use rstest::rstest;
 use tempfile::Builder;
 
+use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::index::{TextIndexParams, TextScoringParams};
 use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
@@ -23,16 +28,18 @@ use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, VectorInterna
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry, SegmentEntry as _, StorageSegmentEntry as _,
 };
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::json_path::JsonPath;
+use crate::payload_json;
 use crate::segment::Segment;
-use crate::segment::read_only::ReadOnlySegment;
-use crate::segment_constructor::build_segment;
+use crate::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
 use crate::segment_constructor::segment_builder::SegmentBuilder;
+use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, HasVectorCondition, HnswConfig, HnswGlobalConfig,
-    Indexes, Match, PayloadFieldSchema, PayloadSchemaType, PointIdType, QuantizationConfig,
-    ScalarQuantizationConfig, ScalarType, SegmentConfig, ValueVariants, VectorDataConfig,
-    VectorStorageType, WithPayload,
+    Indexes, Match, Memory, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    PointIdType, QuantizationConfig, Range, ScalarQuantizationConfig, ScalarType, SegmentConfig,
+    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
 };
 
 const DIM: usize = 8;
@@ -48,7 +55,7 @@ fn build_immutable_segment(
     temp_path: &Path,
     inline_storage: bool,
 ) -> Segment {
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let source_dir = Builder::new().prefix("ro_source").tempdir().unwrap();
     let (mut source, _) = build_segment(
@@ -82,23 +89,20 @@ fn build_immutable_segment(
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        source.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        source.upsert_point(op_num, point_id, vectors).unwrap();
         let kw = ["red", "green", "blue"][i % 3];
         let payload = serde_json::from_value(serde_json::json!({
             "kw": kw,
             "num": i as i64,
         }))
         .unwrap();
-        source
-            .set_full_payload(op_num, point_id, &payload, &hw)
-            .unwrap();
+        source.set_full_payload(op_num, point_id, &payload).unwrap();
     }
     source
         .create_field_index(
             NUM_POINTS as u64 + 1,
             &JsonPath::new("kw"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-            &hw,
         )
         .unwrap();
     source
@@ -106,7 +110,6 @@ fn build_immutable_segment(
             NUM_POINTS as u64 + 2,
             &JsonPath::new("num"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
-            &hw,
         )
         .unwrap();
 
@@ -148,9 +151,7 @@ fn build_immutable_segment(
         FeatureFlags::default(),
     )
     .unwrap();
-    builder
-        .update(&[&source], &AtomicBool::new(false), &hw)
-        .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
     let built = builder.build_for_test(segments_path);
     let expected_storage_type = if inline_storage {
         VectorStorageType::GraphInline
@@ -172,14 +173,13 @@ fn keyword_filter(value: &str) -> Filter {
 }
 
 fn sorted_filtered(segment: &impl ReadSegmentEntry, filter: &Filter) -> Vec<PointIdType> {
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let mut ids = segment
         .read_filtered(
             None,
             None,
             Some(filter),
             &AtomicBool::new(false),
-            &hw,
             DeferredBehavior::WithDeferred,
         )
         .unwrap();
@@ -235,7 +235,7 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
         );
     }
 
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
@@ -248,8 +248,8 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
             continue;
         }
         assert_eq!(
-            reference.payload(point_id, &hw).unwrap(),
-            candidate.payload(point_id, &hw).unwrap(),
+            reference.payload(point_id).unwrap(),
+            candidate.payload(point_id).unwrap(),
             "payload mismatch for point {point_id}",
         );
     }
@@ -257,6 +257,7 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
 
 #[test]
 fn read_only_segment_matches_mutable() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
 
@@ -277,16 +278,16 @@ fn read_only_segment_matches_mutable() {
 
 #[test]
 fn read_only_segment_graph_inline_matches_mutable() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_gi").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_gi").tempdir().unwrap();
 
     let mut mutable = build_immutable_segment(segments_dir.path(), temp_dir.path(), true);
-    let hw = HardwareCounterCell::new();
 
     let deleted: [PointIdType; 3] = [3.into(), 17.into(), 42.into()];
     for &point_id in &deleted {
         assert_matches!(
-            mutable.delete_point(NUM_POINTS as u64 + 3, point_id, &hw),
+            mutable.delete_point(NUM_POINTS as u64 + 3, point_id),
             Ok(true),
         );
     }
@@ -323,6 +324,7 @@ fn read_only_segment_graph_inline_matches_mutable() {
 #[case::mmap(false)]
 #[case::graph_inline(true)]
 fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: bool) {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_lp").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_lp").tempdir().unwrap();
 
@@ -336,10 +338,10 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
         LoadProfile::for_retrieve(),
         // Scroll filtered on "kw": vector components and the "num" index are
         // demoted, the "kw" index and payload storage keep their placement.
-        LoadProfile::for_scroll(Some(&keyword_filter("red")), None, true),
+        LoadProfile::for_scroll(Some(&keyword_filter("red")), None),
         // Search on the default vector: payload storage and both payload
         // indexes are demoted, the vector components keep their placement.
-        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None, false),
+        LoadProfile::for_search(DEFAULT_VECTOR_NAME, None),
     ];
     for profile in &profiles {
         let read_only = ReadOnlySegment::<MmapFile>::open(
@@ -361,7 +363,7 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
 #[test]
 fn read_only_segment_load_profile_defers_points() {
     let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -390,7 +392,7 @@ fn read_only_segment_load_profile_defers_points() {
         let vector = vec![1.0; DIM];
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -563,7 +565,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     }
 
     let dir = Builder::new().prefix("ro_sparse_mut").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -593,7 +595,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         let vector = sparse_vector(i);
         let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -616,24 +618,22 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         vector.values.push(2.0 + (i % 4) as f32);
         let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
         mutable
-            .upsert_point(op_num, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point(op_num, (i as u64 + 1).into(), vectors)
             .unwrap();
         op_num += 1;
     }
     let updated = sparse_vector(NUM_POINTS + 20);
     let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&updated));
-    mutable
-        .upsert_point(op_num, 3.into(), vectors, &hw)
-        .unwrap();
+    mutable.upsert_point(op_num, 3.into(), vectors).unwrap();
     op_num += 1;
     for point_id in [5, 17] {
-        mutable.delete_point(op_num, point_id.into(), &hw).unwrap();
+        mutable.delete_point(op_num, point_id.into()).unwrap();
         op_num += 1;
     }
     mutable.flush(true).unwrap();
 
     // A live reload folds the delta into the rebuilt sparse index.
-    preload_then_reload(&mut read_only, &hw).expect("read-only live reload");
+    preload_then_reload(&mut read_only).expect("read-only live reload");
     assert_eq!(read_only.available_point_count(), NUM_POINTS + 20 - 2);
 
     assert_sparse_search_matches(&mutable, &read_only, &query);
@@ -646,11 +646,10 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
 /// access), then the exclusive apply.
 fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
-    hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
     let max_committed_id =
         futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
-    segment.live_reload(max_committed_id, hw_counter)
+    segment.live_reload(max_committed_id)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -659,6 +658,7 @@ fn preload_then_reload(
 /// keeps answering queries identically to the reference.
 #[test]
 fn read_only_segment_config_reload_payload_index() {
+    let _scope = ambient::test_guard();
     use crate::index::payload_config::PayloadConfig;
     use crate::segment_constructor::get_payload_index_path;
 
@@ -698,7 +698,7 @@ fn read_only_segment_config_reload_payload_index() {
         .config_reload_diff(&MmapFs)
         .expect("config reload diff");
     assert!(!diff.is_empty());
-    read_only.apply_config_reload(diff);
+    let _retired = read_only.apply_config_reload(diff);
     {
         let payload_index = read_only.payload_index.borrow();
         assert!(payload_index.field_indexes.contains_key(&kw_field));
@@ -712,13 +712,17 @@ fn read_only_segment_config_reload_payload_index() {
         .expect("config reload diff");
     assert!(diff.is_empty());
 
-    // Drop `num` again on disk and reload: the index is removed.
+    // Drop `num` again on disk and reload: the index is removed, and handed back
+    // to the caller instead of being dropped inside the apply.
     reduced_config.save(&config_path).unwrap();
     let diff = read_only
         .config_reload_diff(&MmapFs)
         .expect("config reload diff");
     assert!(!diff.is_empty());
-    read_only.apply_config_reload(diff);
+    let (retired_vectors, retired_field_indexes) = read_only.apply_config_reload(diff);
+    assert!(retired_vectors.is_empty());
+    assert!(!retired_field_indexes.is_empty());
+    drop(retired_field_indexes);
     {
         let payload_index = read_only.payload_index.borrow();
         assert!(payload_index.field_indexes.contains_key(&kw_field));
@@ -734,6 +738,7 @@ fn read_only_segment_config_reload_payload_index() {
 /// re-check the segment manifest instead of escalating.
 #[test]
 fn vanished_segment_classifies_not_found() {
+    let _scope = ambient::test_guard();
     use common::universal_io::IsNotFound as _;
 
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
@@ -764,7 +769,7 @@ fn vanished_segment_classifies_not_found() {
             .expect("read-only open");
     let points_before = read_only.available_point_count();
     fs_err::remove_dir_all(&segment_path).unwrap();
-    let err = preload_then_reload(&mut read_only, &HardwareCounterCell::disposable())
+    let err = ambient::test(|| preload_then_reload(&mut read_only))
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
     assert_eq!(read_only.available_point_count(), points_before);
@@ -777,6 +782,7 @@ fn vanished_segment_classifies_not_found() {
 /// first use runs the deferred graph load) surfaces the missing files.
 #[test]
 fn deferred_index_reads_nothing_at_open() {
+    let _scope = ambient::test_guard();
     use crate::data_types::load_profile::LoadProfile;
     use crate::segment_constructor::get_vector_index_path;
 
@@ -791,7 +797,7 @@ fn deferred_index_reads_nothing_at_open() {
     fs_err::remove_dir_all(get_vector_index_path(&segment_path, DEFAULT_VECTOR_NAME)).unwrap();
 
     let filter = keyword_filter("red");
-    let profile = LoadProfile::for_scroll(Some(&filter), None, true);
+    let profile = LoadProfile::for_scroll(Some(&filter), None);
     let read_only = ReadOnlySegment::<MmapFile>::open(
         &MmapFs,
         &segment_path,
@@ -803,8 +809,8 @@ fn deferred_index_reads_nothing_at_open() {
 
     // Non-search reads never touch the deferred index.
     assert!(!sorted_filtered(&read_only, &filter).is_empty());
-    let hw = HardwareCounterCell::new();
-    assert!(read_only.payload(1.into(), &hw).unwrap() != Default::default());
+    let _scope = ambient::test_guard();
+    assert!(read_only.payload(1.into()).unwrap() != Default::default());
 
     // A search runs the deferred open, which now hits the deleted files.
     let query = QueryVector::Nearest(VectorInternal::Dense(vec![0.5; DIM]));
@@ -831,6 +837,7 @@ fn deferred_index_reads_nothing_at_open() {
 /// payload reads identically to an eagerly opened one.
 #[test]
 fn deferred_index_opens_on_first_search() {
+    let _scope = ambient::test_guard();
     use crate::data_types::load_profile::LoadProfile;
 
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
@@ -844,7 +851,7 @@ fn deferred_index_opens_on_first_search() {
     let eager = ReadOnlySegment::<MmapFile>::open(&MmapFs, &segment_path, segment_uuid, None, None)
         .expect("eager open");
 
-    let profile = LoadProfile::for_scroll(None, None, true);
+    let profile = LoadProfile::for_scroll(None, None);
     let deferred = ReadOnlySegment::<MmapFile>::open(
         &MmapFs,
         &segment_path,
@@ -861,6 +868,7 @@ fn deferred_index_opens_on_first_search() {
 /// it, and an unset flag changes nothing.
 #[test]
 fn schedule_open_and_finish_observe_the_stop_flag() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_stop").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_stop").tempdir().unwrap();
 
@@ -924,7 +932,7 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
 #[test]
 fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     let segments_dir = Builder::new().prefix("appendable_seg").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -958,9 +966,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -983,9 +989,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
             .collect();
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -993,7 +997,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // Under the safe read sequence, this reload commits at most the state probed
     // before the LIST (i.e. NUM_POINTS), keeping all components consistent!
     read_only
-        .live_reload(max_committed_id, &hw)
+        .live_reload(max_committed_id)
         .expect("first live reload");
     assert_eq!(
         read_only.available_point_count(),
@@ -1004,7 +1008,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // All currently available points must have valid vectors.
     for point_id in 1..=read_only.available_point_count() as u64 {
         let vec = read_only
-            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
             .unwrap();
         assert!(
             vec.is_some(),
@@ -1013,11 +1017,11 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     }
 
     // A subsequent preload and reload cycle picks up the remaining points.
-    preload_then_reload(&mut read_only, &hw).expect("second live reload");
+    preload_then_reload(&mut read_only).expect("second live reload");
     assert_eq!(read_only.available_point_count(), 5000);
     for point_id in 1..=5000_u64 {
         let vec = read_only
-            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
             .unwrap();
         assert!(
             vec.is_some(),
@@ -1034,7 +1038,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         .prefix("appendable_seg_del")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1068,9 +1072,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -1081,10 +1083,10 @@ fn test_live_reload_pure_delete_without_inserts() {
 
     // Delete a point without adding any new points (versions.dat length does not change)
     let op_num = NUM_POINTS as u64 + 1;
-    mutable.delete_point(op_num, 5.into(), &hw).unwrap();
+    mutable.delete_point(op_num, 5.into()).unwrap();
     mutable.flush(true).unwrap();
 
-    preload_then_reload(&mut read_only, &hw).expect("live reload after delete");
+    preload_then_reload(&mut read_only).expect("live reload after delete");
     assert_eq!(
         read_only.available_point_count(),
         NUM_POINTS - 1,
@@ -1096,6 +1098,115 @@ fn test_live_reload_pure_delete_without_inserts() {
     );
 }
 
+/// A reload whose components fail after the id tracker read its delta must not
+/// expose the new points: their vectors are not loaded yet.
+#[test]
+fn test_failed_live_reload_keeps_new_points_invisible() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_fail")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |segment: &mut Segment, i: usize| {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        segment
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
+            .unwrap();
+    };
+
+    let half = NUM_POINTS / 2;
+    for i in 0..half {
+        upsert(&mut mutable, i);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(read_only.available_point_count(), half);
+
+    for i in half..NUM_POINTS {
+        upsert(&mut mutable, i);
+    }
+    mutable.flush(true).unwrap();
+
+    // Run the tracker half of `live_reload`, as if every component then failed
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert_eq!(fresh.inserted.len(), NUM_POINTS - half);
+        read_only.pending_reload.borrow_mut().merge(fresh);
+    }
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(
+        (0..DIM).map(|j| (j % 5) as f32 + 0.25).collect(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let search = |segment: &ReadOnlySegment<MmapFile>| {
+        segment
+            .search_batch(
+                DEFAULT_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &true.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .expect("search must not hit unloaded vectors")
+    };
+
+    assert_eq!(read_only.available_point_count(), half);
+    assert_eq!(search(&read_only)[0].len(), half);
+    for i in half..NUM_POINTS {
+        assert!(!read_only.has_point((i as u64 + 1).into(), DeferredBehavior::VisibleOnly));
+    }
+
+    // The retry applies the retained delta and publishes the points
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    assert!(read_only.pending_reload.borrow().is_empty());
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_eq!(search(&read_only)[0].len(), NUM_POINTS);
+    assert_query_equivalence(&mutable, &read_only);
+}
+
 /// Verify that `live_preload` short-circuits and skips the directory LIST
 /// when the tracker files are unchanged.
 #[test]
@@ -1104,7 +1215,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         .prefix("appendable_seg_skip")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1135,7 +1246,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         let vector: Vec<f32> = (0..DIM).map(|j| (i + j) as f32).collect();
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -1145,7 +1256,7 @@ fn test_live_preload_skips_list_when_unchanged() {
             .expect("read-only open");
 
     // First preload + reload
-    preload_then_reload(&mut read_only, &hw).expect("first reload");
+    preload_then_reload(&mut read_only).expect("first reload");
     assert_eq!(read_only.available_point_count(), 10);
 
     // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
@@ -1176,7 +1287,7 @@ fn test_live_preload_skips_list_when_unchanged() {
 
     // live_reload is an instantaneous no-op
     read_only
-        .live_reload(max_committed_id, &hw)
+        .live_reload(max_committed_id)
         .expect("second reload");
     assert_eq!(read_only.available_point_count(), 10);
 }
@@ -1191,7 +1302,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         .prefix("appendable_seg_shared_preload")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1223,7 +1334,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
             let vector: Vec<f32> = (0..DIM).map(|j| (i as usize + j) as f32).collect();
             let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
             mutable
-                .upsert_point(i + 1, (i + 1).into(), vectors, &hw)
+                .upsert_point(i + 1, (i + 1).into(), vectors)
                 .unwrap();
         }
         mutable.flush(true).unwrap();
@@ -1248,8 +1359,1034 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         max_committed_id
     };
 
-    read_only
-        .live_reload(max_committed_id, &hw)
-        .expect("reload");
+    read_only.live_reload(max_committed_id).expect("reload");
     assert_eq!(read_only.available_point_count(), 20);
+}
+
+/// Regression test: the writer flushes between the open's listing snapshot and the id-tracker
+/// open. The tracker must not commit points whose vectors that snapshot doesn't cover.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "the flush replaces files the staged open holds mapped"
+)]
+fn test_open_writer_appends_between_list_and_tracker_open() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_open")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |mutable: &mut Segment, ids: std::ops::Range<usize>| {
+        for i in ids {
+            let vector: Vec<f32> = (0..DIM)
+                .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+                .collect();
+            let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+            mutable
+                .upsert_point(i as u64 + 1, (i as u64 + 1).into(), vectors)
+                .unwrap();
+        }
+        mutable.flush(true).unwrap();
+    };
+
+    upsert(&mut mutable, 0..NUM_POINTS);
+
+    // The open's listing snapshot.
+    let cached_fs =
+        futures::executor::block_on(build_cached_fs_async(&MmapFs, &mutable.data_path()))
+            .expect("listing");
+
+    // The writer crosses chunk 0 capacity (4096): chunk 1 is not in the snapshot.
+    upsert(&mut mutable, NUM_POINTS..5000);
+
+    let stop = AtomicBool::new(false);
+    let mut read_only = ReadOnlySegment::<MmapFile>::schedule_open_with_cached_fs(
+        cached_fs,
+        &mutable.data_path(),
+        mutable.uuid,
+        None,
+        None,
+        DeleteGating::Immediate,
+        &stop,
+    )
+    .and_then(|staged| staged.finish(&MmapFs))
+    .expect("read-only open");
+
+    assert_eq!(
+        read_only.available_point_count(),
+        NUM_POINTS,
+        "open must commit only what the listing snapshot covers",
+    );
+    for point_id in 1..=read_only.available_point_count() as u64 {
+        let vector = read_only
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
+            .unwrap();
+        assert!(
+            vector.is_some(),
+            "vector for point {point_id} must be present"
+        );
+    }
+
+    // The next refresh picks up the rest.
+    preload_then_reload(&mut read_only).expect("reload");
+    assert_eq!(read_only.available_point_count(), 5000);
+}
+
+/// Where a simulated partial live reload stops (as if the next component's
+/// reload returned an error).
+#[derive(Debug, Clone, Copy)]
+enum PartialStop {
+    /// Payload storage and every field index applied the delta; vectors failed.
+    BeforeVectors,
+    /// Payload storage applied; the payload index failed on its first field.
+    BeforePayloadIndex,
+    /// Payload storage and the `num` field index applied; another field failed.
+    InsidePayloadIndex,
+    /// Payload storage and the `kw` (map) field index applied; another field failed.
+    InsidePayloadIndexKeyword,
+}
+
+fn num_range_filter(lt: i64) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_range(
+        JsonPath::new("num"),
+        Range {
+            lt: Some(OrderedFloat(lt as f64)),
+            gt: None,
+            gte: None,
+            lte: None,
+        },
+    )))
+}
+
+fn num_match_filter(value: i64) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("num"),
+        Match::new_value(ValueVariants::Integer(value)),
+    )))
+}
+
+/// Regression test: a live reload whose components fail
+/// after *some* of them already applied the tracker delta. The retained delta
+/// is replayed to every component on the retry, including those that applied
+/// it the first time, so each component's reload must be idempotent. The
+/// follower must end up answering exactly like the writer.
+#[rstest]
+#[case::before_vectors(PartialStop::BeforeVectors)]
+#[case::before_payload_index(PartialStop::BeforePayloadIndex)]
+#[case::inside_payload_index(PartialStop::InsidePayloadIndex)]
+#[case::inside_payload_index_keyword(PartialStop::InsidePayloadIndexKeyword)]
+fn test_partially_failed_live_reload_converges(#[case] stop: PartialStop) {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_partial")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    mutable
+        .create_field_index(
+            next_op(),
+            &JsonPath::new("kw"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+    mutable
+        .create_field_index(
+            next_op(),
+            &JsonPath::new("num"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+        )
+        .unwrap();
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3 + round * 5) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let payload = serde_json::from_value(serde_json::json!({
+            "kw": kw,
+            "num": (i % 7 + round * 10) as i64,
+        }))
+        .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_query_equivalence(&mutable, &read_only);
+
+    // Writer: overwrite a third, patch a few payloads, clear some, delete some.
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (1..NUM_POINTS).step_by(11) {
+        let payload = serde_json::from_value(serde_json::json!({ "num": 999 })).unwrap();
+        let op = next_op();
+        mutable
+            .set_payload(op, (i as u64 + 1).into(), &payload, &None)
+            .unwrap();
+    }
+    for i in (2..NUM_POINTS).step_by(13) {
+        let op = next_op();
+        mutable.clear_payload(op, (i as u64 + 1).into()).unwrap();
+    }
+    for i in (5..NUM_POINTS).step_by(17) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    // First reload attempt: tracker delta drained, then components applied in
+    // `live_reload`'s order until the simulated failure.
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert!(!fresh.is_empty());
+        let mut pending = read_only.pending_reload.borrow_mut();
+        pending.merge(fresh);
+        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        let inserted = SortedSlice::new(&pending.inserted).unwrap();
+
+        read_only
+            .payload_storage
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        match stop {
+            PartialStop::BeforePayloadIndex => {}
+            PartialStop::BeforeVectors => read_only
+                .payload_index
+                .borrow_mut()
+                .live_reload(fs, &deleted, &inserted)
+                .unwrap(),
+            PartialStop::InsidePayloadIndex | PartialStop::InsidePayloadIndexKeyword => {
+                let name = match stop {
+                    PartialStop::InsidePayloadIndex => "num",
+                    PartialStop::InsidePayloadIndexKeyword => "kw",
+                    PartialStop::BeforeVectors | PartialStop::BeforePayloadIndex => unreachable!(),
+                };
+                let mut payload_index = read_only.payload_index.borrow_mut();
+                let field = payload_index
+                    .field_indexes
+                    .get_mut(&JsonPath::new(name))
+                    .expect("field is indexed");
+                for index in field.iter_mut() {
+                    index.live_reload(fs, &deleted, &inserted).unwrap();
+                }
+            }
+        }
+        // ... and the next component fails: `pending` is retained.
+    }
+
+    // The retry replays the retained delta to every component.
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    assert!(read_only.pending_reload.borrow().is_empty());
+
+    assert_query_equivalence(&mutable, &read_only);
+    for lt in [5, 12, 1000] {
+        let filter = num_range_filter(lt);
+        assert_eq!(
+            sorted_filtered(&mutable, &filter),
+            sorted_filtered(&read_only, &filter),
+            "filtered read mismatch for num < {lt} ({stop:?})",
+        );
+    }
+    // Two-clause filters: the planner iterates one field's index and checks the
+    // other clause per point, which reads the forward (point -> values) side.
+    for kw in ["red", "green", "blue"] {
+        for value in [0, 3, 13, 999] {
+            let mut filter = keyword_filter(kw);
+            filter
+                .must
+                .as_mut()
+                .unwrap()
+                .extend(num_match_filter(value).must.unwrap());
+            assert_eq!(
+                sorted_filtered(&mutable, &filter),
+                sorted_filtered(&read_only, &filter),
+                "filtered read mismatch for kw == {kw} && num == {value} ({stop:?})",
+            );
+        }
+    }
+    for value in [0, 3, 13, 999] {
+        let filter = num_match_filter(value);
+        assert_eq!(
+            sorted_filtered(&mutable, &filter),
+            sorted_filtered(&read_only, &filter),
+            "filtered read mismatch for num == {value} ({stop:?})",
+        );
+    }
+    for i in 0..NUM_POINTS {
+        let point_id: PointIdType = (i as u64 + 1).into();
+        if mutable.point_version(point_id).is_none() {
+            continue;
+        }
+        assert_eq!(
+            mutable.vector(DEFAULT_VECTOR_NAME, point_id).unwrap(),
+            read_only.vector(DEFAULT_VECTOR_NAME, point_id).unwrap(),
+            "vector mismatch for point {point_id} ({stop:?})",
+        );
+    }
+}
+
+/// Regression test: a reload retried after a part-way failure replays its
+/// inserts into every appendable index (geo, full-text, bool and null indexes,
+/// and the mutable-RAM sparse index whose vector count is IDF's N). The
+/// follower must end up indistinguishable from a fresh open of the same files.
+///
+/// `applied` names the vector whose reload succeeded before the failure.
+#[rstest]
+#[case::no_vector_applied(None)]
+#[case::dense_applied(Some(DEFAULT_VECTOR_NAME))]
+#[case::sparse_applied(Some("sp"))]
+fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static str>) {
+    use sparse::common::sparse_vector::SparseVector;
+
+    use crate::data_types::modifier::Modifier;
+    use crate::data_types::vectors::VectorRef;
+    use crate::index::VectorIndexRead as _;
+    use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+    use crate::types::{
+        GeoPoint, GeoRadius, IsEmptyCondition, IsNullCondition, PayloadField,
+        SparseVectorDataConfig, SparseVectorStorageType,
+    };
+
+    const SPARSE: &str = "sp";
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_all_indexes")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: HashMap::from([(
+                SPARSE.to_owned(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
+                    storage_type: SparseVectorStorageType::default(),
+                    modifier: Some(Modifier::Idf),
+                },
+            )]),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    for (name, schema) in [
+        ("kw", PayloadSchemaType::Keyword),
+        ("num", PayloadSchemaType::Integer),
+        ("loc", PayloadSchemaType::Geo),
+        ("txt", PayloadSchemaType::Text),
+        ("flag", PayloadSchemaType::Bool),
+    ] {
+        mutable
+            .create_field_index(
+                next_op(),
+                &JsonPath::new(name),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+            )
+            .unwrap();
+    }
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let dense: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3 + round * 5) % 13) as f32 + 0.5)
+            .collect();
+        let sparse = SparseVector::new(
+            vec![(i % 7) as u32, 8 + ((i + round) % 15) as u32],
+            vec![1.0 + (i % 11) as f32, 0.5 + (round % 5) as f32],
+        )
+        .unwrap();
+        let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, dense.as_slice().into());
+        vectors.insert_ref(SPARSE, VectorRef::Sparse(&sparse));
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let word = ["alpha", "beta", "gamma"][(i + round) % 3];
+        let mut payload = serde_json::json!({
+            "kw": kw,
+            "loc": { "lat": (i % 50) as f64, "lon": ((i + round) % 50) as f64 },
+            "txt": format!("{word} point {i}"),
+            "flag": (i + round).is_multiple_of(2),
+        });
+        // Every 4th point has an explicit null `num`, every 5th none at all.
+        if i.is_multiple_of(4) {
+            payload["num"] = serde_json::Value::Null;
+        } else if !i.is_multiple_of(5) {
+            payload["num"] = serde_json::json!((i % 7 + round * 10) as i64);
+        }
+        let payload = serde_json::from_value(payload).unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    // Same history, reloads never fail: the reference for the sparse index,
+    // whose statistics a fresh open computes differently (see below).
+    let mut clean =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (1..NUM_POINTS).step_by(11) {
+        let payload = serde_json::from_value(serde_json::json!({ "flag": true })).unwrap();
+        let op = next_op();
+        mutable
+            .set_payload(op, (i as u64 + 1).into(), &payload, &None)
+            .unwrap();
+    }
+    for i in (2..NUM_POINTS).step_by(13) {
+        let op = next_op();
+        mutable.clear_payload(op, (i as u64 + 1).into()).unwrap();
+    }
+    for i in (5..NUM_POINTS).step_by(17) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    // First reload attempt: the tracker delta is drained, payload storage, every
+    // field index and the `applied` vector apply it, and the other vector fails.
+    // Naming the vector covers both reload orders whatever the map's order is.
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert!(!fresh.is_empty());
+        let mut pending = read_only.pending_reload.borrow_mut();
+        pending.merge(fresh);
+        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        let inserted = SortedSlice::new(&pending.inserted).unwrap();
+
+        read_only
+            .payload_storage
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        read_only
+            .payload_index
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        if let Some(name) = applied {
+            read_only.vector_data[name]
+                .live_reload(fs, &deleted, &inserted)
+                .unwrap();
+        }
+        // ... and the other vector fails: `pending` is retained.
+    }
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    // One more reload on each follower, so both have settled.
+    preload_then_reload(&mut read_only).expect("follow-up live reload");
+    preload_then_reload(&mut clean).expect("clean live reload");
+    preload_then_reload(&mut clean).expect("clean follow-up live reload");
+
+    let fresh =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("fresh read-only open");
+
+    let field = |key: &str| PayloadField {
+        key: JsonPath::new(key),
+    };
+    let filters: Vec<(&str, Filter)> = vec![
+        ("kw==red", keyword_filter("red")),
+        ("num<5", num_range_filter(5)),
+        ("num==13", num_match_filter(13)),
+        (
+            "geo",
+            Filter::new_must(Condition::Field(FieldCondition::new_geo_radius(
+                JsonPath::new("loc"),
+                GeoRadius {
+                    center: GeoPoint::new(10.0, 10.0).unwrap(),
+                    radius: OrderedFloat(1_500_000.0),
+                },
+            ))),
+        ),
+        (
+            "txt~alpha",
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                JsonPath::new("txt"),
+                Match::new_text("alpha"),
+            ))),
+        ),
+        (
+            "flag==true",
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                JsonPath::new("flag"),
+                Match::new_value(ValueVariants::Bool(true)),
+            ))),
+        ),
+        (
+            "is_empty(num)",
+            Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+                is_empty: field("num"),
+            })),
+        ),
+        (
+            "is_null(num)",
+            Filter::new_must(Condition::IsNull(IsNullCondition {
+                is_null: field("num"),
+            })),
+        ),
+        (
+            "is_empty(kw)",
+            Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+                is_empty: field("kw"),
+            })),
+        ),
+    ];
+    for (name, filter) in &filters {
+        assert_eq!(
+            sorted_filtered(&fresh, filter),
+            sorted_filtered(&read_only, filter),
+            "filtered read mismatch for {name} (applied before the failure: {applied:?})",
+        );
+        // Two-clause variant: one clause drives, the other is checked per point.
+        let mut combined = keyword_filter("green");
+        combined
+            .must
+            .as_mut()
+            .unwrap()
+            .extend(filter.must.clone().unwrap());
+        assert_eq!(
+            sorted_filtered(&fresh, &combined),
+            sorted_filtered(&read_only, &combined),
+            "filtered read mismatch for kw==green && {name} (applied before the failure: {applied:?})",
+        );
+    }
+
+    let sparse_count = |segment: &ReadOnlySegment<MmapFile>| {
+        segment.vector_data[SPARSE]
+            .vector_index
+            .borrow()
+            .indexed_vector_count()
+    };
+    // The follower's mutable-RAM sparse index never drops superseded or deleted
+    // offsets, so its count (IDF's N) is not a fresh open's: compare against the
+    // follower whose reloads never failed.
+    assert_eq!(
+        sparse_count(&clean),
+        sparse_count(&read_only),
+        "sparse indexed vector count (IDF's N) drifted (applied before the failure: {applied:?})",
+    );
+    let query = QueryVector::Nearest(VectorInternal::Sparse(
+        SparseVector::new(vec![2, 10], vec![1.0, 0.5]).unwrap(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let search = |segment: &ReadOnlySegment<MmapFile>| {
+        segment
+            .search_batch(
+                SPARSE,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        search(&clean),
+        search(&read_only),
+        "sparse IDF search mismatch"
+    );
+}
+
+/// Points deleted by a tombstone-only writer keep their values in the appendable
+/// indexes. A read-only segment drops them from its indexes both when it opens and when
+/// it reloads, so facets count only live points, and a fresh open agrees with a reload.
+#[test]
+fn appendable_indexes_drop_tombstoned_points_at_open_and_reload() {
+    use crate::data_types::facets::{FacetParams, FacetValue};
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_tombstones")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    for (field, schema) in [
+        ("kw", PayloadSchemaType::Keyword),
+        ("num", PayloadSchemaType::Integer),
+    ] {
+        mutable
+            .create_field_index(
+                next_op(),
+                &JsonPath::new(field),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+            )
+            .unwrap();
+    }
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let vector: Vec<f32> = (0..DIM).map(|j| ((i + j) % 13) as f32 + 0.5).collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let payload = serde_json::from_value(serde_json::json!({
+            "kw": kw,
+            "num": (i % 7 + round * 10) as i64,
+        }))
+        .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut reloaded =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .unwrap();
+
+    // Overwrites move points to new offsets, deletes only tombstone them
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (5..NUM_POINTS).step_by(7) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+    preload_then_reload(&mut reloaded).unwrap();
+
+    let fresh =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let request = FacetParams {
+        key: JsonPath::new("kw"),
+        limit: 10,
+        filter: None,
+        exact: true,
+    };
+    let expected: HashMap<FacetValue, usize> = ["red", "green", "blue"]
+        .into_iter()
+        .map(|value| {
+            let count = sorted_filtered(&mutable, &keyword_filter(value)).len();
+            (FacetValue::Keyword(value.to_owned()), count)
+        })
+        // Facets leave out values without points
+        .filter(|&(_, count)| count > 0)
+        .collect();
+    assert_eq!(reloaded.facet(&request, &stopped).unwrap(), expected);
+    assert_eq!(fresh.facet(&request, &stopped).unwrap(), expected);
+
+    let request = FacetParams {
+        key: JsonPath::new("num"),
+        limit: 100,
+        filter: None,
+        exact: true,
+    };
+    assert_eq!(
+        fresh.facet(&request, &stopped).unwrap(),
+        reloaded.facet(&request, &stopped).unwrap(),
+    );
+}
+
+/// Text statistics as a scored query sees them on one segment: `N`, the `df` of
+/// each term, and the average document length.
+fn text_stats(segment: &impl ReadSegmentEntry, terms: &[&str]) -> TextStats {
+    let field = JsonPath::new("text");
+    let mut query_context = QueryContext::default();
+    query_context.init_text_stats(&field, None, terms.iter().map(|term| term.to_string()));
+    segment.fill_query_context(&mut query_context).unwrap();
+    let segment_context = query_context.get_segment_query_context();
+    let text = segment_context.get_text_context(&field).unwrap();
+    let df = terms
+        .iter()
+        .map(|term| text.document_frequency(term))
+        .collect();
+    (text.document_count(), df, text.avg_doc_len())
+}
+
+fn scoring_text_index(memory: Memory) -> PayloadFieldSchema {
+    PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+        phrase_matching: Some(true),
+        memory: Some(memory),
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    }))
+}
+
+const TEXT_DOCUMENTS: [&str; 6] = [
+    "quick brown fox",
+    "lazy dog sleeps",
+    "quick fox jumps over the dog",
+    "brown bear",
+    "fox",
+    "the quick dog",
+];
+const TEXT_TERMS: [&str; 3] = ["quick", "fox", "dog"];
+
+/// `N`, the `df` of each of [`TEXT_TERMS`], and the average document length.
+type TextStats = (usize, Vec<usize>, Option<f32>);
+
+/// Text statistics of four views of the same files, after the writer deleted
+/// points.
+#[derive(Debug)]
+struct TextStatsViews {
+    /// The writer that made the deletions.
+    writer: TextStats,
+    /// The writer, loaded again from its files.
+    writer_reopened: TextStats,
+    /// A reader opened before the deletions, then live-reloaded.
+    reader_reloaded: TextStats,
+    /// A reader opened after the deletions.
+    reader_opened: TextStats,
+}
+
+fn text_stats_views(
+    writer: &Segment,
+    mut reader_before: ReadOnlySegment<MmapFile>,
+) -> TextStatsViews {
+    preload_then_reload(&mut reader_before).expect("live reload");
+    let reader_after =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+    let reopened = load_segment(
+        &writer.data_path(),
+        writer.uuid,
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("reopen");
+
+    TextStatsViews {
+        writer: text_stats(writer, &TEXT_TERMS),
+        writer_reopened: text_stats(&reopened, &TEXT_TERMS),
+        reader_reloaded: text_stats(&reader_before, &TEXT_TERMS),
+        reader_opened: text_stats(&reader_after, &TEXT_TERMS),
+    }
+}
+
+/// The mutable text index of an appendable segment, after a delete and an
+/// update (clone and tombstone). Its statistics follow the deletes that reach
+/// the index: a reader drops deleted points at open and on reload alike. The
+/// append-only writer never sees its tombstones, so it is only compared with
+/// itself reopened.
+#[test]
+fn text_stats_ignore_load_history_appendable() {
+    let segments_dir = Builder::new().prefix("text_stats_ao").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let (mut writer, _) = build_segment(segments_dir.path(), &config, None, true).unwrap();
+    writer.append_only_mutations = true;
+
+    let mut op_num = 1;
+    writer
+        .create_field_index(
+            op_num,
+            &JsonPath::new("text"),
+            Some(&scoring_text_index(Memory::Pinned)),
+        )
+        .unwrap();
+    for (i, document) in TEXT_DOCUMENTS.iter().enumerate() {
+        op_num += 1;
+        let point_id = (i as u64 + 1).into();
+        writer
+            .upsert_point(op_num, point_id, NamedVectors::default())
+            .unwrap();
+        writer
+            .set_full_payload(op_num, point_id, &payload_json! { "text": *document })
+            .unwrap();
+    }
+    writer.flush(true).unwrap();
+
+    let reader_before =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+
+    writer.delete_point(op_num + 1, 1.into()).unwrap();
+    writer
+        .set_full_payload(op_num + 2, 3.into(), &payload_json! { "text": "slow dog" })
+        .unwrap();
+    writer.flush(true).unwrap();
+
+    let views = text_stats_views(&writer, reader_before);
+    assert_eq!(views.writer, views.writer_reopened, "{views:?}");
+    assert_eq!(views.reader_reloaded, views.reader_opened, "{views:?}");
+    // Six documents, less the deleted point 1 and the old copy of point 3.
+    assert_eq!(views.reader_opened.0, TEXT_DOCUMENTS.len() - 1, "{views:?}");
+}
+
+/// The immutable (`Pinned`) and on-disk (`Cold`) text indexes of an optimized
+/// segment, after a delete: every view keeps the build-time statistics.
+#[rstest]
+fn text_stats_ignore_load_history_optimized(
+    #[values(Memory::Pinned, Memory::Cold)] memory: Memory,
+) {
+    let segments_dir = Builder::new().prefix("text_stats_opt").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("text_stats_tmp").tempdir().unwrap();
+    let source_dir = Builder::new().prefix("text_stats_src").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let vector_config = |storage_type| VectorDataConfig {
+        size: DIM,
+        distance: Distance::Cosine,
+        storage_type,
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config: None,
+        datatype: None,
+    };
+    let segment_config = |storage_type| SegmentConfig {
+        vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_config(storage_type))]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let (mut source, _) = build_segment(
+        source_dir.path(),
+        &segment_config(VectorStorageType::default()),
+        None,
+        true,
+    )
+    .unwrap();
+    for (i, document) in TEXT_DOCUMENTS.iter().enumerate() {
+        let op_num = i as u64 + 1;
+        let point_id = (i as u64 + 1).into();
+        let vector = vec![i as f32 + 1.0; DIM];
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        source.upsert_point(op_num, point_id, vectors).unwrap();
+        source
+            .set_full_payload(op_num, point_id, &payload_json! { "text": *document })
+            .unwrap();
+    }
+    source
+        .create_field_index(
+            TEXT_DOCUMENTS.len() as u64 + 1,
+            &JsonPath::new("text"),
+            Some(&scoring_text_index(memory)),
+        )
+        .unwrap();
+
+    let target_config = segment_config(VectorStorageType::Mmap);
+    assert!(!target_config.is_appendable());
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
+    let mut writer = builder.build_for_test(segments_dir.path());
+    writer.append_only_mutations = true;
+
+    let reader_before =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+
+    writer
+        .delete_point(TEXT_DOCUMENTS.len() as u64 + 2, 1.into())
+        .unwrap();
+    writer.flush(true).unwrap();
+
+    let views = text_stats_views(&writer, reader_before);
+    let TextStatsViews {
+        writer,
+        writer_reopened,
+        reader_reloaded,
+        reader_opened,
+    } = &views;
+    assert!(
+        [writer_reopened, reader_reloaded, reader_opened]
+            .iter()
+            .all(|stats| *stats == writer),
+        "{views:?}",
+    );
+    // Deletes don't change the statistics of an immutable segment.
+    assert_eq!(writer.0, TEXT_DOCUMENTS.len(), "{views:?}");
+}
+
+/// The batched lookups give what the per-id ones give, over the read-only
+/// opener's id tracker, for held and unknown points.
+#[test]
+fn read_only_segment_batched_lookups_match_single() {
+    let _scope = ambient::test_guard();
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path(), false);
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    let ids: Vec<PointIdType> = [0, 1, 50, 99, 100, 12345].map(PointIdType::from).to_vec();
+    for deferred_behavior in [
+        DeferredBehavior::VisibleOnly,
+        DeferredBehavior::WithDeferred,
+    ] {
+        let expected: AHashSet<_> = ids
+            .iter()
+            .copied()
+            .filter(|&id| read_only.has_point(id, deferred_behavior))
+            .collect();
+        assert_eq!(
+            read_only.has_points(&ids, deferred_behavior).unwrap(),
+            expected
+        );
+    }
+    let expected: AHashMap<_, _> = ids
+        .iter()
+        .filter_map(|&id| Some((id, read_only.point_version(id)?)))
+        .collect();
+    assert_eq!(expected.len(), 4, "held points have versions");
+    assert_eq!(read_only.point_versions(&ids).unwrap(), expected);
 }

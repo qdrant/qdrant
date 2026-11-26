@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
@@ -7,6 +8,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
 use super::SparseVectorIndexReadView;
+use super::filter_checks::is_nearest;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
@@ -16,6 +18,8 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::resolve_filter::resolve_for_query_vectors;
+use crate::index::query_optimization::resolved_points::contains_resolved_points;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -37,6 +41,9 @@ where
         top: usize,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let resolved = self.resolve_for_query_vectors(vectors, filter, top, query_context)?;
+        let filter = resolved.as_ref().or(filter);
+
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
 
@@ -67,6 +74,37 @@ where
         Ok(results)
     }
 
+    /// The inverted index checks the filter for every nearest query vector on its own: with
+    /// several of them, checking the points it matches may be cheaper. A plain search already
+    /// shares its filtered points between query vectors (`prefiltered_points`), and declines
+    /// here.
+    fn resolve_for_query_vectors(
+        &self,
+        vectors: &[&QueryVector],
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        let Some(filter) = filter else {
+            return Ok(None);
+        };
+        // Other queries score the filtered points directly, and share them already
+        let all_nearest = vectors.iter().all(|vector| is_nearest(vector));
+        if vectors.len() < 2 || !all_nearest || contains_resolved_points(filter) {
+            return Ok(None);
+        }
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
+        let checks = self.nearest_filter_checks(vectors.len(), &cardinality, top);
+        resolve_for_query_vectors(
+            &self.payload_index,
+            self.id_tracker.total_point_count(),
+            filter,
+            &cardinality,
+            checks,
+            &query_context.is_stopped(),
+        )
+    }
+
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         self.searches_telemetry.get_telemetry_data(detail)
     }
@@ -79,15 +117,9 @@ where
         self.inverted_index.total_sparse_vectors_size()
     }
 
-    fn get_query_cardinality(
-        &self,
-        filter: &Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn get_query_cardinality(&self, filter: &Filter) -> OperationResult<CardinalityEstimation> {
         let available_vector_count = self.vector_storage.available_vector_count();
-        let query_point_cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
+        let query_point_cardinality = self.payload_index.estimate_cardinality(filter)?;
         Ok(adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
@@ -117,9 +149,7 @@ where
             None,
             top,
             deleted_point_bitslice,
-            vector_query_context.hardware_counter(),
         )?;
-        let hw_counter = vector_query_context.hardware_counter();
         let mut results = match filter {
             Some(filter) => {
                 let filtered_points = match prefiltered_points {
@@ -127,8 +157,7 @@ where
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
                         let filtered_points =
-                            self.payload_index
-                                .query_points(filter, &hw_counter, &is_stopped)?;
+                            self.payload_index.query_points(filter, &is_stopped)?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -161,8 +190,6 @@ where
             .unwrap_or(self.id_tracker.deleted_point_bitslice());
         let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
-        let hw_counter = vector_query_context.hardware_counter();
-
         let ids = match prefiltered_points {
             // Deferred points get filtered in the `None` case and are added to `prefiltered_points`.
             // In the `Some` case, we iterate over this set of points,
@@ -174,7 +201,6 @@ where
                     .iter_filtered_points(
                         filter,
                         query_cardinality,
-                        &hw_counter,
                         &is_stopped,
                         DeferredBehavior::VisibleOnly,
                     )?
@@ -189,21 +215,13 @@ where
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
-        let mut hw_counter = vector_query_context.hardware_counter();
-        let is_index_on_disk = self.config.index_type.is_on_disk();
-        if is_index_on_disk {
-            hw_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hw_counter.set_vector_io_read_multiplier(0);
-        }
-
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            &hw_counter,
+            usize::from(self.inverted_index.is_cold()),
         )?;
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -229,26 +247,18 @@ where
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
-        let mut hw_counter = vector_query_context.hardware_counter();
-        let is_index_on_disk = self.config.index_type.is_on_disk();
-        if is_index_on_disk {
-            hw_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hw_counter.set_vector_io_read_multiplier(0);
-        }
-
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            &hw_counter,
+            usize::from(self.inverted_index.is_cold()),
         )?;
 
         match filter {
             Some(filter) => {
-                let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+                let filter_context = self.payload_index.filter_context(filter)?;
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check_infallible(idx)
                 };
@@ -270,11 +280,22 @@ where
             return Ok(vec![]);
         }
 
+        // Select the query dimensions here, before `remap_vector` drops the dimensions that a
+        // segment does not contain.
+        let vector = match vector_query_context.max_sparse_dims() {
+            Some(max_sparse_dims) => {
+                let mut cut_vector = vector.clone();
+                cut_vector.cut(max_sparse_dims);
+                Cow::Owned(cut_vector)
+            }
+            None => Cow::Borrowed(vector),
+        };
+        let vector = vector.as_ref();
+
         match filter {
             Some(filter) => {
                 // if cardinality is small - use plain search
-                let query_cardinality =
-                    self.get_query_cardinality(filter, &vector_query_context.hardware_counter())?;
+                let query_cardinality = self.get_query_cardinality(filter)?;
                 let threshold = self
                     .config
                     .full_scan_threshold

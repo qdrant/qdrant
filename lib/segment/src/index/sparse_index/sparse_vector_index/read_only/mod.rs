@@ -228,8 +228,14 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
             }
             indices_tracker.register_indices(vector);
             let vector = indices_tracker.remap_vector(vector.to_owned());
-            inverted_index.upsert(id, vector, None);
-        });
+            // A retried reload replays offsets an earlier, failed attempt already
+            // indexed (an appended offset never changes its vector): replay those
+            // as an update of the same vector, so the vector count (IDF's N) and
+            // total size are not counted twice.
+            let indexed = inverted_index.contains(id, &vector);
+            let old_vector = indexed.then(|| vector.clone());
+            inverted_index.upsert(id, vector, old_vector);
+        })?;
         result
     }
 }

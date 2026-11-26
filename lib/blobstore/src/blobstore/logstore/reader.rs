@@ -1,17 +1,17 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+};
 
 use super::page::AppendOnlyPages;
 use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
+use crate::blobstore::ITER_BATCH_SIZE;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
@@ -87,7 +87,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    ) -> Result<Vec<PreloadFuture>> {
         match &self.tracker {
             TrackerEnum::AppendOnly(tracker) => {
                 let mut futs = vec![tracker.live_preload(fs)?];
@@ -164,9 +164,9 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
-        self.view().get_value::<P>(point_offset, hw_counter)
+        self.view().get_value::<P>(point_offset, hw_metric)
     }
 
     /// Get the serialized value for a given point offset.
@@ -175,10 +175,10 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         let view = self.view();
-        let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
         Ok(bytes.map(std::borrow::Cow::into_owned))
     }
 
@@ -190,7 +190,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         max_id: PointOffset,
         mut callback: F,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
@@ -200,13 +200,17 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         let view = self.view();
 
         // Iterate in batches to bound the size of the tracker reads
-        const BATCH_SIZE: PointOffset = 256;
-
+        let mut batch = Vec::new();
         let mut current_offset = 0;
         while current_offset < max_id {
-            let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_id);
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
 
-            if !view.iter_range(current_offset..end_offset, &mut callback, hw_counter)? {
+            if !view.iter_range(
+                current_offset..end_offset,
+                &mut batch,
+                &mut callback,
+                hw_metric,
+            )? {
                 return Ok(());
             }
 
@@ -220,7 +224,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -233,7 +237,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 callback(user_data, point_offset, value)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())
@@ -244,7 +248,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -257,7 +261,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 callback(user_data, point_offset, bytes)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())
@@ -271,7 +275,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
 
 impl<V, S: UniversalRead, T> LogstoreReader<V, S, T> {
     /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
-    pub(crate) fn is_on_disk(&self) -> bool {
+    pub(crate) fn is_cold(&self) -> bool {
         !self.populate.to_bool::<S>()
     }
 }

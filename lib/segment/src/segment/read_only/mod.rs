@@ -26,7 +26,7 @@ mod lifecycle;
 mod live_reload;
 
 pub use config_reload::SegmentConfigReloadDiff;
-pub use lifecycle::StagedSegmentOpen;
+pub use lifecycle::{StagedSegmentOpen, build_cached_fs_async};
 mod read_entry;
 #[cfg(test)]
 mod tests;
@@ -121,6 +121,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 segment_config: &self.segment_config,
                 // A read-only segment never accepts appends.
                 appendable_flag: false,
+                segment_uuid: self.uuid,
             };
 
             f(view)

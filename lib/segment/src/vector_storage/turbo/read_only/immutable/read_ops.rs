@@ -5,6 +5,7 @@ use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UserData;
 use quantization::turboquant::EncodedQueryTQ;
+use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::ReadOnlyImmutableTurboVectorStorage;
 use crate::common::operation_error::OperationResult;
@@ -29,8 +30,8 @@ impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStora
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.on_disk
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {
@@ -49,7 +50,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStora
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.storage
@@ -57,7 +58,6 @@ impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStora
                 let vector = shared::dequantize_vector(&self.quantizer, self.dim, bytes);
                 callback(user_data[idx], point_offsets[idx], vector);
             })
-            .expect("read TQ vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -148,9 +148,9 @@ impl<B: TurboVectorBlob> TurboScoring for ReadOnlyImmutableTurboVectorStorage<B>
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         self.storage
-            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
+            .score_query_batch(&self.quantizer, self.distance, query, ids, scores)
     }
 
     fn score_internal_encoded(
@@ -165,5 +165,8 @@ impl<B: TurboVectorBlob> TurboScoring for ReadOnlyImmutableTurboVectorStorage<B>
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_vector_data(key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }

@@ -201,6 +201,27 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         }
     }
 
+    fn file_info(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<Option<ListedFile>>> + Send + 'static {
+        let store = self.store.clone();
+        let key = build_key(path);
+        let path = path.to_path_buf();
+        async move {
+            match store.head(&key).await {
+                Ok(meta) => Ok(Some(ListedFile {
+                    path,
+                    size: meta.size,
+                    last_modified: Some(SystemTime::from(meta.last_modified)),
+                    etag: meta.e_tag,
+                })),
+                Err(object_store::Error::NotFound { .. }) => Ok(None),
+                Err(other) => Err(UniversalIoError::s3_at(key.to_string(), other)),
+            }
+        }
+    }
+
     fn kind() -> UniversalKind {
         <S as BlobBackend>::kind()
     }
@@ -277,6 +298,7 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{DiskCacheConfig, ListedFile, ReadRange, UioResult, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
@@ -419,6 +441,7 @@ mod tests {
 
     #[test]
     fn read_full_range() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
@@ -430,6 +453,7 @@ mod tests {
 
     #[test]
     fn read_subrange() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
@@ -441,6 +465,7 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("merged", b"helloWORLDxyz")]);
         let file = make_file(runtime, store, "merged");
@@ -513,7 +538,8 @@ mod tests {
     /// `BlobFile`'s disambiguation turns that into an empty read.
     #[test]
     fn read_from_past_eof_errors_raw_but_disambiguates_in_file() {
-        use common::uio_trace::Op;
+        let _scope = ambient::test_guard();
+        use common::ambient::trace::Op;
 
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("empty", b"")]);
@@ -540,6 +566,7 @@ mod tests {
 
     #[test]
     fn read_whole_through_blob_file() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = BlobFile::new(ObjectStoreSource::new(store), runtime, PathBuf::from("obj"));
@@ -593,6 +620,41 @@ mod tests {
     }
 
     #[test]
+    fn select_files_async_with_inmemory_store() {
+        let _scope = ambient::test_guard();
+        use common::universal_io::UniversalReadFsAsync;
+
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(
+            &runtime,
+            &[("dir/file_a.dat", b"1234"), ("dir/file_b.dat", b"56789")],
+        );
+        let source = ObjectStoreSource::new(store);
+        let fs = io_bridge::BlobFs::new(source, runtime.clone());
+
+        let paths = [
+            Path::new("dir/file_a.dat"),
+            Path::new("dir/file_b.dat"),
+            Path::new("dir/file_c.dat"),
+        ];
+
+        let selected = runtime
+            .block_on(fs.select_files_async(&paths))
+            .expect("select_files_async");
+
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].path, Path::new("dir/file_a.dat"));
+        assert_eq!(selected[0].size, 4);
+        assert!(selected[0].etag.is_some());
+        assert!(selected[0].last_modified.is_some());
+
+        assert_eq!(selected[1].path, Path::new("dir/file_b.dat"));
+        assert_eq!(selected[1].size, 5);
+        assert!(selected[1].etag.is_some());
+        assert!(selected[1].last_modified.is_some());
+    }
+
+    #[test]
     fn populate_and_clear_are_noops() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("o", b"x")]);
@@ -603,6 +665,7 @@ mod tests {
 
     #[test]
     fn len_divides_by_type_size() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
@@ -637,6 +700,7 @@ mod tests {
 
     #[test]
     fn append_through_blob_file() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = Arc::new(InMemory::new());
         let file = make_file(runtime, store, "log");

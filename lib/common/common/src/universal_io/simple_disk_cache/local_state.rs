@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use roaring::RoaringBitmap;
 
 use super::placeholder::PlaceholderRegistry;
+use crate::ambient::hw::HwMetric;
 use crate::generic_consts::AccessPattern;
 use crate::universal_io::simple_disk_cache::BLOCK_SIZE;
 use crate::universal_io::{
@@ -157,7 +158,9 @@ impl LocalState {
         range: Range<u64>,
     ) -> UioResult<&[u8]> {
         let mmap_bytes = self.mmap().as_bytes::<P>();
-        mmap_file::read_bytes(mmap_bytes, range)
+        let bytes = mmap_file::read_bytes(mmap_bytes, range)?;
+        HwMetric::RemoteIoCachedRead.bump(bytes.len());
+        Ok(bytes)
     }
 
     /// # Safety

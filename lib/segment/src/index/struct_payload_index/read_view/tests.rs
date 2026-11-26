@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -45,7 +44,6 @@ fn smoke_view_over_in_memory_backends() {
             visited_pool: &visited_pool,
         };
 
-    let hw_counter = HardwareCounterCell::new();
     let is_stopped = AtomicBool::new(false);
 
     // `indexed_fields` reads from `config.indices`.
@@ -55,7 +53,7 @@ fn smoke_view_over_in_memory_backends() {
     // `query_points` over an empty filter on an empty tracker returns nothing.
     let empty_filter = Filter::default();
     let result = view
-        .query_points(&empty_filter, &hw_counter, &is_stopped)
+        .query_points(&empty_filter, &is_stopped)
         .expect("query_points");
     assert!(result.is_empty(), "no points in tracker");
 

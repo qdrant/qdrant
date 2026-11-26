@@ -1,9 +1,7 @@
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::{Encodable, ReadOnlyNumericIndex};
 use crate::common::operation_error::OperationResult;
@@ -24,8 +22,15 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         self.inner.live_preload(fs)
+    }
+
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.inner.apply_deletions(deleted_points)
     }
 
     fn live_reload<Fs: UniversalReadFs<File = S>>(
@@ -33,9 +38,7 @@ where
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.inner
-            .live_reload(fs, deleted_points, new_points, hw_counter)
+        self.inner.live_reload(fs, deleted_points, new_points)
     }
 }

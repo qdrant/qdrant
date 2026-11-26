@@ -1,14 +1,18 @@
 mod optimize;
+#[cfg(feature = "serverless")]
+mod serverless;
 mod shard_read;
 mod snapshots;
 mod update;
+mod update_log;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::Reason;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
@@ -16,8 +20,8 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
 use segment::pending_changes::PersistedProxyChanges;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
+use segment::types::SeqNumberType;
 use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
-use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::segment_holder::{FlushMode, PostFlushOutcome, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
@@ -25,6 +29,7 @@ use shard::wal::SerdeWal;
 use uuid::Uuid;
 use wal::WalOptions;
 
+use self::update_log::UpdateLog;
 use crate::config::optimizers::EdgeOptimizersConfig;
 use crate::config::shard::{EDGE_CONFIG_FILE, EdgeConfig};
 use crate::read_view::build_segment_pool;
@@ -35,7 +40,7 @@ pub struct EdgeShard {
     /// Shared so long-lived closures (e.g. the optimizer's live vector-name provider) can read the
     /// current config after `&self` borrows expire.
     config: Arc<SaveOnDisk<EdgeConfig>>,
-    wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
+    update_log: Mutex<UpdateLog>,
     segments: LockedSegmentHolder,
     /// Segment manifest (`segments/manifest.json`), kept in sync with the live segment set so a
     /// read-only follower can discover segments without scanning. `Some` only when the
@@ -52,9 +57,10 @@ impl EdgeShard {
     /// Creates `path` (and any missing parents) if it does not exist yet. Fails if the shard
     /// already exists (i.e. the segments directory contains any segment).
     /// Configuration is required and is persisted to `edge_config.json`. WAL
-    /// behavior follows `config.wal_options` (defaults to 32 MiB segments
+    /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
@@ -65,8 +71,14 @@ impl EdgeShard {
             OperationError::service_error(format!("failed to create edge shard directory: {err}"))
         })?;
 
-        let wal_options = config.wal_options.clone().unwrap_or_default();
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
+        let update_log = if config.wal_enabled() {
+            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+        } else {
+            UpdateLog::Disabled {
+                last_operation_id: 0,
+            }
+        };
+        let segments_path = ensure_segments_dir(path)?;
         config.save(path)?;
 
         let mut segments = SegmentHolder::default();
@@ -89,7 +101,7 @@ impl EdgeShard {
         Ok(Self {
             path: path.into(),
             config,
-            wal: parking_lot::Mutex::new(wal),
+            update_log: parking_lot::Mutex::new(update_log),
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
@@ -111,10 +123,15 @@ impl EdgeShard {
     /// Fails if `path` is not an existing directory, or if no segments exist and no config can be
     /// loaded or inferred.
     ///
+    /// WAL operations not yet persisted by the segments, e.g. those left by a crash, are re-applied
+    /// before the shard is returned. With the WAL disabled, an existing WAL (e.g. from a restored
+    /// snapshot) is still re-applied, then persisted into the segments and removed.
+    ///
     /// To override WAL options (e.g. for embedded/mobile deployments where
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "cannot load edge shard: directory {} does not exist",
@@ -124,12 +141,7 @@ impl EdgeShard {
 
         let resolved = resolve_initial_config(path, config)?;
 
-        let wal_options = resolved
-            .as_ref()
-            .and_then(|c| c.wal_options.clone())
-            .unwrap_or_default();
-        let (wal, segments_path) = ensure_dirs_and_open_wal(path, wal_options)?;
-
+        let segments_path = ensure_segments_dir(path)?;
         let (mut segments, derived) = load_segments(&segments_path)?;
 
         let config = match (resolved, derived) {
@@ -157,6 +169,14 @@ impl EdgeShard {
 
         ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
+        let update_log = if config.wal_enabled() || path.join(WAL_PATH).exists() {
+            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+        } else {
+            UpdateLog::Disabled {
+                last_operation_id: max_segment_version(&segments),
+            }
+        };
+
         let search_pool = build_segment_pool(
             "edge-search",
             config.search_thread_count(),
@@ -171,14 +191,21 @@ impl EdgeShard {
 
         let segment_manifest = init_segment_manifest(path, &segments)?;
 
-        Ok(Self {
+        let shard = Self {
             path: path.into(),
             config,
-            wal: parking_lot::Mutex::new(wal),
+            update_log: parking_lot::Mutex::new(update_log),
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
-        })
+        };
+
+        shard.replay_wal()?;
+        if !shard.config.read().wal_enabled() {
+            shard.remove_wal()?;
+        }
+
+        Ok(shard)
     }
 
     /// Rebuild and persist the segment manifest from the current live segment set, when enabled.
@@ -213,6 +240,7 @@ impl EdgeShard {
 
     /// Update global HNSW config and persist. Does not change per-vector HNSW.
     pub fn set_hnsw_config(&self, hnsw_config: segment::types::HnswConfig) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.config
             .write(|cfg| cfg.set_hnsw_config(hnsw_config))
             .map_err(|e| OperationError::service_error(e.to_string()))
@@ -225,6 +253,7 @@ impl EdgeShard {
         vector_name: &str,
         hnsw_config: segment::types::HnswConfig,
     ) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Run the fallible mutation on a clone *inside* the config lock via
         // write_optional, rather than read()-clone-mutate-then-write(). The
         // latter releases the read lock before writing, so a concurrent config
@@ -248,6 +277,7 @@ impl EdgeShard {
 
     /// Update optimizer config and persist.
     pub fn set_optimizers_config(&self, optimizers: EdgeOptimizersConfig) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.config
             .write(|cfg| cfg.set_optimizers_config(optimizers))
             .map_err(|e| OperationError::service_error(e.to_string()))
@@ -261,19 +291,42 @@ impl EdgeShard {
     /// same blocking-lock semantics those operations already use. Still fallible:
     /// a genuine WAL/segment flush I/O error is surfaced instead of panicking.
     ///
-    /// Must not be called while already holding the `wal` mutex or a `segments`
+    /// Must not be called while already holding the `update_log` mutex or a `segments`
     /// guard on the same thread — parking_lot locks are non-reentrant and would
     /// self-deadlock. No current caller does (the FFI boundary, `Drop`, the
     /// Python bindings, and tests all invoke it without holding those locks).
     pub fn flush(&self) -> OperationResult<()> {
-        self.wal
-            .lock()
-            .flush()
-            .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.update_log.lock().flush()?;
 
-        self.segments.read().flush_all(FlushMode::Sync, true)?;
+        let persisted_version = self.segments.read().flush_all(FlushMode::Sync, true)?;
+
+        // Keeps the newest closed segment, which `Wal::open` needs to restore operation numbering.
+        self.update_log.lock().ack(persisted_version)?;
 
         Ok(())
+    }
+
+    /// Switch a shard with the WAL disabled from the WAL found on load to plain numbering: persist
+    /// what the WAL replay applied, then delete the WAL.
+    fn remove_wal(&self) -> OperationResult<()> {
+        let mut update_log = self.update_log.lock();
+        if let UpdateLog::Disabled {
+            last_operation_id: _,
+        } = *update_log
+        {
+            return Ok(());
+        }
+
+        let segments = self.segments.read();
+        segments.flush_all(FlushMode::Sync, true)?;
+        // Replacing the log closes the WAL, so its directory can be removed.
+        *update_log = UpdateLog::Disabled {
+            last_operation_id: max_segment_version(&segments),
+        };
+        fs::remove_dir_all(self.path.join(WAL_PATH)).map_err(|err| {
+            OperationError::service_error(format!("failed to remove WAL directory: {err}"))
+        })
     }
 }
 
@@ -334,10 +387,7 @@ fn has_existing_segments(path: &Path) -> bool {
     false
 }
 
-fn ensure_dirs_and_open_wal(
-    path: &Path,
-    wal_options: WalOptions,
-) -> OperationResult<(SerdeWal<CollectionUpdateOperations>, PathBuf)> {
+fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
         fs::create_dir(&wal_path).map_err(|err| {
@@ -348,15 +398,26 @@ fn ensure_dirs_and_open_wal(
     let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
         OperationError::service_error(format!("failed to open WAL {}: {err}", wal_path.display(),))
     })?;
+    Ok(UpdateLog::Wal(Box::new(wal)))
+}
 
+fn ensure_segments_dir(path: &Path) -> OperationResult<PathBuf> {
     let segments_path = path.join(SEGMENTS_PATH);
     if !segments_path.exists() {
         fs::create_dir(&segments_path).map_err(|err| {
             OperationError::service_error(format!("failed to create segments directory: {err}"))
         })?;
     }
+    Ok(segments_path)
+}
 
-    Ok((wal, segments_path))
+/// Highest operation number applied to any of the segments.
+fn max_segment_version(segments: &SegmentHolder) -> SeqNumberType {
+    segments
+        .iter()
+        .map(|(_, segment)| segment.get().read().version())
+        .max()
+        .unwrap_or(0)
 }
 
 /// The provided → persisted layers of the config fallback chain (the derived-from-segments layer
@@ -371,6 +432,18 @@ fn resolve_initial_config(
         None => None,
     };
     Ok(match (config, persisted) {
+        // Operation numbers come from the WAL when it is enabled and from the segments when it is
+        // not, so switching modes on an existing shard could number new updates below stored data
+        (Some(provided), Some(persisted))
+            if provided.wal_enabled.is_some()
+                && provided.wal_enabled() != persisted.wal_enabled() =>
+        {
+            return Err(OperationError::validation_error(format!(
+                "wal_enabled cannot be changed after the shard is created \
+                 (the shard was created with wal_enabled={})",
+                persisted.wal_enabled(),
+            )));
+        }
         // Provided config wins, but parameters it leaves unspecified keep their persisted values
         (Some(provided), Some(persisted)) => Some(provided.fill_unspecified_from(&persisted)),
         (Some(provided), None) => Some(provided),
@@ -528,9 +601,8 @@ fn ensure_appendable_segment(
 
     let (mut segment, token) =
         build_segment(segments_path, &config.plain_segment_config(), None, true)?;
-    let hw_counter = HardwareCounterCell::disposable();
     for (key, schema) in &indexed_fields {
-        segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+        segment.create_field_index(0, key, Some(schema))?;
     }
     segments.sync_segment_manifest(Some(token))?;
     segments.add_new(segment);

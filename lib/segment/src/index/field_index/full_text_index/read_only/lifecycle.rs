@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
@@ -11,6 +12,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::immutable_text_index::ImmutableFullTextIndex;
 use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::has_doc_len_sidecar;
 use crate::index::payload_config::IndexMutability;
+use crate::types::Memory;
 
 impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// Schedule background prefetch for the appendable (Gridstore) format.
@@ -37,10 +39,20 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config, scoring)?.map(Self::Appendable))
+        Ok(ReadOnlyAppendableFullTextIndex::open(
+            fs,
+            dir,
+            max_point_offset,
+            deleted,
+            config,
+            scoring,
+        )?
+        .map(|index| Self::Appendable(Box::new(index))))
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
@@ -49,14 +61,11 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
     ) -> OperationResult<bool> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
-
-        let populate = match effective_is_on_disk {
-            true => Populate::No,
-            false => Populate::PreferBackground,
+        let populate = match memory.clamp_to_low_memory().populate_on_open() {
+            true => Populate::PreferBackground,
+            false => Populate::No,
         };
 
         OnDiskFullTextIndex::preopen(fs, path, populate)
@@ -69,7 +78,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     /// The writable enum splits the mmap path into two variants (`Immutable`
     /// for in-RAM with mmap backing, `Mmap` for on-disk lazy); the read-only
     /// side collapses to a single [`Self::Immutable`] arm because
-    /// `is_on_disk` (→ populate) already covers the lazy/eager distinction
+    /// the placement already covers the lazy/eager distinction
     /// inside [`MmapFullTextIndex`]. `Ok(None)` propagates from the leaf when
     /// the on-disk index doesn't exist.
     ///
@@ -78,13 +87,13 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let effective_is_on_disk =
-            is_on_disk || common::low_memory::low_memory_mode().prefer_disk();
+        // Low-memory mode degrades the placement, as the writable open does.
+        let memory = memory.clamp_to_low_memory();
 
-        let populate = Populate::from(!effective_is_on_disk);
+        let populate = Populate::from(memory.populate_on_open());
         let scoring = config.scoring();
 
         // Same probe as `new_mmap`, same answer: an index that records no
@@ -100,24 +109,27 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             return Ok(None);
         }
 
-        let Some(on_disk_index) =
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(fs, path, config, populate, deleted_points)?
+                .map(|index| (index.can_score(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.can_score(), Self::OnDisk(index)))
+        };
+        let Some((can_score, index)) = opened else {
             return Ok(None);
         };
 
         // Reachable past the probe when the sidecar exists but `open` rejected
-        // it, so the log says which of the two happened.
-        if scoring && !on_disk_index.records_doc_len() {
-            log::info!("Text index rejected its document length sidecar, not opened read-only");
+        // it, or when scoring has no term frequencies, so the log says which
+        // of the two happened.
+        if scoring && !can_score {
+            log::info!(
+                "Text index rejected its document lengths or has no term frequencies, \
+                 not opened read-only"
+            );
             return Ok(None);
         }
-
-        let index = if effective_is_on_disk {
-            Self::OnDisk(on_disk_index)
-        } else {
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        };
 
         Ok(Some(index))
     }
@@ -138,6 +150,42 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             Self::Appendable(_) => IndexMutability::Mutable,
             Self::OnDisk(_) => IndexMutability::Immutable,
             Self::Immutable(_) => IndexMutability::Immutable,
+        }
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::OnDisk(index) => index.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(_) => Vec::new(),
+            Self::Immutable(index) => index.immutable_files(),
+            Self::OnDisk(index) => index.immutable_files(),
+        }
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            // Appendable / Immutable keep their inverted index fully in RAM —
+            // there is nothing to populate.
+            Self::Appendable(_) | Self::Immutable(_) => Ok(()),
+            Self::OnDisk(index) => index.populate(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
+            Self::OnDisk(index) => index.clear_cache(),
         }
     }
 }

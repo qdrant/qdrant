@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::EncodedVectors;
 
@@ -46,7 +45,6 @@ pub(in crate::vector_storage::quantized) trait QuantizedScorerDispatch {
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>;
 }
 
@@ -57,13 +55,11 @@ pub(in crate::vector_storage::quantized) trait QuantizedScorerDispatch {
 pub(in crate::vector_storage::quantized) fn internal_raw_scorer<'a, TEncodedVectors>(
     point_id: PointOffsetType,
     quantized_data: &'a TEncodedVectors,
-    hardware_counter: HardwareCounterCell,
 ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>
 where
     TEncodedVectors: EncodedVectors,
 {
-    let query_scorer =
-        QuantizedQueryScorer::new_internal(point_id, quantized_data, hardware_counter)?;
+    let query_scorer = QuantizedQueryScorer::new_internal(point_id, quantized_data)?;
     Ok(Box::new(RawScorerImpl { query_scorer }))
 }
 
@@ -75,14 +71,12 @@ pub(in crate::vector_storage::quantized) fn internal_raw_multi_scorer<
 >(
     point_id: PointOffsetType,
     quantized_data: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
-    hardware_counter: HardwareCounterCell,
 ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>
 where
     QuantizedStorage: EncodedVectors + 'a,
     OffsetStorage: MultivectorOffsetsStorage + 'a,
 {
-    let query_scorer =
-        QuantizedMultiQueryScorer::new_internal(point_id, quantized_data, hardware_counter)?;
+    let query_scorer = QuantizedMultiQueryScorer::new_internal(point_id, quantized_data)?;
     Ok(Box::new(RawScorerImpl { query_scorer }))
 }
 
@@ -98,22 +92,12 @@ pub(in crate::vector_storage::quantized) fn build_quantized_raw_scorer<'a, Q>(
     quantization_config: &'a QuantizationConfig,
     distance: &'a Distance,
     datatype: VectorStorageDatatype,
-    on_disk: bool,
     query: QueryVector,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>>
 where
     Q: QuantizedScorerDispatch,
 {
-    QuantizedScorerBuilder::new(
-        quantization_config,
-        query,
-        distance,
-        datatype,
-        hardware_counter,
-        on_disk,
-    )
-    .build(storage)
+    QuantizedScorerBuilder::new(quantization_config, query, distance, datatype).build(storage)
 }
 
 pub(in crate::vector_storage::quantized) struct QuantizedScorerBuilder<'a> {
@@ -121,7 +105,6 @@ pub(in crate::vector_storage::quantized) struct QuantizedScorerBuilder<'a> {
     query: QueryVector,
     distance: &'a Distance,
     datatype: VectorStorageDatatype,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> QuantizedScorerBuilder<'a> {
@@ -130,17 +113,12 @@ impl<'a> QuantizedScorerBuilder<'a> {
         query: QueryVector,
         distance: &'a Distance,
         datatype: VectorStorageDatatype,
-        mut hardware_counter: HardwareCounterCell,
-        on_disk: bool,
     ) -> Self {
-        hardware_counter.set_vector_io_read_multiplier(usize::from(on_disk));
-
         Self {
             quantization_config,
             query,
             distance,
             datatype,
-            hardware_counter,
         }
     }
 
@@ -153,7 +131,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
             // so its query is preprocessed as `VectorElementType` like Float32.
             VectorStorageDatatype::Float32
             | VectorStorageDatatype::Turbo4
-            | VectorStorageDatatype::Turbo8 => match self.distance {
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => match self.distance {
                 Distance::Cosine => {
                     self.build_with_metric::<VectorElementType, CosineMetric, _>(storage)
                 }
@@ -222,7 +201,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
             query,
             distance: _,
             datatype: _,
-            hardware_counter,
         } = self;
 
         match query {
@@ -231,7 +209,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     DenseVector::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -241,7 +218,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     RecoBestScoreQuery::from(reco_query),
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -251,7 +227,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     RecoSumScoresQuery::from(reco_query),
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -261,7 +236,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     discover_query,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -271,7 +245,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     context_query,
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -282,7 +255,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     feedback_query.into_query(),
                     quantized_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -312,7 +284,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
             query,
             distance: _,
             datatype: _,
-            hardware_counter,
         } = self;
 
         match query {
@@ -321,7 +292,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     &MultiDenseVectorInternal::try_from(vector)?,
                     quantized_multivector_storage,
                     quantization_config,
-                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -333,7 +303,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         RecoBestScoreQuery::from(reco_query),
                         quantized_multivector_storage,
                         quantization_config,
-                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -345,7 +314,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         RecoSumScoresQuery::from(reco_query),
                         quantized_multivector_storage,
                         quantization_config,
-                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -357,7 +325,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         discover_query,
                         quantized_multivector_storage,
                         quantization_config,
-                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -369,7 +336,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         context_query,
                         quantized_multivector_storage,
                         quantization_config,
-                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
@@ -381,7 +347,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         feedback_query.into_query(),
                         quantized_multivector_storage,
                         quantization_config,
-                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }

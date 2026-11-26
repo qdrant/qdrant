@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
-use quantization::EncodedStorageWrite;
+use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use smallvec::{SmallVec, smallvec};
 
@@ -115,8 +115,8 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -157,11 +157,10 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
             callback(user_data, key, self.dequantize_records(records));
         })
-        .expect("read TQ multivectors");
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -222,35 +221,17 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .collect()
     }
 
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
-            log::error!("Multivector not found");
-            return ScoreType::NEG_INFINITY;
-        };
-
-        let records = self
-            .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
-
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records.len() * query.len());
-        hw_counter.vector_io_read().incr_delta(records.len());
-
-        self.score_records_max_similarity(query, &records)
+    fn stored_query(&self, key: PointOffsetType) -> Vec<EncodedQueryTQ> {
+        self.get_multi_tq::<Random>(key)
+            .chunks_exact(self.quantizer.quantized_size())
+            .map(|record| self.quantizer.stored_query(record))
+            .collect()
     }
 
     fn score_internal_max_similarity(
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let (Some(offset_a), Some(offset_b)) = (
             self.get_offset::<Random>(point_a),
@@ -270,12 +251,9 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .get_many::<Random>(offset_b.offset, offset_b.count as usize)
             .expect("Multivector not found");
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records_a.len() * offset_b.count as usize);
-        hw_counter
-            .vector_io_read()
-            .incr_delta(records_a.len() + records_b.len());
+        HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
+        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;

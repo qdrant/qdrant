@@ -56,6 +56,22 @@ def test_resharding_state_transitions(tmp_path: pathlib.Path):
     # Wait for resharding to finish
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
+def test_resharding_rejected_on_single_node_cluster(tmp_path: pathlib.Path):
+    """
+    Tests that resharding can't be started in a single-node cluster, even in consensus mode
+    """
+
+    # Bootstrap single-node cluster with multiple shards, so that both directions would be valid otherwise
+    peer_uris, _ = bootstrap_cluster(tmp_path, shard_number=2, replication_factor=1, peers=1)
+
+    for direction in ["up", "down"]:
+        resp = start_resharding(peer_uris[0], direction=direction)
+        assert resp.status_code == 400, resp.text
+        assert "single-node cluster" in resp.json()["status"]["error"]
+
+    # Ensure no resharding operation was started
+    assert check_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
+
 def test_resharding_abort(tmp_path: pathlib.Path):
     """
     Tests that resharding can be aborted

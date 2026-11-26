@@ -43,7 +43,14 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
             QuantizedStorage::from_file(fs, &path.join(VECTORS_PATH), quantizer.quantized_size())?;
 
         // The read-only backend maps lazily; warm it when the load profile asks.
-        if !matches!(populate, Populate::No) {
+        let populated = match populate {
+            Populate::No => false,
+            Populate::Auto
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => true,
+        };
+        if populated {
             storage.populate();
         }
 
@@ -53,7 +60,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<QuantizedStorage<S>> 
             storage,
             quantizer,
             deleted,
-            on_disk: true,
+            cold: !populated,
             distance,
             dim,
         })
@@ -71,7 +78,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>> 
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         Ok(Self {
-            on_disk: graph.is_on_disk(),
+            cold: graph.is_cold(),
             storage: GraphVectors::new(graph, quantizer.quantized_size())?,
             quantizer,
             deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,

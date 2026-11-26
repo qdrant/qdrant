@@ -1,81 +1,90 @@
 //! Live-reload: pick up deletions written by the leader after open.
 
-use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{
+    CachedReadFs, OkUnchanged, Populate, PreloadFuture, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
+use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
-    /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in.
+    /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in, and the
+    /// next read of the delete log.
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
+        let preloads = self.delete_log.live_preload(fs)?;
         fs.reschedule_open(
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
             None,
         );
-        Ok(Vec::new())
+        Ok(preloads)
     }
 
-    /// Re-read the on-disk deleted bitslice and report points deleted since the
-    /// last reload. Mappings are immutable, so nothing is ever inserted.
+    /// Report points deleted since the last read, in the delete log or in the
+    /// on-disk deleted bitslice. Mappings are immutable, so nothing is ever
+    /// inserted.
     ///
-    /// A *fresh* handle is opened rather than reusing the held one: the deleted
-    /// file is mutated in place, which a `reopen()` (append-only-growth
-    /// contract) never picks up on caching backends. A fresh open is guaranteed
-    /// to mirror the current remote bytes; per-point lookups read the fresh
-    /// state from then on too.
+    /// A *fresh* bitslice handle is opened: the deleted file is mutated in
+    /// place, which a `reopen()` (append-only-growth contract) never picks up
+    /// on caching backends. A fresh open is guaranteed to mirror the current
+    /// remote bytes.
     ///
-    /// `deleted_full` doubles as the diff baseline; when it was never
-    /// materialized, every currently-deleted offset is reported (an idempotent
-    /// replay downstream).
+    /// The log's deletes at or below the gate apply, newer ones are held until
+    /// [`release_held_deletes`](Self::release_held_deletes).
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
     ) -> OperationResult<LiveReloadResult> {
-        let Some(fresh) = StoredBitSlice::<S>::open(
+        // Every fallible read comes before any state changes, and the log, whose read advances
+        // its cursor, comes last: a failed reload consumes nothing, and the next one reads the
+        // same deletes again.
+        let mut slots: Vec<PointOffsetType> = match StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(Populate::No),
             Default::default(),
         )
         .ok_unchanged()?
-        else {
-            return Ok(LiveReloadResult {
-                inserted: Vec::new(),
-                deleted: Vec::new(),
-            });
-        };
-
-        let new: BitVec = fresh.read_all()?.into_owned();
-        self.deleted_file = fresh;
-
-        let baseline = self.deleted_full.take();
-        let deleted: Vec<PointOffsetType> = match baseline {
-            Some(old) => new
+        {
+            Some(fresh) => fresh
+                .read_all()?
                 .iter_ones()
-                .filter(|&i| !old.get(i).is_some_and(|b| *b))
-                .map(|i| i as PointOffsetType)
+                .map(|slot| slot as PointOffsetType)
                 .collect(),
-            None => new.iter_ones().map(|i| i as PointOffsetType).collect(),
+            None => Vec::new(),
         };
-        debug_assert!(deleted.is_sorted());
 
-        // `take` above emptied the cell, so this refreshes it to the new state
-        // and serves both the next search view and the next reload baseline.
-        let _ = self.deleted_full.set(new);
+        slots.extend(self.delete_log.read_new(fs)?);
+
+        slots.sort_unstable();
+        slots.dedup();
+        let deleted = self.delete_slots(slots);
+        debug_assert!(deleted.is_sorted());
 
         Ok(LiveReloadResult {
             inserted: Vec::new(),
             deleted,
         })
+    }
+
+    /// Whether [`release_held_deletes`](Self::release_held_deletes) with this gate would release
+    /// anything.
+    pub fn releases_held_deletes(&self, gate: SeqNumberType) -> bool {
+        self.delete_log.releases_any(gate)
+    }
+
+    /// Raise the gate to `gate` and apply the held deletes it now covers. Returns the offsets they
+    /// removed, sorted ascending.
+    pub fn release_held_deletes(&mut self, gate: SeqNumberType) -> Vec<PointOffsetType> {
+        let slots = self.delete_log.release(gate);
+        self.delete_slots(slots)
     }
 }

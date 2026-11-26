@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -11,12 +10,14 @@ use crate::index::field_index::full_text_index::FullTextGridstoreIndexBuilder;
 use crate::index::field_index::full_text_index::on_disk_text_index::FullTextMmapIndexBuilder;
 use crate::index::field_index::geo_index::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
 use crate::index::field_index::map_index::{MapIndexGridstoreBuilder, MapIndexMmapBuilder};
+use crate::index::field_index::nested_index::NestedFieldIndexBuilder;
 use crate::index::field_index::null_index::NullIndex;
 use crate::index::field_index::null_index::immutable_null_index::ImmutableNullIndexBuilder;
 use crate::index::field_index::null_index::mutable_null_index::MutableNullIndexBuilder;
 use crate::index::field_index::numeric_index::{
     NumericIndexGridstoreBuilder, NumericIndexMmapBuilder,
 };
+use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, FloatPayloadType, IntPayloadType, UuidIntType};
 
 /// Common interface for all index builders.
@@ -28,12 +29,9 @@ pub trait FieldIndexBuilderTrait {
     /// Expected to be called exactly once before any other method.
     fn init(&mut self) -> OperationResult<()>;
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    /// Index `payload` for `id`. Returns whether the payload holds a value of the
+    /// index's type.
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool>;
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType>;
 
@@ -71,9 +69,37 @@ pub enum FieldIndexBuilder {
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
     MutableNullIndex(MutableNullIndexBuilder),
     ImmutableNullIndex(ImmutableNullIndexBuilder),
+    Nested(Box<NestedFieldIndexBuilder>),
 }
 
 impl FieldIndexBuilder {
+    /// Payload path to extract for [`Self::add_point`], like [`FieldIndex::input_path`].
+    pub fn input_path<'a>(&'a self, field: &'a JsonPath) -> &'a JsonPath {
+        match self {
+            Self::Nested(builder) => builder.input_path(),
+            Self::IntMmapIndex(_)
+            | Self::IntGridstoreIndex(_)
+            | Self::DatetimeMmapIndex(_)
+            | Self::DatetimeGridstoreIndex(_)
+            | Self::IntMapMmapIndex(_)
+            | Self::IntMapGridstoreIndex(_)
+            | Self::KeywordMmapIndex(_)
+            | Self::KeywordGridstoreIndex(_)
+            | Self::FloatMmapIndex(_)
+            | Self::FloatGridstoreIndex(_)
+            | Self::GeoMmapIndex(_)
+            | Self::GeoGridstoreIndex(_)
+            | Self::FullTextMmapIndex(_)
+            | Self::FullTextGridstoreIndex(_)
+            | Self::BoolMmapIndex(_)
+            | Self::BoolGridstoreIndex(_)
+            | Self::UuidMmapIndex(_)
+            | Self::UuidGridstoreIndex(_)
+            | Self::MutableNullIndex(_)
+            | Self::ImmutableNullIndex(_) => field,
+        }
+    }
+
     /// Don't journal the value mappings of an index stored in a Gridstore, see
     /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
     pub fn disable_journal(&mut self) {
@@ -86,6 +112,7 @@ impl FieldIndexBuilder {
             Self::GeoGridstoreIndex(builder) => builder.disable_journal(),
             Self::FullTextGridstoreIndex(builder) => builder.disable_journal(),
             Self::UuidGridstoreIndex(builder) => builder.disable_journal(),
+            Self::Nested(builder) => builder.disable_journal(),
             // Not stored in a Gridstore, the mutable bool index uses flags despite its name
             Self::IntMmapIndex(_)
             | Self::DatetimeMmapIndex(_)
@@ -128,40 +155,37 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::UuidGridstoreIndex(index) => index.init(),
             Self::MutableNullIndex(index) => index.init(),
             Self::ImmutableNullIndex(index) => index.init(),
+            Self::Nested(index) => index.init(),
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
-            Self::IntMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::DatetimeMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntMapGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::KeywordGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::FloatGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::GeoMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::GeoGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::BoolGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::BoolMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMmapIndex(index) => index.add_point(id, payload),
+            Self::IntGridstoreIndex(index) => index.add_point(id, payload),
+            Self::DatetimeMmapIndex(index) => index.add_point(id, payload),
+            Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload),
+            Self::IntMapMmapIndex(index) => index.add_point(id, payload),
+            Self::IntMapGridstoreIndex(index) => index.add_point(id, payload),
+            Self::KeywordMmapIndex(index) => index.add_point(id, payload),
+            Self::KeywordGridstoreIndex(index) => index.add_point(id, payload),
+            Self::FloatMmapIndex(index) => index.add_point(id, payload),
+            Self::FloatGridstoreIndex(index) => index.add_point(id, payload),
+            Self::GeoMmapIndex(index) => index.add_point(id, payload),
+            Self::GeoGridstoreIndex(index) => index.add_point(id, payload),
+            Self::BoolGridstoreIndex(index) => index.add_point(id, payload),
+            Self::BoolMmapIndex(index) => index.add_point(id, payload),
             Self::FullTextMmapIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
             }
             Self::FullTextGridstoreIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder.as_mut(), id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder.as_mut(), id, payload)
             }
-            Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::MutableNullIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::ImmutableNullIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::UuidMmapIndex(index) => index.add_point(id, payload),
+            Self::UuidGridstoreIndex(index) => index.add_point(id, payload),
+            Self::MutableNullIndex(index) => index.add_point(id, payload),
+            Self::ImmutableNullIndex(index) => index.add_point(id, payload),
+            Self::Nested(index) => index.add_point(id, payload),
         }
     }
 
@@ -195,6 +219,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::ImmutableNullIndex(index) => {
                 FieldIndex::NullIndex(NullIndex::from(index.finalize()?))
             }
+            Self::Nested(index) => FieldIndex::Nested(Box::new((*index).finalize()?)),
         })
     }
 }

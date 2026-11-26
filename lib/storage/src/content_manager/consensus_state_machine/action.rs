@@ -18,6 +18,7 @@ use segment::types::{
     VectorNameBuf,
 };
 use shard::operations::vector_name_ops::VectorNameConfig;
+use tonic::transport::Uri;
 
 use crate::content_manager::collection_meta_ops::UpdateCollection;
 #[cfg(feature = "staging")]
@@ -25,9 +26,21 @@ use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientErr
 use crate::content_manager::errors::StorageResult;
 use crate::quota::QuotaConfig;
 
+mod display;
+
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    AddPeer {
+        peer_id: PeerId,
+        uri: Uri,
+    },
+
+    /// Remove peer address and metadata after every collection has dropped its replicas
+    RemovePeer {
+        peer_id: PeerId,
+    },
+
     CreateCollection {
         collection: CollectionId,
         state: Box<collection_state::State>,
@@ -201,13 +214,25 @@ pub enum Action {
         config: QuotaConfig,
     },
 
-    /// TODO: this action has to sleep when implemented for `TableOfContent`
+    /// Introduce the requested delay on the selected peers
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDown),
 
-    /// TODO: this action has to return an error when implemented for `TableOfContent`
+    /// Draw a transient failure on the selected peers each time the action is applied
     #[cfg(feature = "staging")]
     TestTransientError(TestTransientError),
+
+    /// Pause the sender before persisting the transfer so restart replays its start entry
+    #[cfg(feature = "staging")]
+    TestPauseShardTransferStart,
+
+    /// Hold abort after clearing resharding state, before the remaining transfer or replica writes
+    #[cfg(feature = "staging")]
+    TestPauseReshardingAbort,
+
+    /// Crash after clearing scale-down resharding state to test replay of the remaining actions
+    #[cfg(feature = "staging")]
+    TestCrashAfterScaleDownStateClear,
 }
 
 impl Action {
@@ -221,10 +246,6 @@ impl Action {
             | Action::InvalidateCleanLocalShards { collection, .. }
             | Action::RemoveShardKey { collection, .. }
             | Action::DropShard { collection, .. }
-            | Action::AddNamedVector { collection, .. }
-            | Action::DropNamedVector { collection, .. }
-            | Action::SetPayloadIndex { collection, .. }
-            | Action::DropPayloadIndex { collection, .. }
             | Action::SetShardNumber { collection, .. }
             | Action::RemoveShardFromKeyMapping { collection, .. }
             | Action::SetReplicaState { collection, .. }
@@ -240,16 +261,26 @@ impl Action {
             | Action::RevertProxyShard { collection, .. }
             | Action::UnproxifyShard { collection, .. }
             | Action::SpawnTransferDriver { collection, .. }
-            | Action::UnregisterTransfer { collection, .. } => Some(collection),
+            | Action::UnregisterTransfer { collection, .. }
+            | Action::AddNamedVector { collection, .. }
+            | Action::DropNamedVector { collection, .. }
+            | Action::SetPayloadIndex { collection, .. }
+            | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
-            Action::UpdateAliases { .. }
+            Action::AddPeer { .. }
+            | Action::RemovePeer { .. }
+            | Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,
 
-            // Sleep on a peer, or fail at random. Neither is scoped to a collection.
+            // Staging actions only pause or interrupt application on this peer.
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => None,
+            Action::TestSlowDown(_)
+            | Action::TestTransientError(_)
+            | Action::TestPauseShardTransferStart
+            | Action::TestPauseReshardingAbort
+            | Action::TestCrashAfterScaleDownStateClear => None,
         }
     }
 }
@@ -331,11 +362,14 @@ impl CollectionConfigDiff {
                 });
             }
 
-            // Metadata is merged, not replaced, and a null value removes its key
-            CollectionConfigDiff::Metadata(metadata) => match &mut config.metadata {
-                Some(current) => current.merge(metadata),
-                None => config.metadata = Some(metadata.clone()),
-            },
+            // Metadata update is merged into existing metadata, and a `null` value removes its key.
+            //
+            // If collection has no metadata yet, saving the update as is would store `null` values:
+            // `{"a": 1, "b": null}` would be saved with `"b": null`.
+            // Merging into empty metadata removes `null` values on the first update too.
+            CollectionConfigDiff::Metadata(metadata) => {
+                config.metadata.get_or_insert_default().merge(metadata);
+            }
         }
 
         Ok(())

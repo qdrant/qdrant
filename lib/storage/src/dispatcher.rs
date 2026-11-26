@@ -3,17 +3,20 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::rest::models::HardwareUsage;
+use chrono::SubsecRound as _;
 use collection::common::fetch_vectors::CollectionName;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::counter::hardware_accumulator::HwSharedDrain;
+use common::ambient::hw::HwSharedDrain;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use segment::types::ShardKey;
 
-use crate::content_manager::collection_meta_ops::AliasOperations;
+use crate::content_manager::collection_meta_ops::{
+    AliasOperations, CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE,
+};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::rbac::{Auth, CollectionMultipass};
 use crate::{
@@ -71,11 +74,19 @@ impl Dispatcher {
     /// On deployments without consensus - a submitted operation is always run to completion.
     pub async fn submit_collection_meta_op(
         &self,
-        operation: CollectionMetaOperations,
+        mut operation: CollectionMetaOperations,
         auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
         auth.check_collection_meta_operation(&operation)?;
+
+        if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+            // Keep an existing timestamp: collections re-created from a config
+            // (snapshot recovery, cluster migration) retain their original creation time
+            op.create_collection
+                .created_at
+                .get_or_insert_with(|| chrono::Utc::now().trunc_subsecs(3));
+        }
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
@@ -83,6 +94,9 @@ impl Dispatcher {
 
             // List of operations to await for collection to be operational
             let mut expect_operations: Vec<ConsensusOperations> = vec![];
+
+            // Whether to wait for new shard key replicas to become active
+            let mut wait_for_shard_key_activation = false;
 
             let op = match operation {
                 CollectionMetaOperations::CreateCollection(mut op) => {
@@ -95,11 +109,14 @@ impl Dispatcher {
                                 let collection_defaults =
                                     self.toc.storage_config.collection.as_ref();
 
-                                let shard_distribution = self.toc.suggest_shard_distribution(
-                                    &op,
-                                    collection_defaults,
-                                    number_of_peers,
-                                );
+                                let shard_distribution = self
+                                    .toc
+                                    .suggest_shard_distribution(
+                                        &op,
+                                        collection_defaults,
+                                        number_of_peers,
+                                    )
+                                    .await;
 
                                 // Expect all replicas to become active eventually
                                 for (shard_id, peer_ids) in &shard_distribution.distribution {
@@ -137,7 +154,16 @@ impl Dispatcher {
 
                     CollectionMetaOperations::CreateCollection(op)
                 }
-                CollectionMetaOperations::CreateShardKey(op) => {
+                CollectionMetaOperations::CreateShardKey(mut op) => {
+                    // If the request doesn't set the initial state, resolve it before proposing.
+                    // Otherwise each peer resolves it when applying the operation,
+                    // using the `all_peers_at_version` check, which can differ between versions,
+                    // so peers could create the same replica in different states.
+                    if op.initial_state.is_none() {
+                        op.initial_state = Some(self.default_shard_key_initial_state());
+                        wait_for_shard_key_activation = true;
+                    }
+
                     CollectionMetaOperations::CreateShardKey(op)
                 }
 
@@ -221,8 +247,7 @@ impl Dispatcher {
                 CollectionMetaOperations::CreateShardKey(op) => {
                     let collection_name: CollectionName = op.collection_name.clone();
                     let shard_key = op.shard_key.clone();
-                    let initial_state = op.initial_state;
-                    Some((collection_name, shard_key, initial_state))
+                    Some((collection_name, shard_key))
                 }
                 _ => None,
             };
@@ -247,11 +272,13 @@ impl Dispatcher {
             }
 
             // Wait for shards activation
-            if let Some((collection_name, shard_key, initial_state)) = create_shard_key
-                && initial_state.is_none()
+            if let Some((collection_name, shard_key)) = create_shard_key
+                && wait_for_shard_key_activation
             {
-                // Only do if initial state is not set because we only wanted to wait for Active since introducing
-                // the Initial state which needs a transition to Active.
+                // Wait only if the request didn't set the initial state:
+                // replicas created as `Initializing` become `Active` shortly after.
+                // A request can only set `Active`, with nothing to wait for,
+                // or `Partial`, which becomes `Active` only after a shard transfer.
                 let remaining_timeout =
                     wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
                 self.wait_for_shard_key_activation(collection_name, shard_key, remaining_timeout)
@@ -271,9 +298,34 @@ impl Dispatcher {
 
             Ok(res)
         } else {
+            if let CollectionMetaOperations::CreateCollection(op) = &mut operation {
+                // Assign the UUID before the operation is applied, not when the collection is
+                // created: consensus applies the same operation, and there a missing UUID must
+                // stay missing on every peer. With a UUID, migrating this standalone deployment
+                // to a cluster doesn't have to make one up.
+                op.create_collection
+                    .uuid
+                    .get_or_insert_with(uuid::Uuid::new_v4);
+            }
+
             let toc = self.toc.clone();
             tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
                 .await?
+        }
+    }
+
+    /// Initial state of new shard key replicas, if the request doesn't set it:
+    /// `Initializing` if all peers run at least 1.14.2, `Active` otherwise
+    fn default_shard_key_initial_state(&self) -> ReplicaState {
+        let use_initializing = self
+            .toc
+            .get_channel_service()
+            .all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
+
+        if use_initializing {
+            ReplicaState::Initializing
+        } else {
+            ReplicaState::Active
         }
     }
 

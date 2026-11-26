@@ -1,7 +1,6 @@
 use std::io::{Error, Result, Write};
 use std::path::Path;
 
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use semver::Version;
 
 use crate::universal_io::{OkNotFound as _, UioResult, UniversalReadFs, read_whole_via};
@@ -36,9 +35,8 @@ pub trait StorageVersion {
 
     fn save(dir_path: &Path) -> Result<()> {
         let version_file = dir_path.join(VERSION_FILE);
-        let af = AtomicFile::new(&version_file, AllowOverwrite);
         let current_version = Self::current_raw();
-        af.write(|f| f.write_all(current_version.as_bytes()))
-            .map_err(|err| Error::other(format!("Can't write {version_file:?}: {err}")))
+        crate::fs::atomic_save(&version_file, |f| f.write_all(current_version.as_bytes()))
+            .map_err(|err: Error| Error::other(format!("Can't write {version_file:?}: {err}")))
     }
 }

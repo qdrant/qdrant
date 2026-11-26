@@ -35,6 +35,20 @@ fn all_peers_at_version_missing_metadata() {
     assert!(!state.all_peers_at_version(&version("1.14.2-dev")));
 }
 
+/// Metadata of a peer without an address does not stand in for a peer without metadata
+#[test]
+fn all_peers_at_version_metadata_of_other_peer() {
+    let mut state = cluster_state_with_peers(&[(PEER_ID, "1.15.0")]);
+    state
+        .peer_address_by_id
+        .insert(OTHER_PEER_ID, peer_address(OTHER_PEER_ID));
+    state
+        .peer_metadata_by_id
+        .insert(OTHER_PEER_ID + 1, PeerMetadata::new(version("1.15.0")));
+
+    assert!(!state.all_peers_at_version(&version("1.14.2-dev")));
+}
+
 fn cluster_state_with_peers(peers: &[(PeerId, &str)]) -> ClusterState {
     let peer_address_by_id = peers
         .iter()

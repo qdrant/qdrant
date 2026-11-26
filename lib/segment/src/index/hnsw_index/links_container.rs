@@ -285,6 +285,7 @@ impl Item {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use itertools::Itertools as _;
     use rand::SeedableRng as _;
@@ -318,7 +319,7 @@ mod tests {
         for i in 0..NUM_VECTORS {
             candidates.push(ScoredPointOffset {
                 idx: i as PointOffsetType,
-                score: scorer.score_point(i as PointOffsetType),
+                score: scorer.score_point(i as PointOffsetType).unwrap(),
             });
         }
 
@@ -487,6 +488,7 @@ mod tests {
         for _ in 0..1000 {
             let vector_holder =
                 TestRawScorerProducer::new(DIM, Distance::Euclid, NUM_VECTORS, false, &mut rng);
+            let _scope = ambient::test_guard();
             let scorer = vector_holder.scorer(random_vector(&mut rng, DIM));
 
             let mut candidate_indices: Vec<_> = (0..NUM_VECTORS as u32).collect();

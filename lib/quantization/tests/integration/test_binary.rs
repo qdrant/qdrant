@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
@@ -11,6 +11,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
         let n = f32::signum(rng.random_range(-1.0..1.0));
@@ -48,6 +49,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -65,9 +67,9 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_encoded = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_encoded, index as u32, &counter);
+            let score = encoded.score_point(&query_encoded, index as u32);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
@@ -100,6 +102,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -117,9 +120,9 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_encoded = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_encoded, index as u32, &counter);
+            let score = encoded.score_point(&query_encoded, index as u32);
             let original_score = -dot_similarity(&query, vector);
             assert!((score - original_score).abs() <= error);
         }
@@ -152,6 +155,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -166,9 +170,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
@@ -201,6 +205,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -215,9 +220,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
@@ -249,6 +254,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -266,11 +272,11 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -316,6 +322,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -333,11 +340,11 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -383,6 +390,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -397,11 +405,11 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -447,6 +455,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -461,11 +470,11 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -511,6 +520,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -528,11 +538,11 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -578,6 +588,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -595,11 +606,11 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -645,6 +656,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -659,11 +671,11 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -709,6 +721,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -723,11 +736,11 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
             .collect();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());

@@ -53,7 +53,7 @@ impl ScrollRequestInternal {
             offset: _,
             limit: _,
             filter,
-            with_payload,
+            with_payload: _,
             with_vector: _,
             order_by,
         } = self;
@@ -62,10 +62,7 @@ impl ScrollRequestInternal {
             OrderByInterface::Key(key) => key,
             OrderByInterface::Struct(order_by) => &order_by.key,
         });
-        // The `with_payload` default of a scroll is `true`.
-        let with_payload = with_payload.as_ref().is_none_or(|wp| wp.is_required());
-
-        LoadProfile::for_scroll(filter.as_ref(), order_by_key, with_payload)
+        LoadProfile::for_scroll(filter.as_ref(), order_by_key)
     }
 
     pub const fn default_limit() -> usize {

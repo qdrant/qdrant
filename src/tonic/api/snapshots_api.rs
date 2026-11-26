@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use ::common::ambient::AmbientFutureExt;
+use ::common::reason::reason;
 use api::grpc::qdrant::shard_snapshots_server::ShardSnapshots;
 use api::grpc::qdrant::snapshots_server::Snapshots;
 use api::grpc::qdrant::{
@@ -10,8 +12,11 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
-use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::snapshot_ops::{
+    ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
+};
 use collection::operations::verification::new_unchecked_verification_pass;
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
@@ -24,6 +29,7 @@ use super::{validate, validate_and_log};
 use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 use crate::common::http_client::HttpClient;
+use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_auth;
 
 pub struct SnapshotsService {
@@ -170,11 +176,20 @@ impl Snapshots for SnapshotsService {
 pub struct ShardSnapshotsService {
     toc: Arc<TableOfContent>,
     http_client: HttpClient,
+    service_config: ServiceConfig,
 }
 
 impl ShardSnapshotsService {
-    pub fn new(toc: Arc<TableOfContent>, http_client: HttpClient) -> Self {
-        Self { toc, http_client }
+    pub fn new(
+        toc: Arc<TableOfContent>,
+        http_client: HttpClient,
+        service_config: ServiceConfig,
+    ) -> Self {
+        Self {
+            toc,
+            http_client,
+            service_config,
+        }
     }
 }
 
@@ -276,18 +291,47 @@ impl ShardSnapshots for ShardSnapshotsService {
 
         let timing = Instant::now();
 
+        let snapshot_location = ShardSnapshotLocation::try_from(snapshot_location)?;
+        let snapshot_priority = SnapshotPriority::try_from(snapshot_priority)?;
+
+        // In a snapshot shard transfer, the receiver downloads the snapshot from the REST API of
+        // the source peer. If URL recovery is disabled, allow only that.
+        if !self.service_config.enable_snapshot_url_recovery
+            && let ShardSnapshotLocation::Url(url) = &snapshot_location
+        {
+            let is_shard_transfer = match snapshot_priority {
+                SnapshotPriority::ShardTransfer => true,
+                SnapshotPriority::NoSync
+                | SnapshotPriority::Snapshot
+                | SnapshotPriority::Replica => false,
+            };
+
+            if !is_shard_transfer
+                || !self
+                    .toc
+                    .get_channel_service()
+                    .is_peer_host(url, from_peer_id)
+            {
+                return Err(Status::from(StorageError::forbidden(
+                    "Snapshot recovery from remote URLs is disabled in the configuration, \
+                     except for shard transfers from cluster peers",
+                )));
+            }
+        }
+
         common::snapshots::recover_shard_snapshot(
             self.toc.clone(),
             &auth,
             collection_name,
             shard_id,
-            snapshot_location.try_into()?,
-            snapshot_priority.try_into()?,
+            snapshot_location,
+            snapshot_priority,
             checksum,
             self.http_client.clone(),
             api_key,
             from_peer_id,
         )
+        .unmeasured(reason("Snapshot recovery isn't measured"))
         .await?;
 
         Ok(Response::new(RecoverSnapshotResponse {

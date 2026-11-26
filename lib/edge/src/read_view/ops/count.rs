@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry;
@@ -21,7 +20,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     None,
                     filter.as_ref(),
                     &self.is_stopped,
-                    &HardwareCounterCell::disposable(),
                     DeferredBehavior::VisibleOnly,
                 )
             })?;
@@ -35,7 +33,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             let estimations = self.par_map_segments(|segment| {
                 segment
                     .read_segment() // blocking sync lock
-                    .estimate_point_count(filter.as_ref(), &HardwareCounterCell::disposable())
+                    .estimate_point_count(filter.as_ref())
             })?;
 
             estimations.into_iter().merge_independent().exp

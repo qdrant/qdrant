@@ -37,7 +37,7 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
     /// Returns the decompressed slice of ids for a chunk.
     ///
     /// Assumes the chunk_idx is valid.
-    fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_LEN] {
+    pub(crate) fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_LEN] {
         if self.decompressed_chunk_idx != Some(chunk_idx) {
             self.list
                 .decompress_chunk(chunk_idx, &mut self.decompressed_chunk);
@@ -173,7 +173,9 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
         // get from chunk
         if chunk_idx < self.list.chunks_len() {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
-            let chunk_sized_values = self.list.get_chunk_unchecked(chunk_idx).sized_values;
+            // Borrowed, not copied: the array is a chunk wide, and this runs
+            // for every element read.
+            let chunk_sized_values = &self.list.get_chunk_unchecked(chunk_idx).sized_values;
             let sized_value = chunk_sized_values[local_offset];
             let next_sized_value = || {
                 chunk_sized_values

@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Bound;
 
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::{ReadRange, UniversalRead, UserData};
@@ -16,7 +14,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
     NumericIndexRead<T> for OnDiskNumericIndex<T, S>
@@ -25,36 +23,25 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
-                .check_values_any(idx, |v| check_fn(v), &hw_counter)
+                .check_values_any(idx, |v| check_fn(v))
         } else {
             Ok(false)
         }
     }
 
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        hw_counter: &HardwareCounterCell,
-        check_fn: F,
-        mut on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&T) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&T) -> bool,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
-            ConditionedCounter::always(hw_counter),
             |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
         )
     }
@@ -64,8 +51,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
             Some(Box::new(
                 self.storage
                     .point_to_values
-                    // TODO: Propagate counter upwards
-                    .values_iter(idx, ConditionedCounter::never())
+                    .values_iter(idx)
                     .ok()??
                     .map(|v| *v),
             ))
@@ -92,16 +78,11 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         Ok(self
             .values_range_iterator(start_bound, end_bound)?
             .map(|point| point.idx)
-            .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
-                i.payload_index_io_read_counter()
-            }))
+            .measure_hw(HwMetric::PayloadIndexIoRead, size_of::<Point<T>>()))
     }
 
     fn orderable_values_range(
@@ -115,16 +96,10 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     /// Cheap `O(log n)` boundary search over the on-disk sorted pairs.
-    ///
-    /// `hw_counter` is unused: the two binary searches are accounted
-    /// upfront by the caller ([`query::estimate_points`]).
-    ///
-    /// [`query::estimate_points`]: super::super::query::estimate_points
     fn values_range_size(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         let (start, end) = self.values_range_bounds(start_bound, end_bound)?;
         Ok(end - start)
@@ -143,7 +118,9 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Mmap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -276,7 +253,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         Ok(iter.filter(move |point| deleted.is_active(point.idx)))
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        true
+    pub fn is_cold(&self) -> bool {
+        self.cold
     }
 }

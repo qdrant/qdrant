@@ -87,7 +87,10 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let mut points_to_score = (0..1500)
                 .map(|_| rng.random_range(0..NUM_VECTORS) as u32)
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, 1000).black_box();
+            scorer
+                .score_points(&mut points_to_score, 1000)
+                .unwrap()
+                .black_box();
         })
     });
 
@@ -114,6 +117,7 @@ fn scoring_vectors(c: &mut Criterion) {
                 .collect_vec();
             scorer
                 .score_points(&mut points_to_score, points_per_cycle)
+                .unwrap()
                 .black_box();
         })
     });
@@ -132,6 +136,7 @@ fn scoring_vectors(c: &mut Criterion) {
                 .collect_vec();
             scorer
                 .score_points(&mut points_to_score, points_per_cycle)
+                .unwrap()
                 .black_box();
         })
     });
@@ -150,6 +155,7 @@ fn scoring_vectors(c: &mut Criterion) {
                 .collect_vec();
             scorer
                 .score_points(&mut points_to_score, points_per_cycle)
+                .unwrap()
                 .black_box();
         })
     });

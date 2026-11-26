@@ -12,7 +12,7 @@ use common::types::TelemetryDetail;
 use dashmap::DashMap;
 
 use crate::content_manager::toc::TableOfContent;
-use crate::rbac::Access;
+use crate::rbac::{Access, AccessRequirements};
 
 /// Collects various telemetry handled by ToC.
 #[derive(Default)]
@@ -77,6 +77,16 @@ impl TableOfContent {
             .telemetry
             .snapshots
             .iter()
+            // Apply the same collection filtering as above
+            .filter(|item| {
+                let name = item.key();
+                access
+                    .check_collection_access(name, AccessRequirements::new())
+                    .is_ok()
+                    && only_collections
+                        .as_ref()
+                        .is_none_or(|only_collections| only_collections.contains(name))
+            })
             .map(|item| {
                 let snapshot = item.value();
                 CollectionSnapshotTelemetry {

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
@@ -9,6 +8,8 @@ use super::ReadOnlySparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -25,6 +26,16 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.with_view(|view| view.search(vectors, filter, top, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        Ok(self.with_view(|view| view.filter_checks(query_vectors, cardinality, top)))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -44,9 +55,8 @@ impl<S: UniversalReadExt, TInvertedIndex: InvertedIndex> VectorIndexRead
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &std::sync::atomic::AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        self.with_view(|view| view.fill_idf_statistics(idf, corpus, is_stopped, hw_counter))
+        self.with_view(|view| view.fill_idf_statistics(idf, corpus, is_stopped))
     }
 
     fn is_index(&self) -> bool {

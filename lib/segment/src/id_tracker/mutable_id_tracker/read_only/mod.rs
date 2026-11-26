@@ -1,7 +1,12 @@
+mod held_deletes;
 pub mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
 
+#[cfg(test)]
+mod held_tests;
+#[cfg(test)]
+mod lazy_open_tests;
 #[cfg(test)]
 mod tests;
 
@@ -11,7 +16,9 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use futures::lock::Mutex;
+use smallvec::SmallVec;
 
+use self::held_deletes::HeldMappingDeletes;
 pub use self::live_reload::{LiveReloadResult, TrackerProbe};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
@@ -34,25 +41,35 @@ use crate::types::{PointIdType, SeqNumberType};
 ///
 /// The mapping only ever contains *committed* points. The writer flushes mappings before data
 /// before versions, so a point is fully written only once its version is present. An insert read
-/// from the mappings log is therefore held in [`Self::pending_inserts`] until its version is
-/// flushed, and only then linked into [`Self::mappings`].
+/// from the mappings log is held in [`Self::unversioned_inserts`] until its version is flushed,
+/// then in [`Self::staged_inserts`] until every component has ingested it, and only then linked
+/// into [`Self::mappings`].
 pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     segment_path: PathBuf,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 
-    /// Inserts read from the mappings log whose version is not flushed yet, keyed by external id.
+    /// Inserts read from the mappings log whose version is not flushed yet: per external id, the
+    /// offsets of its inserts in log order.
     ///
-    /// These points are intentionally absent from [`Self::mappings`] (their data may be partially
-    /// written). Each is linked in once its offset is covered by the versions file, or dropped if
-    /// a delete for it arrives first.
-    pending_inserts: HashMap<PointIdType, PointOffsetType>,
+    /// Their data may be partially written. Each moves to [`Self::staged_inserts`] once its offset
+    /// is covered by the versions file, or is dropped if a delete or a complete insert of the same
+    /// point arrives first. A point's committed copy goes on serving meanwhile. A point can have
+    /// several: a reload reads the versions before the mappings, so it may read a re-insert before
+    /// the version of the insert before it. That earlier insert is staged once its version lands,
+    /// and is not hidden by the re-insert.
+    unversioned_inserts: HashMap<PointIdType, SmallVec<[PointOffsetType; 1]>>,
+
+    /// Fully written inserts reported by a reload but not linked yet, keyed by external id.
+    ///
+    /// Reported again by every reload until [`Self::publish_staged`] links them.
+    staged_inserts: HashMap<PointIdType, PointOffsetType>,
 
     /// Highest slot any insert in the mappings log has ever claimed, `None` while the log has
     /// claimed none. This is the slot a writer resumes above.
     ///
     /// Neither structure above can answer that: [`Self::mappings`] holds only committed points, and
-    /// [`Self::pending_inserts`] drops an entry as soon as a delete for its external id arrives, so
+    /// [`Self::unversioned_inserts`] drops an entry as soon as a delete for its external id arrives, so
     /// an `Insert(p, n)` followed by a `Delete(p)` leaves slot `n` claimed on disk yet named nowhere
     /// else. Its data may be half-written, so handing it out again would write a second point over
     /// the remains of the first.
@@ -64,6 +81,10 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// we read the file from here onwards. It always points to the end of the last fully-read
     /// entry, so a partial trailing entry (a flush in progress) is re-read on the next reload.
     mappings_read_to: u64,
+
+    /// Versioned deletes read but not applied yet, `None` unless the tracker was opened with
+    /// [`DeleteGating::Held`](crate::id_tracker::delete_versions::DeleteGating::Held).
+    held_deletes: Option<HeldMappingDeletes>,
 
     /// Backing file handles, behind their own lock so [`Self::probe_committed`] can refresh them
     /// under shared access while readers use the tracker. Readers never touch them.

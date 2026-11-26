@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -9,6 +8,8 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -24,6 +25,17 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.with_view(|view| view.search(query_vectors, filter, top, params, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        _query_vectors: &[QueryVector],
+        _cardinality: &CardinalityEstimation,
+        _top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        // Evaluates the filter on every candidate, once for all query vectors
+        Ok(FilterChecks::Full)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
@@ -63,7 +75,6 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // Plain (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {

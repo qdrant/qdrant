@@ -1,6 +1,6 @@
 use shard::scroll::ScrollRequestInternal;
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 use crate::operations::types::PointRequestInternal;
 
 impl StrictModeVerification for ScrollRequestInternal {
@@ -17,6 +17,10 @@ impl StrictModeVerification for ScrollRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -39,6 +43,10 @@ impl StrictModeVerification for PointRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_exact(&self) -> Option<bool> {

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::segment_constructor::cache_after_build::CacheAfterBuild;
 use segment::types::{
     Distance, HnswConfig, Memory, PayloadStorageType, QuantizationConfig, SegmentConfig,
     VectorName, VectorNameBuf,
@@ -74,10 +75,19 @@ pub struct EdgeConfig {
     /// where the default segment size is too large.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wal_options: Option<WalOptions>,
+    /// Whether updates are written to a WAL. `None` means enabled. Fixed when the shard is
+    /// created: loading with a different value fails.
+    ///
+    /// Without a WAL, updates are durable only once [`EdgeShard::flush`](crate::EdgeShard::flush)
+    /// returns; a crash loses every update since the last flush. `wal_options` is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wal_enabled: Option<bool>,
     /// Number of threads in the shard's search thread pool. The pool executes per-segment reads
     /// (search, scroll, count, facet, ...) in parallel and loads segments in parallel. `None` (the
     /// default) derives the count from the number of CPUs, matching the core search runtime — see
     /// [`EdgeConfig::search_thread_count`].
+    /// Unless pools are supplied externally, read-only followers create a separate load pool
+    /// with this thread count for open and live reload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_search_threads: Option<usize>,
     /// Pin every thread of this shard's search pool to the given CPU core: bounds the shard's
@@ -96,7 +106,7 @@ impl EdgeConfig {
     /// Effective payload storage location: on-disk unless explicitly set to `false`
     /// via `on_disk_payload`, or overridden by `payload_memory`.
     pub fn on_disk_payload(&self) -> bool {
-        self.payload_memory_placement().is_on_disk()
+        self.payload_memory_placement().is_cold()
     }
 
     /// Effective memory placement of the payload storage: [`Self::requested_payload_memory`],
@@ -118,6 +128,11 @@ impl EdgeConfig {
     /// Effective global HNSW config: [`HnswConfig::default`] unless explicitly set.
     pub fn hnsw_config(&self) -> HnswConfig {
         self.hnsw_config.unwrap_or_default()
+    }
+
+    /// Effective WAL mode: enabled unless explicitly disabled.
+    pub fn wal_enabled(&self) -> bool {
+        self.wal_enabled.unwrap_or(true)
     }
 
     /// Effective optimizers config: [`EdgeOptimizersConfig::default`] unless explicitly set.
@@ -146,6 +161,7 @@ impl EdgeConfig {
             quantization_config,
             optimizers,
             wal_options,
+            wal_enabled,
             max_search_threads,
             search_pool_core,
         } = self;
@@ -176,6 +192,7 @@ impl EdgeConfig {
             quantization_config: quantization_config.or_else(|| base.quantization_config.clone()),
             optimizers: optimizers.or_else(|| base.optimizers.clone()),
             wal_options: wal_options.or_else(|| base.wal_options.clone()),
+            wal_enabled: wal_enabled.or(base.wal_enabled),
             max_search_threads: max_search_threads.or(base.max_search_threads),
             search_pool_core: search_pool_core.or(base.search_pool_core),
         }
@@ -221,7 +238,7 @@ impl EdgeConfig {
             })
             .collect();
 
-        let on_disk_payload = payload_storage_type.is_on_disk();
+        let on_disk_payload = payload_storage_type.is_cold();
 
         // Infer global hnsw_config from per-vector HNSW configs when all agree
         let hnsw_configs: Vec<HnswConfig> = vector_data
@@ -249,6 +266,7 @@ impl EdgeConfig {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         }
@@ -310,6 +328,13 @@ impl EdgeConfig {
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
+            // The serverless indexer reads the built segment to meter and upload it, then deletes
+            // it. Evicting its cache would only make both reads go to disk.
+            cache_after_build: if cfg!(feature = "serverless") {
+                CacheAfterBuild::Keep
+            } else {
+                CacheAfterBuild::Drop
+            },
         }
     }
 
@@ -483,6 +508,7 @@ mod tests {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         };
@@ -537,6 +563,7 @@ mod tests {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         };

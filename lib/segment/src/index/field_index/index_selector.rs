@@ -15,10 +15,10 @@ use super::numeric_index::{
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoIndex;
+use crate::index::field_index::nested_index::{ElementMap, NestedFieldIndexBuilder};
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexValue};
 use crate::index::payload_config::{FullPayloadIndexType, IndexMutability, PayloadIndexType};
@@ -36,13 +36,16 @@ pub enum IndexSelector<'a> {
 
 impl IndexSelector<'_> {
     /// Loads the correct index based on `index_type`.
+    ///
+    /// `total_point_count` and `deleted_points` cover the ids the index is keyed by: the
+    /// points of the segment, or the elements of a per-element index.
     pub fn new_index_with_type(
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         index_type: &FullPayloadIndexType,
         create_if_missing: bool,
-        id_tracker: &IdTrackerEnum,
+        total_point_count: usize,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<FieldIndex>> {
         let index = match (&index_type.index_type, payload_schema.expand().as_ref()) {
@@ -116,9 +119,13 @@ impl IndexSelector<'_> {
                 .map_new(field, create_if_missing, deleted_points, false)?
                 .map(FieldIndex::UuidMapIndex),
 
-            (PayloadIndexType::NullIndex, _) => {
-                self.new_null_index(field, create_if_missing, id_tracker, index_type.mutability)?
-            }
+            (PayloadIndexType::NullIndex, _) => self.new_null_index(
+                field,
+                create_if_missing,
+                total_point_count,
+                deleted_points,
+                index_type.mutability,
+            )?,
 
             // Storage inconsistency. Should never happen.
             (index_type, schema) => {
@@ -204,13 +211,20 @@ impl IndexSelector<'_> {
         Ok(indexes)
     }
 
-    /// Selects index builder based on field type.
+    /// Selects builders for the live points of a field, consuming their declared input paths.
     pub fn index_builder(
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         deleted_points: &BitSlice,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
+        // Nested builders assign offsets only to live points' elements, so none of
+        // the inner index's offsets are deleted during construction.
+        let deleted_points = if payload_schema.nested().is_some() {
+            BitSlice::empty()
+        } else {
+            deleted_points
+        };
         let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => {
                 vec![self.map_builder(
@@ -291,7 +305,27 @@ impl IndexSelector<'_> {
             }
         };
 
-        Ok(builders)
+        builders
+            .into_iter()
+            .map(|builder| self.nested_builder(field, payload_schema, builder))
+            .collect()
+    }
+
+    /// `builder`, indexing every element of the array instead of every point if the
+    /// field is `nested`.
+    fn nested_builder(
+        &self,
+        field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
+        builder: FieldIndexBuilder,
+    ) -> OperationResult<FieldIndexBuilder> {
+        let Some(array_key) = payload_schema.nested() else {
+            return Ok(builder);
+        };
+        let (IndexSelector::Appendable { dir } | IndexSelector::NonAppendable { dir, memory: _ }) =
+            self;
+        let builder = NestedFieldIndexBuilder::new(dir, field, array_key, builder)?;
+        Ok(FieldIndexBuilder::Nested(Box::new(builder)))
     }
 
     /// `prefix_index` enables the sorted key dictionary for prefix matching;
@@ -333,7 +367,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(MapIndex::builder_immutable(
                 &map_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
                 prefix_index,
             )),
@@ -376,7 +410,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(NumericIndex::builder_mmap(
                 &numeric_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
             )),
             IndexSelector::Appendable { dir } => {
@@ -411,7 +445,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(GeoIndex::builder_mmap(
                 &map_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
             )),
             IndexSelector::Appendable { dir } => {
@@ -433,6 +467,7 @@ impl IndexSelector<'_> {
     pub fn null_builder(
         &self,
         field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
         total_point_count: usize,
     ) -> OperationResult<FieldIndexBuilder> {
         let builder = match self {
@@ -446,31 +481,27 @@ impl IndexSelector<'_> {
                 MutableNullIndex::builder(&null_dir(dir, field), total_point_count)?,
             ),
         };
-        Ok(builder)
+        self.nested_builder(field, payload_schema, builder)
     }
 
     pub fn new_null_index(
         &self,
         field: &JsonPath,
         create_if_missing: bool,
-        id_tracker: &IdTrackerEnum,
+        total_point_count: usize,
+        deleted_points: &BitSlice,
         mutability: IndexMutability,
     ) -> OperationResult<Option<FieldIndex>> {
-        let total_point_count = id_tracker.total_point_count();
         // `MutableNullIndex` and `ImmutableNullIndex` share the same on-disk
         // format; stored mutability picks which in-memory wrapper to build.
         // Gridstore segments are always appendable, so the null index is
         // always mutable regardless of the stored mutability marker.
         match (self, mutability) {
-            (IndexSelector::NonAppendable { dir, memory: _ }, IndexMutability::Immutable) => {
-                Ok(ImmutableNullIndex::open(
-                    &null_dir(dir, field),
-                    total_point_count,
-                    id_tracker.deleted_point_bitslice(),
-                )?
-                .map(NullIndex::Immutable)
-                .map(FieldIndex::NullIndex))
-            }
+            (IndexSelector::NonAppendable { dir, memory: _ }, IndexMutability::Immutable) => Ok(
+                ImmutableNullIndex::open(&null_dir(dir, field), total_point_count, deleted_points)?
+                    .map(NullIndex::Immutable)
+                    .map(FieldIndex::NullIndex),
+            ),
             (IndexSelector::NonAppendable { dir, memory: _ }, IndexMutability::Mutable)
             | (IndexSelector::Appendable { dir }, IndexMutability::Mutable)
             | (IndexSelector::Appendable { dir }, IndexMutability::Immutable) => {
@@ -492,7 +523,6 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<FullTextIndex>> {
-        let config = config.normalized();
         Ok(match self {
             IndexSelector::NonAppendable { dir, memory } => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config, *memory, deleted_points)?
@@ -509,14 +539,13 @@ impl IndexSelector<'_> {
         config: TextIndexParams,
         deleted_points: &BitSlice,
     ) -> FieldIndexBuilder {
-        let config = config.normalized();
         match self {
             IndexSelector::NonAppendable { dir, memory } => {
                 let scoring = config.scoring();
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
                     config,
-                    !memory.is_heap(),
+                    *memory,
                     deleted_points,
                     scoring,
                 ))
@@ -603,12 +632,17 @@ impl PayloadIndexType {
 /// postings into the fresh build.
 ///
 /// Covers every [`PayloadIndexType`] by construction: the candidate set is derived
-/// by iterating the enum through [`PayloadIndexType::storage_dir`].
+/// by iterating the enum through [`PayloadIndexType::storage_dir`], together with the
+/// element maps of per-element indexes.
 pub(crate) fn wipe_field_dirs(dir: &Path, field: &JsonPath) -> std::io::Result<()> {
     for index_type in <PayloadIndexType as strum::IntoEnumIterator>::iter() {
-        let candidate = index_type.storage_dir(dir, field);
-        if candidate.exists() {
-            fs_err::remove_dir_all(&candidate)?;
+        let index_dir = index_type.storage_dir(dir, field);
+        // A per-element index keeps its element map next to the inner index
+        let element_map_dir = ElementMap::storage_dir(&index_dir);
+        for candidate in [index_dir, element_map_dir] {
+            if candidate.exists() {
+                fs_err::remove_dir_all(&candidate)?;
+            }
         }
     }
     Ok(())
@@ -632,4 +666,75 @@ pub(crate) fn bool_dir(dir: &Path, field: &JsonPath) -> PathBuf {
 
 pub(crate) fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-null", field.filename()))
+}
+
+#[cfg(test)]
+mod tests {
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::data_types::index::{
+        GeoIndexParams, IntegerIndexParams, KeywordIndexParams, TextIndexParams,
+    };
+    use crate::index::field_index::{FieldIndexBuilderTrait, FieldIndexRead as _};
+
+    /// A non-appendable build serves as-is (live index creation installs it), so it
+    /// must apply the placement like an open: only the cold one is left on disk.
+    #[test]
+    fn non_appendable_build_applies_placement() {
+        let field = JsonPath::new("field");
+        let deleted = BitVec::repeat(false, 1);
+        let _scope = ambient::test_guard();
+
+        for memory in [Memory::Cold, Memory::Cached, Memory::Pinned] {
+            let cases: [(PayloadSchemaParams, Value); 4] = [
+                (
+                    PayloadSchemaParams::Keyword(KeywordIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!("a"),
+                ),
+                (
+                    PayloadSchemaParams::Integer(IntegerIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!(1),
+                ),
+                (
+                    PayloadSchemaParams::Geo(GeoIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!({"lon": 1.0, "lat": 2.0}),
+                ),
+                (
+                    PayloadSchemaParams::Text(TextIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!("hello world"),
+                ),
+            ];
+            for (params, value) in cases {
+                let dir = tempfile::tempdir().unwrap();
+                let schema = PayloadFieldSchema::FieldParams(params);
+                let builders = IndexSelector::NonAppendable {
+                    dir: dir.path(),
+                    memory,
+                }
+                .index_builder(&field, &schema, &deleted)
+                .unwrap();
+                for mut builder in builders {
+                    builder.init().unwrap();
+                    builder.add_point(0, &[&value]).unwrap();
+                    let index = builder.finalize().unwrap();
+                    assert_eq!(index.is_cold(), memory == Memory::Cold, "{schema:?}");
+                }
+            }
+        }
+    }
 }

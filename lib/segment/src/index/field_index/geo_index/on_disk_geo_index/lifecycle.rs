@@ -2,10 +2,9 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
+use common::ambient::hw::HwMetric;
 use common::binary_search::binary_search_by;
 use common::bitvec::{BitSlice, DeletedBitVec};
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
@@ -263,43 +262,34 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
             compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
         if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
-                .check_values_any(idx, |v| check_fn(v), &hw_counter)
+                .check_values_any(idx, |v| check_fn(v))
         } else {
             Ok(false)
         }
     }
 
     /// Batched counterpart of [`Self::check_values_any`].
-    pub fn for_each_matching_value<I, F, M, U>(
+    pub fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        hw_counter: &HardwareCounterCell,
-        check_fn: F,
-        mut on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&GeoPoint) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
-            ConditionedCounter::always(hw_counter),
             |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
         )
     }
@@ -307,8 +297,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
         self.storage
             .point_to_values
-            // TODO: propagate counter upwards
-            .values_iter(idx, ConditionedCounter::never())
+            .values_iter(idx)
             .ok()?
             .map(|iter| iter.map(Cow::into_owned))
     }
@@ -344,34 +333,21 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         Ok(results)
     }
 
-    pub fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    pub fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self
-            .counts_of_hash(hash, hw_counter)?
+            .counts_of_hash(hash)?
             .map(|c| c.points as usize)
             .unwrap_or(0))
     }
 
-    pub fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    pub fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self
-            .counts_of_hash(hash, hw_counter)?
+            .counts_of_hash(hash)?
             .map(|c| c.values as usize)
             .unwrap_or(0))
     }
 
-    fn counts_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Counts>> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
+    fn counts_of_hash(&self, hash: GeoHash) -> OperationResult<Option<Counts>> {
         let len = self.storage.counts_per_hash.len()? as usize;
 
         if let Some(block_index) = &self.storage.counts_per_hash_block_index {
@@ -380,9 +356,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 return Ok(None);
             }
 
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(block.len() * size_of::<Counts>());
+            HwMetric::PayloadIndexIoRead.bump(block.len() * size_of::<Counts>());
 
             let range = ReadRange::new(
                 (block.start * size_of::<Counts>()) as u64,
@@ -395,10 +369,9 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 .map(|idx| counts[idx]));
         }
 
-        hw_counter
-            .payload_index_io_read_counter()
-            // Simulate binary search complexity as IO read estimation
-            .incr_delta((len as f32).log2().ceil() as usize * size_of::<Counts>());
+        // Simulate binary search complexity as IO read estimation
+        HwMetric::PayloadIndexIoRead
+            .bump((len as f32).log2().ceil() as usize * size_of::<Counts>());
 
         let read_one = |idx| -> OperationResult<Counts> {
             let range = ReadRange::one((idx * size_of::<Counts>()) as u64);
@@ -643,6 +616,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             points_values_count: _,
             max_values_per_point: _,
             compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             counts_per_hash,

@@ -12,6 +12,8 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::filter_checks::FilterChecks;
+use crate::index::query_optimization::resolve_filter::resolve_for_query_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, QuantizationSearchParams, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -98,14 +100,11 @@ where
 
                 let available_vector_count = self.vector_storage.available_vector_count();
 
-                let hw_counter = query_context.hardware_counter();
-
                 // Estimated once for every strategy below: for a filter whose conditions
                 // resolve ids (`has_id`), the estimation performs the external->internal
                 // resolution, and the plain search reuses the resolved offsets.
-                let query_point_cardinality = self
-                    .payload_index
-                    .estimate_cardinality(query_filter, &hw_counter)?;
+                let query_point_cardinality =
+                    self.payload_index.estimate_cardinality(query_filter)?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -162,9 +161,11 @@ where
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
+                    // Samples are checked one at a time, so conditions on cold indexes are
+                    // read up front: a few sequential reads instead of a random read per sample.
                     let filter_context = self
                         .payload_index
-                        .filter_context(query_filter, &hw_counter)?;
+                        .filter_context_for_serial_checks(query_filter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
@@ -216,7 +217,46 @@ where
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
         });
+
+        let resolved = self.resolve_for_query_vectors(
+            vectors.len(),
+            filter,
+            query_cardinality,
+            top,
+            params,
+            query_context,
+        )?;
+        let filter = resolved.as_ref().unwrap_or(filter);
+
         self.search_vectors_with_graph(vectors, Some(filter), top, params, algorithm, query_context)
+    }
+
+    /// The graph search checks the filter for every query vector on its own: with several of
+    /// them, checking the points it matches may be cheaper. `query_cardinality` is the
+    /// estimation of `filter`.
+    fn resolve_for_query_vectors(
+        &self,
+        query_vectors: usize,
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        if query_vectors < 2 {
+            return Ok(None);
+        }
+        let checks = FilterChecks::Lazy {
+            expected_checks: self.graph_filter_checks(query_vectors, top, params),
+        };
+        resolve_for_query_vectors(
+            &self.payload_index,
+            self.id_tracker.total_point_count(),
+            filter,
+            query_cardinality,
+            checks,
+            &query_context.is_stopped(),
+        )
     }
 
     /// ACORN runs when it is enabled and the filter is selective enough.
@@ -228,7 +268,7 @@ where
         let Some(acorn) = params.and_then(|params| params.acorn) else {
             return SearchAlgorithm::Hnsw;
         };
-        if !acorn.enable || self.config.m0 == 0 {
+        if !acorn.enable {
             return SearchAlgorithm::Hnsw;
         }
         // NOTE: technically we also might want to use ACORN for unfiltered

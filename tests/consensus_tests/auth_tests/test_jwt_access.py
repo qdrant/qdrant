@@ -418,6 +418,8 @@ ACTION_ACCESS = {
     "cluster_telemetry": EndpointAccess(True, True, True, "GET /cluster/telemetry"),
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
+    "get_consensus_state": EndpointAccess(False, False, True, "GET /cluster/consensus_state"),
+    "patch_consensus_state": EndpointAccess(False, False, True, "PATCH /cluster/consensus_state"),
     ### Quotas ###
     "get_quotas": EndpointAccess(True, False, True, "GET /quotas", coll_r=False),
     "update_quotas": EndpointAccess(False, False, True, "PUT /quotas"),
@@ -625,25 +627,25 @@ ACTION_ACCESS = {
     "update_logger_config": EndpointAccess(False, False, True, "POST /logger"),
     ### StorageRead (gRPC only, no REST equivalent) ###
     "storage_read_list_files": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ListFiles"
+        True, True, True, None, "qdrant.StorageRead/ListFiles", coll_prw=False
     ),
     "storage_read_file_exists": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/FileExists"
+        True, True, True, None, "qdrant.StorageRead/FileExists", coll_prw=False
     ),
     "storage_read_file_length": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/FileLength"
+        True, True, True, None, "qdrant.StorageRead/FileLength", coll_prw=False
     ),
     "storage_read_read_bytes": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBytes"
+        True, True, True, None, "qdrant.StorageRead/ReadBytes", coll_prw=False
     ),
     "storage_read_read_bytes_stream": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBytesStream"
+        True, True, True, None, "qdrant.StorageRead/ReadBytesStream", coll_prw=False
     ),
     "storage_read_read_whole": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadWhole"
+        True, True, True, None, "qdrant.StorageRead/ReadWhole", coll_prw=False
     ),
     "storage_read_read_batch": EndpointAccess(
-        True, True, True, None, "qdrant.StorageRead/ReadBatch"
+        True, True, True, None, "qdrant.StorageRead/ReadBatch", coll_prw=False
     ),
 }
 
@@ -802,6 +804,10 @@ class GrpcClients:
             GRPC_URI,
             interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
         )
+        self.coll_prw = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_PRW}")])],
+        )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
         )
@@ -919,6 +925,8 @@ def check_access(
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
+        if allowed_for.coll_prw is not None:
+            check_grpc_access(grpc.coll_prw, service, method, grpc_request, allowed_for.coll_prw)
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
         # Check that API key is the same as manage token
@@ -1549,6 +1557,19 @@ def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
 
 
+def test_get_consensus_state():
+    check_access("get_consensus_state")
+
+
+def test_patch_consensus_state():
+    # Empty diff in dry run mode, so an authorized call does not change anything
+    check_access(
+        "patch_consensus_state",
+        rest_request={},
+        rest_req_kwargs={"params": {"dry_run": "true"}},
+    )
+
+
 def test_get_quotas():
     check_access("get_quotas")
 
@@ -2007,6 +2028,22 @@ def test_livez():
 
 def test_telemetry():
     check_access("telemetry")
+
+
+def test_telemetry_hides_other_collections():
+    other_collection = random_str()
+    fixtures.create_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
+    try:
+        res = requests.get(
+            f"{REST_URI}/telemetry?details_level=2",
+            headers={"authorization": f"Bearer {TOKEN_COLL_R}"},
+        )
+        assert res.status_code == 200, res.text
+        collections = res.json()["result"]["collections"]
+        assert [c["id"] for c in collections["collections"]] == [COLL_NAME]
+        assert [s["id"] for s in collections["snapshots"]] == [COLL_NAME]
+    finally:
+        fixtures.drop_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
 
 
 def test_metrics():

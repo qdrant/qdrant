@@ -3,9 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+#[cfg(feature = "testing")]
+use common::ambient::AmbientContext;
+use common::ambient::Handoff;
 use common::bitvec::BitSlice;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::SimpleCow;
 use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
@@ -14,7 +15,7 @@ use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::types::{Filter, PayloadKeyType, ScoredPoint, VectorName, VectorNameBuf};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct QueryIdfStats {
     /// IDF statistics per corpus scope.
     ///
@@ -35,7 +36,7 @@ impl QueryIdfStats {
 /// Statistics of the element frequency, collected over all segments,
 /// scoped to a single IDF corpus.
 /// Required for processing sparse vector search with `idf-dot` similarity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdfScopeStats {
     /// Filter defining the population the statistics are computed over.
     /// `None` — the whole collection (global statistics).
@@ -53,6 +54,10 @@ pub struct IdfScopeStats {
 /// the segment that assigned it.
 #[derive(Debug, Clone)]
 pub struct TextFieldStats {
+    /// The IDF corpus: only points matching it count as documents, for `N`,
+    /// `df` and `avgdl` alike. `None` counts every point of the shard.
+    pub corpus: Option<Filter>,
+
     /// Document frequency per query term, seeded with the terms the query
     /// needs so each segment knows which ones to resolve and report.
     pub df: HashMap<String, usize>,
@@ -68,6 +73,7 @@ pub struct TextFieldStats {
 impl Default for TextFieldStats {
     fn default() -> Self {
         Self {
+            corpus: None,
             df: HashMap::new(),
             documents: 0,
             total_tokens: Some(0),
@@ -93,7 +99,10 @@ pub fn fancy_idf(n: DimWeight, df: DimWeight) -> DimWeight {
     ((n - df + 0.5) / (df + 0.5) + 1.).ln()
 }
 
-#[derive(Debug)]
+/// Filling segments in parallel: each segment fills its own clone of an
+/// unfilled context, then [`QueryContext::merge_statistics`] sums the clones
+/// back into the original.
+#[derive(Debug, Clone)]
 pub struct QueryContext {
     /// Total amount of available (and visible) points in the segment.
     available_point_count: usize,
@@ -115,23 +124,19 @@ pub struct QueryContext {
     /// Required for scoring a text query against a payload index.
     text_stats: AHashMap<PayloadKeyType, TextFieldStats>,
 
-    /// Structure to accumulate and report hardware usage.
-    /// Holds reference to the shared drain, which is used to accumulate the values.
-    hardware_usage_accumulator: HwMeasurementAcc,
+    /// The scope of the query, to enter it on segment threads.
+    handoff: Handoff,
 }
 
 impl QueryContext {
-    pub fn new(
-        search_optimized_threshold_kb: usize,
-        hardware_usage_accumulator: HwMeasurementAcc,
-    ) -> Self {
+    pub fn new(search_optimized_threshold_kb: usize, handoff: Handoff) -> Self {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
             is_stopped: Arc::new(AtomicBool::new(false)),
             idf_stats: QueryIdfStats::default(),
             text_stats: AHashMap::new(),
-            hardware_usage_accumulator,
+            handoff,
         }
     }
 
@@ -208,14 +213,27 @@ impl QueryContext {
     }
 
     /// Seed the terms a scored text query needs on `field`, so that every
-    /// segment of this shard reports their document frequencies. Terms must
-    /// already be tokenized the way the index tokenizes.
+    /// segment of this shard reports their document frequencies over `corpus`
+    /// (every point when `None`). Terms must already be tokenized the way the
+    /// index tokenizes. A field holds one corpus per context.
     pub fn init_text_stats(
         &mut self,
         field: &PayloadKeyType,
+        corpus: Option<&Filter>,
         terms: impl IntoIterator<Item = String>,
     ) {
-        let stats = self.text_stats.entry(field.clone()).or_default();
+        let stats = self
+            .text_stats
+            .entry(field.clone())
+            .or_insert_with(|| TextFieldStats {
+                corpus: corpus.cloned(),
+                ..TextFieldStats::default()
+            });
+        debug_assert_eq!(
+            stats.corpus.as_ref(),
+            corpus,
+            "one corpus per text field per context",
+        );
         for term in terms {
             stats.df.entry(term).or_insert(0);
         }
@@ -233,23 +251,72 @@ impl QueryContext {
         &mut self.text_stats
     }
 
+    /// Whether filling needs more than the available point count, which
+    /// makes it worth spreading over segments in parallel.
+    pub fn has_statistics_to_collect(&self) -> bool {
+        let Self {
+            available_point_count: _,
+            search_optimized_threshold_kb: _,
+            is_stopped: _,
+            idf_stats: QueryIdfStats { scopes },
+            text_stats,
+            handoff: _,
+        } = self;
+        !scopes.is_empty() || !text_stats.is_empty()
+    }
+
+    /// Sum the statistics of a filled clone of this unfilled context into it.
+    pub fn merge_statistics(&mut self, fork: Self) {
+        let Self {
+            available_point_count,
+            search_optimized_threshold_kb: _,
+            is_stopped: _,
+            idf_stats,
+            text_stats,
+            handoff: _,
+        } = fork;
+
+        self.available_point_count += available_point_count;
+
+        debug_assert_eq!(self.idf_stats.scopes.len(), idf_stats.scopes.len());
+        for (scope, fork_scope) in self.idf_stats.scopes.iter_mut().zip(idf_stats.scopes) {
+            debug_assert_eq!(scope.corpus, fork_scope.corpus);
+            for (vector_name, fork_idf) in fork_scope.idf {
+                let idf = scope.idf.get_or_insert_default(&vector_name);
+                for (dim, df) in fork_idf {
+                    *idf.entry(dim).or_insert(0) += df;
+                }
+            }
+            for (vector_name, count) in fork_scope.indexed_vectors {
+                *scope.indexed_vectors.get_or_insert_default(&vector_name) += count;
+            }
+        }
+
+        for (field, fork_stats) in text_stats {
+            let stats = self.text_stats.entry(field).or_default();
+            for (term, df) in fork_stats.df {
+                *stats.df.entry(term).or_insert(0) += df;
+            }
+            stats.add_segment(fork_stats.documents, fork_stats.total_tokens);
+        }
+    }
+
     pub fn get_segment_query_context(&self) -> SegmentQueryContext<'_> {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: self.hardware_usage_accumulator.get_counter_cell(),
         }
     }
 
-    pub fn hardware_usage_accumulator(&self) -> &HwMeasurementAcc {
-        &self.hardware_usage_accumulator
+    pub fn handoff(&self) -> &Handoff {
+        &self.handoff
     }
 }
 
 #[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX, HwMeasurementAcc::new()) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, Handoff::Measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
     }
 }
 
@@ -258,12 +325,15 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> SegmentQueryContext<'a> {
     pub fn available_point_count(&self) -> usize {
         self.query_context.available_point_count()
+    }
+
+    pub fn handoff(&self) -> &Handoff {
+        self.query_context.handoff()
     }
 
     /// Vector-level context for the given vector name and IDF corpus
@@ -282,7 +352,7 @@ impl<'a> SegmentQueryContext<'a> {
                 .and_then(|scope| scope.indexed_vectors.get(vector_name))
                 .copied(),
             deleted_points: self.deleted_points,
-            hardware_counter: self.hardware_counter.fork(),
+            max_sparse_dims: None,
         }
     }
 
@@ -296,7 +366,6 @@ impl<'a> SegmentQueryContext<'a> {
                 stats,
                 is_stopped: &self.query_context.is_stopped,
                 deleted_points: self.deleted_points,
-                hardware_counter: self.hardware_counter.fork(),
             })
     }
 
@@ -309,11 +378,14 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.is_stopped()
     }
 
+    pub fn is_stopped_flag(&self) -> &AtomicBool {
+        &self.query_context.is_stopped
+    }
+
     pub fn fork(&self) -> Self {
         Self {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
-            hardware_counter: self.hardware_counter.fork(),
         }
     }
 }
@@ -333,12 +405,21 @@ pub struct VectorQueryContext<'a> {
 
     deleted_points: Option<&'a BitSlice>,
 
-    hardware_counter: HardwareCounterCell,
+    /// Sparse vectors only: keep just this many query dimensions, those with the largest
+    /// absolute weight, when searching. `None` searches with the full query.
+    max_sparse_dims: Option<usize>,
 }
 
 impl VectorQueryContext<'_> {
-    pub fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.fork()
+    /// Set the number of query dimensions to keep in sparse search.
+    #[must_use]
+    pub fn with_max_sparse_dims(mut self, max_sparse_dims: Option<usize>) -> Self {
+        self.max_sparse_dims = max_sparse_dims;
+        self
+    }
+
+    pub fn max_sparse_dims(&self) -> Option<usize> {
+        self.max_sparse_dims
     }
 
     pub fn search_optimized_threshold_kb(&self) -> usize {
@@ -388,7 +469,7 @@ impl Default for VectorQueryContext<'_> {
             idf: None,
             indexed_vectors: None,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::new(),
+            max_sparse_dims: None,
         }
     }
 }
@@ -402,7 +483,6 @@ pub struct TextQueryContext<'a> {
     /// Replaces the id tracker's deletions when set, as a proxy segment does
     /// for the segment it wraps. Same role as in [`VectorQueryContext`].
     deleted_points: Option<&'a BitSlice>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl TextQueryContext<'_> {
@@ -412,10 +492,6 @@ impl TextQueryContext<'_> {
 
     pub fn deleted_points(&self) -> Option<&BitSlice> {
         self.deleted_points
-    }
-
-    pub fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.fork()
     }
 
     /// `N`: documents carrying the field, over this shard's segments.
@@ -452,4 +528,48 @@ pub struct FormulaContext {
     pub limit: usize,
     pub score_threshold: Option<ScoreType>,
     pub is_stopped: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merged_forks_sum_statistics() {
+        let field = PayloadKeyType::new("text");
+        let mut context = QueryContext::default();
+        context.init_idf("sparse", None, &[1, 2]);
+        context.init_text_stats(&field, None, ["fox".to_string(), "dog".to_string()]);
+
+        // Each fork stands for one segment's fill.
+        let segment_fill = |documents, total_tokens, fox_df, dim_1_df| {
+            let mut fork = context.clone();
+            fork.add_available_point_count(documents);
+            let scope = &mut fork.mut_idf_stats().scopes[0];
+            *scope.indexed_vectors.get_mut("sparse").unwrap() += documents;
+            *scope.idf.get_mut("sparse").unwrap().get_mut(&1).unwrap() += dim_1_df;
+            let stats = fork.mut_text_stats().get_mut(&field).unwrap();
+            *stats.df.get_mut("fox").unwrap() += fox_df;
+            stats.add_segment(documents, total_tokens);
+            fork
+        };
+        let first = segment_fill(3, Some(10), 2, 1);
+        let second = segment_fill(4, Some(7), 1, 3);
+        let without_lengths = segment_fill(0, None, 0, 0);
+
+        context.merge_statistics(first);
+        context.merge_statistics(second);
+        assert_eq!(context.available_point_count(), 7);
+        let scope = context.idf_stats().scope(None).unwrap();
+        assert_eq!(scope.indexed_vectors.get("sparse"), Some(&7));
+        let idf = scope.idf.get("sparse").unwrap();
+        assert_eq!((idf[&1], idf[&2]), (4, 0));
+        let stats = &context.mut_text_stats()[&field];
+        assert_eq!((stats.df["fox"], stats.df["dog"]), (3, 0));
+        assert_eq!((stats.documents, stats.total_tokens), (7, Some(17)));
+
+        // One segment without document lengths drops `avgdl` for the shard.
+        context.merge_statistics(without_lengths);
+        assert_eq!(context.mut_text_stats()[&field].total_tokens, None);
+    }
 }

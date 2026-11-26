@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
 use segment::data_types::query_context::FormulaContext;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
@@ -20,7 +19,6 @@ impl LocalShard {
         limit: usize,
         score_threshold: Option<ScoreType>,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let stopping_guard = StoppingGuard::new();
 
@@ -38,7 +36,6 @@ impl LocalShard {
             self.segments.clone(),
             arc_ctx,
             &self.search_runtime,
-            hw_measurement_acc,
             timeout,
         );
 

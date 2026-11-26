@@ -139,8 +139,8 @@ pub enum ScoringQuery {
 
     /// BM25 over the text index of a payload field
     ///
-    /// A leaf only: it scores the points of each shard against statistics
-    /// gathered over that shard, and cannot rescore prefetched points yet.
+    /// Scores the points of each shard against statistics gathered over that
+    /// shard, as a leaf or as a rescore of prefetched points.
     Text(TextScoringQuery),
 }
 

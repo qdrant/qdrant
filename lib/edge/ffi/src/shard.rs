@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use segment::types::SegmentConfig;
 use shard::files::{clear_data, move_data};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 
@@ -102,10 +101,8 @@ impl EdgeShard {
             cfg.validate()?;
         }
         // The FFI `EdgeConfig` is the simplified surface (vectors + sparse);
-        // we hydrate it into the richer `edge::EdgeConfig` via SegmentConfig.
-        let edge_config = config
-            .map(SegmentConfig::from)
-            .map(|sc| edge::EdgeConfig::from_segment_config(&sc));
+        // we hydrate it into the richer `edge::EdgeConfig`.
+        let edge_config = config.map(EdgeConfig::into_edge_config);
         let shard = edge::EdgeShard::load(&PathBuf::from(path), edge_config)?;
         Ok(Arc::new(Self {
             inner: RwLock::new(Some(shard)),
@@ -125,7 +122,7 @@ impl EdgeShard {
     #[uniffi::constructor]
     pub fn create(path: String, config: EdgeConfig) -> Result<Arc<Self>> {
         config.validate()?;
-        let edge_config = edge::EdgeConfig::from_segment_config(&SegmentConfig::from(config));
+        let edge_config = config.into_edge_config();
         let shard = edge::EdgeShard::new(&PathBuf::from(path), edge_config)?;
         Ok(Arc::new(Self {
             inner: RwLock::new(Some(shard)),

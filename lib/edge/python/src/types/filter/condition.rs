@@ -68,6 +68,9 @@ impl<'py> IntoPyObject<'py> for PyCondition {
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
             }
+            Condition::ResolvedPoints(_) => {
+                unreachable!("ResolvedPoints condition is not expected in Python bindings")
+            }
         }
     }
 }
@@ -95,6 +98,9 @@ impl Repr for PyCondition {
             Condition::Filter(filter) => PyFilter::wrap_ref(filter).fmt(f),
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
+            }
+            Condition::ResolvedPoints(_) => {
+                unreachable!("ResolvedPoints condition is not expected in Python bindings")
             }
         }
     }
@@ -183,13 +189,13 @@ impl PyHasIdCondition {
     #[new]
     pub fn new(point_ids: ahash::HashSet<PyPointId>) -> Self {
         Self(HasIdCondition {
-            has_id: MaybeArc::NoArc(ahash::AHashSet::from(PyPointId::peel_set(point_ids))),
+            has_id: MaybeArc::NoArc(point_ids.into_iter().map(PyPointId::peel).collect()),
         })
     }
 
     #[getter]
-    pub fn point_ids(&self) -> &ahash::HashSet<PyPointId> {
-        PyPointId::wrap_set_ref(&self.0.has_id)
+    pub fn point_ids(&self) -> ahash::HashSet<PyPointId> {
+        self.0.has_id.iter().copied().map(PyPointId).collect()
     }
 
     pub fn __repr__(&self) -> String {

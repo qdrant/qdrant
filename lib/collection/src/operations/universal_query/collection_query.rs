@@ -3,6 +3,7 @@ use api::rest::{self, LookupLocation};
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
+use segment::data_types::index::{TextIndexParams, TextScoringType};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal, VectorRef};
 use segment::index::field_index::full_text_index::Bm25Params;
@@ -114,30 +115,40 @@ pub enum Query {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextQueryInternal {
     pub text: String,
-    pub params: Bm25Params,
+    /// `None` runs the field's scorer with its defaults.
+    pub params: Option<TextQueryParams>,
 }
 
-impl TextQueryInternal {
+/// Parameters of a text query, one variant per [`TextScoringType`]: the
+/// variant must match the scoring type of the field's text index.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TextQueryParams {
+    Bm25(Bm25Params),
+}
+
+impl TextQueryParams {
     /// `k` and `b` default to [`Bm25Params::default`] where not given.
-    pub fn new(text: String, k: Option<f32>, b: Option<f32>) -> Self {
+    pub fn bm25(k: Option<f32>, b: Option<f32>) -> Self {
         let default = Bm25Params::default();
-        Self {
-            text,
-            params: Bm25Params {
-                k1: k.unwrap_or(default.k1),
-                b: b.unwrap_or(default.b),
-            },
-        }
+        Self::Bm25(Bm25Params {
+            k1: k.unwrap_or(default.k1),
+            b: b.unwrap_or(default.b),
+        })
     }
 }
 
 impl From<rest::TextInterface> for TextQueryInternal {
     fn from(interface: rest::TextInterface) -> Self {
         match interface {
-            rest::TextInterface::Query(text) => Self::new(text, None, None),
-            rest::TextInterface::Struct(rest::TextQueryInput { query, k, b }) => {
-                Self::new(query, k, b)
-            }
+            rest::TextInterface::Query(text) => Self { text, params: None },
+            rest::TextInterface::Struct(rest::TextQueryInput { query, scoring }) => Self {
+                text: query,
+                params: scoring.map(|scoring| match scoring {
+                    rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params { k, b },
+                    }) => TextQueryParams::bm25(k, b),
+                }),
+            },
         }
     }
 }
@@ -165,6 +176,12 @@ impl Query {
             Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
             Query::Text(TextQueryInternal { text, params }) => {
+                // `check_text_queries` matched the parameters with the field's scorer,
+                // which can only be BM25 for now
+                let params = match params {
+                    None => Bm25Params::default(),
+                    Some(TextQueryParams::Bm25(params)) => params,
+                };
                 ScoringQuery::Text(TextScoringQuery {
                     field: text_field(&using)?,
                     text,
@@ -843,8 +860,8 @@ fn text_field(using: &VectorName) -> CollectionResult<JsonPath> {
 }
 
 /// Check a text query against the payload schema before any shard runs it:
-/// the field must have a text index that scores, and the parameters must be
-/// in range. The scorer checks the parameters too, but only in a segment
+/// the field must have a text index that scores, the parameters must be for
+/// its scoring type, and they must be in range. The scorer checks the parameters too, but only in a segment
 /// holding a query term, so without this the same request would fail on some
 /// data and return nothing on the rest.
 fn check_text_query(
@@ -861,8 +878,11 @@ fn check_text_query(
             "A text query needs a text index on `{field}`, which has none",
         )));
     };
-    match field_schema.expand().as_ref() {
-        PayloadSchemaParams::Text(text) if text.scoring.is_some() => {}
+    let scoring = match field_schema.expand().as_ref() {
+        PayloadSchemaParams::Text(TextIndexParams {
+            scoring: Some(scoring),
+            ..
+        }) => scoring.r#type,
         PayloadSchemaParams::Text(_) => {
             return Err(CollectionError::bad_request(format!(
                 "The text index on `{field}` does not score: set `scoring` on it to query it",
@@ -880,7 +900,13 @@ fn check_text_query(
                 field_schema.name(),
             )));
         }
-    }
+    };
+    // Exhaustive on both sides: a new scoring type or parameter variant must
+    // say which pairs match, and how a query without parameters scores
+    let params = match (scoring, params) {
+        (TextScoringType::Bm25, None) => return Ok(()),
+        (TextScoringType::Bm25, Some(TextQueryParams::Bm25(params))) => params,
+    };
     let Bm25Params { k1, b } = *params;
     if !(k1.is_finite() && k1 >= 0.0) {
         return Err(CollectionError::bad_request(format!(
@@ -1014,7 +1040,7 @@ mod tests {
         fn text(params: Bm25Params) -> Query {
             Query::Text(TextQueryInternal {
                 text: "quick fox".to_string(),
-                params,
+                params: Some(TextQueryParams::Bm25(params)),
             })
         }
 
@@ -1116,22 +1142,51 @@ mod tests {
         #[test]
         fn the_string_form_takes_the_defaults() {
             let from_string = TextQueryInternal::from(rest::TextInterface::Query("fox".into()));
-            assert_eq!(from_string.params, Bm25Params::default());
+            assert_eq!(from_string.params, None);
 
             let from_struct =
                 TextQueryInternal::from(rest::TextInterface::Struct(rest::TextQueryInput {
                     query: "fox".into(),
-                    k: Some(2.0),
-                    b: None,
+                    scoring: Some(rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params {
+                            k: Some(2.0),
+                            b: None,
+                        },
+                    })),
                 }));
             assert_eq!(from_struct.text, "fox");
             assert_eq!(
                 from_struct.params,
-                Bm25Params {
+                Some(TextQueryParams::Bm25(Bm25Params {
                     k1: 2.0,
                     b: Bm25Params::default().b,
-                },
+                })),
             );
+        }
+
+        #[test]
+        fn no_parameters_pass_and_score_with_the_defaults() {
+            let query = Query::Text(TextQueryInternal {
+                text: "quick fox".to_string(),
+                params: None,
+            });
+            request("scored", query.clone())
+                .check_text_queries(&schema())
+                .unwrap();
+
+            let scoring = query
+                .try_into_scoring_query(
+                    &ReferencedVectors::default(),
+                    DEFAULT_VECTOR_NAME,
+                    None,
+                    "scored".into(),
+                    10,
+                )
+                .unwrap();
+            let ScoringQuery::Text(TextScoringQuery { params, .. }) = scoring else {
+                panic!("expected a text scoring query, got {scoring:?}");
+            };
+            assert_eq!(params, Bm25Params::default());
         }
     }
 }

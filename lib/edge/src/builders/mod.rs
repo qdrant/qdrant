@@ -1,27 +1,47 @@
 //! Fluent builders for user-facing edge crate configuration and requests.
 
+pub mod bm25_params;
+pub mod bool_index_params;
 pub mod count_request;
+pub mod datetime_index_params;
 pub mod edge_config;
 pub mod edge_sparse_vector_params;
 pub mod edge_vector_params;
 pub mod facet_request;
+pub mod float_index_params;
+pub mod geo_index_params;
 pub mod group_request;
+pub mod integer_index_params;
+pub mod keyword_index_params;
 pub mod prefetch;
 pub mod query_request;
 pub mod retrieve_request;
 pub mod scroll_request;
 pub mod search_matrix_request;
 pub mod search_request;
+pub mod text_index_params;
+pub mod text_query;
+pub mod uuid_index_params;
 
+pub use bm25_params::Bm25ParamsBuilder;
+pub use bool_index_params::BoolIndexParamsBuilder;
 pub use count_request::CountRequestBuilder;
+pub use datetime_index_params::DatetimeIndexParamsBuilder;
 pub use edge_config::EdgeConfigBuilder;
 pub use edge_sparse_vector_params::EdgeSparseVectorParamsBuilder;
 pub use edge_vector_params::EdgeVectorParamsBuilder;
 pub use facet_request::FacetRequestBuilder;
+pub use float_index_params::FloatIndexParamsBuilder;
+pub use geo_index_params::GeoIndexParamsBuilder;
 pub use group_request::GroupRequestBuilder;
+pub use integer_index_params::IntegerIndexParamsBuilder;
+pub use keyword_index_params::KeywordIndexParamsBuilder;
 pub use prefetch::PrefetchBuilder;
 pub use query_request::QueryRequestBuilder;
 pub use retrieve_request::RetrieveRequestBuilder;
 pub use scroll_request::ScrollRequestBuilder;
 pub use search_matrix_request::SearchMatrixRequestBuilder;
 pub use search_request::SearchRequestBuilder;
+pub use text_index_params::TextIndexParamsBuilder;
+pub use text_query::TextQueryBuilder;
+pub use uuid_index_params::UuidIndexParamsBuilder;

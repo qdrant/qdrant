@@ -1,22 +1,28 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs, UniversalReadFsAsync};
-use futures::future::{BoxFuture, join_all};
+use common::universal_io::{
+    CachedReadFs, PreloadFuture, UioResult, UniversalReadFs, UniversalReadFsAsync,
+};
+use futures::future::join_all;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::index::UniversalReadExt;
+use crate::types::SeqNumberType;
 
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Stage every component's next [`Self::live_reload`] under shared access:
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
+    ///
+    /// Fails if any fetch failed. The caller must then skip the reload: it
+    /// would fail part-way, after some components already applied the change.
+    /// What was staged is dropped, and the next preload stages it again.
     pub async fn live_preload(
         &self,
         is_stopped: &AtomicBool,
@@ -64,7 +70,16 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             preloads.extend(vector_data.live_preload(fs)?);
         }
 
-        futures::join!(fs.wait_all(), join_all(preloads));
+        let ((), fetched) = futures::join!(fs.wait_all(), join_all(preloads));
+        let fetched = fetched
+            .into_iter()
+            .collect::<UioResult<()>>()
+            .and_then(|()| fs.prefetch_error());
+        if let Err(err) = fetched {
+            fs.discard_prefetched();
+            return Err(err.into());
+        }
+
         Ok(max_committed_id)
     }
 
@@ -79,10 +94,12 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// every component has reloaded successfully. If a component fails mid-way the
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
+    ///
+    /// New inserts are published to the id-tracker's readers only after that, so
+    /// readers never reach an offset a component cannot serve.
     pub fn live_reload(
         &mut self,
         max_committed_id: Option<PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
             uuid: _,
@@ -109,6 +126,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
 
         if pending.is_empty() {
+            id_tracker.borrow_mut().publish_staged();
             fs.rotate_cache_file_info();
             return Ok(());
         }
@@ -122,18 +140,19 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
             payload_storage
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
             payload_index
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
 
             for vector_data in vector_data.values() {
-                vector_data.live_reload(fs, &deleted, &inserted, hw_counter)?;
+                vector_data.live_reload(fs, &deleted, &inserted)?;
             }
         }
 
-        // Every component is now in sync; discard the applied delta and rotate
-        // file info.
+        // Every component is now in sync; publish the inserts, discard the applied
+        // delta and rotate file info.
+        id_tracker.borrow_mut().publish_staged();
         *pending = LiveReloadResult::default();
         fs.rotate_cache_file_info();
 
@@ -141,12 +160,93 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     }
 }
 
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
+    /// Whether [`Self::release_held_deletes`] with this gate would release anything.
+    pub fn releases_held_deletes(&self, gate: SeqNumberType) -> bool {
+        self.id_tracker.borrow().releases_held_deletes(gate)
+    }
+
+    /// Raise the gate of the held versioned deletes to `gate`, and apply the ones it now covers to
+    /// every component, see [`DeleteGating::Held`]. Does no IO.
+    ///
+    /// The id tracker deletes them first, so readers stop reaching them at once. If an earlier
+    /// reload left a delta unapplied, or a component fails here, the released offsets join that
+    /// delta, and the next [`Self::live_reload`] replays them with it.
+    ///
+    /// [`DeleteGating::Held`]: crate::id_tracker::delete_versions::DeleteGating::Held
+    pub fn release_held_deletes(&mut self, gate: SeqNumberType) -> OperationResult<()> {
+        let Self {
+            uuid: _,
+            segment_path: _,
+            id_tracker,
+            vector_data,
+            payload_index,
+            payload_storage,
+            pending_reload,
+            reload_fs: _,
+            segment_type: _,
+            segment_config: _,
+        } = self;
+
+        let released = id_tracker.borrow_mut().release_held_deletes(gate);
+        if released.is_empty() {
+            return Ok(());
+        }
+
+        let mut pending = pending_reload.borrow_mut();
+        if !pending.is_empty() {
+            pending.merge(LiveReloadResult {
+                inserted: Vec::new(),
+                deleted: released,
+            });
+            return Ok(());
+        }
+
+        let applied = {
+            // SAFETY: the tracker returns the released offsets sorted ascending.
+            let deleted = unsafe { SortedSlice::new_unchecked(&released) };
+            payload_storage
+                .borrow_mut()
+                .apply_deletions(&deleted)
+                .and_then(|()| payload_index.borrow_mut().apply_deletions(&deleted))
+                .and_then(|()| {
+                    vector_data
+                        .values()
+                        .try_for_each(|vector_data| vector_data.apply_deletions(&deleted))
+                })
+        };
+        if let Err(err) = applied {
+            pending.merge(LiveReloadResult {
+                inserted: Vec::new(),
+                deleted: released,
+            });
+            return Err(err);
+        }
+        Ok(())
+    }
+}
+
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
+    /// Apply `deleted` to this vector's storage, index and quantized vectors, without IO.
+    fn apply_deletions(&self, deleted: &SortedSlice<'_, PointOffsetType>) -> OperationResult<()> {
+        let Self {
+            vector_index,
+            vector_storage,
+            quantized_vectors,
+        } = self;
+        vector_storage.borrow_mut().apply_deletions(deleted)?;
+        vector_index.borrow_mut().apply_deletions(deleted)?;
+        if let Some(quantized_vectors) = quantized_vectors.borrow_mut().as_mut() {
+            quantized_vectors.apply_deletions(deleted)?;
+        }
+        Ok(())
+    }
+
     /// Stage this vector's next [`Self::live_reload`]. Shared access only.
     fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let Self {
             vector_index,
             vector_storage,
@@ -167,12 +267,11 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
     /// `Self` is destructured so that every component is covered: adding a field
     /// without reloading it won't compile. Each component mutates through its own
     /// `Arc<AtomicRefCell<_>>`, so `&self` is enough — no `&mut` is needed.
-    fn live_reload<Fs: UniversalReadFs<File = S>>(
+    pub(super) fn live_reload<Fs: UniversalReadFs<File = S>>(
         &self,
         fs: &Fs,
         deleted: &SortedSlice<'_, PointOffsetType>,
         inserted: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
             vector_index,
@@ -185,12 +284,12 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         // its inverted index (see `ReadOnlySparseVectorIndex::live_reload`).
         vector_storage
             .borrow_mut()
-            .live_reload(fs, deleted, inserted, hw_counter)?;
+            .live_reload(fs, deleted, inserted)?;
         vector_index
             .borrow_mut()
-            .live_reload(fs, deleted, inserted, hw_counter)?;
+            .live_reload(fs, deleted, inserted)?;
         if let Some(quantized_vectors) = quantized_vectors.borrow_mut().as_mut() {
-            quantized_vectors.live_reload(fs, deleted, inserted, hw_counter)?;
+            quantized_vectors.live_reload(fs, deleted, inserted)?;
         }
 
         Ok(())

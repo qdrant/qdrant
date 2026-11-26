@@ -26,7 +26,7 @@ from pathlib import Path
 
 import tomlkit
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 # Assume this script is in <root>/lib/edge/publish/.
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
@@ -38,6 +38,7 @@ PACKAGES_TO_INCLUDE = [
     "common",
     "edge",
     "blobstore",
+    "pairwise",
     "posting_list",
     "quantization",
     "segment",
@@ -180,11 +181,9 @@ def main() -> None:
         (r"^#\[macro_export]$\n", ""),
     )
     substitute(
-        AMALGAMATION / "src/common/uio_trace.rs",
-        (
-            r"^pub use __uio_trace_mark as mark;$",
-            "pub(crate) use __uio_trace_mark as mark;",
-        ),
+        AMALGAMATION.glob("src/common/ambient/trace/*.rs"),
+        # Non-`#[macro_export]` macros can't be re-exported as `pub`.
+        (r"^pub use (__\w+ as \w+|record::\{.*\});$", r"pub(crate) use \1;"),
     )
 
     # Fix doctests
@@ -204,12 +203,12 @@ def main() -> None:
         # otherwise cargo fmt will fail to resolve deleted module
         (r"^#\[cfg\(feature = \"gpu\"\)]\npub mod gpu;\n", ""),
     )
-    # io_bridge_object_store is a path dependency excluded from the amalgamation
+    # io_bridge is a path dependency excluded from the amalgamation
     # (the embedded edge build has no object storage), so drop the BlobFile
     # UniversalReadExt impl that references it.
     substitute(
         AMALGAMATION / "src/segment/index/universal_io.rs",
-        (r"(?s)^#\[rustfmt::skip]\nimpl<A: io_bridge_object_store.*?\n\}\n", ""),
+        (r"(?s)^#\[rustfmt::skip]\nimpl<A: io_bridge::.*?\n\}\n", ""),
     )
 
     # Ast-grep-based fixups.

@@ -1,39 +1,8 @@
-use std::collections::HashMap;
-
-use api::rest::{Bm25Config, Document, DocumentOptions, Image, InferenceObject};
-use serde::de::IntoDeserializer;
-use serde::{Deserialize, Serialize};
+use api::rest::{Document, DocumentOptions, Image, InferenceObject};
+pub use inference::{InferenceDataType, InferenceInput};
 use serde_json::Value;
-use storage::content_manager::errors::StorageError;
 
 use super::service::InferenceData;
-
-#[derive(Debug, Serialize, Clone)]
-pub struct InferenceInput {
-    pub data: Value,
-    pub data_type: InferenceDataType,
-    pub model: String,
-    pub options: Option<HashMap<String, Value>>,
-}
-
-impl InferenceInput {
-    /// Attempts to parse the input's options into a local model config.
-    pub fn parse_bm25_config(
-        options: Option<HashMap<String, Value>>,
-    ) -> Result<Bm25Config, StorageError> {
-        let options = options.unwrap_or_default();
-        Bm25Config::deserialize(options.into_deserializer())
-            .map_err(|err| StorageError::bad_input(format!("Invalid BM25 config: {err:#?}")))
-    }
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum InferenceDataType {
-    Text,
-    Image,
-    Object,
-}
 
 impl From<InferenceData> for InferenceInput {
     fn from(value: InferenceData) -> Self {
@@ -78,5 +47,52 @@ impl From<InferenceData> for InferenceInput {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use api::rest::{Bm25Config, TextPreprocessingConfig};
+    use ordered_float::NotNan;
+    use segment::data_types::index::{
+        Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm,
+        StopwordsInterface, TokenizerType,
+    };
+
+    use super::*;
+
+    /// The local model parses its options as `Bm25EmbedderConfig`; every field of the public
+    /// `Bm25Config` must survive that.
+    #[test]
+    fn public_bm25_config_parses_into_embedder_config() {
+        let public = Bm25Config {
+            k: NotNan::new(1.5).unwrap(),
+            b: NotNan::new(0.5).unwrap(),
+            avg_len: NotNan::new(100.0).unwrap(),
+            tokenizer: TokenizerType::Whitespace,
+            text_preprocessing_config: TextPreprocessingConfig {
+                language: Some("german".to_string()),
+                lowercase: Some(false),
+                ascii_folding: Some(true),
+                stopwords: Some(StopwordsInterface::Language(Language::German)),
+                stemmer: Some(StemmingAlgorithm::Snowball(SnowballParams {
+                    r#type: Snowball::Snowball,
+                    language: SnowballLanguage::German,
+                })),
+                min_token_len: Some(2),
+                max_token_len: Some(20),
+            },
+        };
+        let options: HashMap<String, Value> =
+            serde_json::from_value(serde_json::to_value(&public).unwrap()).unwrap();
+
+        let parsed = inference::parse_bm25_config(Some(options)).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&parsed).unwrap(),
+            serde_json::to_value(&public).unwrap(),
+        );
     }
 }

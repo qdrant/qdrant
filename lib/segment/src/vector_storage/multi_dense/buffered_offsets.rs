@@ -51,9 +51,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::generic_consts::AccessPattern;
 use common::is_alive_lock::IsAliveLock;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use parking_lot::RwLock;
@@ -205,9 +206,9 @@ impl BufferedOffsets {
 
                 let mut inner = inner.write();
 
-                let hw_counter = HardwareCounterCell::disposable();
+                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                 for (key, entry) in &items {
-                    inner.store.insert(*key, &[*entry], &hw_counter)?;
+                    inner.store.insert(*key, &[*entry])?;
                 }
 
                 // Drop every key we just persisted from the live pending set, unless

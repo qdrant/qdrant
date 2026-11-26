@@ -1,10 +1,11 @@
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::generic_consts::Sequential;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, ReadRange, TypedStorage, UniversalRead, UniversalReadFs,
 };
@@ -12,12 +13,26 @@ use common::universal_io::{
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
+use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog};
 use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
 use crate::id_tracker::immutable_id_tracker::mappings_storage::{load_mapping, mappings_path};
 use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_path;
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
+    /// No commit mark: the format is fully committed once present.
+    pub fn commit_mark_path(_segment_path: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    /// No commit mark, so no bound: see [`Self::commit_mark_path`].
+    pub fn max_committed_offset(
+        _fs: &impl CachedReadFs,
+        _segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        None
+    }
+
     pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
@@ -45,6 +60,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         fs.schedule_open(&deleted_path(segment_path), Some(options), None);
         fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
         fs.schedule_open(&mappings_path(segment_path), Some(options), None);
+        GatedDeleteLog::preopen(fs, segment_path);
 
         Ok(true)
     }
@@ -65,15 +81,25 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
+        gating: DeleteGating,
     ) -> OperationResult<Option<Self>> {
         if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
             return Ok(None);
         }
-        Ok(Some(Self::open(fs, segment_path)?))
+        Ok(Some(Self::open(fs, segment_path, gating)?))
     }
 
-    pub fn open(fs: &impl UniversalReadFs<File = S>, segment_path: &Path) -> OperationResult<Self> {
+    /// The deletes are the union of the mask and the delete log. With [`DeleteGating::Held`], the
+    /// log's deletes at or below the gate are applied, newer ones held.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        gating: DeleteGating,
+    ) -> OperationResult<Self> {
         let options = Self::open_options();
+
+        let mut delete_log = GatedDeleteLog::new(segment_path, gating);
+        let logged_deletes = delete_log.read_new(fs)?;
 
         let deleted =
             StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
@@ -91,13 +117,20 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         let mappings_file = fs.open(mappings_path(segment_path), options, Default::default())?;
         let mappings_bytes = mappings_file
             .read::<_, u8>(ReadRange::new(0, mappings_file.len::<u8>()?), Sequential)?;
-        let mappings = load_mapping(Cursor::new(mappings_bytes.as_ref()), Some(deleted_bitvec))?;
+        let mut mappings =
+            load_mapping(Cursor::new(mappings_bytes.as_ref()), Some(deleted_bitvec))?;
+        for slot in logged_deletes {
+            if let Some(external_id) = mappings.external_id(slot) {
+                mappings.drop(external_id);
+            }
+        }
 
         Ok(Self {
             path: segment_path.to_path_buf(),
             deleted,
             internal_to_version,
             mappings,
+            delete_log,
         })
     }
 }

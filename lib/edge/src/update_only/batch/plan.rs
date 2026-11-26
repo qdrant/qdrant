@@ -3,6 +3,7 @@
 use ahash::AHashMap;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::json_path::JsonPath;
 use segment::types::{Filter, PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::payload_ops::PayloadOps;
@@ -20,6 +21,9 @@ pub struct UpdateBatchPlan {
     /// appends are deterministic for a given batch.
     order: Vec<PointIdType>,
     updates: AHashMap<PointIdType, PointUpdates>,
+    /// The highest operation number in the batch, 0 for a batch without
+    /// operations.
+    version: SeqNumberType,
 }
 
 impl UpdateBatchPlan {
@@ -36,9 +40,11 @@ impl UpdateBatchPlan {
         let mut plan = Self {
             order: Vec::new(),
             updates: AHashMap::new(),
+            version: 0,
         };
 
         for (op_num, operation) in operations {
+            plan.version = plan.version.max(op_num);
             match operation {
                 CollectionUpdateOperations::PointOperation(operation) => {
                     plan.push_point_operation(op_num, operation)?;
@@ -208,6 +214,7 @@ impl UpdateBatchPlan {
     ) -> OperationResult<()> {
         match operation {
             PayloadOps::SetPayload(operation) => {
+                JsonPath::check_value_set_depth(operation.key.as_ref(), &operation.payload.0)?;
                 let points = require_points(operation.points, operation.filter.is_some())?;
                 for id in points {
                     self.push(
@@ -254,6 +261,12 @@ impl UpdateBatchPlan {
 
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
+    }
+
+    /// The batch version: the highest operation number in the batch, which
+    /// every delete the batch writes records.
+    pub fn version(&self) -> SeqNumberType {
+        self.version
     }
 
     pub fn len(&self) -> usize {

@@ -1,13 +1,12 @@
-use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::panic;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
+use common::{ambient, panic};
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -390,7 +389,11 @@ impl UpdateWorkers {
             let tracker_handle = tracker.handle();
 
             let handle = spawn_stoppable(move |stopped| {
-                let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                // At low priority, as HNSW building already is: the rest of an
+                // optimization (copying and merging segments, building payload
+                // indexes, encoding quantized vectors) otherwise competes with
+                // search for the same cores at equal priority.
+                let result = common::cpu::run_with_low_priority("optimization", || {
                     optimizer.as_ref().optimize(
                         segments.clone(),
                         segments_to_merge,
@@ -405,7 +408,7 @@ impl UpdateWorkers {
                             optimizers_log.lock().register(tracker);
                         }),
                     )
-                }));
+                });
                 let is_optimized;
                 let status;
                 let reported_error;
@@ -462,8 +465,9 @@ impl UpdateWorkers {
 
     /// Ensure there is at least one appendable segment with enough capacity
     ///
-    /// If there is no appendable segment, or all are at or over capacity, a new empty one is
-    /// created.
+    /// If there is no appendable segment, or all are at or over capacity or have unflushed
+    /// copy-on-write moves out of them, a new empty one is created. See
+    /// [`shard::segment_holder::SegmentHolder::has_appendable_segment_with_capacity`].
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
     pub fn ensure_appendable_segment_with_capacity(
@@ -478,7 +482,10 @@ impl UpdateWorkers {
             .has_appendable_segment_with_capacity(thresholds_config.max_segment_size_bytes());
 
         if no_segment_with_capacity {
-            log::debug!("Creating new appendable segment, all existing segments are over capacity");
+            log::debug!(
+                "Creating new appendable segment, all existing ones are over capacity or have \
+                 unflushed copy-on-write moves out of them"
+            );
 
             let segments_guard = segments.upgradable_read();
             // Building the segment yields a `NewSegmentToken` obliging us to register it.
@@ -539,15 +546,16 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    CollectionUpdater::update(
-                        &segments,
-                        op_num,
-                        operation.operation,
-                        update_operation_lock.clone(),
-                        update_tracker.clone(),
-                        max_segment_size_bytes,
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                    ambient::unmeasured(reason("Internal operation"), || {
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation.operation,
+                            update_operation_lock.clone(),
+                            update_tracker.clone(),
+                            max_segment_size_bytes,
+                        )
+                    })?;
                 }
             }
         };

@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
@@ -39,7 +38,6 @@ pub async fn lookup_ids<F, Fut>(
     routing_token: Option<RoutingToken>,
     shard_selection: &ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<HashMap<PseudoId, RecordInternal>>
 where
     F: FnOnce(String) -> Fut,
@@ -73,7 +71,6 @@ where
             routing_token,
             shard_selection,
             timeout,
-            hw_measurement_acc,
         )
         .await?
         .into_iter()

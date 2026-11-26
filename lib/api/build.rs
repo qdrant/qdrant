@@ -278,6 +278,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchParams.quantization", ""),
             ("SearchParams.acorn", ""),
             ("SearchParams.idf", ""),
+            ("SearchParams.max_sparse_dims", "range(min = 1)"),
             ("IdfParams.corpus", ""),
             ("QuantizationSearchParams.oversampling", "range(min = 1.0)"),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
@@ -363,8 +364,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Mmr.diversity", "range(min = 0.0, max = 1.0)"),
             ("Mmr.candidates_limit", "range(max = 16_384)"),
             ("Rrf.k", "range(min = 1)"),
-            ("TextQuery.k", "range(min = 0.0)"),
-            ("TextQuery.b", "range(min = 0.0, max = 1.0)"),
+            ("TextQuery.scoring", ""),
+            ("Bm25Params.k", "range(min = 0.0)"),
+            ("Bm25Params.b", "range(min = 0.0, max = 1.0)"),
             ("Query.variant", ""),
             ("PrefetchQuery.prefetch", ""),
             ("PrefetchQuery.query", ""),
@@ -494,6 +496,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ReadBatchRequest.path", "length(min = 1)"),
             ("ReadBatchRequest.ranges", "length(min = 1)"),
         ], &[])
+        // Cross-field validation: `exact` cannot be combined with `max_sparse_dims`
+        .type_attribute("SearchParams", "#[validate(schema(function = \"crate::grpc::validate::validate_search_params\"))]")
 }
 
 fn append_to_file(path: &str, line: &str) {

@@ -75,7 +75,7 @@ where
     pub fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &mut self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()>> {
+    ) -> UioResult<impl Future<Output = UioResult<()>>> {
         self.inner.live_preload(get_file_info)
     }
 
@@ -124,6 +124,12 @@ where
     #[inline]
     pub fn populate(&self) -> UioResult<()> {
         self.inner.populate()
+    }
+
+    #[inline]
+    pub fn will_need(&self, ranges: impl Iterator<Item = ReadRange>) {
+        self.inner
+            .will_need(ranges.map(ReadRange::into_byte_range::<T>));
     }
 
     #[inline]

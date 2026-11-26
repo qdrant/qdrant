@@ -17,7 +17,6 @@ pub mod collection_verification;
 mod collections_ops;
 pub mod consensus;
 pub mod consensus_manager;
-pub mod consensus_shadow;
 pub mod consensus_state_machine;
 pub mod conversions;
 pub mod errors;
@@ -223,6 +222,9 @@ pub trait CollectionContainer {
     fn apply_collections_snapshot(&self, data: CollectionsSnapshot) -> Result<(), StorageError>;
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
+
+    /// Remove peer addresses and drop outgoing channels after collection actions finish cleanup
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
     /// Whether the given peer has any shard replicas
     fn peer_has_shards(&self, peer_id: PeerId) -> bool;

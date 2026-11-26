@@ -12,7 +12,6 @@ mod turbo;
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
@@ -65,16 +64,13 @@ impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         build_quantized_raw_scorer(
             &self.storage_impl,
             &self.config.quantization_config,
             &self.distance,
             self.datatype,
-            self.storage_impl.is_on_disk(),
             query,
-            hardware_counter,
         )
     }
 
@@ -83,10 +79,8 @@ impl QuantizedVectors {
     pub fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.storage_impl
-            .raw_internal_scorer(point_id, hardware_counter)
+        self.storage_impl.raw_internal_scorer(point_id)
     }
 
     pub(in crate::vector_storage::quantized) fn get_config_path(path: &Path) -> PathBuf {
@@ -126,9 +120,9 @@ impl QuantizedVectors {
     /// layout is identical for all placements, so flipping back later works without rebuild.
     pub(in crate::vector_storage::quantized) fn memory_placement(
         requested: Option<Memory>,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> Memory {
-        let follow_storage = if on_disk_vector_storage {
+        let follow_storage = if cold_vector_storage {
             Memory::Cold
         } else {
             Memory::Pinned
@@ -138,9 +132,9 @@ impl QuantizedVectors {
 
     pub(in crate::vector_storage::quantized) fn is_ram(
         requested: Option<Memory>,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> bool {
-        Self::memory_placement(requested, on_disk_vector_storage) == Memory::Pinned
+        Self::memory_placement(requested, cold_vector_storage) == Memory::Pinned
     }
 
     pub(in crate::vector_storage::quantized) fn convert_binary_encoding(
@@ -202,14 +196,14 @@ impl QuantizedVectors {
     pub(in crate::vector_storage::quantized) fn tq_mode(bits: TQBits) -> TQMode {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 | TQBits::Bits4 => TQMode::Plus,
-            TQBits::Bits8 => TQMode::Normal,
+            TQBits::Bits8 | TQBits::Bits16 => TQMode::Normal,
         }
     }
 
     pub(in crate::vector_storage::quantized) fn tq_bits_default_rescoring(bits: TQBits) -> bool {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
-            TQBits::Bits4 | TQBits::Bits8 => false,
+            TQBits::Bits4 | TQBits::Bits8 | TQBits::Bits16 => false,
         }
     }
 
@@ -316,20 +310,15 @@ impl QuantizedVectorsRead for QuantizedVectors {
         self.default_rescoring()
     }
 
-    fn raw_scorer<'a>(
-        &'a self,
-        query: QueryVector,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        self.raw_scorer(query, hardware_counter)
+    fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query)
     }
 
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.raw_internal_scorer(point_id, hardware_counter)
+        self.raw_internal_scorer(point_id)
     }
 }
 
@@ -352,7 +341,9 @@ pub fn should_keep_source_rotated(
     };
     matches!(
         source_datatype,
-        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8
+        VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16
     ) && turbo.turbo.bits.unwrap_or_default() != TurboQuantBitSize::Bits1_5
         && distance != Distance::Manhattan
 }

@@ -3,11 +3,11 @@ mod writes;
 
 use std::collections::{BTreeSet, HashMap};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::VectorNameBuf;
 
-use super::op::{NamedVectors, Op};
+use super::op::{NamedVectors, Op, UrlMatch};
 use super::{Model, VectorValue};
 use crate::collection::Collection;
 use crate::operations::CollectionUpdateOperations;
@@ -112,7 +112,7 @@ pub(super) async fn apply(
         }
         Op::CountByTag(tag) => reads::apply_count_by_tag(collection, model, tag).await,
         Op::CountByUrlPrefix(prefix) => {
-            reads::apply_count_by_url_prefix(collection, model, prefix).await
+            reads::apply_count_matching(collection, model, &UrlMatch::Prefix(prefix)).await
         }
         Op::CountBySlice { total, index } => {
             reads::apply_count_by_slice(collection, model, *total, *index).await
@@ -121,7 +121,17 @@ pub(super) async fn apply(
             reads::apply_scroll_filtered_by_tag(collection, model, tag).await
         }
         Op::ScrollFilteredByUrlPrefix(prefix) => {
-            reads::apply_scroll_filtered_by_url_prefix(collection, model, prefix).await
+            reads::apply_scroll_matching(collection, model, &UrlMatch::Prefix(prefix)).await
+        }
+        Op::CountByUrlSubstring(substring) => {
+            reads::apply_count_matching(collection, model, &UrlMatch::Substring(substring)).await
+        }
+        Op::ScrollFilteredByUrlSubstring(substring) => {
+            reads::apply_scroll_matching(collection, model, &UrlMatch::Substring(substring)).await
+        }
+        Op::CountByNested(filter) => reads::apply_count_matching(collection, model, filter).await,
+        Op::ScrollFilteredByNested(filter) => {
+            reads::apply_scroll_matching(collection, model, filter).await
         }
         Op::ScrollOrdered(direction) => {
             reads::apply_scroll_ordered(collection, model, *direction).await
@@ -243,13 +253,8 @@ pub(super) async fn apply(
 /// Submit a write op through the standard path and panic with the engine error on failure.
 async fn apply_update(collection: &Collection, op: CollectionUpdateOperations, ctx: &str) {
     collection
-        .update_from_client_simple(
-            op,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(op, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"));
 }

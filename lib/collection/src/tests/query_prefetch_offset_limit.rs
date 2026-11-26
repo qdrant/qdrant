@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
@@ -63,6 +63,7 @@ async fn fixture() -> Collection {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -126,8 +127,8 @@ async fn fixture() -> Collection {
             None,
             WriteOrdering::Weak,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to insert points");
 
@@ -170,8 +171,8 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to query")
     };
@@ -228,8 +229,8 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to query")
     };

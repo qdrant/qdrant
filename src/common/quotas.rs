@@ -99,15 +99,22 @@ pub async fn get_quota_status(
 
 /// Set the cluster-wide quota config.
 ///
+/// A `None` config is a no-op: access is still checked, but nothing is proposed
+/// to consensus and the current config stays as it is.
+///
 /// `wait` blocks until the new config is confirmed by consensus on this peer; see
 /// [`storage::content_manager::toc::TableOfContent::update_quota_config`].
 pub async fn update_quota_status(
     dispatcher: &Dispatcher,
     auth: &Auth,
-    config: QuotaConfig,
+    config: Option<QuotaConfig>,
     wait: bool,
 ) -> Result<(), StorageError> {
     auth.check_global_access(AccessRequirements::new().manage(), "update_quotas")?;
+
+    let Some(config) = config else {
+        return Ok(());
+    };
 
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();

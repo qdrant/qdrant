@@ -24,6 +24,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 num-traits = { workspace = true }
 common = { path = "../common/common" }
+pairwise = { path = "../common/pairwise" }
 strum = { workspace = true }
 bytemuck = { workspace = true }
 parking_lot = { workspace = true }

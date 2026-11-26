@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future;
 use itertools::{Either, Itertools};
 use segment::types::{
-    ExtendedPointId, Filter, Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -30,7 +29,6 @@ impl Collection {
         routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -46,7 +44,6 @@ impl Collection {
                 routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
         Ok(results.into_iter().next().unwrap())
@@ -59,7 +56,6 @@ impl Collection {
         routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
@@ -115,7 +111,6 @@ impl Collection {
                     routing_token,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
             // update timeout
@@ -132,7 +127,6 @@ impl Collection {
                         routing_token,
                         &shard_selection,
                         timeout,
-                        hw_measurement_acc.clone(),
                     )
                 });
             future::try_join_all(filled_results).await
@@ -144,7 +138,6 @@ impl Collection {
                     routing_token,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await?;
             Ok(result)
@@ -158,30 +151,20 @@ impl Collection {
         routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
         let instant = Instant::now();
 
-        // Snapshot the targeted shards under the read guard, then drop it
-        // before awaiting the per-shard searches. Holding the guard across
-        // the searches would block writers (e.g. shard creation) for the
-        // entire search duration; cloning `Arc<ShardReplicaSet>` lets each
-        // search keep the shard alive on its own.
-        let targets: Vec<(Arc<_>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        let targets = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         // query all shards concurrently
         let all_searches = targets.into_iter().map(|(shard, shard_key)| {
             let request = request.clone();
-            let hw_measurement_acc = hw_measurement_acc.clone();
             async move {
                 let mut records = shard
                     .core_search(
@@ -190,7 +173,6 @@ impl Collection {
                         routing_token,
                         shard_selection.is_shard_id(),
                         timeout,
-                        hw_measurement_acc,
                     )
                     .await?;
                 if shard_key.is_some() {
@@ -230,7 +212,6 @@ impl Collection {
         routing_token: Option<RoutingToken>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -258,7 +239,6 @@ impl Collection {
                 routing_token,
                 shard_selection,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 

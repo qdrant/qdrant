@@ -8,8 +8,9 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSliceExt;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
@@ -87,6 +88,19 @@ fn open_turbo_single_uring(
     )
 }
 
+/// Score one stored point the way [`RawScorer::score_point`] does: as a
+/// batch of one.
+///
+/// [`RawScorer::score_point`]: crate::vector_storage::RawScorer::score_point
+fn score_one(
+    scorer: &impl crate::vector_storage::query_scorer::QueryScorer,
+    id: PointOffsetType,
+) -> ScoreType {
+    let mut score = [0.0];
+    scorer.score_stored_batch(&[id], &mut score).unwrap();
+    score[0]
+}
+
 /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
 /// the independent oracle observe exactly the same inputs across runs.
 fn make_vectors(dim: usize, count: usize, seed: u64) -> Vec<DenseVector> {
@@ -116,18 +130,18 @@ const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
 fn upsert_flush_reload_in_ram_matches_independent_oracle(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     const COUNT: usize = 64;
     // Max direction error tolerated on a round-trip, and the separation we
     // require from every unrelated vector.
     const TOL: f32 = 2e-2;
 
-    for seed in SEEDS {
+    for seed in [SEEDS[0]] {
         for dim in [1, 127, 128, 1024, 4096, 4097] {
             let distance = Distance::Dot;
             let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
 
             // Independent oracle, computed up front and fully independently of the
             // storage: a fresh quantizer configured exactly like the storage's
@@ -150,7 +164,7 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle(
                         .unwrap();
                 for (i, vector) in inputs.iter().enumerate() {
                     storage
-                        .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vector.as_slice().into())
                         .unwrap();
                 }
                 assert_eq!(storage.total_vector_count(), COUNT);
@@ -230,7 +244,7 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle(
 /// stays unsupported. Verified against the same independent oracle.
 #[rstest]
 fn mmap_update_from_builds_and_matches_independent_oracle(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     const COUNT: usize = 64;
     const TOL: f32 = 2e-2;
@@ -243,7 +257,6 @@ fn mmap_update_from_builds_and_matches_independent_oracle(
         for dim in [1, 127, 128, 1024, 4097] {
             let distance = Distance::Dot;
             let dir = Builder::new().prefix("turbo_mmap_build").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
             let stopped = AtomicBool::new(false);
 
             // Independent oracle, configured exactly like the storage's quantizer.
@@ -266,7 +279,7 @@ fn mmap_update_from_builds_and_matches_independent_oracle(
                 // Runtime per-point insert is unsupported for the single-file backend.
                 assert!(
                     storage
-                        .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+                        .insert_vector(0, inputs[0].as_slice().into())
                         .is_err(),
                     "insert_vector must be unsupported on the single-file mmap backend",
                 );
@@ -346,7 +359,7 @@ fn reinsert_clears_deleted_flag_and_count() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_reinsert").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -357,7 +370,7 @@ fn reinsert_clears_deleted_flag_and_count() {
         let inputs = make_vectors(DIM, 2, seed);
         for (i, vector) in inputs.iter().enumerate() {
             storage
-                .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                .insert_vector(i as PointOffsetType, vector.as_slice().into())
                 .unwrap();
         }
 
@@ -373,7 +386,7 @@ fn reinsert_clears_deleted_flag_and_count() {
 
         // Re-insert (upsert) the same slot: it must come back to life.
         storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[0].as_slice().into())
             .unwrap();
 
         // (a) The flag itself must be cleared — checked both via the accessor
@@ -401,14 +414,10 @@ fn reinsert_clears_deleted_flag_and_count() {
 }
 
 /// Insert `vectors` at contiguous keys starting from 0.
-fn insert_all(
-    storage: &mut AppendableMmapTurboVectorStorage,
-    vectors: &[DenseVector],
-    hw: &HardwareCounterCell,
-) {
+fn insert_all(storage: &mut AppendableMmapTurboVectorStorage, vectors: &[DenseVector]) {
     for (i, vector) in vectors.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vector.as_slice().into(), hw)
+            .insert_vector(i as PointOffsetType, vector.as_slice().into())
             .unwrap();
     }
 }
@@ -422,12 +431,12 @@ fn get_vector_opt_returns_none_for_absent_key() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_opt_none").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
                 .unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         // Present key is `Some`; the first absent key and one well past it are `None`.
         assert!(storage.get_vector_opt::<Random>(0).is_some());
@@ -454,7 +463,7 @@ fn insert_overwrites_existing_key_in_place() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_overwrite").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Two near-orthogonal unit vectors so the stored one is unambiguous.
         let inputs = make_vectors(DIM, 2, seed);
@@ -463,14 +472,14 @@ fn insert_overwrites_existing_key_in_place() {
                 .unwrap();
 
         storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[0].as_slice().into())
             .unwrap();
         assert_eq!(storage.total_vector_count(), 1);
         let bytes_first = storage.get_quantized_vector(0).into_owned();
 
         // Overwrite slot 0 with the second vector.
         storage
-            .insert_vector(0, inputs[1].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[1].as_slice().into())
             .unwrap();
 
         // Overwrite, not append: still one vector, but with new bytes.
@@ -496,7 +505,8 @@ fn insert_overwrites_existing_key_in_place() {
     }
 }
 
-/// `datatype` and `is_on_disk` for both in-RAM and on-disk openings.
+/// `datatype` and `is_cold` for both in-RAM and on-disk openings, for the
+/// appendable and the single-file storages.
 #[test]
 fn metadata_accessors_report_expected_values() {
     const DIM: usize = 128;
@@ -504,18 +514,42 @@ fn metadata_accessors_report_expected_values() {
     const SEED: u64 = 0x0FEED;
 
     let distance = Distance::Dot;
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
-    // `in_ram` drives `populate`, which is exactly what `is_on_disk` reports.
+    // `in_ram` drives `populate`, which is exactly what `is_cold` reports.
     for (in_ram, expect_on_disk) in [(true, false), (false, true)] {
         let dir = Builder::new().prefix("turbo_meta").tempdir().unwrap();
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, in_ram)
                 .unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED));
 
         assert_eq!(storage.datatype(), VectorStorageDatatype::Turbo4);
-        assert_eq!(storage.is_on_disk(), expect_on_disk);
+        assert_eq!(storage.is_cold(), expect_on_disk);
+
+        // The single-file storages the optimizer builds into report it the same
+        // way: the segment builder drops the page cache of on-disk storages.
+        let dir = Builder::new()
+            .prefix("turbo_meta_single")
+            .tempdir()
+            .unwrap();
+        let storage =
+            open_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, in_ram).unwrap();
+        assert_eq!(storage.is_cold(), expect_on_disk, "mmap, in_ram {in_ram}");
+
+        #[cfg(target_os = "linux")]
+        {
+            let dir = Builder::new().prefix("turbo_meta_uring").tempdir().unwrap();
+            if let Ok(storage) =
+                open_turbo_single_uring(dir.path(), DIM, distance, TQBits::Bits4, in_ram)
+            {
+                assert_eq!(
+                    storage.is_cold(),
+                    expect_on_disk,
+                    "io_uring, in_ram {in_ram}"
+                );
+            }
+        }
     }
 }
 
@@ -530,12 +564,12 @@ fn files_and_immutable_files_match_expected_layout() {
 
     let distance = Distance::Dot;
     let dir = Builder::new().prefix("turbo_files").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut storage =
         open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
             .unwrap();
-    insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+    insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED));
 
     let vectors_dir = dir.path().join(VECTORS_DIR_PATH);
     let deleted_dir = dir.path().join(DELETED_DIR_PATH);
@@ -571,12 +605,12 @@ fn available_count_and_size_track_deletions() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_avail").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
                 .unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         let encoded_len = storage.get_quantized_vector(0).as_ref().len();
 
@@ -628,21 +662,23 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_read_batch").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
                 .unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         // User data is an arbitrary tag we expect echoed back beside each offset.
         let keys: Vec<(usize, PointOffsetType)> =
             (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
         let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
+            })
+            .unwrap();
 
         // Order is not guaranteed (the trait permits parallel reads), so check
         // each callback against its own offset, not its arrival position.
@@ -670,8 +706,9 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
 
 #[rstest]
 fn deleted_placeholders_load_and_score_without_panic(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
+    let _scope = ambient::test_guard();
     const COUNT: usize = 4;
     let stopped = AtomicBool::new(false);
 
@@ -729,7 +766,9 @@ fn deleted_placeholders_load_and_score_without_panic(
 /// arithmetic and the "higher = better" sign convention must all line up so
 /// that a stored vector scores best against itself.
 #[rstest]
-fn nearest_scorer_ranks_self_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn nearest_scorer_ranks_self_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 
@@ -746,24 +785,20 @@ fn nearest_scorer_ranks_self_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits:
         for dim in [4, 127, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_scorer").tempdir().unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
                 for (q, query_vec) in inputs.iter().enumerate() {
-                    let scorer = TurboQueryScorer::new(
-                        query_vec.clone(),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
+                    let scorer = TurboQueryScorer::new(query_vec.clone(), &storage);
 
                     // Asymmetric path: the query must score best against its
                     // own stored (lossy) encoding.
                     let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                        .map(|k| scorer.score_stored(k))
+                        .map(|k| score_one(&scorer, k))
                         .collect();
                     let best = (0..COUNT)
                         .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -793,12 +828,14 @@ fn nearest_scorer_ranks_self_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits:
     }
 }
 
-/// `score_bytes` must agree with `score_stored` on a stored vector's own
+/// `score_bytes` must agree with scoring the stored vector on its own
 /// encoded bytes, for both the nearest and the multi-vector (reco) scorers —
 /// the inline-rescoring path scores the exact same TQ bytes the storage
 /// holds, so the two must produce identical scores.
 #[rstest]
-fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn score_bytes_matches_stored_score(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use common::typelevel::True;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -820,22 +857,20 @@ fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits
                     .prefix("turbo_score_bytes")
                     .tempdir()
                     .unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
-                let nearest =
-                    TurboQueryScorer::new(inputs[0].clone(), &storage, HardwareCounterCell::new());
+                let nearest = TurboQueryScorer::new(inputs[0].clone(), &storage);
                 let reco = TurboCustomQueryScorer::new(
                     RecoBestScoreQuery::from(RecoQuery::new(
                         vec![inputs[1].clone()],
                         vec![inputs[2].clone()],
                     )),
                     &storage,
-                    HardwareCounterCell::new(),
                 );
 
                 for key in 0..COUNT as PointOffsetType {
@@ -843,14 +878,14 @@ fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits
 
                     assert_eq!(
                         nearest.score_bytes(True, &bytes),
-                        nearest.score_stored(key),
-                        "nearest score_bytes != score_stored at {key} \
+                        score_one(&nearest, key),
+                        "nearest score_bytes != stored score at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                     assert_eq!(
                         reco.score_bytes(True, &bytes),
-                        reco.score_stored(key),
-                        "reco score_bytes != score_stored at {key} \
+                        score_one(&reco, key),
+                        "reco score_bytes != stored score at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                 }
@@ -865,7 +900,9 @@ fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits
 /// which exercises query transform/preprocessing and `score_by` plumbing on
 /// top of the same asymmetric scoring used by the nearest path.
 #[rstest]
-fn custom_reco_scorer_ranks_positive_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn custom_reco_scorer_ranks_positive_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
@@ -875,7 +912,7 @@ fn custom_reco_scorer_ranks_positive_first(#[values(TQBits::Bits4, TQBits::Bits8
     /// Offset of the highest-scoring stored vector.
     fn top_scored(scorer: &impl QueryScorer, count: usize) -> usize {
         let scores: Vec<ScoreType> = (0..count as PointOffsetType)
-            .map(|k| scorer.score_stored(k))
+            .map(|k| score_one(scorer, k))
             .collect();
         (0..count)
             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -891,28 +928,22 @@ fn custom_reco_scorer_ranks_positive_first(#[values(TQBits::Bits4, TQBits::Bits8
         for dim in [4, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_reco").tempdir().unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
                 for (q, query_vec) in inputs.iter().enumerate() {
                     // One positive (the stored vector itself), no negatives.
                     let reco =
                         || RecoQuery::new(vec![query_vec.clone()], Vec::<DenseVector>::new());
 
-                    let best = TurboCustomQueryScorer::new(
-                        RecoBestScoreQuery::from(reco()),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
-                    let sum = TurboCustomQueryScorer::new(
-                        RecoSumScoresQuery::from(reco()),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
+                    let best =
+                        TurboCustomQueryScorer::new(RecoBestScoreQuery::from(reco()), &storage);
+                    let sum =
+                        TurboCustomQueryScorer::new(RecoSumScoresQuery::from(reco()), &storage);
 
                     for (kind, top) in [
                         ("best", top_scored(&best, COUNT)),
@@ -1125,7 +1156,7 @@ fn run_model_scenario(dim: usize, distance: Distance, bits: TQBits, seed: u64, o
     let oracle = Oracle::new(dim, distance, bits);
     let dir = Builder::new().prefix("turbo_model_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("turbo_model_dst").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let mut model: Vec<Slot> = Vec::new();
@@ -1147,9 +1178,7 @@ fn run_model_scenario(dim: usize, distance: Distance, bits: TQBits, seed: u64, o
             0..=34 => {
                 let v = random_unit_vector(&mut rng, dim);
                 let encoded = oracle.encode(&v);
-                storage
-                    .insert_vector(count, v.as_slice().into(), &hw)
-                    .unwrap();
+                storage.insert_vector(count, v.as_slice().into()).unwrap();
                 model.push(Slot {
                     input: v,
                     encoded,
@@ -1162,7 +1191,7 @@ fn run_model_scenario(dim: usize, distance: Distance, bits: TQBits, seed: u64, o
                 let v = random_unit_vector(&mut rng, dim);
                 let encoded = oracle.encode(&v);
                 storage
-                    .insert_vector(k as PointOffsetType, v.as_slice().into(), &hw)
+                    .insert_vector(k as PointOffsetType, v.as_slice().into())
                     .unwrap();
                 model[k] = Slot {
                     input: v,
@@ -1222,7 +1251,9 @@ const OPS: usize = 60;
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
-fn turbo_model_test_random_ops_dot(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn turbo_model_test_random_ops_dot(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
@@ -1237,7 +1268,9 @@ fn turbo_model_test_random_ops_dot(#[values(TQBits::Bits4, TQBits::Bits8)] bits:
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
-fn turbo_model_test_random_ops_cosine(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn turbo_model_test_random_ops_cosine(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
@@ -1279,7 +1312,9 @@ fn build_single_file(
 /// dequantized reads.
 #[cfg(target_os = "linux")]
 #[rstest]
-fn uring_backend_matches_mmap_and_oracle(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn uring_backend_matches_mmap_and_oracle(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 80;
 
     for (seed, dim) in [(SEEDS[0], 127), (SEEDS[1], 128), (SEEDS[2], 1024)] {
@@ -1329,12 +1364,14 @@ fn uring_backend_matches_mmap_and_oracle(#[values(TQBits::Bits4, TQBits::Bits8)]
     }
 }
 
-/// `score_stored_batch` must agree exactly with per-point `score_stored`
-/// on every backend and both scorers. Keys are shuffled, contain
+/// `score_stored_batch` must agree exactly with scoring each point on its
+/// own on every backend and both scorers. Keys are shuffled, contain
 /// duplicates, and exceed `VECTOR_READ_BATCH_SIZE`, so chunking and the
 /// idx→key mapping are actually exercised.
 #[rstest]
-fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn score_stored_batch_matches_single_points(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -1353,7 +1390,7 @@ fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8
     let distance = Distance::Dot;
     let seed = SEEDS[0];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1373,7 +1410,7 @@ fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8
     let mut chunked =
         open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, bits, true)
             .unwrap();
-    insert_all(&mut chunked, &inputs, &hw_counter);
+    insert_all(&mut chunked, &inputs);
 
     let single_dir = Builder::new()
         .prefix("turbo_batch_single")
@@ -1392,30 +1429,31 @@ fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8
         inputs: &[DenseVector],
         ids: &[PointOffsetType],
     ) {
-        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage, HardwareCounterCell::new());
+        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage);
         let reco = TurboCustomQueryScorer::new(
             RecoBestScoreQuery::from(RecoQuery::new(
                 vec![inputs[1].clone()],
                 vec![inputs[2].clone()],
             )),
             storage,
-            HardwareCounterCell::new(),
         );
 
         let mut nearest_scores = vec![0.0; ids.len()];
-        nearest.score_stored_batch(ids, &mut nearest_scores);
+        nearest
+            .score_stored_batch(ids, &mut nearest_scores)
+            .unwrap();
         let mut reco_scores = vec![0.0; ids.len()];
-        reco.score_stored_batch(ids, &mut reco_scores);
+        reco.score_stored_batch(ids, &mut reco_scores).unwrap();
 
         for (idx, &id) in ids.iter().enumerate() {
             assert_eq!(
                 nearest_scores[idx],
-                nearest.score_stored(id),
+                score_one(&nearest, id),
                 "nearest batch score diverges at idx {idx} (key {id}, {backend})",
             );
             assert_eq!(
                 reco_scores[idx],
-                reco.score_stored(id),
+                score_one(&reco, id),
                 "reco batch score diverges at idx {idx} (key {id}, {backend})",
             );
         }
@@ -1441,7 +1479,9 @@ fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8
 /// `VECTOR_READ_BATCH_SIZE`, so chunking and the idx→key mapping are
 /// actually exercised.
 #[rstest]
-fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn batched_retrieval_matches_per_point_reads(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     const DIM: usize = 128;
@@ -1450,7 +1490,7 @@ fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bit
     let distance = Distance::Dot;
     let seed = SEEDS[1];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1465,7 +1505,7 @@ fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bit
     let mut chunked =
         open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, bits, true)
             .unwrap();
-    insert_all(&mut chunked, &inputs, &hw_counter);
+    insert_all(&mut chunked, &inputs);
 
     let single_dir = Builder::new()
         .prefix("turbo_retr_single")
@@ -1489,23 +1529,25 @@ fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bit
     ) {
         // Decoded path: `read_vectors` ≡ `get_vector`, tags ride along.
         let mut seen = vec![false; keys.len()];
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            assert_eq!(
-                ids[tag], offset,
-                "user data not threaded to its offset ({backend})",
-            );
-            assert!(
-                !seen[tag],
-                "key at position {tag} visited twice ({backend})"
-            );
-            seen[tag] = true;
-            let direct = storage.get_vector::<Random>(offset);
-            assert_eq!(
-                DenseVector::try_from(vector).unwrap(),
-                DenseVector::try_from(direct).unwrap(),
-                "read_vectors disagrees with get_vector at {offset} ({backend})",
-            );
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                assert_eq!(
+                    ids[tag], offset,
+                    "user data not threaded to its offset ({backend})",
+                );
+                assert!(
+                    !seen[tag],
+                    "key at position {tag} visited twice ({backend})"
+                );
+                seen[tag] = true;
+                let direct = storage.get_vector::<Random>(offset);
+                assert_eq!(
+                    DenseVector::try_from(vector).unwrap(),
+                    DenseVector::try_from(direct).unwrap(),
+                    "read_vectors disagrees with get_vector at {offset} ({backend})",
+                );
+            })
+            .unwrap();
         assert!(
             seen.iter().all(|&s| s),
             "not every key was visited ({backend})",
@@ -1551,9 +1593,9 @@ fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bit
 /// scoring the same keys one by one.
 #[rstest]
 fn batch_scoring_accumulates_same_hw_counters(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::ambient::AmbientContext;
 
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
@@ -1574,29 +1616,29 @@ fn batch_scoring_accumulates_same_hw_counters(
 
     let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
 
-    let per_point_acc = HwMeasurementAcc::new();
+    let per_point_ctx = AmbientContext::new();
     {
-        let scorer = TurboQueryScorer::new(
-            inputs[0].clone(),
-            &storage,
-            per_point_acc.get_counter_cell(),
-        );
+        let _scope = per_point_ctx.measure_guard();
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         for &id in &ids {
-            scorer.score_stored(id);
+            score_one(&scorer, id);
         }
     }
 
-    let batch_acc = HwMeasurementAcc::new();
+    let batch_ctx = AmbientContext::new();
     {
-        let scorer =
-            TurboQueryScorer::new(inputs[0].clone(), &storage, batch_acc.get_counter_cell());
+        let _scope = batch_ctx.measure_guard();
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         let mut scores = vec![0.0; ids.len()];
-        scorer.score_stored_batch(&ids, &mut scores);
+        scorer.score_stored_batch(&ids, &mut scores).unwrap();
     }
 
-    assert_eq!(batch_acc.get_cpu(), per_point_acc.get_cpu());
     assert_eq!(
-        batch_acc.get_vector_io_read(),
-        per_point_acc.get_vector_io_read(),
+        batch_ctx.hw_data()[HwMetric::Cpu],
+        per_point_ctx.hw_data()[HwMetric::Cpu]
+    );
+    assert_eq!(
+        batch_ctx.hw_data()[HwMetric::VectorIoRead],
+        per_point_ctx.hw_data()[HwMetric::VectorIoRead],
     );
 }

@@ -2,6 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -69,8 +70,8 @@ async fn discover_points(
             shard_selection,
             auth,
             params.timeout(),
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await
         .map(|scored_points| {
             scored_points
@@ -124,8 +125,8 @@ async fn discover_batch_points(
         routing_token,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|batch_scored_points| {
         batch_scored_points

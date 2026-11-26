@@ -59,6 +59,7 @@ fn custom_sharding_config() -> CollectionConfigInternal {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     }
 }
 

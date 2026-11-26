@@ -3,6 +3,7 @@ use std::ops::Deref;
 use ahash::AHashSet;
 use common::types::PointOffsetType;
 
+use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::types::{Condition, FieldCondition, PointIdType, VectorNameBuf};
 
 pub mod bool_index;
@@ -17,6 +18,7 @@ mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
 mod memory_reporter;
+pub mod nested_index;
 pub mod null_index;
 pub mod numeric_index;
 mod numeric_point;
@@ -46,6 +48,8 @@ pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
     Ids(ResolvedHasId),
     HasVector(VectorNameBuf),
+    /// A filter already resolved to the points of this segment
+    Points(ResolvedPoints),
 }
 
 impl From<FieldCondition> for PrimaryCondition {
@@ -139,7 +143,8 @@ impl CardinalityEstimation {
                     | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)
-                    | Condition::CustomIdChecker(_) => false,
+                    | Condition::CustomIdChecker(_)
+                    | Condition::ResolvedPoints(_) => false,
                 },
                 PrimaryCondition::Ids(ids) => match condition {
                     Condition::HasId(has_id) => ids.point_ids.deref() == has_id.has_id.deref(),
@@ -150,7 +155,8 @@ impl CardinalityEstimation {
                     | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)
-                    | Condition::CustomIdChecker(_) => false,
+                    | Condition::CustomIdChecker(_)
+                    | Condition::ResolvedPoints(_) => false,
                 },
                 PrimaryCondition::HasVector(has_vector) => match condition {
                     Condition::HasVector(vector_condition) => {
@@ -160,6 +166,19 @@ impl CardinalityEstimation {
                     | Condition::IsEmpty(_)
                     | Condition::IsNull(_)
                     | Condition::HasId(_)
+                    | Condition::Slice(_)
+                    | Condition::Nested(_)
+                    | Condition::Filter(_)
+                    | Condition::CustomIdChecker(_)
+                    | Condition::ResolvedPoints(_) => false,
+                },
+                PrimaryCondition::Points(points) => match condition {
+                    Condition::ResolvedPoints(resolved) => points == resolved,
+                    Condition::Field(_)
+                    | Condition::IsEmpty(_)
+                    | Condition::IsNull(_)
+                    | Condition::HasId(_)
+                    | Condition::HasVector(_)
                     | Condition::Slice(_)
                     | Condition::Nested(_)
                     | Condition::Filter(_)

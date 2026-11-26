@@ -14,6 +14,7 @@ use quantization::encoded_storage::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
@@ -35,6 +36,7 @@ pub fn datatype_bits(datatype: VectorStorageDatatype) -> Option<TQBits> {
     match datatype {
         VectorStorageDatatype::Turbo4 => Some(TQBits::Bits4),
         VectorStorageDatatype::Turbo8 => Some(TQBits::Bits8),
+        VectorStorageDatatype::Turbo16 => Some(TQBits::Bits16),
         VectorStorageDatatype::Float32
         | VectorStorageDatatype::Float16
         | VectorStorageDatatype::Uint8 => None,
@@ -52,6 +54,7 @@ pub fn tq_bits(datatype: VectorStorageDatatype) -> TQBits {
 /// The datatype of a storage encoded with `quantizer`.
 pub(crate) fn storage_datatype(quantizer: &TurboQuantizer) -> VectorStorageDatatype {
     match quantizer.bits() {
+        TQBits::Bits16 => VectorStorageDatatype::Turbo16,
         TQBits::Bits8 => VectorStorageDatatype::Turbo8,
         TQBits::Bits4 => VectorStorageDatatype::Turbo4,
         bits @ (TQBits::Bits2 | TQBits::Bits1_5 | TQBits::Bits1) => {
@@ -108,7 +111,7 @@ pub fn turbo_storage_roundtrip(vector: &[f32], distance: Distance, bits: TQBits)
 /// Whether scores must be negated to follow qdrant's "higher = better"
 /// convention: TurboQuant returns a distance (lower = better) for the
 /// Euclid/Manhattan metrics, mirroring `VectorParameters::invert`.
-pub(super) fn invert_score(distance: Distance) -> bool {
+pub(crate) fn invert_score(distance: Distance) -> bool {
     matches!(distance, Distance::Euclid | Distance::Manhattan)
 }
 
@@ -164,27 +167,28 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     query: &EncodedQueryTQ,
     ids: &[PointOffsetType],
     scores: &mut [ScoreType],
-) {
+) -> OperationResult<()> {
     debug_assert_eq!(ids.len(), scores.len());
 
     if !TStorage::prefers_run_scoring(ids) {
         storage.for_each_batch(ids, |idx, bytes| {
             scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
-        });
-        return;
+        })?;
+        return Ok(());
     }
 
     // The record size every Turbo datatype storage is created with.
     let stride = quantizer.quantized_size();
     storage.for_each_run(ids, |first, count, bytes| {
         quantizer.score_precomputed_batch(query, &bytes, stride, &mut scores[first..first + count]);
-    });
+    })?;
 
     if invert_score(distance) {
         for score in scores {
             *score = -*score;
         }
     }
+    Ok(())
 }
 
 /// Symmetric score between two encoded vectors, applying the metric sign
@@ -221,7 +225,7 @@ pub(super) fn dequantize_vector<'a>(
 /// `keep_rotated` is set the inverse rotation is skipped and the result is
 /// dequantized straight into `f32`, avoiding the intermediate `Vec<f64>` that
 /// the rotation would need.
-pub(super) fn dequantize_for_requantization(
+pub(crate) fn dequantize_for_requantization(
     quantizer: &TurboQuantizer,
     dim: usize,
     quantized: &[u8],
@@ -255,7 +259,7 @@ mod tests {
             Distance::Dot,
             Distance::Manhattan,
         ];
-        for bits in [TQBits::Bits4, TQBits::Bits8] {
+        for bits in [TQBits::Bits4, TQBits::Bits8, TQBits::Bits16] {
             for distance in distances {
                 for dim in [1, 4, 5, 127, 256, 1023] {
                     assert_eq!(

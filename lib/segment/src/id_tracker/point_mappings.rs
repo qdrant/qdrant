@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-#[cfg(test)]
 use std::collections::btree_map::Entry;
 use std::iter;
 
@@ -63,8 +62,8 @@ pub struct PointMappings {
     /// Only set for appendable segments with deferred points.
     deferred_internal_id: Option<PointOffsetType>,
 
-    /// Number of deleted deferred points. Maintained incrementally so we can
-    /// derive the visible deferred count without re-scanning the deleted bitslice.
+    /// Number of set bits in `deleted` at or above the deferred cutoff. Maintained incrementally so
+    /// we can derive the visible deferred count without re-scanning the deleted bitslice.
     deferred_deleted_count: usize,
 }
 
@@ -226,6 +225,16 @@ impl PointMappings {
             .map(Into::into)
     }
 
+    /// The active and deferred heads of `external_id`, in that order, if any.
+    pub(crate) fn heads(&self, external_id: &PointIdType) -> impl Iterator<Item = PointOffsetType> {
+        [
+            self.internal_id_active(external_id),
+            self.internal_id_deferred(external_id),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
         // Drop from both tracks: an ext can be shadowed (active + deferred
         // head for the same external id), and `drop` must tombstone both.
@@ -253,6 +262,75 @@ impl PointMappings {
         active.or(deferred)
     }
 
+    /// Drop the head of `external_id` that sits at `internal_id`, if either of its heads does, and
+    /// return whether one did. Unlike [`Self::drop`] this leaves the other head alone: it serves a
+    /// delete that only applies to the slots the point held when it was deleted, not to a copy
+    /// linked after.
+    pub(crate) fn drop_head(
+        &mut self,
+        external_id: PointIdType,
+        internal_id: PointOffsetType,
+    ) -> bool {
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|cutoff| internal_id >= cutoff);
+
+        let removed = match (external_id, is_deferred) {
+            (PointIdType::NumId(num), false) => {
+                remove_if_at(&mut self.external_to_internal_num, num, internal_id)
+            }
+            (PointIdType::NumId(num), true) => remove_if_at(
+                &mut self.external_to_internal_num_deferred,
+                num,
+                internal_id,
+            ),
+            (PointIdType::Uuid(uuid), false) => {
+                remove_if_at(&mut self.external_to_internal_uuid, uuid, internal_id)
+            }
+            (PointIdType::Uuid(uuid), true) => remove_if_at(
+                &mut self.external_to_internal_uuid_deferred,
+                uuid,
+                internal_id,
+            ),
+        };
+        if !removed {
+            return false;
+        }
+
+        self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
+        self.tombstone_slot(internal_id);
+
+        // With its deferred head gone, nothing shadows the active head anymore
+        if is_deferred && let Some(active) = self.internal_id_active(&external_id) {
+            let active = active as usize;
+            if active < self.shadowed.len() {
+                self.shadowed.set(active, false);
+            }
+        }
+        true
+    }
+
+    /// Grow the slot range to cover `internal_id` without linking it. New slots start deleted,
+    /// and are counted as such. A no-op for slots already in range.
+    ///
+    /// Keeps `internal_id` allocated, so that it is never handed out again: its storages may
+    /// already hold data written for it.
+    pub(crate) fn reserve_slot(&mut self, internal_id: PointOffsetType) {
+        let internal_id_usize = internal_id as usize;
+        if internal_id_usize >= self.internal_to_external.len() {
+            self.internal_to_external
+                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
+        }
+        if internal_id_usize >= self.deleted.len() {
+            let new_from = self.deleted.len();
+            self.deleted.resize(internal_id_usize + 1, true);
+            if let Some(deferred_from) = self.deferred_internal_id {
+                self.deferred_deleted_count +=
+                    (internal_id_usize + 1).saturating_sub(new_from.max(deferred_from as usize));
+            }
+        }
+    }
+
     /// Mark `internal_id` as soft-deleted. Idempotent on the deleted bit, and
     /// keeps `deferred_deleted_count` in sync — increments only on the
     /// live → tombstoned transition for slots at or above the cutoff. Also
@@ -275,6 +353,19 @@ impl PointMappings {
                 .is_some_and(|deferred_from| internal_id >= deferred_from)
         {
             self.deferred_deleted_count += 1;
+        }
+    }
+
+    /// Mark `internal_id` as live, the inverse of [`Self::tombstone_slot`]: decrements
+    /// `deferred_deleted_count` only on the tombstoned → live transition for slots at or above
+    /// the cutoff.
+    fn revive_slot(&mut self, internal_id: PointOffsetType) {
+        let was_deleted = self.deleted.replace(internal_id as usize, false);
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|deferred_from| internal_id >= deferred_from);
+        if was_deleted && is_deferred {
+            self.deferred_deleted_count -= 1;
         }
     }
 
@@ -489,6 +580,23 @@ impl PointMappings {
         self.deleted[key]
     }
 
+    /// The head [`Self::set_link`] would return for this link, without linking.
+    pub(crate) fn peek_link(
+        &self,
+        external_id: &PointIdType,
+        internal_id: PointOffsetType,
+    ) -> Option<PointOffsetType> {
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|cutoff| internal_id >= cutoff);
+
+        if is_deferred {
+            self.internal_id_deferred(external_id)
+        } else {
+            self.internal_id_active(external_id)
+        }
+    }
+
     /// Sets the link between an external and internal id.
     /// Returns the previous head for the same track if it existed.
     ///
@@ -526,13 +634,7 @@ impl PointMappings {
             .is_some_and(|cutoff| internal_id >= cutoff);
 
         let internal_id_usize = internal_id as usize;
-        if internal_id_usize >= self.internal_to_external.len() {
-            self.internal_to_external
-                .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
-        }
-        if internal_id_usize >= self.deleted.len() {
-            self.deleted.resize(internal_id_usize + 1, true);
-        }
+        self.reserve_slot(internal_id);
 
         // Same-track insert; capture the prior head for tombstoning.
         let same_track_prior = match (external_id, is_deferred) {
@@ -575,6 +677,11 @@ impl PointMappings {
                 && old as usize != internal_id_usize
             {
                 self.tombstone_slot(old);
+            }
+            // With no deferred head left nothing shadows this one, including a slot linked
+            // again after a deferred head superseded it.
+            if internal_id_usize < self.shadowed.len() {
+                self.shadowed.set(internal_id_usize, false);
             }
         }
 
@@ -622,7 +729,7 @@ impl PointMappings {
         }
 
         self.internal_to_external[internal_id_usize] = external_id;
-        self.deleted.set(internal_id_usize, false);
+        self.revive_slot(internal_id);
 
         same_track_prior
     }
@@ -777,6 +884,21 @@ impl PointMappings {
     }
 }
 
+/// Remove `key` from `map` if it maps to `internal_id`, returning whether it did.
+fn remove_if_at<K: Ord>(
+    map: &mut BTreeMap<K, PointOffsetType>,
+    key: K,
+    internal_id: PointOffsetType,
+) -> bool {
+    match map.entry(key) {
+        Entry::Occupied(entry) if *entry.get() == internal_id => {
+            entry.remove();
+            true
+        }
+        Entry::Occupied(_) | Entry::Vacant(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod set_link_shadow_tests {
     use super::*;
@@ -870,6 +992,29 @@ mod set_link_shadow_tests {
         assert!(m.is_shadowed(2));
         assert!(m.is_deleted_point(7), "prior deferred head tombstoned");
         assert!(!m.is_deleted_point(9));
+    }
+
+    /// The count follows the deleted bits whatever the slot held before: a fresh slot, whose
+    /// placeholder equals point `u64::MAX`, skipped slots, and a superseded slot linked again.
+    #[test]
+    fn deferred_deleted_count_matches_deleted_bits() {
+        let mut m = fresh_mapping(Some(2));
+        let check = |m: &PointMappings| {
+            assert_eq!(m.deferred_deleted_count(), m.deleted[2..].count_ones());
+        };
+
+        m.set_link(ext(1), 2);
+        m.set_link(ext(1), 3);
+        check(&m);
+        m.set_link(ext(u64::MAX), 4);
+        check(&m);
+        m.set_link(ext(5), 7);
+        check(&m);
+        m.set_link(ext(1), 2);
+        check(&m);
+        m.drop(ext(u64::MAX));
+        check(&m);
+        assert_eq!(m.deferred_deleted_count(), 4, "slots 3, 4, 5 and 6");
     }
 
     #[test]

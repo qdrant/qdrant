@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use itertools::Itertools;
@@ -23,7 +22,6 @@ pub trait FacetIndex {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
     ) -> OperationResult<()>;
 
@@ -33,7 +31,6 @@ pub trait FacetIndex {
     fn for_values_map(
         &self,
         values: impl Iterator<Item = FacetValue>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
@@ -46,7 +43,6 @@ pub trait FacetIndex {
     /// Call a closure on each value->point_ids mapping.
     fn for_each_value_map(
         &self,
-        hw_acc: &HardwareCounterCell,
         f: impl FnMut(
             FacetValueRef<'_>,
             &mut dyn Iterator<Item = PointOffsetType>,
@@ -67,11 +63,10 @@ pub trait FacetIndex {
         &self,
         values: impl Iterator<Item = FacetValue>,
         deferred_internal_id: Option<PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(FacetHit<FacetValue>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let max_id = deferred_internal_id.unwrap_or(PointOffsetType::MAX);
-        self.for_values_map(values, hw_counter, |value, ids| {
+        self.for_values_map(values, |value, ids| {
             // Postings are sorted, so `take_while` matches `range_cardinality(..threshold)`.
             let count = ids.dedup().take_while(|&id| id < max_id).count();
             f(FacetHit { value, count })
@@ -85,24 +80,21 @@ pub trait FacetIndex {
     /// it has at least one point with internal id `< threshold`.
     fn for_each_visible_value(
         &self,
-        hw_counter: &HardwareCounterCell,
         deferred_internal_id: Option<PointOffsetType>,
         mut f: impl FnMut(FacetValueRef<'_>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match deferred_internal_id {
-            Some(deferred_internal_id) => {
-                self.for_each_value_map(hw_counter, |facet_value, id_iter| {
-                    let has_visible_point = id_iter
-                        .take_while(|&id| id < deferred_internal_id)
-                        .next()
-                        .is_some();
+            Some(deferred_internal_id) => self.for_each_value_map(|facet_value, id_iter| {
+                let has_visible_point = id_iter
+                    .take_while(|&id| id < deferred_internal_id)
+                    .next()
+                    .is_some();
 
-                    if has_visible_point {
-                        f(facet_value)?;
-                    }
-                    Ok(())
-                })
-            }
+                if has_visible_point {
+                    f(facet_value)?;
+                }
+                Ok(())
+            }),
             None => self.for_each_value(f),
         }
     }
@@ -144,34 +136,19 @@ impl<'a, S: UniversalReadExt> FacetIndex for FacetIndexEnum<'a, S> {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
     ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
-            FacetIndexEnum::Int(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
-            FacetIndexEnum::Uuid(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
-            FacetIndexEnum::Bool(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
+            FacetIndexEnum::Keyword(index) => FacetIndex::for_points_values(*index, points, f),
+            FacetIndexEnum::Int(index) => FacetIndex::for_points_values(*index, points, f),
+            FacetIndexEnum::Uuid(index) => FacetIndex::for_points_values(*index, points, f),
+            FacetIndexEnum::Bool(index) => FacetIndex::for_points_values(*index, points, f),
             FacetIndexEnum::KeywordReadOnly(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
+                FacetIndex::for_points_values(*index, points, f)
             }
-            FacetIndexEnum::IntReadOnly(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
-            FacetIndexEnum::UuidReadOnly(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
-            FacetIndexEnum::BoolReadOnly(index) => {
-                FacetIndex::for_points_values(*index, points, hw_counter, f)
-            }
+            FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_points_values(*index, points, f),
+            FacetIndexEnum::UuidReadOnly(index) => FacetIndex::for_points_values(*index, points, f),
+            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::for_points_values(*index, points, f),
         }
     }
 
@@ -193,61 +170,37 @@ impl<'a, S: UniversalReadExt> FacetIndex for FacetIndexEnum<'a, S> {
 
     fn for_each_value_map(
         &self,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(
             FacetValueRef<'_>,
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
-            FacetIndexEnum::Int(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
-            FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
-            FacetIndexEnum::Bool(index) => FacetIndex::for_each_value_map(*index, hw_counter, f),
-            FacetIndexEnum::KeywordReadOnly(index) => {
-                FacetIndex::for_each_value_map(*index, hw_counter, f)
-            }
-            FacetIndexEnum::IntReadOnly(index) => {
-                FacetIndex::for_each_value_map(*index, hw_counter, f)
-            }
-            FacetIndexEnum::UuidReadOnly(index) => {
-                FacetIndex::for_each_value_map(*index, hw_counter, f)
-            }
-            FacetIndexEnum::BoolReadOnly(index) => {
-                FacetIndex::for_each_value_map(*index, hw_counter, f)
-            }
+            FacetIndexEnum::Keyword(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::Int(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::Uuid(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::Bool(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::KeywordReadOnly(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::UuidReadOnly(index) => FacetIndex::for_each_value_map(*index, f),
+            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::for_each_value_map(*index, f),
         }
     }
 
     fn for_values_map(
         &self,
         values: impl Iterator<Item = FacetValue>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         match self {
-            FacetIndexEnum::Keyword(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::Int(index) => FacetIndex::for_values_map(*index, values, hw_counter, f),
-            FacetIndexEnum::Uuid(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::Bool(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::KeywordReadOnly(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::IntReadOnly(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::UuidReadOnly(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
-            FacetIndexEnum::BoolReadOnly(index) => {
-                FacetIndex::for_values_map(*index, values, hw_counter, f)
-            }
+            FacetIndexEnum::Keyword(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::Int(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::Uuid(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::Bool(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::KeywordReadOnly(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::IntReadOnly(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::UuidReadOnly(index) => FacetIndex::for_values_map(*index, values, f),
+            FacetIndexEnum::BoolReadOnly(index) => FacetIndex::for_values_map(*index, values, f),
         }
     }
 

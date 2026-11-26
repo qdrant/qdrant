@@ -1,6 +1,9 @@
-//! Staging-only operations for testing and debugging purposes.
+//! Staging-only operations and hooks for testing and debugging purposes.
 //!
-//! This module contains operations that are only available when the `staging` feature is enabled.
+//! Available only when the `staging` feature is enabled.
+
+use std::path::Path;
+use std::time::Duration;
 
 use collection::shards::shard::PeerId;
 use serde::{Deserialize, Serialize};
@@ -65,4 +68,49 @@ impl TestTransientError {
             Ok(())
         }
     }
+}
+
+/// Hold transfer-start application before the sender persists its transfer record
+pub(crate) async fn pause_shard_transfer_start() {
+    pause_from_env(
+        "QDRANT_STAGING_SHARD_TRANSFER_START_DELAY_SEC",
+        "shard transfer start",
+    )
+    .await;
+}
+
+/// Hold abort after clearing persisted resharding state, before transfer or replica writes
+pub(crate) async fn pause_resharding_abort() {
+    pause_from_env(
+        "QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC",
+        "resharding abort",
+    )
+    .await;
+}
+
+/// Leave the remaining scale-down abort actions for restart to replay
+pub(crate) fn crash_after_scale_down_state_clear() {
+    if std::env::var("QDRANT_STAGING_RESHARDING_CRASH_AFTER_STATE_CLEAR").is_ok()
+        && Path::new("crash_after_resharding_state_clear").exists()
+    {
+        log::debug!("Staging: crashing after clearing scale-down resharding state");
+        std::process::exit(1);
+    }
+}
+
+async fn pause_from_env(variable: &str, operation: &str) {
+    let Ok(seconds) = std::env::var(variable) else {
+        return;
+    };
+
+    let Ok(seconds) = seconds.parse::<f64>() else {
+        return;
+    };
+
+    let Ok(duration) = Duration::try_from_secs_f64(seconds) else {
+        return;
+    };
+
+    log::debug!("Staging: pausing {operation} for {duration:?}");
+    tokio::time::sleep(duration).await;
 }

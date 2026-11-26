@@ -39,6 +39,7 @@ impl StubResponse {
 
 /// One request as observed by [`stub_server`].
 pub(in crate::append) struct SeenRequest {
+    pub(in crate::append) headers: http::HeaderMap,
     pub(in crate::append) method: String,
     pub(in crate::append) path: String,
     pub(in crate::append) write_offset: Option<String>,
@@ -109,6 +110,7 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
     let mut copy_range = None;
     let mut copy_if_match = None;
     let mut signed = false;
+    let mut headers = http::HeaderMap::new();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).ok()?;
@@ -118,6 +120,10 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
         }
         let (name, value) = line.split_once(':')?;
         let value = value.trim().to_string();
+        headers.insert(
+            http::HeaderName::from_bytes(name.as_bytes()).ok()?,
+            http::HeaderValue::from_str(&value).ok()?,
+        );
         if name.eq_ignore_ascii_case("content-length") {
             content_length = value.parse().ok()?;
         } else if name.eq_ignore_ascii_case(super::native::WRITE_OFFSET_HEADER) {
@@ -137,6 +143,7 @@ fn read_request(stream: &mut TcpStream) -> Option<SeenRequest> {
     reader.read_exact(&mut body).ok()?;
 
     Some(SeenRequest {
+        headers,
         method,
         path,
         write_offset,

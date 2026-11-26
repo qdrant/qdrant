@@ -3,8 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::{self, Handoff};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
@@ -16,13 +15,14 @@ use super::AppendableIdTrackerState;
 use crate::common::check_named_vectors;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::mutable_id_tracker::update_only::{
     MappingOperation, UpdateOnlyAppendableIdTracker,
 };
 use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
 use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
 use crate::segment_constructor::get_vector_storage_path;
-use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorName, VectorNameBuf};
 use crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors;
 use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
 
@@ -54,21 +54,21 @@ struct StoreComponents<Fs: UniversalAppendFs> {
 /// The writers of one named vector.
 struct VectorComponents<Fs: UniversalAppendFs> {
     storage: UpdateOnlyVectorStorage<Fs::File>,
-    /// Quantized overlay — only for dense, non-multivector vectors whose
-    /// quantization method supports incremental appends.
-    quantized: Option<UpdateOnlyQuantizedVectors<Fs>>,
+    /// Quantized overlay — only for vectors whose quantization method supports
+    /// incremental appends.
+    quantized: Option<UpdateOnlyQuantizedVectors>,
 }
 
 impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
     /// Appends many points to the original and quantized (if any) storages in parallel
     fn append_many(
         &mut self,
-        pool: &rayon::ThreadPool,
-        points: &[FullyQualifiedPoint],
-        start_slot: u32,
         fs: &Fs,
-        hw_acc: &HwMeasurementAcc,
-        vector_name: &String,
+        start_slot: PointOffsetType,
+        points: &[FullyQualifiedPoint],
+        vector_name: &VectorName,
+        pool: &rayon::ThreadPool,
+        handoff: &Handoff,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points
             .iter()
@@ -91,16 +91,15 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         let mut quantized_res = Ok(());
         pool.scope(|s| {
             s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                original_res =
-                    self.storage
-                        .append_many(fs, start_slot, vectors.iter().copied(), &hw_counter);
+                let _scope = handoff.enter_guard();
+                original_res = self
+                    .storage
+                    .append_many(fs, start_slot, vectors.iter().copied());
             });
             if let Some(quantized) = &mut self.quantized {
                 s.spawn(|_| {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    quantized_res =
-                        quantized.append_many(start_slot, vectors.iter().copied(), &hw_counter);
+                    let _scope = handoff.enter_guard();
+                    quantized_res = quantized.append_many(fs, start_slot, vectors.iter().copied());
                 });
             }
         });
@@ -119,54 +118,64 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
         let mut payload_indexes = None;
         let mut dense_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
         let mut sparse_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
-        pool.scope(|s| {
-            s.spawn(|_| {
-                payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
-            });
-            s.spawn(|_| {
-                payload_indexes = Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
-            });
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
+                });
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_indexes =
+                        Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
+                });
 
-            s.spawn(|_| {
-                dense_vectors = config
-                    .vector_data
-                    .par_iter()
-                    .map(|(vector_name, vector_config)| {
-                        let path = get_vector_storage_path(segment_path, vector_name);
+                s.spawn(|_| {
+                    dense_vectors = config
+                        .vector_data
+                        .par_iter()
+                        .map(|(vector_name, vector_config)| {
+                            let path = get_vector_storage_path(segment_path, vector_name);
 
-                        let (original, quantized) = rayon::join(
-                            || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
-                            || {
-                                UpdateOnlyQuantizedVectors::<Fs>::open(
-                                    fs.clone(),
-                                    &path,
-                                    vector_config,
-                                )
-                            },
-                        );
+                            let (original, quantized) = rayon::join(
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyVectorStorage::<Fs::File>::open(
+                                        fs,
+                                        &path,
+                                        vector_config,
+                                    )
+                                },
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyQuantizedVectors::open(fs, &path, vector_config)
+                                },
+                            );
 
-                        let components = VectorComponents {
-                            storage: original?,
-                            quantized: quantized?,
-                        };
-                        Ok((vector_name.clone(), components))
-                    })
-                    .collect();
-            });
+                            let components = VectorComponents {
+                                storage: original?,
+                                quantized: quantized?,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
 
-            s.spawn(|_| {
-                sparse_vectors = config
-                    .sparse_vector_data
-                    .par_iter()
-                    .map(|(vector_name, _config)| {
-                        let path = get_vector_storage_path(segment_path, vector_name);
-                        let components = VectorComponents {
-                            storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
-                            quantized: None,
-                        };
-                        Ok((vector_name.clone(), components))
-                    })
-                    .collect();
+                s.spawn(|_| {
+                    sparse_vectors = config
+                        .sparse_vector_data
+                        .par_iter()
+                        .map(|(vector_name, _config)| {
+                            let _scope = handoff.enter_guard();
+                            let path = get_vector_storage_path(segment_path, vector_name);
+                            let components = VectorComponents {
+                                storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                                quantized: None,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
             });
         });
 
@@ -244,7 +253,6 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         &mut self,
         pool: &ThreadPool,
         points: &mut [FullyQualifiedPoint],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointOffsetType>> {
         if points.is_empty() {
             return Ok(Vec::new());
@@ -276,51 +284,44 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
         let (fs, store) = self.store_components(pool)?;
 
-        // One cell per task, off the accumulator: the cell itself is not Sync
-        let hw_acc = hw_counter.new_accumulator();
-
-        let slot_payloads = || {
-            inserted
-                .iter()
-                .zip(points)
-                .map(|((_, slot), point)| (*slot, &point.payload))
-        };
+        let payloads = || points.iter().map(|point| &point.payload);
 
         // Each component owns its files, so none of them waits on another
         let mut vectors_res = Ok(());
         let mut payload_res = Ok(());
         let mut indexes_res = Ok(());
-        pool.scope(|s| {
-            s.spawn(|_| {
-                vectors_res =
-                    store
-                        .vectors
-                        .par_iter_mut()
-                        .try_for_each(|(vector_name, components)| {
-                            components.append_many(
-                                pool,
-                                points,
-                                start_slot,
-                                fs,
-                                &hw_acc,
-                                vector_name,
-                            )
-                        });
-            });
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    vectors_res =
+                        store
+                            .vectors
+                            .par_iter_mut()
+                            .try_for_each(|(vector_name, components)| {
+                                components.append_many(
+                                    fs,
+                                    start_slot,
+                                    points,
+                                    vector_name,
+                                    pool,
+                                    handoff,
+                                )
+                            });
+                });
 
-            s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                payload_res = store
-                    .payload_storage
-                    .append_many(fs, slot_payloads(), &hw_counter);
-            });
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_res = store
+                        .payload_storage
+                        .append_many(fs, start_slot, payloads());
+                });
 
-            s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                indexes_res =
-                    store
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    indexes_res = store
                         .payload_indexes
-                        .par_append_many(fs, slot_payloads(), &hw_counter);
+                        .append_many(fs, start_slot, payloads());
+                });
             });
         });
         vectors_res.and(payload_res).and(indexes_res)?;
@@ -344,13 +345,20 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// again needs no retirement — its new mapping supersedes the old slot —
     /// and asking for one here retires the point outright: a delete addresses
     /// the external id, so it takes the fresh slot along with the stale one.
+    ///
+    /// `version` is the version of the batch that deletes the points, recorded
+    /// as [`delete_versions`](crate::id_tracker::delete_versions) describes.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
         self.id_tracker.delete_points(
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),
+            version,
+            versioning,
         )
     }
 }

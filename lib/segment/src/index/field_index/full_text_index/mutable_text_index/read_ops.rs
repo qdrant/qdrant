@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 
@@ -9,9 +8,10 @@ use super::super::inverted_index::{ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
 use super::MutableFullTextIndex;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
+use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
+use crate::index::query_optimization::point_sink::{PointSink, push_all};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl FullTextIndexRead for MutableFullTextIndex {
@@ -27,6 +27,10 @@ impl FullTextIndexRead for MutableFullTextIndex {
         self.inner.points_count()
     }
 
+    fn document_count(&self) -> usize {
+        self.inner.document_count()
+    }
+
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.inner.values_count(point_id)
     }
@@ -38,61 +42,63 @@ impl FullTextIndexRead for MutableFullTextIndex {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
-        self.inner.doc_len_batch(point_ids, hw_counter, f)
+        self.inner.doc_len_batch(point_ids, f)
     }
 
-    fn posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
-        self.inner.posting_len(token_id, hw_counter)
+    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+        self.inner.posting_len(token_id)
     }
 
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        self.inner
-            .score_bm25(query, accept, limit, is_stopped, hw_counter)
+        self.inner.score_bm25(query, accept, limit, is_stopped)
     }
 
     fn total_tokens(&self) -> Option<u64> {
         self.inner.total_tokens()
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        self.inner.token_bytes()
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.inner.for_each_token_id(iter, hw_counter, f)
+        self.inner.for_each_token_id(iter, f)
     }
 
     fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.inner.filter_query(query, hw_counter)
+        self.inner.filter_query(query)
+    }
+
+    fn filter_query_into(
+        &self,
+        query: ParsedQuery,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<()> {
+        push_all(self.filter_query(query)?, sink);
+        Ok(())
     }
 
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.inner
-            .estimate_query_cardinality(query, condition, hw_counter)
+        self.inner.estimate_query_cardinality(query, condition)
     }
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
@@ -125,7 +131,7 @@ impl FullTextIndexRead for MutableFullTextIndex {
         self.inner.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.inner.is_cold()
     }
 }

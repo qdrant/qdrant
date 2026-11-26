@@ -1,6 +1,9 @@
+import http.client
+import json
 import pytest
 import time
 import requests
+from urllib.parse import urlparse
 
 from .helpers.helpers import qdrant_host_headers, request_with_validation
 from .helpers.settings import QDRANT_HOST
@@ -134,6 +137,37 @@ def test_create_vector_rejects_oversize(collection_name):
     )
     assert response.status_code == 422, response.text
     assert "size" in response.text
+
+
+@pytest.mark.parametrize("encoded_name", ["%2E", "%2E%2E"])
+def test_create_vector_rejects_dot_segment_name(collection_name, encoded_name):
+    """`.` and `..` must be rejected at the API boundary.
+
+    Segments refuse to load a vector named `..`. Accepting it stored the name in the collection
+    config while every shard declined the operation, and the node then failed to load the shard
+    on restart.
+    """
+    # `requests` unescapes `%2E` and drops dot segments, so send the path as is.
+    parsed = urlparse(QDRANT_HOST)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port)
+    conn.request(
+        "PUT",
+        f"/collections/{collection_name}/vectors/{encoded_name}?wait=true",
+        body=json.dumps({"dense": {"size": VECTOR_SIZE1, "distance": "Cosine"}}),
+        headers={**qdrant_host_headers(), "Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    text = response.read().decode()
+    assert response.status == 422, text
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    vectors = response.json()["result"]["config"]["params"]["vectors"]
+    assert "." not in vectors and ".." not in vectors, vectors
 
 
 def test_delete_recreate_indexed_vector_scroll():

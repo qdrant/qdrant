@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 
@@ -146,20 +147,33 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
+    async fn apply_config(&self, mut new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
             let mut config = self.collection_config.write().await;
 
-            if config.uuid != new_config.uuid {
-                return Err(CollectionError::service_error(format!(
-                    "collection {} UUID mismatch: \
-                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
-                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
-                    self.id, config.uuid, new_config.uuid,
-                )));
-            }
+            // A missing UUID on either side belongs to a collection created outside of consensus,
+            // so take whichever UUID is known
+            let is_uuid_assigned = match (config.uuid, new_config.uuid) {
+                (Some(existing), Some(snapshot)) => {
+                    if existing != snapshot {
+                        return Err(CollectionError::service_error(format!(
+                            "collection {} UUID mismatch: \
+                             UUID of existing collection is different from UUID of collection in Raft snapshot: \
+                             existing collection UUID: {existing}, Raft snapshot collection UUID: {snapshot}",
+                            self.id,
+                        )));
+                    }
+                    false
+                }
+                (Some(existing), None) => {
+                    new_config.uuid = Some(existing);
+                    false
+                }
+                (None, Some(_)) => true,
+                (None, None) => false,
+            };
 
             if let Err(err) = config.params.check_compatible(&new_config.params) {
                 // Stop consensus with a service error, if new config is incompatible with current one.
@@ -182,6 +196,7 @@ impl Collection {
                 strict_mode_config,
                 uuid: _,
                 metadata,
+                created_at: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params
@@ -194,7 +209,8 @@ impl Collection {
             let is_wal_config_updated = wal_config != &config.wal_config;
             let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
 
-            let is_config_updated = is_core_config_updated
+            let is_config_updated = is_uuid_assigned
+                || is_core_config_updated
                 || is_wal_config_updated
                 || is_strict_mode_config_updated
                 || is_metadata_updated;
@@ -211,13 +227,15 @@ impl Collection {
                 );
             }
 
+            // Save before updating config in memory. If saving fails, the in-memory config
+            // must stay unchanged, so retrying the same state applies and saves it again,
+            // instead of seeing no changes.
+            new_config.save(&self.path)?;
             *config = new_config;
 
             // We need to recreate optimizers, if "core" config was updated
             recreate_optimizers = is_core_config_updated;
         }
-
-        self.collection_config.read().await.save(&self.path)?;
 
         self.print_warnings().await;
 
@@ -296,8 +314,8 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            // This function is only used in collection state recovery and thus an unmeasured internal operation.
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
+            self.create_payload_index(field_name, field_schema)
+                .unmeasured(reason("This function is only used in collection state recovery and thus an unmeasured internal operation."))
                 .await?;
         }
         Ok(())
@@ -427,7 +445,8 @@ impl Collection {
         }
 
         for (vector_name, config) in to_create {
-            self.create_named_vector(vector_name, config, HwMeasurementAcc::disposable())
+            self.create_named_vector(vector_name, config)
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
 

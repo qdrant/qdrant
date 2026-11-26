@@ -32,11 +32,11 @@ use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
+use common::ambient::{self, Handoff, hw};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use common::{panic, tar_ext};
@@ -150,6 +150,10 @@ pub struct LocalShard {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
+
+    /// Effective optimizer config, with any node-local `optimizers_overwrite` applied.
+    /// Used everywhere the override must win over the persisted collection config.
+    effective_optimizers_config: OptimizersConfig,
 }
 
 /// Shard holds information about segments and WAL.
@@ -261,6 +265,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        effective_optimizers_config: OptimizersConfig,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
@@ -301,10 +306,9 @@ impl LocalShard {
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
-            config.optimizer_config.flush_interval_sec,
-            config.optimizer_config.max_optimization_threads,
-            config
-                .optimizer_config
+            effective_optimizers_config.flush_interval_sec,
+            effective_optimizers_config.max_optimization_threads,
+            effective_optimizers_config
                 .prevent_unoptimized
                 .unwrap_or_default(),
             clocks.clone(),
@@ -355,6 +359,7 @@ impl LocalShard {
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
             applied_seq_handler,
+            effective_optimizers_config,
         }
     }
 
@@ -442,11 +447,14 @@ impl LocalShard {
         // Build desired vector names from collection config for segment reconciliation
         let desired_vector_names = desired_vector_names_from_config(&collection_config_read.params);
 
+        let handoff = ambient::current();
         let mut segment_stream = futures::stream::iter(segment_paths)
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
                 let desired_vectors = desired_vector_names.clone();
+                let handoff = handoff.clone();
                 let handle = tokio::task::spawn_blocking(move || {
+                    let _scope = handoff.into_scope();
                     let Some((segment_path, uuid)) = normalize_segment_dir(&segment_path)? else {
                         return CollectionResult::Ok(None);
                     };
@@ -570,6 +578,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             clocks,
@@ -738,6 +747,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
+            effective_optimizers_config,
             optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
@@ -790,10 +800,7 @@ impl LocalShard {
         // (the pre-`applied_seq` behavior) keeps the shard unavailable until every acknowledged
         // operation is applied, which is what every read path assumes.
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or_default();
         let op_num_upper_bound = if prevent_unoptimized {
@@ -893,6 +900,8 @@ impl LocalShard {
             .first()
             .and_then(|optimizer| optimizer.threshold_config().max_segment_size_bytes());
 
+        let mut skipped_missing_point_ops: usize = 0;
+
         for entry in wal.read_range(from..to) {
             let (op_num, mut update) = entry.map_err(|e| {
                 CollectionError::service_error(format!(
@@ -918,15 +927,16 @@ impl LocalShard {
             let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(
-                &self.segments,
-                op_num,
-                update.operation,
-                self.update_operation_lock.clone(),
-                self.update_tracker.clone(),
-                max_segment_size_bytes,
-                &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
-            ) {
+            match &ambient::unmeasured(reason("Internal operation"), || {
+                CollectionUpdater::replay(
+                    &self.segments,
+                    op_num,
+                    update.operation,
+                    self.update_operation_lock.clone(),
+                    self.update_tracker.clone(),
+                    max_segment_size_bytes,
+                )
+            }) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 
@@ -946,6 +956,17 @@ impl LocalShard {
                 Err(err @ CollectionError::OutOfMemory { .. }) => {
                     log::error!("{err}");
                     return Err(err.clone());
+                }
+                // Replay may start before the persisted state of some segments, so an update
+                // to a point that a later operation deleted is expected to miss. Count these
+                // and report once below, keeping the per-operation detail (incl. the point ID)
+                // at debug level.
+                Err(err) if err.is_missing_point() => {
+                    log::debug!(
+                        "Recovering shard {}: skipped WAL operation {op_num}: {err}",
+                        self.path.display(),
+                    );
+                    skipped_missing_point_ops += 1;
                 }
                 Err(err @ CollectionError::NotFound { .. }) => log::warn!("{err}"),
                 Err(err) => log::error!("{err}"),
@@ -984,6 +1005,13 @@ impl LocalShard {
         }
 
         bar.finish();
+        if skipped_missing_point_ops > 0 {
+            log::info!(
+                "Recovering shard {}: skipped {skipped_missing_point_ops} WAL operations on \
+                 points that no longer exist",
+                self.path.display(),
+            );
+        }
         if !show_progress_bar {
             log::info!(
                 "Recovered collection {collection_id}: {wal_entries_to_replay}/{wal_entries_to_replay} (100%)"
@@ -1033,8 +1061,6 @@ impl LocalShard {
                 last_wal_index - to
             );
             let update_sender = self.update_sender.load();
-            // TODO use proper collection's hardware measurement
-            let hw_measurements = HwMeasurementAcc::disposable();
             for op_num in to..last_wal_index {
                 update_sender
                     .send(UpdateSignal::Operation(OperationData {
@@ -1042,7 +1068,9 @@ impl LocalShard {
                         operation: None,
                         sender: None,
                         wait_for_deferred: false,
-                        hw_measurements: hw_measurements.clone(),
+                        handoff: Handoff::unmeasured(reason(
+                            "TODO use proper collection's hardware measurement",
+                        )),
                     }))
                     .await?;
             }
@@ -1105,13 +1133,13 @@ impl LocalShard {
     pub async fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments.clone();
-        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let handoff = ambient::current();
         // clone filter for spawning task
         let filter = filter.cloned();
         let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {
+            let _scope = handoff.enter_guard();
             // Collect the segments first so we don't lock the segment holder during the operations.
             let segments = segments
                 .read()
@@ -1125,7 +1153,7 @@ impl LocalShard {
                     segment
                         .get()
                         .read() // blocking sync lock
-                        .estimate_point_count(filter.as_ref(), &hw_counter)
+                        .estimate_point_count(filter.as_ref())
                 })
                 .process_results(|iter| iter.merge_independent())
         });
@@ -1137,7 +1165,6 @@ impl LocalShard {
         &'a self,
         filter: Option<&'a Filter>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_counter: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
@@ -1146,7 +1173,6 @@ impl LocalShard {
             segments,
             filter,
             runtime_handle,
-            hw_counter,
             timeout,
             deferred_behavior,
         )
@@ -1181,10 +1207,7 @@ impl LocalShard {
 
     pub async fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
         let prevent_unoptimized = self
-            .collection_config
-            .read()
-            .await
-            .optimizer_config
+            .effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or(false);
 
@@ -1212,6 +1235,15 @@ impl LocalShard {
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
             deferred_points: deferred_point_count,
         }
+    }
+
+    /// Whether an optimizer error is recorded on this shard. Recreating optimizers clears it.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let segments = self.segments.clone();
+        let handle =
+            tokio::task::spawn_blocking(move || segments.read().optimizer_errors.is_some());
+        // If we can't tell, report an error so callers fall back to recreating optimizers
+        AbortOnDropHandle::new(handle).await.unwrap_or(true)
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
@@ -1472,22 +1504,16 @@ impl LocalShard {
     }
 
     /// Check if the read rate limiter allows the operation to proceed
-    /// - hw_measurement_acc: the current hardware measurement accumulator
     /// - context: the context of the operation to add on the error message
     /// - cost_fn: the cost of the operation called lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_read_rate_limiter<F>(
-        &self,
-        hw_measurement_acc: &HwMeasurementAcc,
-        context: &str,
-        cost_fn: F,
-    ) -> CollectionResult<()>
+    fn check_read_rate_limiter<F>(&self, context: &str, cost_fn: F) -> CollectionResult<()>
     where
         F: FnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
+        if !hw::is_measured() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.read_rate_limiter {
@@ -1508,16 +1534,12 @@ impl LocalShard {
     /// Mirrors `check_read_rate_limiter` but for writes; the cost is computed
     /// lazily via `cost_fn` (which may be async, e.g. cardinality estimates).
     /// Returns an error if the rate limit is exceeded.
-    pub(crate) async fn check_write_rate_limiter<F>(
-        &self,
-        hw_measurement_acc: &HwMeasurementAcc,
-        cost_fn: F,
-    ) -> CollectionResult<()>
+    pub(crate) async fn check_write_rate_limiter<F>(&self, cost_fn: F) -> CollectionResult<()>
     where
         F: AsyncFnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
+        if !hw::is_measured() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.write_rate_limiter {
@@ -1752,3 +1774,29 @@ fn collect_segment_memory_metadata(
         }
     }
 }
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(LocalShard {
+    collection_name,
+    segments,
+    collection_config,
+    shared_storage_config,
+    payload_index_schema,
+    wal,
+    update_handler,
+    update_sender,
+    update_tracker,
+    update_lock,
+    path,
+    optimizers,
+    optimizers_log,
+    total_optimized_points,
+    search_runtime,
+    disk_usage_watcher,
+    read_rate_limiter,
+    write_rate_limiter,
+    is_gracefully_stopped,
+    update_operation_lock,
+    applied_seq_handler,
+    effective_optimizers_config,
+});

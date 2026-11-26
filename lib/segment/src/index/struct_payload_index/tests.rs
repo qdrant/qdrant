@@ -5,7 +5,7 @@
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -34,28 +34,25 @@ fn test_load_payload_index() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let key = JsonPath::from_str("name").unwrap();
 
     let full_segment_path = {
         let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 
-        segment
-            .set_full_payload(0, 0.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
 
         segment
             .create_field_index(
                 0,
                 &key,
                 Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -122,7 +119,7 @@ fn name_filter(key: &JsonPath, value: &str) -> Filter {
 #[test]
 fn create_field_index_persists_index_data_with_config() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
@@ -130,17 +127,13 @@ fn create_field_index_persists_index_data_with_config() {
     let segment_path = {
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
         segment
-            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
-        segment
-            .set_full_payload(2, 0.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(2, 0.into(), &payload).unwrap();
         segment.flush(true).unwrap();
 
         // No flush after this op: its own persistence must be self-contained.
-        segment
-            .create_field_index(4, &key, Some(&schema), &hw_counter)
-            .unwrap();
+        segment.create_field_index(4, &key, Some(&schema)).unwrap();
 
         segment.segment_path.clone()
         // Dropped without a further flush: simulates a crash right after the op.
@@ -169,11 +162,7 @@ fn create_field_index_persists_index_data_with_config() {
         .payload_index
         .borrow()
         .with_view(|view| {
-            view.query_points(
-                &name_filter(&key, "John Doe"),
-                &hw_counter,
-                &AtomicBool::new(false),
-            )
+            view.query_points(&name_filter(&key, "John Doe"), &AtomicBool::new(false))
         })
         .unwrap();
     assert_eq!(
@@ -193,7 +182,7 @@ fn create_field_index_persists_index_data_with_config() {
 #[test]
 fn switch_incompatible_index_type_survives_crash() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let keyword_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let text_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
@@ -202,20 +191,18 @@ fn switch_incompatible_index_type_survives_crash() {
     let segment_path = {
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
         segment
-            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
+        segment.set_full_payload(2, 0.into(), &payload).unwrap();
         segment
-            .set_full_payload(2, 0.into(), &payload, &hw_counter)
-            .unwrap();
-        segment
-            .create_field_index(3, &key, Some(&keyword_schema), &hw_counter)
+            .create_field_index(3, &key, Some(&keyword_schema))
             .unwrap();
         segment.flush(true).unwrap();
 
         // Incompatible switch: drops the keyword index, then builds full-text.
         // No flush after this op: its own persistence must be self-contained.
         segment
-            .create_field_index(4, &key, Some(&text_schema), &hw_counter)
+            .create_field_index(4, &key, Some(&text_schema))
             .unwrap();
 
         segment.segment_path.clone()
@@ -248,7 +235,7 @@ fn switch_incompatible_index_type_survives_crash() {
     let hits = segment
         .payload_index
         .borrow()
-        .with_view(|view| view.query_points(&filter, &hw_counter, &AtomicBool::new(false)))
+        .with_view(|view| view.query_points(&filter, &AtomicBool::new(false)))
         .unwrap();
     assert_eq!(
         hits,
@@ -292,13 +279,7 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    index
-        .set_indexed(
-            &field,
-            PayloadSchemaType::Integer,
-            &HardwareCounterCell::new(),
-        )
-        .unwrap();
+    ambient::test(|| index.set_indexed(&field, PayloadSchemaType::Integer)).unwrap();
 
     // Same integer index, but with on_disk flipped to true.
     let on_disk_schema =
@@ -400,7 +381,6 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let mut index = create_struct_payload_index(dir.path(), 100, 42);
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let hw_counter = HardwareCounterCell::new();
 
     let before_count: usize = index
         .field_indexes
@@ -416,9 +396,7 @@ fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
             enable_hnsw: Some(false),
             ..Default::default()
         }));
-    index
-        .set_indexed(&field, schema.clone(), &hw_counter)
-        .unwrap();
+    index.set_indexed(&field, schema.clone()).unwrap();
 
     let stored = index
         .config()
@@ -458,25 +436,25 @@ fn set_indexed_enable_hnsw_change_keeps_unflushed_appendable_updates() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let mut index = create_struct_payload_index(dir.path(), 100, 42);
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Not flushed: only the live index handles know about this value.
     let payload: Payload = serde_json::from_str(r#"{"int": 123456789}"#).unwrap();
-    index.overwrite_payload(0, &payload, &hw_counter).unwrap();
+    index.overwrite_payload(0, &payload).unwrap();
 
     let schema =
         PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
             enable_hnsw: Some(false),
             ..Default::default()
         }));
-    index.set_indexed(&field, schema, &hw_counter).unwrap();
+    index.set_indexed(&field, schema).unwrap();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         field,
         Match::new_value(ValueVariants::Integer(123456789)),
     )));
     let hits = index
-        .with_view(|view| view.query_points(&filter, &hw_counter, &AtomicBool::new(false)))
+        .with_view(|view| view.query_points(&filter, &AtomicBool::new(false)))
         .unwrap();
     assert_eq!(
         hits,
@@ -498,7 +476,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         create_id_tracker_fixture, create_payload_storage_fixture,
     };
     use crate::fixtures::payload_fixtures::INT_KEY;
-    use crate::index::field_index::PayloadFieldIndexRead;
+    use crate::index::field_index::{FieldIndexRead as _, PayloadFieldIndexRead};
     use crate::index::{BuildIndexResult, PayloadIndex};
     use crate::types::PayloadSchemaParams;
 
@@ -520,9 +498,9 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     index
-        .set_indexed(&field, PayloadSchemaType::Integer, &hw_counter)
+        .set_indexed(&field, PayloadSchemaType::Integer)
         .unwrap();
 
     // Indexed-point count of the freshly built (on_disk = false) index.
@@ -542,13 +520,10 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
             ..Default::default()
         }));
 
-    match index
-        .build_index(&field, &on_disk_schema, &hw_counter)
-        .unwrap()
-    {
+    match index.build_index(&field, &on_disk_schema).unwrap() {
         BuildIndexResult::Built(indexes) => {
             assert!(
-                indexes.iter().any(|i| i.is_on_disk()),
+                indexes.iter().any(|i| i.is_cold()),
                 "an on_disk-only change must reload the existing index in on-disk mode",
             );
             let after_count: usize = indexes
@@ -580,7 +555,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
 #[test]
 fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
@@ -588,22 +563,15 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
         for i in 0..3 {
             segment
-                .upsert_point(
-                    1 + i,
-                    i.into(),
-                    only_default_vector(&[1.0, 1.0]),
-                    &hw_counter,
-                )
+                .upsert_point(1 + i, i.into(), only_default_vector(&[1.0, 1.0]))
                 .unwrap();
             let payload: Payload =
                 serde_json::from_str(&format!(r#"{{ "name": "name_{i}" }}"#)).unwrap();
             segment
-                .set_full_payload(10 + i, i.into(), &payload, &hw_counter)
+                .set_full_payload(10 + i, i.into(), &payload)
                 .unwrap();
         }
-        segment
-            .create_field_index(20, &key, Some(&schema), &hw_counter)
-            .unwrap();
+        segment.create_field_index(20, &key, Some(&schema)).unwrap();
         segment.flush(true).unwrap();
         segment.segment_path.clone()
     };
@@ -656,7 +624,6 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
             .with_view(|view| {
                 view.query_points(
                     &name_filter(&key, &format!("name_{i}")),
-                    &hw_counter,
                     &AtomicBool::new(false),
                 )
             })
@@ -674,17 +641,15 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
 #[test]
 fn test_build_field_index_without_journal() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
     segment
-        .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+        .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
         .unwrap();
     let payload: Payload = serde_json::from_str(r#"{ "first": "a", "second": "b" }"#).unwrap();
-    segment
-        .set_full_payload(2, 0.into(), &payload, &hw_counter)
-        .unwrap();
+    segment.set_full_payload(2, 0.into(), &payload).unwrap();
 
     // The journal of a Gridstore lives next to its tracker file
     let has_journal = |segment: &Segment, key: &JsonPath| {
@@ -697,14 +662,327 @@ fn test_build_field_index_without_journal() {
 
     let first = JsonPath::from_str("first").unwrap();
     segment
-        .create_field_index(3, &first, Some(&schema), &hw_counter)
+        .create_field_index(3, &first, Some(&schema))
         .unwrap();
     assert!(has_journal(&segment, &first));
 
     segment.payload_index.borrow_mut().disable_journal();
     let second = JsonPath::from_str("second").unwrap();
     segment
-        .create_field_index(4, &second, Some(&schema), &hw_counter)
+        .create_field_index(4, &second, Some(&schema))
         .unwrap();
     assert!(!has_journal(&segment, &second));
+}
+
+/// Conditions read up front into point sets (a [`MaterializationHint`] given) must accept
+/// exactly the points the per-point index checks accept, for every clause that merges
+/// posting lists (`must` intersects, `should` and `must_not` unite) and with the primary
+/// clauses excluded, and the plain path built on them must return the brute-force matches.
+#[test]
+fn materialized_conditions_match_per_point_checks() {
+    use common::condition_checker::ConditionChecker;
+    use common::types::DeferredBehavior;
+
+    use crate::index::query_optimization::expected_checks::ExpectedChecks;
+    use crate::index::struct_payload_index::MaterializationHint;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let narrow = JsonPath::from_str("narrow").unwrap();
+    let small = JsonPath::from_str("small").unwrap();
+    let mid = JsonPath::from_str("mid").unwrap();
+    let num_points = 6600u64;
+    // `narrow = "n7"` holds 66 points, `small = "s"` holds 200 and `mid = "m"` 3300: with
+    // 66 checks, `small` passes the in-RAM ratio (4) and `mid` doesn't.
+    let in_narrow = |i: u64| i % 100 == 7;
+    let in_small = |i: u64| i.is_multiple_of(33);
+    let in_mid = |i: u64| !i.is_multiple_of(2);
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for i in 0..num_points {
+        segment
+            .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let payload: Payload = serde_json::from_value(serde_json::json!({
+            "narrow": format!("n{}", i % 100),
+            "small": if in_small(i) { "s" } else { "t" },
+            "mid": if in_mid(i) { "m" } else { "x" },
+        }))
+        .unwrap();
+        segment.set_full_payload(0, i.into(), &payload).unwrap();
+    }
+    for key in [&narrow, &small, &mid] {
+        segment
+            .create_field_index(
+                0,
+                key,
+                Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+            )
+            .unwrap();
+    }
+
+    let cond = |key: &JsonPath, value: &str| {
+        Condition::Field(FieldCondition::new_match(
+            key.clone(),
+            Match::new_value(ValueVariants::String(value.to_string())),
+        ))
+    };
+    let filter = |must: Vec<Condition>,
+                  should: Option<Vec<Condition>>,
+                  must_not: Option<Vec<Condition>>| Filter {
+        should,
+        min_should: None,
+        must: Some(must),
+        must_not,
+    };
+    // (filter, brute force)
+    #[expect(clippy::type_complexity)]
+    let cases: Vec<(Filter, Box<dyn Fn(u64) -> bool>)> = vec![
+        (
+            filter(vec![cond(&narrow, "n7"), cond(&small, "s")], None, None),
+            Box::new(move |i| in_narrow(i) && in_small(i)),
+        ),
+        (
+            filter(
+                vec![
+                    cond(&narrow, "n7"),
+                    cond(&small, "s"),
+                    cond(&small, "s"),
+                    cond(&mid, "m"),
+                ],
+                None,
+                None,
+            ),
+            Box::new(move |i| in_narrow(i) && in_small(i) && in_mid(i)),
+        ),
+        (
+            filter(
+                vec![cond(&narrow, "n7")],
+                Some(vec![cond(&small, "s"), cond(&narrow, "n8")]),
+                None,
+            ),
+            Box::new(move |i| in_narrow(i) && (in_small(i) || i % 100 == 8)),
+        ),
+        (
+            filter(
+                vec![cond(&narrow, "n7")],
+                None,
+                Some(vec![cond(&small, "s"), cond(&narrow, "n9")]),
+            ),
+            Box::new(move |i| in_narrow(i) && !in_small(i)),
+        ),
+    ];
+
+    segment.payload_index.borrow().with_view(|view| {
+        for (case, (filter, brute_force)) in cases.iter().enumerate() {
+            let expected: Vec<u64> = (0..num_points).filter(|&i| brute_force(i)).collect();
+            assert!(!expected.is_empty(), "case {case}");
+
+            let estimation = view.estimate_cardinality(filter).unwrap();
+            let per_point = view
+                .optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+                .unwrap();
+            for primary in [None, Some(&estimation)] {
+                let hint = MaterializationHint {
+                    expected_checks: ExpectedChecks::Batched { count: 66 },
+                    primary,
+                };
+                let materialized = view
+                    .optimized_filter(filter, DeferredBehavior::VisibleOnly, Some(hint))
+                    .unwrap();
+                for point in 0..num_points as u32 {
+                    assert_eq!(
+                        per_point.check(point).unwrap(),
+                        materialized.check(point).unwrap(),
+                        "case {case}, primary {}, point {point}",
+                        primary.is_some(),
+                    );
+                }
+            }
+
+            let mut hits = view.query_points(filter, &AtomicBool::new(false)).unwrap();
+            hits.sort_unstable();
+            let hits: Vec<u64> = hits.into_iter().map(u64::from).collect();
+            assert_eq!(hits, expected, "case {case}");
+        }
+    });
+}
+
+/// Unindexed field, `is_empty` and `is_null` conditions read only the first key of their path
+/// from the Mmap payload storage. They must match a check on the full payload, for deep paths
+/// and payloads where the path is missing, null, empty or has another shape.
+#[test]
+fn unindexed_conditions_on_mmap_match_full_payload_checks() {
+    use common::condition_checker::ConditionChecker;
+    use common::types::DeferredBehavior;
+    use serde_json::{Value, json};
+
+    use crate::common::utils::IndexesMap;
+    use crate::payload_storage::PayloadStorageRead;
+    use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+    use crate::payload_storage::query_checker::check_payload;
+    use crate::types::OwnedPayloadRef;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let num_points = 600u64;
+    let payload_for = |i: u64| -> Payload {
+        // `z` has the shape of `a`, so a check reading the wrong key would see other values
+        let a = match i % 7 {
+            0 => json!({
+                "b": {"c": i % 10, "k": format!("k{}", i % 3), "tags": [i % 4, (i + 1) % 4]},
+                "arr": [{"v": i % 5}, {"v": (i + 1) % 5}],
+            }),
+            1 => json!({"b": {"c": null, "k": null}, "arr": []}),
+            2 => json!({"b": [{"c": i % 10}, {"c": (i + 3) % 10}], "arr": [{"v": null}]}),
+            3 => json!({"b": {}, "arr": [{"w": 1}, 7]}),
+            4 => Value::Null,
+            5 => json!([{"b": {"c": i % 10}}]),
+            _ => json!({"b": {"c": [i % 10, 9], "k": ["k0", "k2"]}, "arr": [{"v": [2, 4]}]}),
+        };
+        let mut payload = json!({
+            "pad": {"blob": "x".repeat((i % 13) as usize), "list": [i, i + 1, {"c": i}]},
+            "a": a,
+            "z": {"b": {"c": 3, "k": "k1"}, "arr": [{"v": 2}]},
+            // Keys the storage writes with a JSON escape. Paths can't express a `"` or `\`
+            // in a key, so only the tab key is used in filters.
+            "q\"k": i,
+            "b\\s": [i, "x"],
+        });
+        if !i.is_multiple_of(3) {
+            let k = if i.is_multiple_of(4) {
+                Value::Null
+            } else {
+                json!(format!("k{}", i % 2))
+            };
+            let tab = json!({"c": i % 6, "k": k});
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("tab\tkey".to_string(), tab);
+        }
+        if i.is_multiple_of(11) {
+            payload.as_object_mut().unwrap().remove("a");
+        }
+        serde_json::from_value(payload).unwrap()
+    };
+
+    // No field index: every condition below falls back to the payload storage
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for i in 0..num_points {
+        segment
+            .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(0, i.into(), &payload_for(i))
+            .unwrap();
+    }
+
+    let payload_storage = segment.payload_storage.borrow();
+    assert!(
+        matches!(&*payload_storage, PayloadStorageEnum::Mmap(_)),
+        "test must run on the storage that parses partially",
+    );
+
+    // Storage level: only the requested first key, with the same value as the full payload
+    for point in 0..num_points as u32 {
+        let full = payload_storage.get(point).unwrap();
+        for key in ["a", "z", "pad", "missing", "q\"k", "b\\s", "tab\tkey"] {
+            let partial = payload_storage.payload_ref_field(point, key).unwrap();
+            assert!(partial.len() <= 1, "point {point}, key {key}");
+            assert_eq!(
+                partial.get(key),
+                full.0.get(key),
+                "point {point}, key {key}"
+            );
+        }
+    }
+
+    // The escaped keys are stored, so the checks above compared real values
+    let stored = payload_storage.get(1).unwrap();
+    for key in ["q\"k", "b\\s", "tab\tkey"] {
+        assert!(stored.0.contains_key(key), "{key:?}");
+    }
+
+    let filters = [
+        json!({"must": [{"key": "a.b.c", "match": {"value": 3}}]}),
+        json!({"must": [{"key": "a.b.c", "range": {"gte": 5}}]}),
+        json!({"must": [{"key": "a.b.c", "values_count": {"gte": 2}}]}),
+        json!({"must": [{"key": "a.b.k", "match": {"value": "k1"}}]}),
+        json!({"must": [{"key": "a.b.k", "match": {"any": ["k0", "k2"]}}]}),
+        json!({"must": [{"key": "a.b.tags[]", "match": {"value": 1}}]}),
+        json!({"must": [{"key": "a.b.tags[1]", "range": {"lt": 2}}]}),
+        json!({"must": [{"key": "a.arr[].v", "match": {"value": 2}}]}),
+        json!({"must": [{"key": "a.arr[0].v", "range": {"lte": 1}}]}),
+        json!({"must": [{"key": "a[].b.c", "match": {"value": 4}}]}),
+        json!({"must": [{"is_empty": {"key": "a.b.c"}}]}),
+        json!({"must": [{"is_null": {"key": "a.b.c"}}]}),
+        json!({"must": [{"is_empty": {"key": "a.arr[].v"}}]}),
+        json!({"must": [{"is_empty": {"key": "a"}}]}),
+        json!({"must": [{"is_null": {"key": "a"}}]}),
+        json!({"must_not": [{"key": "a.b.c", "range": {"lt": 5}}]}),
+        json!({
+            "should": [
+                {"key": "a.b.c", "match": {"value": 1}},
+                {"key": "a.arr[].v", "match": {"value": 4}},
+            ],
+            "must": [{"key": "z.b.c", "match": {"value": 3}}],
+            "must_not": [{"is_null": {"key": "a.b.k"}}],
+        }),
+        // First key stored with a JSON escape
+        json!({"must": [{"key": "\"tab\tkey\".c", "range": {"gte": 3}}]}),
+        json!({"must": [{"key": "\"tab\tkey\".k", "match": {"value": "k1"}}]}),
+        json!({"must": [{"is_empty": {"key": "\"tab\tkey\".c"}}]}),
+        json!({"must": [{"is_null": {"key": "\"tab\tkey\".k"}}]}),
+        // Nested keeps the full parse, mixed with a partial one
+        json!({"must": [
+            {"nested": {"key": "a.arr", "filter": {"must": [{"key": "v", "match": {"value": 2}}]}}},
+            {"key": "a.b.c", "range": {"gte": 2}},
+        ]}),
+    ];
+
+    let field_indexes = IndexesMap::new();
+    let vector_storages = std::collections::HashMap::new();
+
+    segment.payload_index.borrow().with_view(|view| {
+        for (case, filter) in filters.iter().enumerate() {
+            let filter: Filter = serde_json::from_value(filter.clone()).unwrap();
+
+            let expected: Vec<u32> = (0..num_points as u32)
+                .filter(|&point| {
+                    let full = payload_storage.get(point).unwrap();
+                    check_payload(
+                        Box::new(|| OwnedPayloadRef::from(&full)),
+                        None,
+                        &vector_storages,
+                        &filter,
+                        point,
+                        &field_indexes,
+                    )
+                })
+                .collect();
+            assert!(
+                !expected.is_empty() && expected.len() < num_points as usize,
+                "case {case} should split the points, matched {}",
+                expected.len(),
+            );
+
+            let checker = view
+                .optimized_filter(&filter, DeferredBehavior::VisibleOnly, None)
+                .unwrap();
+            for point in 0..num_points as u32 {
+                assert_eq!(
+                    checker.check(point).unwrap(),
+                    expected.binary_search(&point).is_ok(),
+                    "case {case}, point {point}",
+                );
+            }
+
+            let mut hits = view.query_points(&filter, &AtomicBool::new(false)).unwrap();
+            hits.sort_unstable();
+            assert_eq!(hits, expected, "case {case}");
+        }
+    });
 }

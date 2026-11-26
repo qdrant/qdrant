@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use api::rest::ShardKeySelector;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cow::ArcCow;
 use futures::Future;
 use futures::future::try_join_all;
@@ -34,7 +33,6 @@ pub async fn retrieve_points(
     routing_token: Option<RoutingToken>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<RecordInternal>> {
     collection
         .retrieve(
@@ -47,7 +45,6 @@ pub async fn retrieve_points(
             routing_token,
             shard_selector,
             timeout,
-            hw_measurement_acc,
         )
         .await
 }
@@ -178,7 +175,6 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         collection_by_name: &F,
         shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ReferencedVectors>
     where
         F: Fn(String) -> Fut,
@@ -210,7 +206,6 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                 ),
             };
             let shard_selector = &shard_selector;
-            let hw_measurement_acc = hw_measurement_acc.clone();
             vector_retrieves.push(async move {
                 retrieve_points(
                     &referenced_collection,
@@ -220,7 +215,6 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                     routing_token,
                     shard_selector,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await
             });
@@ -286,7 +280,6 @@ pub async fn resolve_referenced_vectors_batch<F, Fut, Req: RetrieveRequest>(
     read_consistency: Option<ReadConsistency>,
     routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<ReferencedVectors>
 where
     F: Fn(String) -> Fut,
@@ -327,7 +320,6 @@ where
                 &collection_by_name,
                 shard_selector,
                 timeout,
-                hw_measurement_acc.clone(),
             );
             requests.push(fetch);
             Ok(())

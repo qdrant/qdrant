@@ -40,7 +40,8 @@ impl SparseIndexType {
         }
     }
 
-    pub fn is_on_disk(self) -> bool {
+    /// Whether the index is read straight from the mmap rather than loaded into heap.
+    pub fn is_mmap(self) -> bool {
         match self {
             Self::Mmap => true,
             Self::MutableRam | Self::ImmutableRam => false,

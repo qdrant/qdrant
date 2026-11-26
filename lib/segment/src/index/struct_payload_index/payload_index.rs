@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -22,7 +21,6 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
         if let Some(prev_schema) = self.config().indices.get(field) {
             let transition = classify(&prev_schema.schema, payload_schema);
@@ -36,13 +34,11 @@ impl PayloadIndex for StructPayloadIndex {
                 // `on_disk` flipped (possibly together with `enable_hnsw`): reuse the
                 // existing files, reloaded in the new mode, instead of rebuilding from
                 // payload.
-                SchemaTransition::Compatible(_) => {
-                    self.reuse_or_build_index(field, payload_schema, hw_counter)
-                }
+                SchemaTransition::Compatible(_) => self.reuse_or_build_index(field, payload_schema),
                 SchemaTransition::Incompatible => Ok(BuildIndexResult::IncompatibleSchema),
             };
         }
-        let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
+        let indexes = self.build_field_indexes(field, payload_schema)?;
         Ok(BuildIndexResult::Built(indexes))
     }
 
@@ -79,13 +75,12 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let payload_schema = payload_schema.into();
 
         self.drop_index_if_incompatible(field, &payload_schema)?;
 
-        let field_index = match self.build_index(field, &payload_schema, hw_counter)? {
+        let field_index = match self.build_index(field, &payload_schema)? {
             BuildIndexResult::Built(field_index) => field_index,
             BuildIndexResult::AlreadyBuilt => {
                 // Index already built, no need to do anything
@@ -127,6 +122,13 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
+        // `on_disk` flipped on a non-appendable (mmap) segment: the existing files can be
+        // reloaded in the new mode. Per-element indexes are rebuilt with their element maps.
+        let reload_on_disk_flip = match self.storage_type {
+            StorageType::NonAppendable => new_payload_schema.nested().is_none(),
+            StorageType::Appendable => false,
+        };
+
         let Some(current_schema) = self.config.indices.get_mut(field) else {
             return Ok(false);
         };
@@ -142,14 +144,9 @@ impl PayloadIndex for StructPayloadIndex {
                 self.save_config()?;
                 Ok(false)
             }
-            // `on_disk` flipped on a non-appendable (mmap) segment: keep the
-            // existing files and reload the index in the new mode during
+            // Keep the existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.
-            SchemaTransition::Compatible(_)
-                if matches!(self.storage_type, StorageType::NonAppendable) =>
-            {
-                Ok(false)
-            }
+            SchemaTransition::Compatible(_) if reload_on_disk_flip => Ok(false),
             // Appendable Gridstore (its `on_disk` change goes through the normal
             // drop-and-rebuild path) or any incompatible change: drop so
             // `build_index` rebuilds.
@@ -163,22 +160,13 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.payload
-            .borrow_mut()
-            .overwrite(point_id, payload, hw_counter)?;
+        self.payload.borrow_mut().overwrite(point_id, payload)?;
 
         for (field, field_index) in &mut self.field_indexes {
-            let field_value = payload.get_value(field);
-            if !field_value.is_empty() {
-                for index in field_index {
-                    index.add_point(point_id, &field_value, hw_counter)?;
-                }
-            } else {
-                for index in field_index {
-                    index.remove_point(point_id)?;
-                }
+            for index in field_index {
+                let values = payload.get_value(index.input_path(field));
+                update_index(index, point_id, &values)?;
             }
         }
         Ok(())
@@ -189,34 +177,25 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
-                .set_by_key(point_id, payload, key, hw_counter)?;
+                .set_by_key(point_id, payload, key)?;
         } else {
-            self.payload
-                .borrow_mut()
-                .set(point_id, payload, hw_counter)?;
+            self.payload.borrow_mut().set(point_id, payload)?;
         };
 
         // Re-read the payload after the write so field indexes see the merged
         // value. Inlined `get_payload` to avoid going through `with_view` from
         // a `&mut self` write path.
-        let updated_payload = self.payload.borrow().get(point_id, hw_counter)?;
+        let updated_payload = self.payload.borrow().get(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
-                continue;
-            }
-            let field_value = updated_payload.get_value(field);
-            if !field_value.is_empty() {
-                for index in field_index {
-                    index.add_point(point_id, &field_value, hw_counter)?;
-                }
-            } else {
-                for index in field_index {
-                    index.remove_point(point_id)?;
+            for index in field_index {
+                let input_path = index.input_path(field);
+                if input_path.is_affected_by_value_set(&payload.0, key.as_ref()) {
+                    let values = updated_payload.get_value(input_path);
+                    update_index(index, point_id, &values)?;
                 }
             }
         }
@@ -227,23 +206,30 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
-        if let Some(indexes) = self.field_indexes.get_mut(key) {
+        let deleted = self.payload.borrow_mut().delete(point_id, key)?;
+
+        let mut updated_payload = None;
+        for (field, indexes) in &mut self.field_indexes {
             for index in indexes {
-                index.remove_point(point_id)?;
+                let input_path = index.input_path(field);
+                if !input_path.is_affected_by_value_remove(key) {
+                    continue;
+                }
+                let payload = match &mut updated_payload {
+                    Some(payload) => payload,
+                    None => updated_payload.insert(self.payload.borrow().get(point_id)?),
+                };
+                let values = payload.get_value(input_path);
+                update_index(index, point_id, &values)?;
             }
         }
-        self.payload.borrow_mut().delete(point_id, key, hw_counter)
+        Ok(deleted)
     }
 
-    fn clear_payload(
-        &mut self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Payload>> {
+    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.payload.borrow_mut().clear(point_id, hw_counter)
+        self.payload.borrow_mut().clear(point_id)
     }
 
     fn flusher(&self) -> Flusher {
@@ -301,5 +287,19 @@ impl PayloadIndex for StructPayloadIndex {
                 })
             })
             .collect()
+    }
+}
+
+/// Replace the indexed values of `point_id`, or remove it when its input is missing.
+fn update_index(
+    index: &mut FieldIndex,
+    point_id: PointOffsetType,
+    field_value: &[&Value],
+) -> OperationResult<()> {
+    if field_value.is_empty() {
+        index.remove_point(point_id)
+    } else {
+        index.add_point(point_id, field_value)?;
+        Ok(())
     }
 }

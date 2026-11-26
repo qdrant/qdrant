@@ -12,8 +12,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{CachedFs, UniversalReadFsAsync};
 
-use super::{AppendableIdTrackerState, DeleteOnlyIdTrackerState, WriterIdTrackerState};
-use crate::id_tracker::IdTrackerRead as _;
+pub(super) use self::lifecycle::{WRITER_POPULATE, build_cached_fs};
+use super::WriterIdTrackerState;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{SegmentConfig, VectorNameBuf};
@@ -46,28 +46,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     ///
     /// Taken from this segment's own reads rather than re-read by the writer:
     /// a second read costs another round-trip on a remote backend and may
-    /// land on a different state than the batch resolved against. The deleted
-    /// mask is handed over only when already in memory — the disk-resident
-    /// tracker deliberately avoids materializing it.
+    /// land on a different state than the batch resolved against.
     pub fn writer_state(&self) -> WriterIdTrackerState {
-        match &*self.id_tracker.borrow() {
-            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
-                WriterIdTrackerState::Appendable(AppendableIdTrackerState {
-                    max_claimed_internal_id: id_tracker.max_claimed_internal_id(),
-                    pending_inserts: id_tracker.pending_inserts().collect(),
-                    mappings_end: id_tracker.mappings_read_to(),
-                })
-            }
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::Immutable(Some(
-                    id_tracker.deleted_point_bitslice().to_bitvec(),
-                )))
-            }
-            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(
-                    id_tracker.deleted_full_if_materialized().cloned(),
-                ))
-            }
-        }
+        WriterIdTrackerState::of(&self.id_tracker.borrow())
     }
 }

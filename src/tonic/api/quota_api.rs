@@ -55,7 +55,7 @@ impl Quotas for QuotaService {
 
         let config = quota_config_from_grpc(require_config(config)?);
 
-        update_quota_status(&self.dispatcher, &auth, config, wait).await?;
+        update_quota_status(&self.dispatcher, &auth, Some(config), wait).await?;
 
         let response = UpdateQuotasResponse {
             result: true,

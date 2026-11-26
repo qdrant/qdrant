@@ -142,21 +142,23 @@ impl<S: UniversalRead> HnswGraph<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         residency: GraphLinksResidency,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<()>
+    where
+        S: 'static,
+    {
         fs.schedule_open(&GraphLayers::get_path(dir), None, None);
         let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
             return Ok(());
         };
-        let options = if Self::format_is_batched(format, residency) {
-            GraphLinksFile::<S>::preopen_options(format, residency)
-        } else {
-            GraphLinks::preopen_options(residency)
-        };
-        fs.schedule_open(
-            &GraphLayers::get_links_path(dir, format),
-            Some(options),
-            None,
-        );
+        let path = GraphLayers::get_links_path(dir, format);
+        if !Self::format_is_batched(format, residency) {
+            fs.schedule_open(&path, Some(GraphLinks::preopen_options(residency)), None);
+            return Ok(());
+        }
+        let options = GraphLinksFile::<S>::preopen_options(residency);
+        fs.schedule_open_with(&path, Some(options), None, move |file| {
+            GraphLinksFile::preload_offsets(file, format)
+        });
         Ok(())
     }
 
@@ -262,7 +264,7 @@ impl<S: UniversalRead> HnswGraph<S> {
                 return Ok(None);
             }
             let mut scores = vec![0.0; seed_ids.len()];
-            scorer.raw_scorer().score_points(&seed_ids, &mut scores);
+            scorer.raw_scorer().score_points(&seed_ids, &mut scores)?;
             let seeds = std::iter::zip(seed_ids, scores)
                 .map(|(idx, score)| ScoredPointOffset { idx, score })
                 .collect();
@@ -357,7 +359,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         self.residency() == GraphLinksResidency::Cold
     }
 

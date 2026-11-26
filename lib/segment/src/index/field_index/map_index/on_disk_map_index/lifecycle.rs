@@ -128,6 +128,7 @@ where
             },
             total_key_value_pairs: config.total_key_value_pairs,
             compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
@@ -183,6 +184,7 @@ where
             storage,
             total_key_value_pairs: _,
             compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             value_to_points,

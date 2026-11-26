@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -35,7 +35,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment
@@ -43,7 +43,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
             op_num,
             &field(),
             Some(&PayloadFieldSchema::from(PayloadSchemaType::Text)),
-            &hw_counter,
         )
         .unwrap();
 
@@ -54,7 +53,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
                 op_num,
                 PointIdType::from(point_id as u64),
                 NamedVectors::default(),
-                &hw_counter,
             )
             .unwrap();
         segment
@@ -63,7 +61,6 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
                 PointIdType::from(point_id as u64),
                 &payload_json! { "text": *document },
                 &None,
-                &hw_counter,
             )
             .unwrap();
     }
@@ -91,7 +88,11 @@ fn text_statistics_are_summed_across_segments() {
     );
 
     let mut query_context = QueryContext::default();
-    query_context.init_text_stats(&field(), ["quick", "fox", "absent"].map(str::to_string));
+    query_context.init_text_stats(
+        &field(),
+        None,
+        ["quick", "fox", "absent"].map(str::to_string),
+    );
 
     first.fill_query_context(&mut query_context).unwrap();
     second.fill_query_context(&mut query_context).unwrap();

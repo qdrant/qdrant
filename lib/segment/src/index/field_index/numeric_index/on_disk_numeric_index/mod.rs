@@ -41,6 +41,8 @@ pub struct OnDiskNumericIndex<
     /// Whether the "no values" mask was read from the compact
     /// `deleted_mask.bin` or the legacy `deleted.bin`.
     pub(super) compact_deleted_mask: bool,
+    /// Whether the pages were left on disk at open rather than populated.
+    pub(super) cold: bool,
 }
 
 pub(in super::super) struct Storage<

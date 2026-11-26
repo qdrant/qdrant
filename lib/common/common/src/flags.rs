@@ -81,20 +81,33 @@ pub struct FeatureFlags {
     /// Read on the sending side only: nodes accept raw payloads regardless.
     pub transfer_raw_payloads: bool,
 
-    /// Persist proxy segment changes on disk. Prevents pinning the WAL while proxy segments are
-    /// open. Replays the persisted changes on startup to guarantee data consistency. Required for
-    /// serverless deployments where storage and compute is separated.
-    pub persist_proxy_segments: bool,
-
     /// When `hnsw_config.inline_storage` enabled, use the `GraphInline` vector storage
     /// (aka inline-storage without standalone vector storage) for new segments.
     ///
     /// Existing `GraphInline` segments are always readable, regardless of this flag.
     pub combined_vector_storage: bool,
 
+    /// Record the version of every delete, in formats older readers cannot parse: versioned
+    /// delete entries in appendable mappings logs, and a delete log next to the deleted mask of
+    /// immutable segments, which takes their deletes in place of the mask. Followers use the
+    /// versions to never apply the delete of a moved point before they see its new copy. Gates
+    /// writing only: both formats are always read, and the deletes of an immutable segment are the
+    /// union of its mask and its log.
+    pub versioned_deletes: bool,
+
+    /// Build the main HNSW graph of large segments with PiPNN instead of inserting point by
+    /// point. When disabled, PiPNN is *never* used and graphs are built with HNSW.
+    /// When enabled, PiPNN is used where it applies: segments that are large enough, have
+    /// no older graph to build from, and whose vectors support it. Only changes how graphs
+    /// are built: the resulting graph has the same format either way.
+    ///
+    /// Disabled by default: PiPNN ignores `ef_construct`, so with it the graph quality of large
+    /// segments can only be tuned through `m`.
+    pub pipnn_graph_building: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
-    /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
+    /// [`Self::compact_logstore_tracker`] and [`Self::versioned_deletes`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -114,10 +127,11 @@ impl Default for FeatureFlags {
             compact_bitmask: false,
             append_only_storages: false,
             compact_logstore_tracker: false,
-            transfer_raw_points: false,
-            transfer_raw_payloads: false,
-            persist_proxy_segments: false,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
             combined_vector_storage: true,
+            versioned_deletes: false,
+            pipnn_graph_building: false,
             serverless_compatible: false,
         }
     }
@@ -135,6 +149,12 @@ impl FeatureFlags {
         self.serverless_compatible
     }
 
+    /// Turn on serverless-compatible mode. The implied sub-flags are applied
+    /// when the flags are passed to [`init_feature_flags`].
+    pub fn enable_serverless_compatible(&mut self) {
+        self.serverless_compatible = true;
+    }
+
     fn all() -> Self {
         Self {
             all: true,
@@ -150,12 +170,12 @@ impl FeatureFlags {
             append_only_storages: false,
             compact_logstore_tracker: false,
             compact_bitmask: true,
-            // Deliberately not enabled by `all`: a node only accepts these once it runs a
-            // version that understands them, so they can only be switched on a release later.
-            transfer_raw_points: false,
-            transfer_raw_payloads: false,
-            persist_proxy_segments: true,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
             combined_vector_storage: true,
+            // Deliberately not enabled by `all`: it changes the persisted storage format.
+            versioned_deletes: false,
+            pipnn_graph_building: true,
             serverless_compatible: false,
         }
     }
@@ -174,7 +194,7 @@ impl FeatureFlags {
             self.compact_bitmask = true;
             self.append_only_storages = true;
             self.compact_logstore_tracker = true;
-            self.persist_proxy_segments = true;
+            self.versioned_deletes = true;
         }
 
         // Append-only storages cannot rewrite slots.
@@ -235,7 +255,7 @@ mod tests {
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
-        assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
     }
 
     #[test]
@@ -252,7 +272,7 @@ mod tests {
         assert!(flags.compact_bitmask);
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
-        assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
     }
 
     #[test]

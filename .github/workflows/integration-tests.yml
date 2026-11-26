@@ -16,7 +16,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  UV_VERSION: 0.9.17
 
 jobs:
   # Builds the debug binary once; the integration and consensus test jobs download it.
@@ -32,7 +31,7 @@ jobs:
           persist-credentials: false
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: integration-tests
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
@@ -42,7 +41,7 @@ jobs:
       - name: Build
         run: cargo build --features "service_debug data-consistency-check staging" --locked
       - name: Upload qdrant binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qdrant-debug
           path: target/debug/qdrant
@@ -60,17 +59,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
+          python-version: '3.14'
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.9.17"
+      - name: Install Python dependencies
         run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
       - name: Download qdrant binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: qdrant-debug
           path: target/debug
@@ -93,17 +94,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
+          python-version: '3.14'
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.9.17"
+      - name: Install Python dependencies
         run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
       - name: Download qdrant binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: qdrant-debug
           path: target/debug
@@ -121,7 +124,7 @@ jobs:
             --durations-path tests/consensus_tests/.test_durations --store-durations --clean-durations
         timeout-minutes: 60
       - name: Upload test durations
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: consensus-test-durations-${{ matrix.shard }}
@@ -129,7 +132,7 @@ jobs:
           include-hidden-files: true
           retention-days: 7
       - name: upload logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           path: consensus_test_logs
@@ -139,27 +142,40 @@ jobs:
   test-consensus-compose:
 
     runs-on: ubuntu-latest
+    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant-ci-cache package (only cache data),
+    # not in the size-limited Actions cache
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
+          python-version: '3.14'
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.9.17"
+      - name: Install Python dependencies
         run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to ghcr.io
+        # Only dev pushes export the build cache; other runs read the public cache anonymously
+        if: github.event_name == 'push' && github.ref_name == 'dev'
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Docker build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           tags: qdrant_consensus
-          cache-from: type=gha,scope=docker-integration-tests
-          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-integration-tests' || '' }}
+          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:integration-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:integration-tests,mode=max' || '' }}
           load: true
           build-args: |
             PROFILE=ci
@@ -214,7 +230,7 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: integration-tests
           # integration-tests is the broadest build in this group and owns saving the cache
@@ -242,6 +258,11 @@ jobs:
   # Builds the e2e image once; the e2e test jobs download it.
   build-e2e-image:
     runs-on: ubuntu-latest
+    # Docker layer cache lives in the public ghcr.io/qdrant/qdrant-ci-cache package (only cache data),
+    # not in the size-limited Actions cache
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -250,13 +271,19 @@ jobs:
           persist-credentials: false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to ghcr.io
+        # Only dev pushes export the build cache; other runs read the public cache anonymously
+        if: github.event_name == 'push' && github.ref_name == 'dev'
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Qdrant Docker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
-          cache-from: type=gha,scope=docker-e2e-tests
-          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=gha,mode=max,scope=docker-e2e-tests' || '' }}
+          cache-from: type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:e2e-tests
+          cache-to: ${{ github.event_name == 'push' && github.ref_name == 'dev' && 'type=registry,ref=ghcr.io/qdrant/qdrant-ci-cache:e2e-tests,mode=max' || '' }}
           outputs: type=docker,dest=/tmp/e2e-image.tar
           build-args: |
             PROFILE=ci
@@ -264,7 +291,7 @@ jobs:
       - name: Compress image
         run: zstd -T0 -3 --rm /tmp/e2e-image.tar -o /tmp/e2e-image.tar.zst
       - name: Upload image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-image
           path: /tmp/e2e-image.tar.zst
@@ -312,17 +339,19 @@ jobs:
         with:
           lfs: true  # Fetch LFS files automatically
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
-      - name: Install uv and Python dependencies
+          python-version: '3.14'
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.9.17"
+      - name: Install Python dependencies
         run: |
-          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
           uv --project tests lock --check
           uv --project tests sync
       - name: Download Qdrant image
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: e2e-image
           path: /tmp
@@ -335,7 +364,7 @@ jobs:
         shell: bash
         timeout-minutes: 20
       - name: Upload test logs on failure
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: e2e-test-logs-${{ matrix.group }}

@@ -1,0 +1,14 @@
+language: rust
+severity: error
+message: Standalone integration test binary.
+note: |-
+  Integration tests should be in `<pkg>/tests/integration/`, not in `<pkg>/tests/*.rs`.
+  Rationale: https://matklad.github.io/2021/02/27/delete-cargo-integration-tests.html
+  Use `common::testing::is_process_isolated` if test modifies the process-global state.
+files:
+  - "lib/**/tests/**"
+ignores:
+  - "lib/**/tests/integration/**" # the only allowed location
+  - "lib/**/src/**/tests/**"      # e.g., lib/segment/src/segment/tests
+rule:
+  kind: source_file

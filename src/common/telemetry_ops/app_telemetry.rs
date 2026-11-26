@@ -172,8 +172,9 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
     // `ID` from `/etc/os-release` on Linux (e.g. "ubuntu"); the OS name on
     // other platforms.
     let distribution = Some(sysinfo::System::distribution_id());
-    let distribution_version = sysinfo::System::os_version();
-    let mut cpu_flags = vec![];
+    let distribution_version = sysinfo::System::os_version().ok();
+    #[allow(unused_mut)]
+    let mut cpu_flags: Vec<&str> = vec![];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if std::arch::is_x86_feature_detected!("sse") {
@@ -194,14 +195,23 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         if std::arch::is_x86_feature_detected!("f16c") {
             cpu_flags.push("f16c");
         }
+        if std::arch::is_x86_feature_detected!("avxvnni") {
+            cpu_flags.push("avxvnni");
+        }
         if std::arch::is_x86_feature_detected!("avx512f") {
             cpu_flags.push("avx512f");
+        }
+        if std::arch::is_x86_feature_detected!("avx512bw") {
+            cpu_flags.push("avx512bw");
         }
         if std::arch::is_x86_feature_detected!("avx512vl") {
             cpu_flags.push("avx512vl");
         }
         if std::arch::is_x86_feature_detected!("avx512vpopcntdq") {
             cpu_flags.push("avx512vpopcntdq");
+        }
+        if std::arch::is_x86_feature_detected!("avx512vnni") {
+            cpu_flags.push("avx512vnni");
         }
     }
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -211,6 +221,9 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
         }
         if std::arch::is_aarch64_feature_detected!("fp16") {
             cpu_flags.push("fp16");
+        }
+        if std::arch::is_aarch64_feature_detected!("dotprod") {
+            cpu_flags.push("dotprod");
         }
     }
 

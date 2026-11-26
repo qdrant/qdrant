@@ -7,6 +7,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
@@ -18,8 +19,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::process_counter::ProcessCounter;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -466,19 +468,29 @@ impl SegmentHolder {
             .collect()
     }
 
-    /// Whether at least one appendable segment is smaller than `max_segment_size_bytes`.
-    /// Also `false` when there is no appendable segment at all.
+    /// Whether at least one appendable segment is smaller than `max_segment_size_bytes` and
+    /// has no pending outgoing copy-on-write move. Also `false` when there is no appendable
+    /// segment at all.
+    ///
+    /// A segment with an outgoing move (left from a time it was proxied) may close a flush
+    /// cycle as a destination, see [`Self::acyclic_cow_destinations`]. Requiring one without
+    /// makes the caller provision a fresh segment, so moves can avoid the cycle.
     pub fn has_appendable_segment_with_capacity(
         &self,
         max_segment_size_bytes: Option<NonZeroUsize>,
     ) -> bool {
-        let Some(max_segment_size_bytes) = max_segment_size_bytes else {
-            return !self.appendable_segments.is_empty();
-        };
-
+        let flush_dependency = self.flush_dependency.lock();
         self.appendable_segments
-            .values()
-            .any(|segment| Self::segment_has_capacity(segment, max_segment_size_bytes))
+            .iter()
+            .any(|(segment_id, segment)| {
+                let has_capacity = max_segment_size_bytes
+                    .is_none_or(|max| Self::segment_has_capacity(segment, max));
+                has_capacity
+                    && flush_dependency
+                        .dependencies_of(segment_id)
+                        .next()
+                        .is_none()
+            })
     }
 
     /// Candidate destinations for copy-on-write moves, computed lazily on the first move and
@@ -499,6 +511,47 @@ impl SegmentHolder {
                 eligible
             }
         })
+    }
+
+    /// Drop the `candidates` a copy-on-write move out of `source` must not target.
+    ///
+    /// The move makes `source` depend on its destination in the flush topology. A
+    /// destination that already depends on `source`, directly or transitively, would close a
+    /// cycle that no flush order can honor (#11184). This happens when an appendable segment
+    /// is restored by unproxying while it still has unflushed outgoing moves: it is a
+    /// destination again before those moves are persisted.
+    ///
+    /// Such candidates are skipped until a flush retires their edges. Normally none qualify: a
+    /// segment only gets outgoing edges while proxied, and before each update
+    /// [`Self::has_appendable_segment_with_capacity`] makes the update worker provision a fresh
+    /// segment if every appendable one has outgoing edges. If every candidate would still
+    /// close a cycle (the fresh segment got proxied in between), the full list is returned,
+    /// keeping the previous behavior rather than failing the update.
+    fn acyclic_cow_destinations<'a>(
+        &self,
+        source: SegmentId,
+        candidates: &'a [SegmentId],
+    ) -> Cow<'a, [SegmentId]> {
+        let flush_dependency = self.flush_dependency.lock();
+        if !candidates
+            .iter()
+            .any(|candidate| flush_dependency.reaches(candidate, &source))
+        {
+            return Cow::Borrowed(candidates);
+        }
+        let acyclic: Vec<SegmentId> = candidates
+            .iter()
+            .copied()
+            .filter(|candidate| !flush_dependency.reaches(candidate, &source))
+            .collect();
+        if acyclic.is_empty() {
+            log::warn!(
+                "Every copy-on-write destination of segment {source} would form a flush cycle, \
+                 moving anyway",
+            );
+            return Cow::Borrowed(candidates);
+        }
+        Cow::Owned(acyclic)
     }
 
     /// Return non-appendable segment IDs sorted by IDs
@@ -919,7 +972,6 @@ impl SegmentHolder {
     pub fn apply_points<F>(
         &self,
         ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
         mut point_operation: F,
     ) -> OperationResult<usize>
     where
@@ -932,7 +984,7 @@ impl SegmentHolder {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
-        self.delete_points_from_segments(to_delete, hw_counter)?;
+        self.delete_points_from_segments(to_delete)?;
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -953,7 +1005,6 @@ impl SegmentHolder {
     pub fn delete_points_from_segments(
         &self,
         to_delete: AHashMap<SegmentId, Vec<PointIdType>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for (segment_id, points) in to_delete {
             let segment = self.get(segment_id).unwrap();
@@ -962,7 +1013,7 @@ impl SegmentHolder {
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
-                    write_segment.delete_point(version, point_id, hw_counter)?;
+                    write_segment.delete_point(version, point_id)?;
                 }
             }
         }
@@ -972,13 +1023,9 @@ impl SegmentHolder {
     /// This operation deduplicates subset of points across all segments.
     /// It scans all segments for presence of the points, detects points with the highest version,
     /// and removes all other versions of the points from all segments.
-    pub fn deduplicate_points(
-        &self,
-        points: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn deduplicate_points(&self, points: &[PointIdType]) -> OperationResult<()> {
         let (_to_keep, to_delete) = self.find_points_to_update_and_delete(points);
-        self.delete_points_from_segments(to_delete, hw_counter)
+        self.delete_points_from_segments(to_delete)
     }
 
     /// Try to acquire read lock over the given segment with increasing wait time.
@@ -1078,7 +1125,6 @@ impl SegmentHolder {
         mut point_operation: F,
         mut point_cow_operation: G,
         max_segment_size_bytes: Option<NonZeroUsize>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -1094,7 +1140,7 @@ impl SegmentHolder {
         let mut applied_points: AHashSet<PointIdType> = Default::default();
         let stopped = AtomicBool::new(false);
 
-        let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
+        let _ = self.apply_points(ids,  |point_id, idx, write_segment| {
             if let Some(point_version) = write_segment.point_version(point_id)
                 && point_version >= op_num
             {
@@ -1107,11 +1153,10 @@ impl SegmentHolder {
             let is_applied = if can_apply_operation {
                 point_operation(point_id, write_segment)?
             } else {
+                let candidates =
+                    self.cow_destination_candidates(&mut destination_cache, max_segment_size_bytes);
                 self.aloha_random_write(
-                    self.cow_destination_candidates(
-                        &mut destination_cache,
-                        max_segment_size_bytes,
-                    ),
+                    &self.acyclic_cow_destinations(idx, candidates),
                     |appendable_idx, appendable_write_segment| {
                         // If we are moving point from one segment to another,
                         // we must guarantee, that data in new segment will be persisted before
@@ -1136,7 +1181,7 @@ impl SegmentHolder {
                             .retrieve_raw(
                                 &[point_id],
                                 &WithVector::Bool(true),
-                                hw_counter,
+
                                 &stopped,
                                 DeferredBehavior::WithDeferred,
                             )?
@@ -1204,12 +1249,12 @@ impl SegmentHolder {
                             &raw_vectors,
                             updated_vectors,
                             &payload,
-                            hw_counter,
+
                         )?;
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                            write_segment.delete_point(op_num, point_id)?;
                         }
 
                         Ok(true)
@@ -1329,12 +1374,11 @@ impl SegmentHolder {
         let (mut segment, token) =
             build_segment(segments_path, &config, deferred_internal_id, save_version)?;
 
-        // Internal operation.
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let payload_schema_lock = payload_index_schema.read();
         for (key, schema) in payload_schema_lock.schema.iter() {
-            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+            segment.create_field_index(0, key, Some(schema))?;
         }
 
         Ok((LockedSegment::new(segment), token))
@@ -1405,12 +1449,12 @@ impl SegmentHolder {
                     let segment_arc = locked_segment.get();
                     let mut write_segment = segment_arc.write();
 
-                    let disposable_hw_counter = HardwareCounterCell::disposable();
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
-                            write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
+                            write_segment.delete_point(point_version, point_id)?;
                         }
                     }
 

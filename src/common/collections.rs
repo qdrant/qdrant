@@ -482,6 +482,27 @@ pub async fn do_update_collection_cluster(
 
             validate_peer_exists(drop_replica.peer_id)?;
 
+            // Checked against this peer's state before proposing, so a replica may still die
+            // before the drop is applied. Not checked at apply time on purpose: the consensus
+            // operation stays a plain drop, which peers on older versions apply the same way.
+            if let Some(min) = drop_replica.min_active {
+                let state = collection.state().await;
+                let other_active = state.shards.get(&drop_replica.shard_id).map_or(0, |shard| {
+                    shard
+                        .replicas
+                        .iter()
+                        .filter(|&(&id, state)| id != drop_replica.peer_id && state.is_active())
+                        .count()
+                });
+                if other_active < min as usize {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {} has {other_active} other active replicas besides {}, but at \
+                         least {min} are required",
+                        drop_replica.shard_id, drop_replica.peer_id,
+                    )));
+                }
+            }
+
             let mut update_operation = UpdateCollectionOperation::new_empty(collection_name);
 
             update_operation.set_shard_replica_changes(vec![replica_set::Change::Remove(
@@ -684,6 +705,14 @@ pub async fn do_update_collection_cluster(
             if !dispatcher.is_resharding_enabled() {
                 return Err(StorageError::bad_request(
                     "resharding is only supported in Qdrant Cloud",
+                ));
+            }
+
+            // Resharding is meant to redistribute data across peers, it makes no sense in a
+            // cluster with a single peer, even if it runs in consensus (distributed) mode
+            if consensus_state.peer_count() <= 1 {
+                return Err(StorageError::bad_request(
+                    "resharding is not supported in a single-node cluster",
                 ));
             }
 

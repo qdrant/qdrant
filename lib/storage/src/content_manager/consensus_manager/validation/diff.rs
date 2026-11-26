@@ -1,0 +1,601 @@
+//! Report field-level differences between consensus state machine and applied state
+
+use std::collections::{BTreeSet, HashMap};
+use std::fmt;
+
+use collection::collection_state;
+use collection::shards::CollectionId;
+use collection::shards::shard::PeerId;
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::content_manager::alias_mapping::AliasMapping;
+use crate::content_manager::consensus_state_machine::ClusterState;
+use crate::quota::QuotaConfig;
+use crate::types::{PeerAddressById, PeerMetadataById};
+
+/// Lightweight view of applied consensus state.
+///
+/// Mirrors [`ClusterState`], but stores only collection names instead of full collection state,
+/// so validation can check cluster fields without reading every collection.
+///
+/// Full state is loaded on demand for collections the operation may have changed.
+#[derive(Clone, Debug)]
+pub struct ShallowState {
+    pub collections: BTreeSet<CollectionId>,
+    pub aliases: AliasMapping,
+    pub peer_address_by_id: PeerAddressById,
+    pub peer_metadata_by_id: PeerMetadataById,
+    pub cluster_metadata: HashMap<String, serde_json::Value>,
+    pub quota_config: QuotaConfig,
+}
+
+/// One field that differs between the state machine and applied state
+#[derive(Clone, Debug)]
+pub struct Difference {
+    /// Field path, such as `collections[books].shards`
+    pub field: String,
+    /// Differing values inside the field, as `path: expected X, applied Y`.
+    ///
+    /// Expected values come from the state machine.
+    pub values: String,
+}
+
+impl fmt::Display for Difference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.field, self.values)
+    }
+}
+
+/// Compare collection names and cluster fields
+pub fn cluster(state_machine: &ClusterState, applied: &ShallowState) -> Vec<Difference> {
+    let ClusterState {
+        collections,
+        aliases,
+        peer_address_by_id,
+        peer_metadata_by_id,
+        cluster_metadata,
+        quota_config,
+    } = state_machine;
+
+    let ShallowState {
+        collections: applied_collections,
+        aliases: applied_aliases,
+        peer_address_by_id: applied_peer_address_by_id,
+        peer_metadata_by_id: applied_peer_metadata_by_id,
+        cluster_metadata: applied_cluster_metadata,
+        quota_config: applied_quota_config,
+    } = applied;
+
+    let mut diff = Vec::new();
+
+    let collections: BTreeSet<_> = collections.keys().cloned().collect();
+    for collection in collections.symmetric_difference(applied_collections) {
+        let values = if collections.contains(collection) {
+            "expected present, applied absent"
+        } else {
+            "expected absent, applied present"
+        };
+
+        diff.push(Difference {
+            field: format!("collections[{collection}]"),
+            values: values.into(),
+        });
+    }
+
+    if aliases != applied_aliases {
+        diff.push(json_difference(
+            "aliases",
+            aliases,
+            applied_aliases,
+            Arrays::Ordered,
+        ));
+    }
+
+    if peer_address_by_id != applied_peer_address_by_id {
+        diff.push(json_difference(
+            "peer_address_by_id",
+            &uris_to_strings(peer_address_by_id),
+            &uris_to_strings(applied_peer_address_by_id),
+            Arrays::Ordered,
+        ));
+    }
+
+    if peer_metadata_by_id != applied_peer_metadata_by_id {
+        diff.push(json_difference(
+            "peer_metadata_by_id",
+            peer_metadata_by_id,
+            applied_peer_metadata_by_id,
+            Arrays::Ordered,
+        ));
+    }
+
+    if cluster_metadata != applied_cluster_metadata {
+        diff.push(json_difference(
+            "cluster_metadata",
+            cluster_metadata,
+            applied_cluster_metadata,
+            Arrays::Ordered,
+        ));
+    }
+
+    if quota_config != applied_quota_config {
+        diff.push(json_difference(
+            "quota_config",
+            quota_config,
+            applied_quota_config,
+            Arrays::Ordered,
+        ));
+    }
+
+    diff
+}
+
+/// Compare collection states
+pub fn collection(
+    name: &str,
+    state_machine: &collection_state::State,
+    applied: &collection_state::State,
+) -> Vec<Difference> {
+    let collection_state::State {
+        config,
+        shards,
+        resharding,
+        transfers,
+        shards_key_mapping,
+        payload_index_schema,
+    } = state_machine;
+
+    let collection_state::State {
+        config: applied_config,
+        shards: applied_shards,
+        resharding: applied_resharding,
+        transfers: applied_transfers,
+        shards_key_mapping: applied_shards_key_mapping,
+        payload_index_schema: applied_payload_index_schema,
+    } = applied;
+
+    let field = |field: &str| format!("collections[{name}].{field}");
+    let mut diff = Vec::new();
+
+    if config != applied_config {
+        diff.push(json_difference(
+            &field("config"),
+            config,
+            applied_config,
+            Arrays::Ordered,
+        ));
+    }
+
+    if shards != applied_shards {
+        diff.push(json_difference(
+            &field("shards"),
+            shards,
+            applied_shards,
+            Arrays::Ordered,
+        ));
+    }
+
+    if resharding != applied_resharding {
+        diff.push(json_difference(
+            &field("resharding"),
+            resharding,
+            applied_resharding,
+            Arrays::Ordered,
+        ));
+    }
+
+    if transfers != applied_transfers {
+        diff.push(json_difference(
+            &field("transfers"),
+            transfers,
+            applied_transfers,
+            Arrays::Unordered,
+        ));
+    }
+
+    if shards_key_mapping != applied_shards_key_mapping {
+        diff.push(json_difference(
+            &field("shards_key_mapping"),
+            shards_key_mapping,
+            applied_shards_key_mapping,
+            Arrays::Unordered,
+        ));
+    }
+
+    if payload_index_schema != applied_payload_index_schema {
+        diff.push(json_difference(
+            &field("payload_index_schema"),
+            payload_index_schema,
+            applied_payload_index_schema,
+            Arrays::Ordered,
+        ));
+    }
+
+    diff
+}
+
+fn uris_to_strings(peer_address_by_id: &PeerAddressById) -> HashMap<PeerId, String> {
+    peer_address_by_id
+        .iter()
+        .map(|(&peer_id, uri)| (peer_id, uri.to_string()))
+        .collect()
+}
+
+/// Whether array order inside a field is meaningful
+#[derive(Copy, Clone, Debug)]
+enum Arrays {
+    /// Arrays keep their order, such as metadata values
+    Ordered,
+    /// Arrays come from sets or hash maps, such as transfers, and serialize in arbitrary order
+    Unordered,
+}
+
+/// Describe a differing field by the JSON values that differ inside it.
+///
+/// Objects are compared key by key, so a changed replica state reports only that replica.
+/// Arrays are reported whole. Unordered arrays are sorted first, so equal sets compare equal
+/// and differing ones print in the same order.
+fn json_difference<T>(field: &str, expected: &T, applied: &T, arrays: Arrays) -> Difference
+where
+    T: Serialize + fmt::Debug,
+{
+    let normalize = |mut value: Value| {
+        match arrays {
+            Arrays::Ordered => (),
+            Arrays::Unordered => sort_arrays(&mut value),
+        }
+        value
+    };
+
+    let expected_json = serde_json::to_value(expected).map(normalize);
+    let applied_json = serde_json::to_value(applied).map(normalize);
+
+    let values = match (expected_json, applied_json) {
+        (Ok(expected), Ok(applied)) => {
+            let mut changes = Vec::new();
+            json_changes("", Some(&expected), Some(&applied), &mut changes);
+            changes.join("; ")
+        }
+
+        // Fall back to the whole values, e.g. when a map key does not serialize as a JSON key
+        _ => format!("expected {expected:?}, applied {applied:?}"),
+    };
+
+    Difference {
+        field: field.to_string(),
+        values,
+    }
+}
+
+fn json_changes(
+    path: &str,
+    expected: Option<&Value>,
+    applied: Option<&Value>,
+    changes: &mut Vec<String>,
+) {
+    if expected == applied {
+        return;
+    }
+
+    if let (Some(Value::Object(expected)), Some(Value::Object(applied))) = (expected, applied) {
+        let keys: BTreeSet<_> = expected.keys().chain(applied.keys()).collect();
+        for key in keys {
+            let path = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
+            json_changes(&path, expected.get(key), applied.get(key), changes);
+        }
+
+        return;
+    }
+
+    let prefix = if path.is_empty() {
+        String::new()
+    } else {
+        format!("{path}: ")
+    };
+    changes.push(format!(
+        "{prefix}expected {}, applied {}",
+        render_json(expected),
+        render_json(applied),
+    ));
+}
+
+fn render_json(value: Option<&Value>) -> String {
+    match value {
+        None => "absent".into(),
+        Some(value) => value.to_string(),
+    }
+}
+
+/// Sort arrays recursively, numbers numerically and other values by their JSON text
+fn sort_arrays(value: &mut Value) {
+    match value {
+        Value::Array(elements) => {
+            elements.iter_mut().for_each(sort_arrays);
+            elements.sort_by_cached_key(|element| match element.as_u64() {
+                Some(number) => (0, number, String::new()),
+                None => (1, 0, element.to_string()),
+            });
+        }
+
+        Value::Object(fields) => fields.values_mut().for_each(sort_arrays),
+
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => (),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::num::NonZeroU32;
+
+    use collection::collection_state::ShardInfo;
+    use collection::operations::cluster_ops::ReshardingDirection;
+    use collection::operations::types::PeerMetadata;
+    use collection::shards::replica_set::replica_set_state::ReplicaState;
+    use collection::shards::resharding::ReshardState;
+    use collection::shards::transfer::ShardTransfer;
+    use segment::types::PayloadSchemaType;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::content_manager::alias_mapping::AliasMapping;
+    use crate::content_manager::consensus_state_machine::tests::{PEER_ID, collection_state};
+    use crate::quota::QuotaConfig;
+
+    const COLLECTION: &str = "books";
+    const ALIAS: &str = "novels";
+
+    /// A change to one field of a state, and the field name the compare reports for it
+    type Mutation<T> = (&'static str, fn(&mut T));
+
+    #[test]
+    fn cluster_match() {
+        let (expected, actual) = cluster_states();
+        let diff = cluster(&expected, &actual);
+
+        assert!(diff.is_empty(), "states match, got {diff:?}");
+    }
+
+    /// A collection one side does not hold is reported by name, whatever is inside it
+    #[test]
+    fn cluster_collection_names() {
+        let (expected, mut actual) = cluster_states();
+        actual.collections.clear();
+
+        let diff = cluster(&expected, &actual);
+
+        assert_eq!(fields(&diff), [format!("collections[{COLLECTION}]")]);
+        assert_eq!(diff[0].values, "expected present, applied absent");
+    }
+
+    #[test]
+    fn cluster_every_field() {
+        let mutations: Vec<Mutation<ShallowState>> = vec![
+            ("aliases", |actual| actual.aliases.remove(ALIAS)),
+            ("peer_address_by_id", |actual| {
+                actual.peer_address_by_id.clear();
+            }),
+            ("peer_metadata_by_id", |actual| {
+                actual.peer_metadata_by_id.clear();
+            }),
+            ("cluster_metadata", |actual| {
+                actual.cluster_metadata.clear();
+            }),
+            ("quota_config", |actual| {
+                actual.quota_config.enabled = !actual.quota_config.enabled;
+            }),
+        ];
+
+        for (field, mutate) in mutations {
+            let (expected, mut actual) = cluster_states();
+            mutate(&mut actual);
+
+            assert_eq!(
+                fields(&cluster(&expected, &actual)),
+                [field],
+                "mutated {field}"
+            );
+        }
+    }
+
+    /// Matching state-machine and applied states used as the mutation-test baseline
+    fn cluster_states() -> (ClusterState, ShallowState) {
+        let mut aliases = AliasMapping::default();
+        aliases.insert(ALIAS.to_string(), COLLECTION.to_string());
+
+        let peer_address_by_id =
+            HashMap::from([(PEER_ID, "http://localhost:6335".parse().expect("valid URI"))]);
+        let peer_metadata_by_id = HashMap::from([(PEER_ID, PeerMetadata::current())]);
+        let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
+        let quota_config = QuotaConfig::default();
+
+        let expected = ClusterState {
+            collections: HashMap::from([(COLLECTION.to_string(), collection_state(Vec::new()))]),
+            aliases: aliases.clone(),
+            peer_address_by_id: peer_address_by_id.clone(),
+            peer_metadata_by_id: peer_metadata_by_id.clone(),
+            cluster_metadata: cluster_metadata.clone(),
+            quota_config,
+        };
+
+        let actual = ShallowState {
+            collections: BTreeSet::from([COLLECTION.to_string()]),
+            aliases,
+            peer_address_by_id,
+            peer_metadata_by_id,
+            cluster_metadata,
+            quota_config,
+        };
+
+        (expected, actual)
+    }
+
+    #[test]
+    fn collection_match() {
+        let state = collection_state(Vec::new());
+        let diff = collection(COLLECTION, &state, &state);
+
+        assert!(diff.is_empty(), "states match, got {diff:?}");
+    }
+
+    #[test]
+    fn collection_every_field() {
+        let mutations: Vec<Mutation<collection_state::State>> = vec![
+            ("config", |state| {
+                state.config.params.shard_number = NonZeroU32::new(2).expect("non-zero");
+            }),
+            ("shards", |state| {
+                let replicas = HashMap::new();
+                state.shards.insert(0, ShardInfo { replicas });
+            }),
+            ("resharding", |state| {
+                let resharding =
+                    ReshardState::new(Uuid::nil(), ReshardingDirection::Up, PEER_ID, 1, None);
+                state.resharding = Some(resharding);
+            }),
+            ("transfers", |state| {
+                state.transfers.insert(ShardTransfer {
+                    shard_id: 0,
+                    to_shard_id: None,
+                    from: PEER_ID,
+                    to: PEER_ID + 1,
+                    sync: false,
+                    method: None,
+                    filter: None,
+                });
+            }),
+            ("shards_key_mapping", |state| {
+                state
+                    .shards_key_mapping
+                    .insert("keyword".into(), [0].into_iter().collect());
+            }),
+            ("payload_index_schema", |state| {
+                let field = "city".parse().expect("valid field name");
+                state
+                    .payload_index_schema
+                    .schema
+                    .insert(field, PayloadSchemaType::Keyword.into());
+            }),
+        ];
+
+        for (field, mutate) in mutations {
+            let mut actual = collection_state(Vec::new());
+            mutate(&mut actual);
+
+            assert_eq!(
+                fields(&collection(
+                    COLLECTION,
+                    &collection_state(Vec::new()),
+                    &actual
+                )),
+                [format!("collections[{COLLECTION}].{field}")],
+                "mutated {field}",
+            );
+        }
+    }
+
+    /// Values name the differing replica or config field, not the whole collection state
+    #[test]
+    fn collection_values() {
+        let mut expected = collection_state(Vec::new());
+        let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+        expected.shards.insert(0, ShardInfo { replicas });
+
+        let mut actual = expected.clone();
+        let replicas = HashMap::from([(PEER_ID, ReplicaState::Dead)]);
+        actual.shards.insert(0, ShardInfo { replicas });
+        actual.config.params.shard_number = NonZeroU32::new(2).expect("non-zero");
+
+        let diff = collection(COLLECTION, &expected, &actual);
+
+        let values: Vec<_> = diff.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            values,
+            [
+                format!(
+                    "collections[{COLLECTION}].config \
+                     (params.shard_number: expected 1, applied 2)"
+                ),
+                format!(
+                    "collections[{COLLECTION}].shards \
+                     (0.replicas.{PEER_ID}: expected \"Active\", applied \"Dead\")"
+                ),
+            ],
+        );
+    }
+
+    /// Sets serialize in arbitrary order, so their elements are sorted before reporting
+    #[test]
+    fn collection_values_sorted() {
+        let transfer = |to| ShardTransfer {
+            shard_id: 0,
+            to_shard_id: None,
+            from: PEER_ID,
+            to,
+            sync: false,
+            method: None,
+            filter: None,
+        };
+        let expected = collection_state(Vec::new());
+        let mut actual = expected.clone();
+        actual
+            .transfers
+            .extend([transfer(PEER_ID + 2), transfer(PEER_ID + 1)]);
+
+        let diff = collection(COLLECTION, &expected, &actual);
+
+        let first = serde_json::to_string(&transfer(PEER_ID + 1)).expect("serializable");
+        let second = serde_json::to_string(&transfer(PEER_ID + 2)).expect("serializable");
+        assert_eq!(diff.len(), 1);
+        assert_eq!(
+            diff[0].values,
+            format!("expected [], applied [{first},{second}]"),
+        );
+    }
+
+    /// Ordinary arrays, such as metadata values, are reported in their own order
+    #[test]
+    fn cluster_values_keep_array_order() {
+        let (mut expected, mut actual) = cluster_states();
+        expected
+            .cluster_metadata
+            .insert("priority".into(), json!([1, 2]));
+        actual
+            .cluster_metadata
+            .insert("priority".into(), json!([2, 1]));
+
+        let diff = cluster(&expected, &actual);
+
+        assert_eq!(fields(&diff), ["cluster_metadata"]);
+        assert_eq!(diff[0].values, "priority: expected [1,2], applied [2,1]");
+    }
+
+    /// Key mappings serialize sets inside an array of pairs, so both levels are sorted
+    #[test]
+    fn unordered_arrays_sorted_recursively() {
+        let mut value = json!([
+            {"key": "b", "shard_ids": [3, 1]},
+            {"key": "a", "shard_ids": [10, 2]},
+        ]);
+
+        sort_arrays(&mut value);
+
+        let sorted = json!([
+            {"key": "a", "shard_ids": [2, 10]},
+            {"key": "b", "shard_ids": [1, 3]},
+        ]);
+        assert_eq!(value, sorted);
+    }
+
+    fn fields(diff: &[Difference]) -> Vec<&str> {
+        diff.iter()
+            .map(|difference| difference.field.as_str())
+            .collect()
+    }
+}

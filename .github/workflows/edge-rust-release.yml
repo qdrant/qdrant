@@ -37,13 +37,13 @@ jobs:
 
       - name: Install mold
         if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
 
       - name: Install Just
         uses: ./.github/actions/setup-just
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/setup-qdrant
 
       - name: Restore Rust build cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: edge
           # edge-test (edge-test.yml) is the broadest build in this group and owns saving the cache
@@ -81,6 +81,7 @@ jobs:
     name: Publish to crates.io
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - edge-rust-check
 
@@ -91,7 +92,7 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli

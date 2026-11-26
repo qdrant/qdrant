@@ -6,6 +6,8 @@ mod read_ops;
 pub mod replica_set_state;
 mod shard_transfer;
 pub mod snapshots;
+#[cfg(feature = "staging")]
+mod staging;
 mod telemetry;
 mod update;
 
@@ -16,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::fs::sync_parent_dir_async;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -51,8 +53,10 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_initializing_flag_path;
 use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
+#[cfg(feature = "testing")]
+use crate::update_handler::Optimizer;
 
 //    │    Collection Created
 //    │
@@ -383,6 +387,14 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Block all access to the local shard until the returned guard is dropped. Test-only.
+    #[cfg(test)]
+    pub(crate) async fn lock_local_for_test(
+        &self,
+    ) -> tokio::sync::RwLockWriteGuard<'_, Option<crate::shards::shard::Shard>> {
+        self.local.write().await
+    }
+
     /// Synchronously flush every segment in the local shard. Test-only — `stop_gracefully`
     /// signals the periodic flush worker to stop but never triggers a final flush, so
     /// tests that need on-disk consistency without waiting for the periodic tick use this.
@@ -394,9 +406,9 @@ impl ShardReplicaSet {
         }
     }
 
-    /// The local shard's segments, for the model tester to inspect their layout.
+    /// The local shard's segments, for tests to inspect their layout and schema
     #[cfg(feature = "testing")]
-    pub(crate) async fn local_segments_for_test(
+    pub async fn local_segments_for_test(
         &self,
     ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
         use crate::shards::shard::Shard;
@@ -404,6 +416,33 @@ impl ShardReplicaSet {
             Some(Shard::Local(local)) => Some(local.segments()),
             _ => None,
         }
+    }
+
+    /// Config cached by each optimizer on the local shard
+    #[cfg(feature = "testing")]
+    pub async fn local_optimizer_configs_for_test(
+        &self,
+    ) -> Option<Vec<shard::optimizers::config::SegmentOptimizerConfig>> {
+        let local = self.local.read().await;
+        let Some(Shard::Local(local)) = local.as_ref() else {
+            return None;
+        };
+
+        let configs = local
+            .optimizers
+            .load()
+            .iter()
+            .map(|optimizer| optimizer.segment_optimizer_config().clone())
+            .collect();
+        Some(configs)
+    }
+
+    /// Optimizers currently installed on the local shard, for recreation tests
+    #[cfg(feature = "testing")]
+    pub async fn local_optimizers_for_test(&self) -> Option<Arc<Vec<Arc<Optimizer>>>> {
+        let local = self.local.read().await;
+        let local_shard = local.as_ref()?.local_shard()?;
+        Some(local_shard.optimizers.load_full())
     }
 
     pub fn shard_key(&self) -> Option<ShardKey> {
@@ -433,7 +472,6 @@ impl ShardReplicaSet {
         match *local_read {
             None => false,
             Some(Shard::Local(_)) => false,
-            Some(Shard::Proxy(_)) => true,
             Some(Shard::ForwardProxy(_)) => true,
             Some(Shard::QueueProxy(_)) => true,
             Some(Shard::Dummy(_)) => false,
@@ -625,36 +663,86 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Clears the local shard data and loads an empty local shard
+    /// Replace the local shard with a dummy and create the shard initializing flag.
     ///
-    /// Removes the shard initializing flag after the empty shard is built, before installing it. The removal happens
-    /// under the `local` lock, so it never deletes a flag created by a concurrent
-    /// [`Self::restore_local_replica_from`] for its own restore.
+    /// The dummy is installed before the flag is created, so we do not leave the flag next to
+    /// a valid local shard and load a dummy on restart.
+    ///
+    /// If the flag file can't be created, the operation is aborted and the previous shard is put back.
+    /// If the flag file is created, but can't be synced to disk, the dummy stays installed.
+    ///
+    /// Returns the path to the flag.
+    async fn replace_local_with_dummy(
+        &self,
+        local: &mut Option<Shard>,
+        collection_path: &Path,
+        message: &str,
+    ) -> CollectionResult<PathBuf> {
+        // Replace local shard with a dummy
+        let shard = local.replace(Shard::Dummy(DummyShard::new(message)));
+
+        // Create shard initializing flag.
+        //
+        // If we fail to create the flag, we can abort and put the shard back.
+        let flag_path = shard_initializing_flag_path(collection_path, self.shard_id);
+        let flag_file = match fs_err::tokio::File::create(&flag_path).await {
+            Ok(flag_file) => flag_file,
+
+            Err(err) => {
+                *local = shard;
+                return Err(CollectionError::from(err));
+            }
+        };
+
+        // If we created the flag, we have to stop and drop the local shard and sync the flag to disk.
+        //
+        // Even if we fail to sync the flag, it might be persisted to disk,
+        // so we can't put the shard back anymore.
+        if let Some(shard) = shard {
+            shard.stop_gracefully().await;
+        }
+
+        flag_file.sync_all().await?;
+        sync_parent_dir_async(&flag_path).await?;
+
+        // Return path to the flag
+        Ok(flag_path)
+    }
+
+    /// Clears the local shard data and loads an empty local shard.
     ///
     /// # Cancel safety
     ///
-    /// This is cancel safe. If the future is dropped, `local` is left holding a dummy shard rather
-    /// than the real thing. That dummy state is picked up like any other initialization failure: a
-    /// retried call to this method clears it and tries again.
+    /// This method is cancel safe.
+    ///
+    /// If the future is dropped, initialization is cancelled and the local shard is replaced with
+    /// a dummy.
     pub async fn init_empty_local_shard(&self, collection_path: &Path) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
-        // Keep a dummy placeholder because every await below may drop the future early on
-        // cancellation, we must never leave this at None
-        let current_shard = local.replace(Shard::Dummy(DummyShard::new(
-            "Local shard is being initialized",
-        )));
-
-        if let Some(current_shard) = current_shard {
-            current_shard.stop_gracefully().await;
-        }
+        // Replace the local shard with a dummy placeholder while the shard is (re)initialized,
+        // and create the shard initializing flag.
+        //
+        // If initialization fails, is cancelled or the node crashes, `local` is never left as `None`,
+        // and a crash is detected on restart, so the shard can be recovered.
+        //
+        // The flag is removed and the dummy is replaced after the shard is initialized.
+        let shard_flag = self
+            .replace_local_with_dummy(
+                &mut local,
+                collection_path,
+                "Local shard is being initialized",
+            )
+            .await?;
 
         if let Err(err) = LocalShard::clear(&self.shard_path).await {
             let error = format!(
                 "Failed to clear local shard at {:?}: {err}",
                 self.shard_path,
             );
+
             log::error!("{error}");
+
             local.replace(Shard::Dummy(DummyShard::new(error)));
             return Err(err);
         }
@@ -675,25 +763,25 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
-                match fs_err::tokio::remove_file(&shard_flag).await {
-                    Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => {
-                        local_shard.stop_gracefully().await;
-                        return Err(err.into());
-                    }
+                let res = remove_shard_initializing_flag(&shard_flag, Some(&self.shard_path)).await;
+
+                if let Err(err) = res {
+                    local_shard.stop_gracefully().await;
+                    return Err(err);
                 }
 
                 local.replace(Shard::Local(local_shard));
                 Ok(())
             }
+
             Err(err) => {
                 let error = format!(
                     "Failed to initialize local shard at {:?}: {err}",
                     self.shard_path,
                 );
+
                 log::error!("{error}");
+
                 local.replace(Shard::Dummy(DummyShard::new(error)));
                 Err(err)
             }
@@ -1004,6 +1092,20 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Whether the local shard, if any, has an optimizer error recorded.
+    pub(crate) async fn has_local_optimizer_errors(&self) -> bool {
+        match self
+            .local
+            .read()
+            .await
+            .as_ref()
+            .and_then(|shard| shard.local_shard())
+        {
+            Some(local_shard) => local_shard.has_optimizer_errors().await,
+            None => false,
+        }
+    }
+
     /// Apply shard's strict mode configuration update
     ///
     /// The actual rate limiters live on `LocalShard`, so this just delegates
@@ -1065,7 +1167,6 @@ impl ShardReplicaSet {
     pub async fn delete_local_points(
         &self,
         filter: Filter,
-        hw_measurement_acc: HwMeasurementAcc,
         force: bool,
         deferred_behavior: DeferredBehavior,
         wait: WaitUntil,
@@ -1095,7 +1196,6 @@ impl ShardReplicaSet {
                     Some(&filter),
                     &self.search_runtime,
                     None,
-                    hw_measurement_acc.clone(),
                     deferred_behavior,
                 )
                 .await?;
@@ -1126,7 +1226,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), wait, None, hw_measurement_acc, force)
+            .update_local(op.into(), wait, None, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(
@@ -1360,9 +1460,7 @@ impl ShardReplicaSet {
                     .map(|i| i.1.clone())
                     .collect::<Vec<_>>(),
             ),
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
-                None
-            }
+            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => None,
         }) else {
             return Ok(None);
         };
@@ -1453,7 +1551,6 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         match local.as_ref() {
             Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
-            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report().await,
             Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report().await,
             Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report().await,
             Some(Shard::Dummy(_)) | None => {
@@ -1597,3 +1694,29 @@ impl ShardReplicaSet {
 pub enum Change {
     Remove(ShardId, PeerId),
 }
+
+// Speeds up compilation of the `qdrant` binary, see `common::impl_send_sync_checked`.
+common::impl_send_sync_checked!(ShardReplicaSet {
+    local,
+    remotes,
+    replica_state,
+    locally_disabled_peers,
+    shard_path,
+    shard_id,
+    shard_key,
+    notify_peer_failure_cb,
+    abort_shard_transfer_cb,
+    channel_service,
+    collection_id,
+    collection_config,
+    optimizers_config,
+    shared_storage_config,
+    payload_index_schema,
+    update_runtime,
+    search_runtime,
+    optimizer_resource_budget,
+    write_ordering_lock,
+    clock_set,
+    partial_snapshot_meta,
+    snapshot_recovery_lock,
+});

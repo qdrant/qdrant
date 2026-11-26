@@ -22,13 +22,15 @@ use parking_lot::Mutex;
 
 use self::change::MappingChange;
 use self::mappings_storage::{
-    load_mappings, mappings_path, reconcile_persisted_mapping_changes, store_mapping_changes,
+    LoadedMappings, load_mappings, mappings_path, reconcile_persisted_mapping_changes,
+    store_mapping_changes,
 };
 use self::versions_storage::{
     load_versions, reconcile_persisted_version_changes, store_version_changes, versions_path,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
@@ -57,6 +59,10 @@ pub struct MutableIdTracker {
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
 
+    /// Whether deletes are persisted with their version, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions).
+    delete_versioning: DeleteVersioning,
+
     is_alive_lock: IsAliveLock,
 
     /// Expected length of the mappings file in bytes
@@ -73,6 +79,20 @@ impl MutableIdTracker {
     pub fn open(
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
+        Self::open_with_delete_versioning(
+            segment_path,
+            deferred_internal_id,
+            DeleteVersioning::from_feature_flags(),
+        )
+    }
+
+    /// Like [`open`](Self::open), with deletes persisted as `versioning` says rather than as the
+    /// feature flags do.
+    pub(crate) fn open_with_delete_versioning(
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        delete_versioning: DeleteVersioning,
     ) -> OperationResult<Self> {
         let segment_path = segment_path.into();
 
@@ -96,21 +116,7 @@ impl MutableIdTracker {
             );
         }
 
-        let (mappings, mappings_expected_len) = if has_mappings {
-            load_mappings(&mappings_path, deferred_internal_id).map_err(|err| {
-                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
-            })?
-        } else {
-            let mappings = PointMappings::new(
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                deferred_internal_id,
-            );
-            (mappings, 0)
-        };
-
+        // Versions are loaded first: replaying the mappings needs to know which slots have one
         let internal_to_version = if has_versions {
             load_versions(&versions_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
@@ -118,6 +124,57 @@ impl MutableIdTracker {
         } else {
             vec![]
         };
+
+        // A slot "has a version" when the versions file reaches it: the file's length is the commit
+        // mark, see `versions_storage`. Zero-filled gaps count as having one, so this only tells
+        // abandoned inserts apart on the first load after a crash, before any later version write
+        // grows the file over them, which is why they are relinked in the log below.
+        // See <https://github.com/qdrant/qdrant/pull/11633>.
+        let has_version =
+            |internal_id: PointOffsetType| (internal_id as usize) < internal_to_version.len();
+        let LoadedMappings {
+            mappings,
+            abandoned_relocations,
+            read_to: mappings_expected_len,
+        } = if has_mappings {
+            load_mappings(&mappings_path, deferred_internal_id, has_version).map_err(|err| {
+                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
+            })?
+        } else {
+            LoadedMappings {
+                mappings: PointMappings::new(
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    deferred_internal_id,
+                ),
+                abandoned_relocations: Vec::new(),
+                read_to: 0,
+            }
+        };
+
+        // Points whose last insert was abandoned stay on their previous copy, but the log still
+        // names the abandoned slot as theirs. Relink them to their previous copy in the log too,
+        // like an update-only writer does with the inserts it inherits. Otherwise, once a later
+        // version write covers the abandoned slot, a reader of the log (this tracker on its next
+        // load, or a read-only follower) takes the abandoned insert for committed and serves
+        // whatever its slot holds. Flushed with the next mappings flush, before any version.
+        // See <https://github.com/qdrant/qdrant/pull/11641>.
+        let mut relinks = Vec::new();
+        for &external_id in &abandoned_relocations {
+            relinks.extend(
+                mappings
+                    .heads(&external_id)
+                    .map(|internal_id| MappingChange::Insert(external_id, internal_id)),
+            );
+        }
+        if !relinks.is_empty() {
+            log::warn!(
+                "Mutable ID tracker found {} points relocated without a persisted version, keeping their previous copy and assuming automatic recovery by WAL",
+                abandoned_relocations.len(),
+            );
+        }
 
         // Compare internal point mappings and versions count, report warning if we don't
         debug_assert!(
@@ -140,7 +197,8 @@ impl MutableIdTracker {
             internal_to_version,
             mappings,
             pending_versions: Default::default(),
-            pending_mappings: Default::default(),
+            pending_mappings: Arc::new(Mutex::new(relinks)),
+            delete_versioning,
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
         })
@@ -154,6 +212,7 @@ impl MutableIdTracker {
             mappings,
             pending_versions: _, // transient, small
             pending_mappings: _, // transient, small
+            delete_versioning: _,
             is_alive_lock: _,
             mappings_expected_len: _,
         } = self;
@@ -167,6 +226,23 @@ impl MutableIdTracker {
             .into_iter()
             .filter(|path| path.is_file())
             .collect()
+    }
+
+    /// The mapping change that persists the delete of `external_id`: with
+    /// [`DeleteVersioning::Versioned`], a versioned entry when the delete has a `version`.
+    fn delete_change(
+        &self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> MappingChange {
+        match (self.delete_versioning, version) {
+            (DeleteVersioning::Versioned, Some(version)) => {
+                MappingChange::DeleteVersioned(external_id, version)
+            }
+            (DeleteVersioning::Versioned, None) | (DeleteVersioning::Unversioned, _) => {
+                MappingChange::Delete(external_id)
+            }
+        }
     }
 }
 
@@ -290,23 +366,31 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
-            .push(MappingChange::Delete(external_id));
+            .push(self.delete_change(external_id, version));
         if let Some(internal_id) = internal_id {
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
             self.pending_mappings
                 .lock()
-                .push(MappingChange::Delete(external_id));
+                .push(self.delete_change(external_id, version));
         }
 
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
@@ -414,6 +498,7 @@ impl IdTracker for MutableIdTracker {
             mappings: _,            // kept in RAM
             pending_versions: _,
             pending_mappings: _,
+            delete_versioning: _,
             is_alive_lock: _,
             mappings_expected_len: _,
         } = self;

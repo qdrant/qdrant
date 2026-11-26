@@ -36,15 +36,13 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
             return Ok(None);
         }
 
-        let str_tokens =
+        let document =
             FullTextIndex::tokenize_document(&self.tokenizer, self.phrase_matching, &values);
 
-        let doc_len = self
-            .scoring
-            .then(|| FullTextIndex::document_length(&str_tokens, self.phrase_matching, &values));
+        let doc_len = self.scoring.then(|| document.length());
 
         Ok(Some(FullTextIndex::serialize_stored_document(
-            str_tokens,
+            document.tokens,
             self.phrase_matching,
             doc_len,
         )?))
@@ -53,7 +51,7 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::universal_io::{MmapFile, MmapFs};
     use serde_json::json;
     use tempfile::TempDir;
@@ -70,7 +68,7 @@ mod tests {
     #[test]
     fn full_text_index_round_trip() {
         let dir = TempDir::with_prefix("update_only_text").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let field = JsonPath::new("f");
 
         let params = TextIndexParams {
@@ -94,13 +92,11 @@ mod tests {
         .unwrap();
 
         writer
-            .add_point(&MmapFs, 0, &[&json!("the quick brown fox")], &hw_counter)
+            .add_point(&MmapFs, 0, &[&json!("the quick brown fox")])
             .unwrap();
         // A value the text index cannot read stores nothing.
-        writer
-            .add_point(&MmapFs, 1, &[&json!(42)], &hw_counter)
-            .unwrap();
-        writer.flush(&MmapFs, &hw_counter).unwrap();
+        writer.add_point(&MmapFs, 1, &[&json!(42)]).unwrap();
+        writer.flush(&MmapFs).unwrap();
 
         let scoring = params.scoring();
         let index = MutableFullTextIndex::open_gridstore(storage, params, false, scoring)

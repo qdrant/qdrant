@@ -2,14 +2,14 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use ahash::{AHashMap, AHashSet};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
 use super::ReadOnlySegment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -24,8 +24,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Read-only counterpart of `impl ReadSegmentEntry for Segment`.
@@ -68,6 +68,15 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         })
     }
 
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        self.with_view(|view| view.share_filter(filter, users, query_context))
+    }
+
     fn score_bm25(
         &self,
         field: PayloadKeyTypeRef,
@@ -93,21 +102,16 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         })
     }
 
-    fn rescore_with_formula(
-        &self,
-        ctx: Arc<FormulaContext>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        self.with_view(|view| view.rescore_with_formula(ctx, hw_counter))
+    fn rescore_with_formula(&self, ctx: Arc<FormulaContext>) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| view.rescore_with_formula(ctx))
     }
 
     fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        self.with_view(|view| view.vector(vector_name, point_id, hw_counter))
+        self.with_view(|view| view.vector(vector_name, point_id))
     }
 
     fn vector_with_behavior(
@@ -115,27 +119,17 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         vector_name: &VectorName,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        self.with_view(|view| {
-            view.vector_with_behavior(vector_name, point_id, deferred_behavior, hw_counter)
-        })
+        self.with_view(|view| view.vector_with_behavior(vector_name, point_id, deferred_behavior))
     }
 
-    fn all_vectors(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>> {
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors<'_>> {
         self.with_view(|view| {
             let mut result = NamedVectors::default();
             for vector_name in view.vector_data.keys() {
-                if let Some(vec) = view.vector_with_behavior(
-                    vector_name,
-                    point_id,
-                    DeferredBehavior::VisibleOnly,
-                    hw_counter,
-                )? {
+                if let Some(vec) =
+                    view.vector_with_behavior(vector_name, point_id, DeferredBehavior::VisibleOnly)?
+                {
                     result.insert(vector_name.clone(), vec);
                 }
             }
@@ -143,12 +137,8 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         })
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.with_view(|view| view.payload(point_id, hw_counter))
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
+        self.with_view(|view| view.payload(point_id))
     }
 
     fn retrieve(
@@ -156,7 +146,6 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
@@ -165,7 +154,25 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
                 point_ids,
                 with_payload,
                 with_vector,
-                hw_counter,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
+    }
+
+    fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| {
+            view.retrieve_at(
+                points,
+                with_payload,
+                with_vector,
                 is_stopped,
                 deferred_behavior,
             )
@@ -176,18 +183,11 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         &self,
         point_ids: &[PointIdType],
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
         self.with_view(|view| {
-            view.retrieve_raw(
-                point_ids,
-                with_vector,
-                hw_counter,
-                is_stopped,
-                deferred_behavior,
-            )
+            view.retrieve_raw(point_ids, with_vector, is_stopped, deferred_behavior)
         })
     }
 
@@ -197,18 +197,10 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         self.with_view(|view| {
-            view.read_filtered(
-                offset,
-                limit,
-                filter,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            view.read_filtered(offset, limit, filter, is_stopped, deferred_behavior)
         })
     }
 
@@ -218,18 +210,10 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         self.with_view(|view| {
-            view.read_ordered_filtered(
-                limit,
-                filter,
-                order_by,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            view.read_ordered_filtered(limit, filter, order_by, is_stopped, deferred_behavior)
         })
     }
 
@@ -238,9 +222,8 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped, hw_counter))
+        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped))
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
@@ -252,18 +235,16 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
-        self.with_view(|view| view.facet_values(key, filter, is_stopped, hw_counter))
+        self.with_view(|view| view.facet_values(key, filter, is_stopped))
     }
 
     fn facet(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        self.with_view(|view| view.approximate_facet(request, is_stopped, hw_counter))
+        self.with_view(|view| view.approximate_facet(request, is_stopped))
     }
 
     fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool {
@@ -273,12 +254,26 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
             .is_some()
     }
 
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        self.with_view(|view| view.has_points(point_ids, deferred_behavior))
+    }
+
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        self.with_view(|view| view.point_versions(point_ids))
+    }
+
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.with_view(|view| view.estimate_point_count(filter, hw_counter))
+        self.with_view(|view| view.estimate_point_count(filter))
     }
 
     fn vector_names(&self) -> Vec<VectorNameBuf> {
@@ -305,6 +300,10 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
+    }
+
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        Ok(self.with_view(|view| view.max_available_vectors_size_in_bytes()))
     }
 
     fn segment_uuid(&self) -> Uuid {

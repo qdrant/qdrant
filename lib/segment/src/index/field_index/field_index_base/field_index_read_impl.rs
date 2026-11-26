@@ -1,7 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
@@ -13,15 +11,18 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
-use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::point_sink::PointSink;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
+use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -39,46 +40,68 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.count_indexed_points(),
             FieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
             FieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::Nested(idx) => idx.count_indexed_points(),
         }
     }
 
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
         match self {
-            FieldIndex::IntIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::DatetimeIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::IntMapIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::KeywordIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::FloatIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::GeoIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::BoolIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::FullTextIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::UuidIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::UuidMapIndex(idx) => idx.filter(condition, hw_counter),
-            FieldIndex::NullIndex(idx) => idx.filter(condition, hw_counter),
+            FieldIndex::IntIndex(idx) => idx.filter(condition),
+            FieldIndex::DatetimeIndex(idx) => idx.filter(condition),
+            FieldIndex::IntMapIndex(idx) => idx.filter(condition),
+            FieldIndex::KeywordIndex(idx) => idx.filter(condition),
+            FieldIndex::FloatIndex(idx) => idx.filter(condition),
+            FieldIndex::GeoIndex(idx) => idx.filter(condition),
+            FieldIndex::BoolIndex(idx) => idx.filter(condition),
+            FieldIndex::FullTextIndex(idx) => idx.filter(condition),
+            FieldIndex::UuidIndex(idx) => idx.filter(condition),
+            FieldIndex::UuidMapIndex(idx) => idx.filter(condition),
+            FieldIndex::NullIndex(idx) => idx.filter(condition),
+            FieldIndex::Nested(idx) => idx.filter(condition),
+        }
+    }
+
+    fn filter_into(
+        &self,
+        condition: &FieldCondition,
+        sink: &mut impl PointSink,
+    ) -> OperationResult<bool> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::DatetimeIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::IntMapIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::KeywordIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::FloatIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::GeoIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::BoolIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::FullTextIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::UuidIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::UuidMapIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::NullIndex(idx) => idx.filter_into(condition, sink),
+            FieldIndex::Nested(idx) => idx.filter_into(condition, sink),
         }
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
         match self {
-            FieldIndex::IntIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::DatetimeIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::IntMapIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::KeywordIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::FloatIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::GeoIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::BoolIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::FullTextIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::UuidIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::UuidMapIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
-            FieldIndex::NullIndex(idx) => idx.estimate_cardinality(condition, hw_counter),
+            FieldIndex::IntIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::DatetimeIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::IntMapIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::KeywordIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::FloatIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::GeoIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::BoolIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::FullTextIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::UuidIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::UuidMapIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::NullIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::Nested(idx) => idx.estimate_cardinality(condition),
         }
     }
 
@@ -100,26 +123,27 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::Nested(idx) => idx.for_each_payload_block(threshold, key, f),
         }
     }
 
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
         match self {
-            FieldIndex::IntIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::IntMapIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::KeywordIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::FloatIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::GeoIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::BoolIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::FullTextIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::UuidIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::UuidMapIndex(idx) => idx.condition_checker(condition, hw_acc),
-            FieldIndex::NullIndex(idx) => idx.condition_checker(condition, hw_acc),
+            FieldIndex::IntIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::DatetimeIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::IntMapIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::KeywordIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::FloatIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::GeoIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::BoolIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::FullTextIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::UuidIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::UuidMapIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::NullIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::Nested(idx) => idx.condition_checker(condition),
         }
     }
 
@@ -127,47 +151,42 @@ impl PayloadFieldIndexRead for FieldIndex {
         &self,
         condition: &FieldCondition,
         payload_value: &Value,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<bool>> {
         match self {
-            FieldIndex::IntIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::DatetimeIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::IntMapIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::KeywordIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::FloatIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::GeoIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::BoolIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::FullTextIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::UuidIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::UuidMapIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
-            FieldIndex::NullIndex(idx) => {
-                idx.special_check_condition(condition, payload_value, hw_counter)
-            }
+            FieldIndex::IntIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::DatetimeIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::IntMapIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::KeywordIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::FloatIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::GeoIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::BoolIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::FullTextIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::UuidIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::UuidMapIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::NullIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::Nested(idx) => idx.special_check_condition(condition, payload_value),
         }
     }
 }
 
 impl FieldIndexRead for FieldIndex {
+    fn is_cold(&self) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.is_cold(),
+            FieldIndex::DatetimeIndex(index) => index.is_cold(),
+            FieldIndex::IntMapIndex(index) => index.is_cold(),
+            FieldIndex::KeywordIndex(index) => index.is_cold(),
+            FieldIndex::FloatIndex(index) => index.is_cold(),
+            FieldIndex::GeoIndex(index) => index.is_cold(),
+            FieldIndex::BoolIndex(index) => index.is_cold(),
+            FieldIndex::FullTextIndex(index) => index.is_cold(),
+            FieldIndex::UuidIndex(index) => index.is_cold(),
+            FieldIndex::UuidMapIndex(index) => index.is_cold(),
+            FieldIndex::NullIndex(index) => index.is_cold(),
+            FieldIndex::Nested(index) => index.is_cold(),
+        }
+    }
+
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         Ok(match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
@@ -181,6 +200,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::NullIndex(index) => index.get_telemetry_data(),
+            FieldIndex::Nested(index) => index.get_telemetry_data()?,
         })
     }
 
@@ -197,6 +217,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
             FieldIndex::NullIndex(index) => index.values_count(point_id)?,
+            FieldIndex::Nested(index) => index.values_count(point_id)?,
         })
     }
 
@@ -213,13 +234,11 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::NullIndex(index) => index.values_is_empty(point_id)?,
+            FieldIndex::Nested(index) => index.values_is_empty(point_id)?,
         })
     }
 
-    fn value_retriever<'a, 'q>(
-        &'a self,
-        hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<Option<VariableRetrieverFn<'q>>>
+    fn value_retriever<'a, 'q>(&'a self) -> OperationResult<Option<VariableRetrieverFn<'q>>>
     where
         'a: 'q,
     {
@@ -229,15 +248,15 @@ impl FieldIndexRead for FieldIndex {
         // This dispatch is mechanical — adding a `FieldIndex` variant
         // forces a compile error here.
         Ok(match self {
-            FieldIndex::IntIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::DatetimeIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::IntMapIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::KeywordIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::FloatIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::GeoIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::BoolIndex(index) => Some(index.value_retriever(hw_counter)?),
-            FieldIndex::UuidIndex(index) => Some(index.value_retriever(hw_counter)),
-            FieldIndex::UuidMapIndex(index) => Some(index.value_retriever(hw_counter)),
+            FieldIndex::IntIndex(index) => Some(index.value_retriever()),
+            FieldIndex::DatetimeIndex(index) => Some(index.value_retriever()),
+            FieldIndex::IntMapIndex(index) => Some(index.value_retriever()),
+            FieldIndex::KeywordIndex(index) => Some(index.value_retriever()),
+            FieldIndex::FloatIndex(index) => Some(index.value_retriever()),
+            FieldIndex::GeoIndex(index) => Some(index.value_retriever()),
+            FieldIndex::BoolIndex(index) => Some(index.value_retriever()?),
+            FieldIndex::UuidIndex(index) => Some(index.value_retriever()),
+            FieldIndex::UuidMapIndex(index) => Some(index.value_retriever()),
             // FullTextIndex: caller falls back to payload — text values
             // are easier to read directly than reconstruct from the
             // inverted index.
@@ -245,34 +264,36 @@ impl FieldIndexRead for FieldIndex {
             // NullIndex: no underlying values to return; another index
             // on the same field is expected to provide them.
             FieldIndex::NullIndex(_) => None,
+            FieldIndex::Nested(index) => index.value_retriever()?,
         })
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {
         match self {
-            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
-            FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
-            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index.inner())),
-            FieldIndex::IntMapIndex(_)
+            FieldIndex::Nested(index) => index.numeric_view().map(NumericView::Nested),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::IntMapIndex(_)
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BoolIndex(_)
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_)
-            | FieldIndex::NullIndex(_) => None,
+            | FieldIndex::NullIndex(_) => self.numeric_view().map(NumericView::Plain),
         }
     }
 
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match self {
             FieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, stats, is_stopped, hw_counter)?;
+                fill_text_statistics(index, stats, corpus, is_stopped)?;
                 Ok(true)
             }
             FieldIndex::IntIndex(_)
@@ -285,6 +306,7 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::NullIndex(_) => Ok(false),
+            FieldIndex::Nested(index) => index.fill_text_statistics(stats, corpus, is_stopped),
         }
     }
 
@@ -293,7 +315,7 @@ impl FieldIndexRead for FieldIndex {
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
         match self {
@@ -305,7 +327,6 @@ impl FieldIndexRead for FieldIndex {
                 accept,
                 limit,
                 context.is_stopped(),
-                &context.hardware_counter(),
             )
             .map(Some),
             FieldIndex::IntIndex(_)
@@ -318,26 +339,85 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::NullIndex(_) => Ok(None),
+            FieldIndex::Nested(index) => index.score_bm25(terms, context, params, accept, limit),
         }
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
-        // None of these variants carry the `S` storage parameter; pin the
-        // returned `FacetIndexEnum`'s `S` to `MmapFile` (the default) so
-        // inference doesn't choke on the unconstrained generic.
-        use common::universal_io::MmapFile;
         match self {
-            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::<MmapFile>::Keyword(index)),
-            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Int(index)),
-            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Uuid(index)),
-            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::<MmapFile>::Bool(index)),
+            FieldIndex::Nested(index) => index.facet_view().map(FacetView::Nested),
+            FieldIndex::KeywordIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_) => self.facet_view().map(FacetView::Plain),
+        }
+    }
+
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        match self {
+            FieldIndex::Nested(index) => index.element_condition_checker(array_key, condition),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => Ok(None),
+        }
+    }
+}
+
+impl FieldIndex {
+    /// Order-by view of a flattened numeric index; `None` for other indexes, including
+    /// per-element ones.
+    pub(crate) fn numeric_view(&self) -> Option<NumericFieldIndex<'_>> {
+        match self {
+            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
+            FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
+            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index.inner())),
+            FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
+        }
+    }
+
+    /// Facet view of a flattened index that supports faceting; `None` for other indexes,
+    /// including per-element ones.
+    pub(crate) fn facet_view(&self) -> Option<FacetIndexEnum<'_>> {
+        match self {
+            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::Keyword(index)),
+            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::Int(index)),
+            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::Uuid(index)),
+            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::FullTextIndex(_)
-            | FieldIndex::NullIndex(_) => None,
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
         }
     }
 }

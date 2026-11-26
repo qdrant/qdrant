@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
+use common::ambient;
 use common::generic_consts::Sequential;
 use common::universal_io::{
     ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
@@ -142,6 +143,7 @@ const DATA: &[u8] = b"the quick brown fox jumps over the lazy dog";
 
 #[test]
 fn blob_file_read_whole_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -164,6 +166,7 @@ fn blob_file_read_whole_uses_single_get_without_head() {
 
 #[test]
 fn owned_pipeline_tail_read_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -190,6 +193,7 @@ fn owned_pipeline_tail_read_uses_single_get_without_head() {
 
 #[test]
 fn owned_pipeline_empty_tail_resolves_to_empty_read() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -213,6 +217,7 @@ fn owned_pipeline_empty_tail_resolves_to_empty_read() {
 
 #[test]
 fn disk_cache_read_whole_skips_remote_len() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -265,6 +270,7 @@ fn disk_cache_read_whole_skips_remote_len() {
 
 #[test]
 fn disk_cache_prefill_open_uses_whole_get_without_head() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -316,6 +322,7 @@ fn async_prefill_open(
     local_dir: &Path,
     known_len: Option<u64>,
 ) -> UioResult<impl UniversalRead> {
+    let _scope = ambient::test_guard();
     let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir.to_path_buf()).unwrap();
     let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
         config: Arc::new(config),
@@ -340,6 +347,7 @@ fn async_prefill_open(
 
 #[test]
 fn disk_cache_async_prefill_streams_whole_get() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -361,6 +369,7 @@ fn disk_cache_async_prefill_streams_whole_get() {
 /// The mirror takes the length of the file as read, not the stale one the open was given.
 #[test]
 fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
+    let _scope = ambient::test_guard();
     for stale_len in [3, DATA.len() as u64 * 2] {
         let tmp = tempfile::Builder::new()
             .prefix("uio_whole_read")
@@ -406,6 +415,7 @@ impl ChunkSink for TestSink {
 
 #[tokio::test]
 async fn blob_file_read_from_into_async_tail_and_empty() {
+    let _scope = ambient::async_test_guard();
     use common::universal_io::UniversalReadAsync;
 
     let source = CountingSource::new(DATA);

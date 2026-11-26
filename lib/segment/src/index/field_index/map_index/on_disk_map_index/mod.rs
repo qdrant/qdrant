@@ -38,6 +38,8 @@ pub struct OnDiskMapIndex<N: MapIndexKey + Key + ?Sized, S: UniversalRead = Mmap
     /// Whether the "no values" mask was read from the compact
     /// `deleted_mask.bin` or the legacy `deleted.bin`.
     pub(super) compact_deleted_mask: bool,
+    /// Whether the pages were left on disk at open rather than populated.
+    pub(super) cold: bool,
 }
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized, S: UniversalRead = MmapFile> {

@@ -1,12 +1,11 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
-    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, PreloadFuture, ReadPipeline, ReadRange,
+    UniversalAppend, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 
 use crate::Result;
@@ -275,7 +274,7 @@ impl<S: UniversalRead> AppendOnlyTracker<S> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+    ) -> Result<PreloadFuture> {
         Ok(Box::pin(
             self.file.live_preload(|path| fs.cached_file_info(path))?,
         ))

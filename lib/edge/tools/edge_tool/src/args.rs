@@ -24,6 +24,8 @@ pub enum Command {
     Create(CreateArgs),
     /// Upsert randomly generated points into an existing local collection.
     Upsert(UpsertArgs),
+    /// Load a BEIR corpus into an existing local collection, one point per document.
+    LoadBeir(LoadBeirArgs),
     /// Run the shard optimizers (merge/indexing/vacuum) until idle.
     Optimize(OptimizeArgs),
     /// Upload a local collection directory to S3/GCS object storage.
@@ -64,7 +66,8 @@ pub struct CreateArgs {
     pub quantization: Option<QuantizationPreset>,
 
     /// Create a payload index: `NAME:TYPE`, where TYPE is one of keyword, integer,
-    /// float, text, geo. Comma-separated and/or repeatable.
+    /// float, text, bm25 (a text index scored with BM25), geo. Comma-separated
+    /// and/or repeatable.
     #[arg(
         long = "payload-index",
         value_name = "NAME:TYPE",
@@ -121,6 +124,41 @@ pub struct UpsertArgs {
     pub start_id: Option<u64>,
 
     /// RNG seed for the generated points.
+    #[arg(long, default_value_t = 42)]
+    pub seed: u64,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct LoadBeirArgs {
+    /// Path to an existing collection directory.
+    pub path: PathBuf,
+
+    /// BEIR `corpus.jsonl`: one `{"_id", "title", "text"}` object per line.
+    #[arg(long)]
+    pub corpus: PathBuf,
+
+    /// Payload field to store each document's title and text in. Create it with
+    /// `--payload-index NAME:bm25` to rank it by BM25. The BEIR id goes to `doc_id`.
+    #[arg(long, default_value = "text")]
+    pub field: String,
+
+    /// Load only the first N documents.
+    #[arg(long)]
+    pub limit: Option<usize>,
+
+    /// Documents per update operation.
+    #[arg(long, default_value_t = 1000)]
+    pub batch_size: usize,
+
+    /// Point id of the first document; the others follow in corpus order, so a
+    /// re-run overwrites the same points. A re-run loading fewer documents
+    /// leaves the earlier ones past its end: recreate the collection to reload
+    /// a smaller or different corpus. Pass the end of the previous range to
+    /// load a second corpus next to the first.
+    #[arg(long, default_value_t = 0)]
+    pub start_id: u64,
+
+    /// RNG seed for the generated vectors and other payload fields.
     #[arg(long, default_value_t = 42)]
     pub seed: u64,
 }

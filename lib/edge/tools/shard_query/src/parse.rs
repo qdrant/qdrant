@@ -25,6 +25,14 @@ pub fn read_data_arg(raw: &str) -> Result<String> {
     }
 }
 
+/// Parse a JSON filter given as a data argument (see [`read_data_arg`]);
+/// `flag` names the option in the error.
+pub fn parse_filter_arg(flag: &str, raw: &str) -> Result<Filter> {
+    let json = read_data_arg(raw)?;
+    serde_json::from_str(&json)
+        .with_context(|| format!("failed to parse {flag} as a JSON filter: {json}"))
+}
+
 /// Build a single "field equals value" filter from the `--filter-key`/
 /// `--filter-value` shortcut. Returns `None` when neither is set. The value is
 /// parsed as an integer or boolean when it looks like one, otherwise as a string.

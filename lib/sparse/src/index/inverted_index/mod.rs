@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -50,7 +49,9 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     type Version: StorageVersion;
 
-    fn is_on_disk(&self) -> bool;
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
     /// Open existing index based on path.
     fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>
@@ -83,7 +84,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
         callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
     ) -> UioResult<()>;
 
@@ -99,7 +99,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
         callback: impl FnMut(U, usize) -> UioResult<()>,
     ) -> UioResult<()>;
 
@@ -139,6 +138,20 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     /// Get max existed index
     fn max_index(&self) -> Option<DimOffset>;
+
+    /// Elements across all posting lists, i.e. the (dimension, weight) pairs of the indexed
+    /// vectors, independent of how the postings are stored. Reads only the posting list headers.
+    fn total_element_count(&self) -> UioResult<usize> {
+        let Some(max_index) = self.max_index() else {
+            return Ok(0);
+        };
+        let mut total = 0usize;
+        self.posting_list_len_batch((0..=max_index).map(|dim| ((), dim)), |(), len| {
+            total += len;
+            Ok(())
+        })?;
+        Ok(total)
+    }
 }
 
 /// Error returned from [`InvertedIndex::get_batch`] and [`InvertedIndex::posting_list_len_batch`].

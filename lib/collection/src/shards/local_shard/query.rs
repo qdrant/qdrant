@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -13,6 +12,7 @@ use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use shard::query::planned_query::RescoreStages;
+use shard::query::text::TextSearchRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
@@ -70,7 +70,6 @@ impl LocalShard {
         request: PlannedQuery,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
         let searches_f = self.do_search(
@@ -79,17 +78,12 @@ impl LocalShard {
             }),
             search_runtime_handle,
             timeout,
-            hw_counter_acc.clone(),
         );
 
-        let scrolls_f = self.query_scroll_batch(
-            Arc::new(request.scrolls),
-            search_runtime_handle,
-            timeout,
-            hw_counter_acc.clone(),
-        );
+        let scrolls_f =
+            self.query_scroll_batch(Arc::new(request.scrolls), search_runtime_handle, timeout);
 
-        let texts_f = self.do_text_searches(request.texts, timeout, hw_counter_acc.clone());
+        let texts_f = self.do_text_searches(request.texts, timeout);
 
         // execute searches, scrolls and BM25 queries concurrently
         let (search_results, scroll_results, text_results) =
@@ -100,13 +94,7 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start_time.elapsed());
 
         let plans_futures = request.root_plans.into_iter().map(|root_plan| {
-            self.resolve_plan(
-                root_plan,
-                &prefetch_holder,
-                search_runtime_handle,
-                timeout,
-                hw_counter_acc.clone(),
-            )
+            self.resolve_plan(root_plan, &prefetch_holder, search_runtime_handle, timeout)
         });
 
         let batched_scored_points = futures::future::try_join_all(plans_futures).await?;
@@ -123,7 +111,6 @@ impl LocalShard {
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ShardQueryResponse> {
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
@@ -146,7 +133,6 @@ impl LocalShard {
                 &with_vector,
                 &self.search_runtime,
                 timeout,
-                hw_measurement_acc,
                 DeferredBehavior::VisibleOnly,
             ),
         )
@@ -180,7 +166,6 @@ impl LocalShard {
         prefetch_holder: &PrefetchResults,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let RootPlan {
             merge_plan,
@@ -196,19 +181,12 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 0,
-                hw_measurement_acc.clone(),
             )
             .await?;
 
         // fetch payloads and vectors if required
-        self.fill_with_payload_or_vectors(
-            results,
-            with_payload,
-            with_vector,
-            timeout,
-            hw_measurement_acc,
-        )
-        .await
+        self.fill_with_payload_or_vectors(results, with_payload, with_vector, timeout)
+            .await
     }
 
     fn recurse_prefetch<'a>(
@@ -218,7 +196,6 @@ impl LocalShard {
         search_runtime_handle: &'a AdaptiveSearchHandle,
         timeout: Duration,
         depth: usize,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> BoxFuture<'a, CollectionResult<Vec<Vec<ScoredPoint>>>> {
         async move {
             let MergePlan {
@@ -250,7 +227,6 @@ impl LocalShard {
                                 search_runtime_handle,
                                 timeout,
                                 depth + 1,
-                                hw_counter_acc.clone(),
                             )
                             .await?
                             .into_iter();
@@ -270,13 +246,7 @@ impl LocalShard {
 
                 let rescored = if let Some(rescore_params) = shard_level {
                     let rescored = self
-                        .rescore(
-                            sources,
-                            rescore_params,
-                            search_runtime_handle,
-                            timeout,
-                            hw_counter_acc,
-                        )
+                        .rescore(sources, rescore_params, search_runtime_handle, timeout)
                         .await?;
                     vec![rescored]
                 } else {
@@ -304,7 +274,6 @@ impl LocalShard {
         rescore_params: RescoreParams,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let RescoreParams {
             rescore,
@@ -338,7 +307,6 @@ impl LocalShard {
                     Arc::new(vec![scroll_request]),
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc.clone(),
                 )
                 .await?
                 .pop()
@@ -370,7 +338,6 @@ impl LocalShard {
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc,
                 )
                 .await?
                 // One search request is sent. We expect only one result
@@ -388,7 +355,6 @@ impl LocalShard {
                     limit,
                     score_threshold.map(OrderedFloat::into_inner),
                     timeout,
-                    hw_counter_acc,
                 )
                 .await
             }
@@ -410,7 +376,6 @@ impl LocalShard {
                         Arc::new(vec![scroll_request]),
                         search_runtime_handle,
                         timeout,
-                        hw_counter_acc.clone(),
                     )
                     .await?
                     .pop()
@@ -422,20 +387,36 @@ impl LocalShard {
                 }
             },
             ScoringQuery::Mmr(mmr) => {
-                self.mmr_rescore(
-                    sources,
-                    mmr,
-                    limit,
-                    search_runtime_handle,
-                    timeout,
-                    hw_counter_acc,
-                )
-                .await
+                self.mmr_rescore(sources, mmr, limit, search_runtime_handle, timeout)
+                    .await
             }
-            // Refused when the query is planned, see `MergePlan::validate`.
-            ScoringQuery::Text(_) => Err(CollectionError::service_error(
-                "BM25 over a text index cannot rescore prefetches",
-            )),
+            ScoringQuery::Text(query) => {
+                // Same shape as the vector rescore: a filter on the prefetched ids
+                let filter = filter_with_sources_ids(sources.into_iter());
+                let idf_corpus = params
+                    .and_then(|params| params.idf)
+                    .and_then(|idf| idf.corpus().cloned());
+
+                let text_request = TextSearchRequestInternal {
+                    query,
+                    filter: Some(filter),
+                    idf_corpus,
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat::into_inner),
+                    with_vector: false.into(),
+                    with_payload: false.into(),
+                };
+
+                self.do_text_searches(vec![text_request], timeout)
+                    .await?
+                    // One text request is sent. We expect only one result
+                    .pop()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Rescoring with text query didn't return expected batch of results",
+                        )
+                    })
+            }
         }
     }
 
@@ -476,7 +457,6 @@ impl LocalShard {
         limit: usize,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let start = Instant::now();
 
@@ -486,7 +466,6 @@ impl LocalShard {
                 false.into(),
                 WithVector::from(mmr.using.clone()),
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await?
             .into_iter()
@@ -504,7 +483,6 @@ impl LocalShard {
             limit,
             search_runtime_handle,
             timeout,
-            hw_measurement_acc,
         )
         .await?;
 

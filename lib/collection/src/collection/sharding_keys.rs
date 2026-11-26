@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use segment::types::ShardKey;
 
 use crate::collection::{AbortReshardingScope, Collection};
@@ -15,6 +16,83 @@ use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use crate::shards::shard_trait::WaitUntil;
 
 impl Collection {
+    /// Build missing replica sets and their indexes before registering the batch
+    ///
+    /// A failed build leaves directories outside the key mapping or saved shard count,
+    /// so startup ignores them and replay can rebuild them. Already registered shards
+    /// are retained to preserve writes from an earlier apply.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    pub async fn create_and_register_shards(
+        &self,
+        shard_key: Option<ShardKey>,
+        shards: &[(ShardId, Vec<PeerId>, ReplicaState)],
+    ) -> CollectionResult<()> {
+        let existing: HashSet<_> = self
+            .shards_holder
+            .read()
+            .await
+            .get_shards()
+            .map(|(id, _)| id)
+            .collect();
+        let payload_schema = self.payload_index_schema.read().schema.clone();
+        let mut built: Vec<(ShardId, ShardReplicaSet)> = Vec::new();
+
+        let result: CollectionResult<()> = async {
+            for (shard_id, peers, state) in shards {
+                if existing.contains(shard_id) {
+                    continue;
+                }
+
+                let replica_set = self
+                    .create_replica_set(*shard_id, shard_key.clone(), peers, Some(*state))
+                    .await?;
+                built.push((*shard_id, replica_set));
+                let replica_set = &built.last().expect("just built a replica set").1;
+
+                for (field_name, field_schema) in &payload_schema {
+                    let operation = CollectionUpdateOperations::FieldIndexOperation(
+                        FieldIndexOperations::CreateIndex(CreateIndex {
+                            field_name: field_name.clone(),
+                            field_schema: Some(field_schema.clone()),
+                        }),
+                    );
+
+                    // Index initialization must also work for replicas that reject updates
+                    replica_set
+                        .update_local(operation.into(), WaitUntil::Visible, None, true)
+                        .unmeasured(reason("Internal operation"))
+                        .await?;
+                }
+            }
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(error) = result {
+            for (_, replica_set) in built {
+                replica_set.stop_gracefully().await;
+            }
+
+            return Err(error);
+        }
+
+        let mut holder = self.shards_holder.write().await;
+        let previous_ring = holder.rings.get(&shard_key).cloned();
+        holder.add_shards(built, shard_key.clone()).await?;
+
+        // Adding shards to an existing key starts resharding. Keep its current routing
+        // until SetReshardingState persists the state and installs the dual ring.
+        if let Some(previous_ring) = previous_ring {
+            holder.rings.insert(shard_key, previous_ring);
+        }
+
+        Ok(())
+    }
+
     pub async fn create_replica_set(
         &self,
         shard_id: ShardId,
@@ -64,8 +142,6 @@ impl Collection {
         placement: ShardsPlacement,
         init_state: ReplicaState,
     ) -> CollectionResult<()> {
-        let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
-
         let (sharding_method, key_mapping) = {
             let shards_holder = self.shards_holder.read().await;
             (
@@ -155,9 +231,9 @@ impl Collection {
                         OperationWithClockTag::from(create_index_op),
                         WaitUntil::Visible,
                         None,
-                        hw_counter.clone(),
                         false,
                     )
+                    .unmeasured(reason("Internal operation"))
                     .await?;
             }
 

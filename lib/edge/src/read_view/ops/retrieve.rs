@@ -1,4 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
@@ -25,7 +24,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &with_payload,
             &with_vector,
             &self.is_stopped,
-            HwMeasurementAcc::disposable_edge(),
             DeferredBehavior::VisibleOnly,
         )?;
         self.check_stopped()?;

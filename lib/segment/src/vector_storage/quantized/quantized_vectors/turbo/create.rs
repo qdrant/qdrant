@@ -23,6 +23,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_turbo<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
@@ -30,7 +31,7 @@ impl QuantizedVectors {
         input_already_rotated: bool,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
@@ -40,7 +41,7 @@ impl QuantizedVectors {
             encoded_vectors_tq::get_quantized_vector_size(vector_parameters, bits, mode);
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
-        let in_ram = Self::is_ram(turbo_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(turbo_config.memory_placement(), cold_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
@@ -53,9 +54,9 @@ impl QuantizedVectors {
                 Ok(QuantizedVectorStorage::TQChunkedMmap(
                     EncodedVectorsTQ::encode(
                         vectors,
+                        keep,
                         storage_builder,
                         vector_parameters,
-                        vectors_count,
                         bits,
                         mode,
                         rotation,
@@ -74,9 +75,9 @@ impl QuantizedVectors {
                 )?;
                 Ok(QuantizedVectorStorage::TQRam(EncodedVectorsTQ::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    vectors_count,
                     bits,
                     mode,
                     rotation,
@@ -94,9 +95,9 @@ impl QuantizedVectors {
                 )?;
                 Ok(QuantizedVectorStorage::TQMmap(EncodedVectorsTQ::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    vectors_count,
                     bits,
                     mode,
                     rotation,
@@ -112,6 +113,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_turbo_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -122,7 +124,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
@@ -133,7 +135,7 @@ impl QuantizedVectors {
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
-        let in_ram = Self::is_ram(turbo_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(turbo_config.memory_placement(), cold_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
@@ -145,9 +147,9 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    inner_vectors_count,
                     bits,
                     mode,
                     rotation,
@@ -179,9 +181,9 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    inner_vectors_count,
                     bits,
                     mode,
                     rotation,
@@ -208,9 +210,9 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    inner_vectors_count,
                     bits,
                     mode,
                     rotation,

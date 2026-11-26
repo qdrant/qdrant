@@ -53,7 +53,6 @@ pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     /// Residency for the (possibly deferred) graph load.
     residency: GraphLinksResidency,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 /// Read-only view over a [`ReadOnlyHNSWIndex`].
@@ -90,7 +89,7 @@ fn graph_deferred<S: UniversalRead>(
     Ok(cold_override && !HnswGraph::<S>::is_batched(fs, path, residency)?)
 }
 
-impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
+impl<S: UniversalReadExt + 'static> ReadOnlyHNSWIndex<S> {
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// A cold `populate_override` defers the graph load (see [`Self::open`]),
@@ -144,9 +143,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     {
         let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
 
-        let (memory, residency) =
+        let (_memory, residency) =
             graph_residency(hnsw_config.memory_placement(), populate_override);
-        let is_on_disk = memory.is_on_disk();
 
         let graph = match vector_storage.borrow().hnsw_graph() {
             Some(graph) => OnceCell::with_value(graph),
@@ -165,7 +163,6 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             fs: raw_fs.clone(),
             residency,
             searches_telemetry: HNSWSearchesTelemetry::new(),
-            is_on_disk,
         })
     }
 
@@ -191,8 +188,13 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             .get_or_try_init(|| HnswGraph::open_universal(&self.fs, &self.path, self.residency))
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+    /// Residency of the loaded graph, which may be borrowed from a
+    /// graph-inline vector storage; a deferred graph will load cold.
+    pub fn is_cold(&self) -> bool {
+        match self.graph.get() {
+            Some(graph) => graph.is_cold(),
+            None => self.residency == GraphLinksResidency::Cold,
+        }
     }
 
     /// Read underlying graph data from disk into the disk cache.
@@ -246,6 +248,7 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 mod tests {
     use GraphLinksFormat::{Compressed, CompressedWithVectors, Plain};
     use GraphLinksResidency::{Cached, Cold, Pinned};
+    use common::ambient;
     use common::universal_io::{MmapFs, UniversalKind as Kind};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -258,6 +261,7 @@ mod tests {
 
     #[test]
     fn test_open_matrix() {
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         for format in [

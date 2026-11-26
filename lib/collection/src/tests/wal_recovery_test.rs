@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
@@ -49,6 +49,7 @@ fn create_collection_config_with_prevent_unoptimized() -> CollectionConfigIntern
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {
+    let _scope = ambient::async_test_guard();
     //  Init the logger
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -82,10 +83,11 @@ async fn test_delete_from_indexed_payload() {
 
     let upsert_ops = upsert_operation();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     shard
-        .update(upsert_ops.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -100,18 +102,15 @@ async fn test_delete_from_indexed_payload() {
         })
         .unwrap();
     shard
-        .update(index_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(index_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(
-            delete_point_op.into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -147,12 +146,8 @@ async fn test_delete_from_indexed_payload() {
     eprintln!("dropping point 5");
     let delete_point_op = delete_point_operation(5);
     shard
-        .update(
-            delete_point_op.into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -190,6 +185,7 @@ async fn test_delete_from_indexed_payload() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_partial_flush_recovery() {
+    let _scope = ambient::async_test_guard();
     //  Init the logger
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -223,10 +219,11 @@ async fn test_partial_flush_recovery() {
 
     let upsert_ops = upsert_operation();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     shard
-        .update(upsert_ops.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -242,7 +239,8 @@ async fn test_partial_flush_recovery() {
         .unwrap();
 
     shard
-        .update(index_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(index_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -252,12 +250,8 @@ async fn test_partial_flush_recovery() {
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(
-            delete_point_op.into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -337,7 +331,7 @@ async fn test_truncate_unapplied_wal() {
         "Expected 0 records removed on an empty WAL"
     );
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Insert many individual points with wait=false to fill up the WAL.
     // We need more than APPLIED_SEQ_SAVE_INTERVAL + 1 updates to potentially have something to truncate.
@@ -357,7 +351,11 @@ async fn test_truncate_unapplied_wal() {
         ));
 
         // Use wait=false so updates queue up faster than they're processed
-        update_futures.push(shard.update(op.into(), WaitUntil::Wal, None, hw_acc.clone()));
+        update_futures.push(
+            shard
+                .update(op.into(), WaitUntil::Wal, None)
+                .measured(AmbientContext::clone(&ctx)),
+        );
     }
 
     // Send all updates as fast as possible
@@ -392,9 +390,9 @@ async fn test_truncate_unapplied_wal() {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            hw_acc.clone(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -437,7 +435,8 @@ async fn test_truncate_unapplied_wal() {
 
     // Use wait=true to ensure the update is fully applied
     let update_result = shard
-        .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -457,6 +456,7 @@ async fn test_truncate_unapplied_wal() {
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_loads_pending_to_queue() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -498,8 +498,6 @@ async fn test_wal_replay_loads_pending_to_queue() {
     // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Insert all operations
     for i in 0..total_ops {
         let point = PointStructPersisted {
@@ -511,7 +509,8 @@ async fn test_wal_replay_loads_pending_to_queue() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await
             .unwrap();
     }
@@ -627,6 +626,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
 /// with no plunger, no queue drain and no polling.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -676,8 +676,6 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
     // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Every one of these is acknowledged with `WaitUntil::Visible`, so a client has been told
     // they are durable *and* readable.
     for i in 0..total_ops {
@@ -690,7 +688,8 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await
             .unwrap();
     }
@@ -755,6 +754,7 @@ async fn test_wal_replay_is_synchronous_without_prevent_unoptimized() {
 /// there turns one bad tail record into a shard, and by default a node, that cannot start.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_tolerates_corrupt_tail_entry() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -796,8 +796,6 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
     // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Insert all operations
     for i in 0..total_ops {
         let point = PointStructPersisted {
@@ -809,7 +807,8 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await
             .unwrap();
     }
@@ -897,6 +896,7 @@ async fn test_wal_replay_tolerates_corrupt_tail_entry() {
 /// entries: everything before `first_index` is already durably flushed.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_truncated_past_applied_seq() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -937,8 +937,6 @@ async fn test_wal_replay_truncated_past_applied_seq() {
     // Stop flush worker so the WAL truncation below is under the test's control.
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Insert all operations
     for i in 0..total_ops {
         let point = PointStructPersisted {
@@ -950,7 +948,8 @@ async fn test_wal_replay_truncated_past_applied_seq() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await
             .unwrap();
     }
@@ -1036,6 +1035,7 @@ async fn test_wal_replay_truncated_past_applied_seq() {
 /// Test that verifies the WAL recovery process correctly loads pending updates into the update queue.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_replay_with_smaller_queue_size() {
+    let _scope = ambient::async_test_guard();
     let _ = env_logger::builder().is_test(true).try_init();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
@@ -1077,8 +1077,6 @@ async fn test_wal_replay_with_smaller_queue_size() {
     // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Insert all operations
     for i in 0..total_ops {
         let point = PointStructPersisted {
@@ -1090,7 +1088,8 @@ async fn test_wal_replay_with_smaller_queue_size() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await
             .unwrap();
     }
@@ -1184,6 +1183,7 @@ async fn test_wal_replay_with_smaller_queue_size() {
 /// point set as the original run (issue #9575).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_filter_ops_resolved_to_ids_in_wal() {
+    let _scope = ambient::async_test_guard();
     use ahash::AHashSet;
     use segment::types::{Condition, Filter};
     use shard::operations::point_ops::{ConditionalInsertOperationInternal, UpdateMode};
@@ -1222,16 +1222,12 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     .await
     .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Points 1..=5
     shard
-        .update(
-            upsert_operation().into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(upsert_operation().into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1256,7 +1252,8 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
         }),
     );
     shard
-        .update(conditional.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(conditional.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1274,8 +1271,8 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
             OperationWithClockTag::new(delete_by_filter, Some(delete_clock_tag)),
             WaitUntil::Visible,
             None,
-            hw_acc.clone(),
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1349,9 +1346,9 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            hw_acc.clone(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1371,6 +1368,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
 /// apply semantics.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_old_wal_filter_op_replays_with_apply_semantics() {
+    let _scope = ambient::async_test_guard();
     use ahash::AHashSet;
     use segment::types::{Condition, Filter};
     use shard::operations::OperationWithClockTag;
@@ -1404,16 +1402,12 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
     .await
     .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Points 1..=5, applied in this run.
     shard
-        .update(
-            upsert_operation().into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(upsert_operation().into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1466,7 +1460,8 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
         ids: vec![999.into()],
     });
     shard
-        .update(barrier.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(barrier.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1482,9 +1477,9 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            hw_acc.clone(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1538,15 +1533,17 @@ async fn assert_bad_op_skipped_on_wal_replay(
     .await
     .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     shard
-        .update(valid_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(valid_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .expect("valid op should succeed");
 
     let err = shard
-        .update(bad_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(bad_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .expect_err("bad op must be rejected");
 
@@ -1581,9 +1578,9 @@ async fn assert_bad_op_skipped_on_wal_replay(
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            hw_acc,
             DeferredBehavior::VisibleOnly,
         )
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -1601,6 +1598,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let raw_upsert = |id: u64, bytes: Vec<u8>| {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsRaw(vec![
             PointStructRawPersisted {
@@ -1644,6 +1642,7 @@ async fn test_malformed_raw_upsert_is_skipped_on_wal_replay() {
 /// reaches the WAL unparsed, so a bad one is only found on apply and must be skipped.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_raw_payload_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let vector_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
         .iter()
         .flat_map(|f| f.to_ne_bytes())
@@ -1678,6 +1677,7 @@ async fn test_malformed_raw_payload_upsert_is_skipped_on_wal_replay() {
 /// a raw sparse blob that doesn't decode as a stored sparse vector.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     let sparse_name = "sparse";
 
     // Sparse-only collection: one sparse vector, default index parameters.
@@ -1726,6 +1726,7 @@ async fn test_malformed_sparse_raw_upsert_is_skipped_on_wal_replay() {
 /// path rejects it, after the WAL write.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
+    let _scope = ambient::async_test_guard();
     const DIM: usize = 128;
 
     // Single multivector with TurboQuant (Turbo4) storage.
@@ -1777,6 +1778,7 @@ async fn test_malformed_multivector_raw_upsert_is_skipped_on_wal_replay() {
 /// must come back through pending changes recovery — the WAL no longer holds it.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_proxy_pending_changes_crash_recovery() {
+    let _scope = ambient::async_test_guard();
     use shard::proxy_segment::UnsyncedProxySegment;
 
     init_test_feature_flags();
@@ -1813,7 +1815,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
     // Keep flushing and WAL acknowledging under the test's control
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
     let total_points = 10u64;
@@ -1827,7 +1829,8 @@ async fn test_proxy_pending_changes_crash_recovery() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -1864,8 +1867,8 @@ async fn test_proxy_pending_changes_crash_recovery() {
                 delete_point_operation(point_id).into(),
                 WaitUntil::Visible,
                 None,
-                hw_acc.clone(),
             )
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -1973,9 +1976,9 @@ async fn test_proxy_pending_changes_crash_recovery() {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            hw_acc.clone(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     let retrieved_ids: Vec<_> = retrieved.iter().map(|point| point.id).collect();

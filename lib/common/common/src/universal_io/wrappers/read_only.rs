@@ -118,7 +118,7 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
         self.0.live_preload(get_file_info)
     }
 
@@ -193,6 +193,11 @@ where
     #[inline]
     fn populate_auto() -> bool {
         S::populate_auto()
+    }
+
+    #[inline]
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        self.0.will_need(byte_ranges);
     }
 
     #[inline]

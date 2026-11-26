@@ -26,8 +26,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use ordered_float::OrderedFloat;
 use rand::SeedableRng;
@@ -126,11 +126,17 @@ impl ShardFixture {
             exact,
         });
         let runtime = &self.search_runtime;
-        let hw = HwMeasurementAcc::new();
+        let hw = AmbientContext::new();
         let hits = if exact {
-            self.shard.exact_facet(request, runtime, TIMEOUT, hw).await
+            self.shard
+                .exact_facet(request, runtime, TIMEOUT)
+                .measured(hw)
+                .await
         } else {
-            self.shard.approx_facet(request, runtime, TIMEOUT, hw).await
+            self.shard
+                .approx_facet(request, runtime, TIMEOUT)
+                .measured(hw)
+                .await
         }
         .unwrap();
         let counts = hits.into_iter().map(|hit| (hit.value, hit.count)).collect();
@@ -169,7 +175,8 @@ fn make_point(i: usize, colour: &str, tag: u64) -> PointStructPersisted {
 /// Issue `op` against the shard and wait for it to become visible.
 async fn apply(shard: &LocalShard, op: CollectionUpdateOperations) {
     shard
-        .update(op.into(), WaitUntil::Visible, None, HwMeasurementAcc::new())
+        .update(op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 }

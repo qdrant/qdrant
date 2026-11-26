@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::{DeferredBehavior, PointOffsetType};
 
@@ -23,10 +22,9 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.payload_index
-            .read_payloads::<P, _>(point_offsets, callback, hw_counter)
+            .read_payloads::<P, _>(point_offsets, callback)
     }
 
     /// Raw analogue of [`Self::read_payloads`], see
@@ -35,31 +33,22 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.payload_index
-            .read_payloads_raw::<P, _>(point_offsets, callback, hw_counter)
+            .read_payloads_raw::<P, _>(point_offsets, callback)
     }
 
     /// Retrieve payload by internal ID.
     #[inline]
-    pub fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.payload_index.get_payload(point_offset, hw_counter)
+    pub fn payload_by_offset(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        self.payload_index.get_payload(point_offset)
     }
 
     /// Retrieve payload by external point ID.
-    pub fn payload(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
+    pub fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         // Single-point retrieval observes the visible snapshot; deferred
         // mutations stay hidden until the optimizer rolls a fresh segment.
-        self.payload_with_behavior(point_id, DeferredBehavior::VisibleOnly, hw_counter)
+        self.payload_with_behavior(point_id, DeferredBehavior::VisibleOnly)
     }
 
     /// Retrieve payload by external point ID with explicit deferred semantics.
@@ -70,17 +59,15 @@ where
         &self,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id, deferred_behavior)?;
-        self.payload_by_offset(internal_id, hw_counter)
+        self.payload_by_offset(internal_id)
     }
 
     /// Estimate the number of available points matching the filter.
     pub fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match filter {
             None => {
@@ -93,9 +80,7 @@ where
                 }
             }
             Some(filter) => {
-                let cardinality = self
-                    .payload_index
-                    .estimate_cardinality(filter, hw_counter)?;
+                let cardinality = self.payload_index.estimate_cardinality(filter)?;
 
                 let total_points = self.id_tracker.available_point_count();
                 let available_points = self.available_point_count_without_deferred();

@@ -27,11 +27,9 @@ impl SegmentHolder {
         let mut read_points = 0;
         for segment in segments {
             let read_segment = segment.read();
-            let segment_point_ids: Vec<PointIdType> = ids
-                .iter()
-                .copied()
-                .filter(|id| read_segment.has_point(*id, deferred_behavior))
-                .collect();
+            let held = read_segment.has_points(ids, deferred_behavior)?;
+            let segment_point_ids: Vec<PointIdType> =
+                ids.iter().copied().filter(|id| held.contains(id)).collect();
             check_stopped(is_stopped)?;
             if !segment_point_ids.is_empty() {
                 read_points += f(&segment_point_ids, &read_segment)?;

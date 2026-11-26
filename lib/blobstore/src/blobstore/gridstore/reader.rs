@@ -1,18 +1,18 @@
 use std::cmp;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+};
 
 use super::pages::Pages;
 use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
+use crate::blobstore::{ITER_BATCH_SIZE, iter_batch_in_order};
 use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
@@ -116,9 +116,9 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
-        self.view().get_value::<P>(point_offset, hw_counter)
+        self.view().get_value::<P>(point_offset, hw_metric)
     }
 
     /// Get the serialized value for a given point offset.
@@ -127,15 +127,15 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         let view = self.view();
-        let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+        let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
         Ok(bytes.map(std::borrow::Cow::into_owned))
     }
 
-    /// Iterate over all values with point offsets below `max_id` and execute callback for each one.
-    /// Missing values are skipped.
+    /// Iterate over all values with point offsets below `max_id`, in ascending order, and
+    /// execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
     //
@@ -144,27 +144,42 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         &self,
         max_id: PointOffset,
         mut callback: F,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
         let max_id = cmp::min(max_id, self.max_point_offset()?);
+        let view = self.view();
 
-        let point_offsets = (0..max_id).map(|point_offset| ((), point_offset));
+        let mut batch = Vec::new();
+        let mut current_offset = 0;
+        while current_offset < max_id {
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
+            let point_offsets = (current_offset..end_offset).map(|point_offset| ((), point_offset));
 
-        self.view().read_values::<Sequential, _, _>(
-            point_offsets,
-            |_, point_offset, value| {
-                let Some(value) = value else {
-                    return Ok(true);
-                };
+            let should_continue = iter_batch_in_order(
+                &mut batch,
+                |batch| {
+                    view.read_values::<Sequential, _, _>(
+                        point_offsets,
+                        |_, point_offset, value| -> Result<_, E> {
+                            batch.extend(value.map(|value| (point_offset, value)));
+                            Ok(true)
+                        },
+                        Some(hw_metric),
+                    )?;
+                    Ok(())
+                },
+                &mut callback,
+            )?;
+            if !should_continue {
+                return Ok(());
+            }
 
-                callback(point_offset, value)
-            },
-            &hw_counter,
-        )?;
+            current_offset = end_offset;
+        }
 
         Ok(())
     }
@@ -174,7 +189,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -187,7 +202,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 callback(user_data, point_offset, value)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())
@@ -198,7 +213,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -211,7 +226,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
                 callback(user_data, point_offset, bytes)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())
@@ -227,7 +242,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    ) -> Result<Vec<PreloadFuture>> {
         self.tracker.live_preload(fs);
         self.pages.live_preload(fs, self.populate)?;
         Ok(Vec::new())
@@ -255,7 +270,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
 
 impl<V, S: UniversalRead> GridstoreReader<V, S> {
     /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
-    pub(crate) fn is_on_disk(&self) -> bool {
+    pub(crate) fn is_cold(&self) -> bool {
         !self.populate.to_bool::<S>()
     }
 

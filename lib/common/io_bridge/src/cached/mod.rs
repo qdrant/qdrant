@@ -190,7 +190,7 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
         self.cache.live_preload(get_file_info)
     }
 
@@ -217,6 +217,10 @@ where
 
     fn populate_auto() -> bool {
         false
+    }
+
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        self.cache.will_need(byte_ranges);
     }
 
     fn clear_ram_cache(&self) -> UioResult<()> {

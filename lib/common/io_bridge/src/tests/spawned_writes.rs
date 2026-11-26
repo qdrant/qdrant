@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
+use common::ambient;
 use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::BoxStream;
 
@@ -100,6 +101,7 @@ fn blob_fs() -> (BlobFs<TimerWriteSource>, Arc<AtomicUsize>, BridgeRuntime) {
 /// own drives them on a bare executor, and the reactor-bound work still runs.
 #[test]
 fn a_save_resolves_on_a_bare_executor() {
+    let _scope = ambient::test_guard();
     let (fs, saves, _runtime) = blob_fs();
 
     futures::executor::block_on(fs.save_async("object".into(), vec![1, 2, 3]))
@@ -110,6 +112,7 @@ fn a_save_resolves_on_a_bare_executor() {
 
 #[test]
 fn a_remove_resolves_on_a_bare_executor() {
+    let _scope = ambient::test_guard();
     let (fs, _saves, _runtime) = blob_fs();
 
     futures::executor::block_on(fs.remove_async("object".into()))
@@ -119,6 +122,7 @@ fn a_remove_resolves_on_a_bare_executor() {
 /// Nothing runs before the first poll, so a collected wave stays a plan.
 #[test]
 fn a_save_does_not_start_until_polled() {
+    let _scope = ambient::test_guard();
     let (fs, saves, _runtime) = blob_fs();
 
     let save = fs.save_async("object".into(), vec![1]);

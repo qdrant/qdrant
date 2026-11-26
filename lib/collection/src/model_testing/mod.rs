@@ -1,4 +1,5 @@
 mod apply;
+mod edge_verify;
 mod fixture;
 mod op;
 mod trace;
@@ -116,6 +117,16 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         kind: VectorKind::Dense(7),
         datatype: Some(Datatype::Turbo8),
         distance: Distance::Cosine,
+        quantization: None,
+        inline_storage: false,
+        initially_active: true,
+    },
+    // TurboQuant 16-bit storage: same contract as "q".
+    VectorCandidate {
+        name: "b16",
+        kind: VectorKind::Dense(9),
+        datatype: Some(Datatype::Turbo16),
+        distance: Distance::Dot,
         quantization: None,
         inline_storage: false,
         initially_active: true,
@@ -352,7 +363,10 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 ///   (dense-only follows from the quantization constraint).
 fn assert_candidates_predictable() {
     for c in ALL_CANDIDATES {
-        let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4 | Datatype::Turbo8));
+        let turbo4 = matches!(
+            c.datatype,
+            Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)
+        );
         let supported = match c.kind {
             VectorKind::Dense(_) => {
                 !turbo4 || matches!(c.distance, Distance::Dot | Distance::Cosine)
@@ -528,6 +542,16 @@ pub(super) enum VectorValue {
 /// `shutdown` lets the caller request an early stop (e.g. on Ctrl-C). The op loop
 /// checks it before each iteration and exits cleanly when set; post-run verification
 /// + summary + reload still run with whatever ops were applied.
+///
+/// With `edge_verify`, every shard directory is also opened through an Edge read-only
+/// follower ([`edge_verify::EdgeVerifier`]) and compared against the model at quiesced
+/// checkpoints: end of run and each mid-run restart. Requires the `edge-verify` cargo
+/// feature and the `serverless_compatible` feature-flag bundle (manifest discovery plus
+/// append-only mutations; see [`edge_verify::EdgeVerifier::open`]). The flag draws no rng
+/// and does not change the candidate universe, so op streams are seed-comparable with
+/// non-edge runs; note however that each checkpoint force-flushes every shard, so with
+/// `edge_verify` the mid-run close+reopen no longer exercises the cold, unflushed
+/// WAL-replay recovery path (see the no-flush comment in the restart block).
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     seed: u64,
@@ -545,6 +569,7 @@ pub async fn run(
     pre_restart_check: bool,
     enable_force_off: bool,
     disable_snapshots: bool,
+    edge_verify: bool,
     duration: Option<Duration>,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -566,6 +591,8 @@ pub async fn run(
         text_params.stemmer,
         text_params.ascii_folding,
     );
+    let nested_index_setup = fixture::nested_index_setup(seed);
+    println!("model_testing: offers per-element indexes {nested_index_setup:?}");
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -574,11 +601,17 @@ pub async fn run(
         indexing_threshold_kb,
         on_disk,
         text_params,
+        nested_index_setup,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
     // keeps writing to it. Reassigned (restart / final reload) by replacing the `Arc`.
     let mut collection = Arc::new(collection);
+
+    // Edge read-only followers over the shard dirs, kept open across checkpoints so each
+    // one exercises refresh/live_reload deltas. `None` without --edge-verify.
+    let edge_verifier =
+        edge_verify.then(|| edge_verify::EdgeVerifier::open(&collection_dir, shard_count));
 
     // Trace lives at the storage-path root (next to `collection/` and `snapshots/`) so the
     // fixture's per-run wipe of those subdirs leaves it alone; `File::create` truncates so each
@@ -600,6 +633,7 @@ pub async fn run(
         swarm_interval,
         enable_force_off,
         disable_snapshots,
+        edge_verify,
         duration,
     );
 
@@ -752,7 +786,10 @@ pub async fn run(
             }
             // Close + reopen + full model verification. Does NOT force a flush — mirrors
             // what a real user gets from `stop_gracefully`, which is the path that exposes
-            // the WAL-replay bug class.
+            // the WAL-replay bug class. Caveat: with `edge_verify` the checkpoint below
+            // force-flushes every shard right before this close, so edge runs reload from
+            // flushed state and largely lose that coverage; run without --edge-verify when
+            // hunting WAL-replay bugs.
             //
             // `Collection::load` (inside `reopen_collection`) draws its own
             // "Recovering collection" progress bar to stderr. Two independent indicatif bars on
@@ -771,6 +808,19 @@ pub async fn run(
             // unsafe.
             stage_breadcrumb(&bar, &format!("op:{i} restart: drain_snapshot"));
             drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, i).await;
+            // Edge checkpoint at the restart boundary: quiesced (snapshot drained, op loop
+            // idle), and the follower survives the leader's close+reopen below for free.
+            if let Some(verifier) = &edge_verifier {
+                edge_checkpoint(
+                    &collection,
+                    verifier,
+                    &model,
+                    &mut trace,
+                    i,
+                    &format!("edge at restart op:{i}"),
+                )
+                .await;
+            }
             // Newest-clocks recovery point must survive the close+reopen exactly; captured here
             // (snapshot drained, op loop idle) and compared after the reload below. See
             // [`verify::assert_clocks_match`] for why both mismatch directions are bugs.
@@ -916,6 +966,19 @@ pub async fn run(
     // path), then close and reopen and re-verify — mirrors blobstore tests.rs:488-516.
     stage_breadcrumb(&bar, "reload: drain_snapshot");
     drain_snapshot(&collection, &snapshots_dir, &mut pending_snapshot, applied).await;
+    // Final edge checkpoint: after the optimizer settled and the snapshot drained, before
+    // the leader closes for the reload check.
+    if let Some(verifier) = &edge_verifier {
+        edge_checkpoint(
+            &collection,
+            verifier,
+            &model,
+            &mut trace,
+            applied,
+            "edge final",
+        )
+        .await;
+    }
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
     stage_breadcrumb(&bar, "reload: stop_gracefully");
@@ -953,6 +1016,99 @@ pub async fn run(
 /// line from being overwritten by the next progress-bar repaint.
 fn stage_breadcrumb(bar: &ProgressBar, msg: &str) {
     bar.suspend(|| println!("model_testing: {msg}"));
+}
+
+/// Quiesced edge-follower checkpoint: wait (bounded) for in-flight optimizations to
+/// settle, force-flush every shard (a follower only sees flushed state), refresh + scroll
+/// the followers, and compare against the model. Callers must be between ops with any
+/// background snapshot drained.
+///
+/// The wait exists because deletes against a proxied segment live only in the proxy's
+/// in-memory map until the optimization finishes: no flush can make a follower see them,
+/// so comparing while proxies exist reports false divergences. Skipping outright instead
+/// of waiting made optimizer-on runs silently compare nothing (every restart landed on a
+/// busy optimizer); waiting converges quickly here because the op loop is idle. If
+/// proxies persist past the deadline the checkpoint degrades to a skip, recorded in the
+/// trace as `EdgeVerifySkipped`.
+///
+/// After proxies clear, flush can still race the follower: the leader may remove segment
+/// files (or finish rewriting them) while the manifest briefly still lists the UUID.
+/// Edge escalates that as not-found; production hosts retry on the next tick. We do the
+/// same here under a shared budget — re-wait proxies if they reappear during flush, and
+/// retry `try_observe` on not-found until the deadline. Persistent not-found (or any
+/// other observe error) still panics.
+///
+/// TODO(model tester): drop the wait/skip once proxy deletions are persisted.
+async fn edge_checkpoint(
+    collection: &Collection,
+    verifier: &edge_verify::EdgeVerifier,
+    model: &Model,
+    trace: &mut trace::Trace,
+    tick: usize,
+    ctx: &str,
+) {
+    use common::universal_io::IsNotFound as _;
+
+    let deadline = Instant::now() + EDGE_CHECKPOINT_BUDGET;
+
+    // Initial quiesce: no proxy segments.
+    if !wait_proxies_clear_until(collection, deadline).await {
+        log::warn!(
+            "{ctx}: optimizer still busy at deadline (proxy segments present), \
+             skipping edge checkpoint"
+        );
+        trace.edge_verify_skipped(tick);
+        return;
+    }
+    trace.edge_verify(tick, model.len());
+
+    loop {
+        verify::flush_all_local_shards(collection).await;
+
+        // Flush may finish an optimization that started another, or leave the
+        // manifest briefly ahead of deleted files. Re-quiesce before observing.
+        if verify::has_proxy_segments(collection).await {
+            if !wait_proxies_clear_until(collection, deadline).await {
+                panic!(
+                    "{ctx}: optimizer still busy after flush within edge-checkpoint budget; \
+                     cannot observe a stable follower view",
+                );
+            }
+            continue;
+        }
+
+        match verifier.try_observe(ctx) {
+            Ok(observed) => {
+                verify::assert_matches_model(&observed, model, ctx);
+                return;
+            }
+            Err(err) if err.is_not_found() && Instant::now() < deadline => {
+                log::warn!(
+                    "{ctx}: follower observe hit not-found ({err}); \
+                     retrying within edge-checkpoint budget",
+                );
+                tokio::time::sleep(EDGE_CHECKPOINT_RETRY_SLEEP).await;
+            }
+            Err(err) => {
+                panic!("{ctx}: follower observe failed: {err}");
+            }
+        }
+    }
+}
+
+/// Shared wall-clock budget for proxy wait + flush/observe retries at one checkpoint.
+const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(30);
+const EDGE_CHECKPOINT_RETRY_SLEEP: Duration = Duration::from_millis(100);
+
+/// Poll until no local shard holds proxy segments, or `deadline` is reached.
+async fn wait_proxies_clear_until(collection: &Collection, deadline: Instant) -> bool {
+    while verify::has_proxy_segments(collection).await {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(EDGE_CHECKPOINT_RETRY_SLEEP).await;
+    }
+    true
 }
 
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
@@ -1021,8 +1177,9 @@ const HARNESS_UUID_ID_FRACTION: f64 = 0.5;
 const HARNESS_MAX_SEGMENT_SIZE_KB: usize = 10;
 #[cfg(test)]
 const HARNESS_INDEXING_THRESHOLD_KB: usize = 5;
+/// Gives a 4,000-op run 4 swarm configs, so few runs disable an op in all of them.
 #[cfg(test)]
-const HARNESS_SWARM_INTERVAL: usize = 2500;
+const HARNESS_SWARM_INTERVAL: usize = 1250;
 
 /// Resolve the seed override from the process environment, distinguishing "not set" from
 /// "set but unusable".
@@ -1063,9 +1220,8 @@ fn resolve_seed(env_value: Option<&str>, mut draw_fresh: impl FnMut() -> u64) ->
 /// instead of being something a reader has to infer.
 ///
 /// `--exact` is required: libtest matches filters as substrings, so a bare
-/// `model_testing::tests::harness` would also run `harness_no_optimizer`,
-/// `harness_no_optimizer_no_restarts`, `harness_no_optimizer_snapshots` and `harness_no_restarts`
-/// — several long runs in parallel, all consuming the same `MODEL_TESTING_SEED`.
+/// `model_testing::tests::harness` would also run `harness_no_optimizer_snapshots` and
+/// `harness_no_restarts`: several long runs in parallel, all consuming the same `MODEL_TESTING_SEED`.
 #[cfg(test)]
 fn test_replay_command(name: &str, seed: u64) -> String {
     format!(
@@ -1095,10 +1251,17 @@ fn replay_command(
     on_disk: bool,
     pre_restart_check: bool,
     enable_force_off: bool,
+    edge_verify: bool,
     duration_sec: Option<u64>,
 ) -> String {
+    // `--edge-verify` is only accepted by a binary built with the `edge-verify` feature.
+    let features = if edge_verify {
+        "service_debug,edge-verify"
+    } else {
+        "service_debug"
+    };
     let mut command = format!(
-        "cargo run --bin model_testing --features service_debug --profile perf -- \
+        "cargo run --bin model_testing --features {features} --profile perf -- \
          --seed {seed} \
          --op-num {op_num} \
          --shard-count {HARNESS_SHARD_COUNT} \
@@ -1116,6 +1279,7 @@ fn replay_command(
         (on_disk, "--on-disk"),
         (pre_restart_check, "--pre-restart-check"),
         (enable_force_off, "--enable-force-off"),
+        (edge_verify, "--edge-verify"),
     ] {
         if enabled {
             command.push(' ');
@@ -1132,6 +1296,8 @@ fn replay_command(
 #[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
+    use common::ambient;
+
     use super::*;
 
     const OP_NUM: usize = 8_000;
@@ -1197,6 +1363,7 @@ mod tests {
         restart_probability: f64,
         disable_snapshots: bool,
         op_num: usize,
+        edge_verify: bool,
     ) {
         let storage_dir = tempfile::tempdir().expect("failed to create temp dir");
         let seed = resolve_seed(seed_override(std::env::var(SEED_ENV)).as_deref(), || {
@@ -1230,6 +1397,7 @@ mod tests {
                 on_disk,
                 pre_restart_check,
                 enable_force_off,
+                edge_verify,
                 duration.map(|d| d.as_secs()),
             )
         );
@@ -1254,83 +1422,59 @@ mod tests {
             pre_restart_check,
             enable_force_off,
             disable_snapshots,
+            edge_verify,
             duration,
             Arc::new(AtomicBool::new(false)),
         )
         .await;
     }
 
-    /// End-to-end smoke run: [`OP_NUM`] seeded ops against a single-shard collection, including
-    /// the per-op verification ops, the end-of-run live check, and the final close+reopen
-    /// reload check. Catches harness rot (op/model drift, fixture breakage) on every
-    /// `cargo test` run.
+    /// End-to-end smoke run with the optimizer enabled, single shard, no mid-run restarts:
+    /// background segment churn (merges, indexing) runs concurrently with the op stream and
+    /// feeds into the final close+reopen reload check.
     ///
-    /// Single shard, optimizer disabled, no mid-run restarts: keeps the run fast and
-    /// steers clear of the known-unfixed multi-shard reload bug class, so this stays green as a
-    /// regression gate for the harness itself rather than a bug-finder (that's the binary's job).
-    /// Snapshot ops are disabled here (`SNAPSHOTS_OFF`); the snapshot path has its own test
-    /// ([`harness_no_optimizer_snapshots`]).
-    #[tokio::test(flavor = "multi_thread")]
-    async fn harness_no_optimizer_no_restarts() {
-        smoke(
-            "harness_no_optimizer_no_restarts",
-            true,
-            0.0,
-            SNAPSHOTS_OFF,
-            OP_NUM,
-        )
-        .await;
-    }
-
-    /// Same configuration as [`harness_no_optimizer_no_restarts`], but with the optimizer
-    /// enabled: background segment churn (merges, indexing) runs concurrently with the op
-    /// stream and feeds into the final close+reopen reload check, with no mid-run restarts.
-    ///
-    /// This is the fourth cell of the {optimizer on/off} × {restarts on/off} matrix. Holding
-    /// restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
+    /// Holding restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
     /// path that [`harness`] also exercises: a failure here points at the optimizer or the final
     /// reload, not at mid-run restart recovery.
     ///
-    /// Runs half the op count of the optimizer-off variants: optimizer churn without restarts
-    /// makes this the slowest no-restart cell, so it's trimmed to stay under the CI slow-test
+    /// Runs half of `OP_NUM`: optimizer churn makes it slow, so it's trimmed to stay under the
+    /// CI slow-test
     /// threshold. The fresh seed each run plus many CI runs recover the per-run coverage lost
     /// to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_restarts() {
-        // op_num halved: optimizer churn makes this the slowest no-restart variant; trim it so
+        let _scope = ambient::async_test_guard();
+        // op_num halved: optimizer churn makes this variant slow; trim it so
         // it isn't marked SLOW by nextest (coverage is recovered across many seeded CI runs).
-        smoke("harness_no_restarts", false, 0.0, SNAPSHOTS_OFF, OP_NUM / 2).await;
+        smoke(
+            "harness_no_restarts",
+            false,
+            0.0,
+            SNAPSHOTS_OFF,
+            OP_NUM / 2,
+            false,
+        )
+        .await;
     }
 
-    /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
-    /// restarts (~20 expected at p=0.002 over 10k ops): each one is a cold close+reopen+full
-    /// model verification, so the WAL-replay path is exercised throughout the run
-    /// instead of only at the final reload check.
-    ///
-    /// Note: the restart roll consumes one rng draw per iteration, so even for the same
-    /// seed the op stream differs from a no-restart run.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn harness_no_optimizer() {
-        smoke("harness_no_optimizer", true, 0.002, SNAPSHOTS_OFF, OP_NUM).await;
-    }
-
-    /// Same configuration as [`harness_no_optimizer`], but with the optimizer enabled:
-    /// background segment churn (merges, indexing) runs concurrently with the op stream
+    /// Same configuration as [`harness_no_optimizer_snapshots`], but with the optimizer enabled
+    /// and snapshots disabled: background segment churn (merges, indexing) runs concurrently with the op stream
     /// and the seeded mid-run restarts, so the WAL-replay path is exercised against an
     /// optimized on-disk layout rather than a static one.
     ///
     /// Single shard keeps this clear of the known-unfixed multi-shard reload bug class, so
     /// it stays green as a regression gate for the optimizer-on restart path.
     ///
-    /// Runs a quarter of the op count of the other variants: optimizer churn plus mid-run
+    /// Runs a quarter of `OP_NUM`: optimizer churn plus mid-run
     /// restarts make this the slowest combination, so it's trimmed to keep its wall-clock under
     /// the others rather than dominate the suite. The fresh seed each run plus many CI runs
     /// recover the per-run coverage lost to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness() {
+        let _scope = ambient::async_test_guard();
         // op_num quartered: optimizer churn + restarts make this the slowest variant; trim it so
         // it isn't the suite's long pole (coverage is recovered across many seeded CI runs).
-        smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4).await;
+        smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4, false).await;
     }
 
     /// Snapshot-focused gate: snapshots enabled (`SNAPSHOTS_ON`) plus seeded restarts. Each
@@ -1345,13 +1489,57 @@ mod tests {
     /// a fixed seed is fully reproducible.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_snapshots() {
-        // restart_probability 0.001: exercise drain-before-restart
+        let _scope = ambient::async_test_guard();
+        // restart_probability 0.001: exercise drain-before-restart, and the WAL replay of the
+        // optimizer-off restart path, which has no other gate. 0.002 made the run 30-70% slower
         smoke(
             "harness_no_optimizer_snapshots",
             true,
             0.001,
             SNAPSHOTS_ON,
-            OP_NUM,
+            // Halved like `harness_no_restarts`: background snapshots make this variant slow
+            OP_NUM / 2,
+            false,
+        )
+        .await;
+    }
+
+    /// Edge-follower gate (`edge-verify` feature): the optimizer-on, restarts-on cell with
+    /// an Edge read-only follower verified at every restart and at end of run. Optimizer
+    /// churn exercises manifest-driven segment discovery under the follower (segments
+    /// appear and vanish between refreshes); restarts exercise the quiesced
+    /// flush + refresh + full-compare checkpoints mid-run.
+    ///
+    /// Not run by default CI (needs the feature):
+    /// `cargo nextest run -p collection --features edge-verify -E 'test(harness_edge_verify)'`
+    ///
+    /// Append-only note: cardinality adjustment clamps when clone-and-tombstone leaves
+    /// `available_vectors > available_points` (see `adjust_to_available_vectors`). Named-vector
+    /// deletes stay in the swarm — append-only soft-delete support landed in #11388.
+    /// Keep the gate out of required CI until a longer soak looks clean.
+    #[cfg(feature = "edge-verify")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn harness_edge_verify() {
+        let _scope = ambient::async_test_guard();
+        // The follower assumes the serverless leader contract, same as the binary's
+        // --edge-verify path: manifest-driven segment discovery plus append-only
+        // mutations. Manifests alone are NOT enough: an in-place point rewrite produces
+        // no live-reload delta, the follower serves stale data, and the checkpoint
+        // reports a false divergence (repro: seed 362077359617665433 with manifest-only
+        // flags diverges at op 564). Set before the fixture builds the collection. A
+        // second init in the same process (plain `cargo test`) only logs a warning;
+        // sibling harness tests picking up the bundle mid-run is acceptable there, and
+        // nextest runs one test per process anyway.
+        let mut flags = common::flags::FeatureFlags::default();
+        flags.enable_serverless_compatible();
+        common::flags::init_feature_flags(flags);
+        smoke(
+            "harness_edge_verify",
+            false,
+            0.002,
+            SNAPSHOTS_OFF,
+            OP_NUM / 4,
+            true,
         )
         .await;
     }
@@ -1421,9 +1609,9 @@ mod seed_support_tests {
     #[test]
     fn test_replay_command_points_at_the_same_test() {
         assert_eq!(
-            test_replay_command("harness_no_optimizer_no_restarts", 424242),
+            test_replay_command("harness_no_restarts", 424242),
             "MODEL_TESTING_SEED=424242 cargo test -p collection --lib \
-             model_testing::tests::harness_no_optimizer_no_restarts -- --exact --nocapture"
+             model_testing::tests::harness_no_restarts -- --exact --nocapture"
         );
     }
 
@@ -1432,7 +1620,9 @@ mod seed_support_tests {
     /// reordered flag fails here too.
     #[test]
     fn replay_command_carries_the_full_harness_configuration() {
-        let command = replay_command(7, 2_000, 500, 0.002, false, true, false, false, false, None);
+        let command = replay_command(
+            7, 2_000, 500, 0.002, false, true, false, false, false, false, None,
+        );
         assert_eq!(
             command.split_whitespace().collect::<Vec<_>>(),
             vec![
@@ -1462,7 +1652,7 @@ mod seed_support_tests {
                 "--restart-probability",
                 "0.002",
                 "--swarm-interval",
-                "2500",
+                "1250",
                 "--storage-path",
                 "./storage-model",
                 "--disable-snapshots",
@@ -1473,16 +1663,30 @@ mod seed_support_tests {
     /// Every conditional flag is emitted, in a stable order, exactly when its knob is on.
     #[test]
     fn replay_command_flags_follow_every_knob() {
-        let all_on = replay_command(1, 4_000, 500, 0.0, true, true, true, true, true, Some(30));
+        let all_on = replay_command(
+            1,
+            4_000,
+            500,
+            0.0,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            Some(30),
+        );
         let tokens: Vec<_> = all_on.split_whitespace().collect();
+        assert_eq!(&tokens[4..6], ["--features", "service_debug,edge-verify"]);
         assert_eq!(
-            &tokens[tokens.len() - 7..],
+            &tokens[tokens.len() - 8..],
             [
                 "--disable-optimizer",
                 "--disable-snapshots",
                 "--on-disk",
                 "--pre-restart-check",
                 "--enable-force-off",
+                "--edge-verify",
                 "--duration-sec",
                 "30",
             ]
