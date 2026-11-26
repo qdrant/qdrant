@@ -24,7 +24,7 @@ use segment::index::hnsw_index::remote::registry::{
 };
 use segment::index::hnsw_index::remote::remote_indexer;
 use segment::index::hnsw_index::remote::wire::{
-    RemoteIndexParams, SUPPORTED_GRAPH_FORMAT_VERSIONS,
+    RemoteIndexParams, SUPPORTED_GRAPH_FORMAT_VERSIONS, max_entry_points,
 };
 use tonic::{Request, Response, Status, Streaming, async_trait};
 
@@ -173,6 +173,7 @@ impl IndexingTask for IndexingTaskService {
         let mut assembler = GraphAssembler::new(
             description.params.point_count,
             max_upload_links(&description, block_points),
+            max_entry_points(&description.params, block_points),
         );
         // A stalled upload must not hold the token and the connection: no message within the
         // heartbeat lease ends it

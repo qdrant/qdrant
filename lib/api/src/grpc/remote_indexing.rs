@@ -390,21 +390,24 @@ pub fn graph_to_grpc(graph: &WireGraph) -> Vec<UploadIndexingGraphRequest> {
 }
 
 /// Assembles an uploaded graph from its stream. Rejects malformed streams early, and bounds
-/// memory: at most `max_points` points, `max_links` links and [`max_upper_levels`] levels
-/// above 0 in total, with every chunk self-consistent (counts match levels, links match
-/// counts) before it is kept. The shape is validated afterwards, by the registry.
+/// memory: at most `max_points` points, `max_links` links, `max_entry_points` entry points
+/// and [`max_upper_levels`] levels above 0 in total, with every chunk self-consistent (counts
+/// match levels, links match counts) before it is kept. The shape is validated afterwards, by
+/// the registry.
 pub struct GraphAssembler {
     graph: Option<WireGraph>,
     max_points: usize,
     max_links: usize,
+    max_entry_points: usize,
 }
 
 impl GraphAssembler {
-    pub fn new(max_points: usize, max_links: usize) -> Self {
+    pub fn new(max_points: usize, max_links: usize, max_entry_points: usize) -> Self {
         Self {
             graph: None,
             max_points,
             max_links,
+            max_entry_points,
         }
     }
 
@@ -424,6 +427,13 @@ impl GraphAssembler {
                     return Err(format!(
                         "graph of {point_count} points, task has {}",
                         self.max_points
+                    ));
+                }
+                if entry_points.len() + extra_entry_points.len() > self.max_entry_points {
+                    return Err(format!(
+                        "graph of {} entry points, task allows {}",
+                        entry_points.len() + extra_entry_points.len(),
+                        self.max_entry_points,
                     ));
                 }
                 self.graph = Some(WireGraph {
@@ -578,7 +588,7 @@ mod tests {
                 level: 1,
             }],
         };
-        let mut assembler = GraphAssembler::new(point_count, point_count * 8);
+        let mut assembler = GraphAssembler::new(point_count, point_count * 8, 2);
         for message in graph_to_grpc(&graph) {
             assembler.push(message).unwrap();
         }
@@ -595,7 +605,25 @@ mod tests {
             entry_points: vec![],
             extra_entry_points: vec![],
         };
-        let mut assembler = GraphAssembler::new(5, 40);
+        let mut assembler = GraphAssembler::new(5, 40, 1);
+        let messages = graph_to_grpc(&graph);
+        assert!(assembler.push(messages[0].clone()).is_err());
+
+        let graph = WireGraph {
+            format_version: GRAPH_FORMAT_VERSION_V1,
+            levels: vec![0; 5],
+            link_counts: vec![0; 5],
+            links: vec![],
+            entry_points: vec![
+                EntryPoint {
+                    point_id: 0,
+                    level: 0,
+                };
+                2
+            ],
+            extra_entry_points: vec![],
+        };
+        let mut assembler = GraphAssembler::new(5, 40, 1);
         let messages = graph_to_grpc(&graph);
         assert!(assembler.push(messages[0].clone()).is_err());
     }
@@ -638,7 +666,7 @@ mod tests {
             chunk(vec![0, 0], vec![20, 20], vec![1; 40]),
         ];
         for (i, case) in cases.into_iter().enumerate() {
-            let mut assembler = GraphAssembler::new(4, 16);
+            let mut assembler = GraphAssembler::new(4, 16, 1);
             assembler.push(header.clone()).unwrap();
             assert!(assembler.push(case).is_err(), "case {i} accepted");
         }

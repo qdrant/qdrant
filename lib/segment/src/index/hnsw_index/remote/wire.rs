@@ -224,6 +224,8 @@ pub struct GraphLimits<'a> {
     pub block_memberships: Vec<u16>,
     /// One flag per point, set if the point must not be linked.
     pub deleted: &'a BitSlice,
+    /// See [`max_entry_points`].
+    pub max_entry_points: usize,
 }
 
 impl<'a> GraphLimits<'a> {
@@ -235,6 +237,7 @@ impl<'a> GraphLimits<'a> {
             block_m: hnsw.block_m(),
             block_memberships: plan.block_memberships(params.point_count),
             deleted,
+            max_entry_points: max_entry_points(params, plan.num_points()),
         }
     }
 
@@ -257,6 +260,19 @@ impl<'a> GraphLimits<'a> {
 /// Upper levels are rare: level `l` holds about `m^-l` of the points. This bounds memory on a
 /// corrupted upload.
 const MAX_LEVEL: usize = 64;
+
+/// The most entry points a graph may have, main and fallback together.
+///
+/// A graph enters each of its points once, so it has no more main entry points than points.
+/// Those of the block graphs are merged into the main ones, with `block_points` the number
+/// of points over all planned blocks. The fallback list is capped at `entry_points_num`.
+pub fn max_entry_points(params: &RemoteGraphParams, block_points: usize) -> usize {
+    let RemoteIndexParams::Hnsw(hnsw) = &params.index;
+    params
+        .point_count
+        .saturating_add(block_points)
+        .saturating_add(hnsw.entry_points_num)
+}
 
 /// The most levels above 0 a graph may have, summed over its points.
 ///
@@ -352,6 +368,13 @@ impl WireGraph {
             }
         }
 
+        let entry_points = self.entry_points.len() + self.extra_entry_points.len();
+        if entry_points > limits.max_entry_points {
+            return err(format!(
+                "graph has {entry_points} entry points, at most {} allowed",
+                limits.max_entry_points,
+            ));
+        }
         for entry in self.entry_points.iter().chain(&self.extra_entry_points) {
             let EntryPoint { point_id, level } = *entry;
             if point_id as usize >= limits.point_count {
@@ -582,6 +605,11 @@ mod tests {
                 Box::new(|g| g.entry_points[0].point_id = 1),
             ),
             ("no entry", Box::new(|g| g.entry_points.clear())),
+            (
+                // 3 points, no blocks, room for 1 fallback
+                "too many entries",
+                Box::new(|g| g.entry_points = vec![g.entry_points[0]; 5]),
+            ),
         ];
         for (name, corrupt) in cases {
             let mut g = graph();
