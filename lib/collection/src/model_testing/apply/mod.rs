@@ -1,4 +1,5 @@
 mod reads;
+mod topk;
 mod writes;
 
 use std::collections::{BTreeSet, HashMap};
@@ -6,6 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::VectorNameBuf;
+pub(super) use topk::checks as topk_checks;
 
 use super::op::{NamedVectors, Op, UrlMatch};
 use super::{Model, VectorValue};

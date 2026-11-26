@@ -999,6 +999,10 @@ pub async fn run(
         verify::wait_for_pending_updates(&collection).await;
     }
     println!("model_testing: {nowait_ops} writes submitted with wait=false");
+    println!(
+        "model_testing: {} exact searches checked against the model's top-k",
+        apply::topk_checks(),
+    );
     log::debug!("all ops applied, verifying live collection against model");
     stage_breadcrumb(&bar, "live: scroll + verify");
     let live = verify::collect_model_from_collection(&collection).await;
