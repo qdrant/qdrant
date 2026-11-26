@@ -311,10 +311,18 @@ impl ClusterState {
         let collection = self.resolve_collection(collection_name)?;
 
         // Same as in `plan_create_collection`: the API validates the name before proposal,
-        // but a committed entry does not have to come through it
-        common::validation::validate_vector_name(vector_name).map_err(|err| {
-            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
-        })?;
+        // but a committed entry does not have to come through it.
+        //
+        // Peers older than `REJECT_EMPTY_SPARSE_VECTOR_NAME_FROM_VERSION` accept a sparse vector
+        // named `""`. Reject it only once every peer rejects it too, so that during a rolling
+        // upgrade all peers apply the same entry the same way.
+        if self.all_peers_at_version(&REJECT_EMPTY_SPARSE_VECTOR_NAME_FROM_VERSION) {
+            op.validate_vector_name()?;
+        } else {
+            common::validation::validate_vector_name(vector_name).map_err(|err| {
+                StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+            })?;
+        }
 
         // Reject vector that already exists with different config.
         //

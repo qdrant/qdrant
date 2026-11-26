@@ -47,6 +47,12 @@ pub(crate) static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::V
 pub static NESTED_PAYLOAD_INDEX_FROM_VERSION: LazyLock<semver::Version> =
     LazyLock::new(|| semver::Version::parse("1.19.3-dev").unwrap());
 
+/// First version that rejects a committed [`CreateNamedVector`] for a sparse vector named `""`.
+/// Older peers accept and apply it, so consensus may only reject it once every peer runs this
+/// version. Otherwise upgraded and old peers would apply the same entry differently.
+pub static REJECT_EMPTY_SPARSE_VECTOR_NAME_FROM_VERSION: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.20.3-dev").unwrap());
+
 // *Operation wrapper structure is only required for better OpenAPI generation
 
 /// Create alternative name for a collection.
@@ -539,6 +545,38 @@ pub struct CreateNamedVector {
     pub collection_name: String,
     pub vector_name: segment::types::VectorNameBuf,
     pub config: shard::operations::vector_name_ops::VectorNameConfig,
+}
+
+impl CreateNamedVector {
+    /// Validate the new vector's name, with the same rules as
+    /// [`CreateCollectionOperation::validate_vector_names`].
+    ///
+    /// Sparse vectors can't use the empty name: it is the name of the unnamed dense vector,
+    /// and both would share a storage directory in a segment.
+    pub fn validate_vector_name(&self) -> StorageResult<()> {
+        let Self {
+            collection_name: _,
+            vector_name,
+            config,
+        } = self;
+
+        common::validation::validate_vector_name(vector_name).map_err(|err| {
+            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+        })?;
+
+        match config {
+            shard::operations::vector_name_ops::VectorNameConfig::Dense(_) => {}
+            shard::operations::vector_name_ops::VectorNameConfig::Sparse(_) => {
+                if vector_name == DEFAULT_VECTOR_NAME {
+                    return Err(StorageError::bad_input(
+                        "Sparse vector name cannot be empty",
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
