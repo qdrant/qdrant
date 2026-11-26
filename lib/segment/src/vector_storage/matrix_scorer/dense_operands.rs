@@ -1,9 +1,8 @@
 use common::types::PointOffsetType;
-use half::slice::HalfFloatSliceExt as _;
 use pairwise::{Aux, Combine, CombineDispatch, CombineFn, MatrixOperands};
 
 use crate::common::operation_error::OperationError;
-use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::F32Element;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::Distance;
 use crate::vector_storage::DenseVectorStorageRead;
@@ -66,42 +65,23 @@ impl Combine for Cos {
 }
 
 /// A stored element of a dense vector, decoded to an f32 operand.
-pub(super) trait MatrixElement: PrimitiveVectorElement {
+pub(super) trait MatrixElement: F32Element {
     /// How Cosine scores vectors of this type.
     const COSINE: DenseCombine;
-
-    /// `src` into `out`, of the same length.
-    fn decode(src: &[Self], out: &mut [f32]);
 }
 
 /// Float vectors are stored normalized, so Cosine is their dot product.
 impl MatrixElement for VectorElementType {
     const COSINE: DenseCombine = DenseCombine::Plain;
-
-    fn decode(src: &[Self], out: &mut [f32]) {
-        out.copy_from_slice(src);
-    }
 }
 
 impl MatrixElement for VectorElementTypeHalf {
     const COSINE: DenseCombine = DenseCombine::Plain;
-
-    /// The slice conversion uses F16C several values at a time; `f16::to_f32` checks for it
-    /// per value unless the build enables it, which cost a leaf about 20%.
-    fn decode(src: &[Self], out: &mut [f32]) {
-        src.convert_to_f32_slice(out);
-    }
 }
 
 /// Byte vectors are stored as they are, so Cosine divides by both norms.
 impl MatrixElement for VectorElementTypeByte {
     const COSINE: DenseCombine = DenseCombine::Cos;
-
-    fn decode(src: &[Self], out: &mut [f32]) {
-        for (o, &x) in out.iter_mut().zip(src) {
-            *o = f32::from(x);
-        }
-    }
 }
 
 /// Original dense vectors as f32 operands.

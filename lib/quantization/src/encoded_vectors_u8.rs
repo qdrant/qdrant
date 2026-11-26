@@ -18,6 +18,7 @@ use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
@@ -733,6 +734,28 @@ pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
 pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
     let actual_dim = get_actual_dim(vector_parameters);
     actual_dim + ADDITIONAL_CONSTANT_SIZE
+}
+
+/// Each code `c` as `alpha · c + offset`, over the dimensions a vector stores, padding included.
+/// Dot and Cosine score the dot product of two such vectors, L2 their squared distance, and L1
+/// their distance.
+impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsU8<TStorage> {
+    fn symmetric_dim(&self) -> usize {
+        self.metadata.actual_dim()
+    }
+
+    fn symmetric_vector<'a>(&'a self, data: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        let Metadata::Int8(metadata) = &self.metadata;
+        let (alpha, offset) = (metadata.alpha, metadata.offset);
+        let (_, code) = Self::parse_vec_data(data);
+        code[..metadata.actual_dim]
+            .iter()
+            .map(move |&c| alpha * f32::from(c) + offset)
+    }
+
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        DuplicateKey::Bytes(code)
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {

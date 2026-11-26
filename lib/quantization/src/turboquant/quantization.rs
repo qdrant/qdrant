@@ -574,6 +574,40 @@ impl TurboQuantizer {
         }
     }
 
+    /// `quantized` as a vector of the rotated, padded space: its centroids times its scaling
+    /// factor. The dot product of two such vectors is the [`Self::score_symmetric`] of Dot and
+    /// Cosine, and the cross term of L2's.
+    ///
+    /// For 2 and 4 bits, whose score TQ+ weights, the centroids with the correction reverted.
+    /// The score adds the stored `⟨X, M⟩` of each vector where these have their centroids' own,
+    /// so for them the dot product is only close.
+    ///
+    /// Their squared distance is L2's score only where a vector's stored length is its own. At 1
+    /// and 1.5 bits with TQ+, the score ignores the correction but the scaling factor comes from
+    /// the norm of the corrected centroids, so a vector is longer or shorter than the stored
+    /// length the score uses: there the cross term stays exact, the distance is only a proxy.
+    ///
+    /// L1 isn't represented at any width: its score is taken after the inverse rotation, which
+    /// doesn't preserve L1 distances.
+    pub(crate) fn symmetric_vector<'a>(
+        &'a self,
+        quantized: &'a [u8],
+    ) -> impl Iterator<Item = f32> + 'a {
+        let (centroids, extras) = self.unpack_vector(quantized);
+        let scale = f64::from(extras.scaling_factor());
+        let correction = self
+            .error_correction
+            .as_ref()
+            .filter(|_| self.scores_correction());
+        centroids.enumerate().map(move |(i, c)| {
+            let c = match correction {
+                Some(ec) => c / f64::from(ec.scale[i]) - f64::from(ec.shift[i]),
+                None => c,
+            };
+            (c * scale) as f32
+        })
+    }
+
     pub fn get_padded_dim(&self) -> usize {
         self.padded_dim
     }
@@ -725,17 +759,32 @@ impl TurboQuantizer {
             }
             DistanceType::Cosine | DistanceType::Dot | DistanceType::L1 => 0.0,
         };
-        // TQ+ corrects the symmetric scores of 2 and 4 bits only, see `score_symmetric_ec`
-        let correction = match (&self.error_correction, self.bits) {
-            (Some(_), TQBits::Bits2 | TQBits::Bits4) => extras.ec_correction(),
-            (Some(_), TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits8 | TQBits::Bits16)
-            | (None, _) => 0.0,
+        let correction = if self.scores_correction() {
+            extras.ec_correction()
+        } else {
+            0.0
         };
         SymmetricValues {
             scale: extras.scaling_factor(),
             l2_sq,
             correction,
         }
+    }
+
+    /// Whether [`Self::score_symmetric`] weights by TQ+ and adds the correction stored with each
+    /// vector: at 2 and 4 bits only, see [`Self::score_symmetric_ec`].
+    fn scores_correction(&self) -> bool {
+        match (&self.error_correction, self.bits) {
+            (Some(_), TQBits::Bits2 | TQBits::Bits4) => true,
+            (Some(_), TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits8 | TQBits::Bits16)
+            | (None, _) => false,
+        }
+    }
+
+    /// Whether each vector stores a TQ+ correction that [`Self::score_symmetric`] ignores, as at 1
+    /// and 1.5 bits: vectors then score alike against every other with different bytes.
+    pub(crate) fn stores_ignored_correction(&self) -> bool {
+        self.error_correction.is_some() && !self.scores_correction()
     }
 
     /// TQ+ symmetric-scoring slow path.

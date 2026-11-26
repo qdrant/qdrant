@@ -512,12 +512,13 @@ mod tests {
     use super::*;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
     use crate::index::hnsw_index::pipnn::progress::TestCounter;
+    use crate::index::hnsw_index::pipnn::vectors::IndexBuildVectors;
     use crate::types::{
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
         QuantizationConfig, ScalarQuantizationConfig,
     };
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::matrix_scorer::{MatrixTopK, new_matrix_scorer};
+    use crate::vector_storage::matrix_scorer::MatrixTopK;
     use crate::vector_storage::quantized::quantized_vectors::{
         QuantizedVectors, QuantizedVectorsStorageType,
     };
@@ -583,7 +584,9 @@ mod tests {
         }
 
         fn scorer(&self) -> MatrixScorer<'_> {
-            new_matrix_scorer(&self.storage, self.quantized.as_ref()).unwrap()
+            IndexBuildVectors::new(&self.storage, self.quantized.as_ref())
+                .matrix_scorer()
+                .unwrap()
         }
 
         /// [`partition`], which must add all of its progress.
