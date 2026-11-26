@@ -57,7 +57,7 @@ where
                 outcome.remaining = segments.len() - visited;
                 break;
             }
-            let config_path = config_path(&segment.path);
+            let config_path = Self::config_path(&segment.path);
             let mut config = self.load_config(&config_path)?;
             if config
                 .indices
@@ -100,7 +100,7 @@ where
                 outcome.remaining = segments.len() - visited;
                 break;
             }
-            let config_path = config_path(&segment.path);
+            let config_path = Self::config_path(&segment.path);
             let mut config = self.load_config(&config_path)?;
             let indexed = config.indices.remove(field).is_some();
             let files = self.field_files(&segment.path, field)?;
@@ -137,6 +137,10 @@ where
             .collect();
         segments.sort_by_key(|segment| segment.uuid);
         segments
+    }
+
+    fn config_path(segment_path: &Path) -> PathBuf {
+        PayloadConfig::get_config_path(&get_payload_index_path(segment_path))
     }
 
     fn load_config(&self, path: &Path) -> OperationResult<PayloadConfig> {
@@ -224,8 +228,4 @@ where
         self.writers.insert(segment.uuid, writer);
         Ok(())
     }
-}
-
-fn config_path(segment_path: &Path) -> PathBuf {
-    PayloadConfig::get_config_path(&get_payload_index_path(segment_path))
 }
