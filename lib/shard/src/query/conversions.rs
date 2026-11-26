@@ -193,7 +193,7 @@ impl From<rest::Fusion> for FusionInternal {
                 k: DEFAULT_RRF_K,
                 weights: None,
             },
-            rest::Fusion::Dbsf => FusionInternal::Dbsf,
+            rest::Fusion::Dbsf => FusionInternal::Dbsf { weights: None },
         }
     }
 }
@@ -208,6 +208,15 @@ impl From<rest::Rrf> for FusionInternal {
     }
 }
 
+impl From<rest::Dbsf> for FusionInternal {
+    fn from(value: rest::Dbsf) -> Self {
+        let rest::Dbsf { weights } = value;
+        FusionInternal::Dbsf {
+            weights: weights.map(|w| w.into_iter().map(OrderedFloat).collect()),
+        }
+    }
+}
+
 impl From<grpc::Fusion> for FusionInternal {
     fn from(fusion: grpc::Fusion) -> Self {
         match fusion {
@@ -215,7 +224,7 @@ impl From<grpc::Fusion> for FusionInternal {
                 k: DEFAULT_RRF_K,
                 weights: None,
             },
-            grpc::Fusion::Dbsf => FusionInternal::Dbsf,
+            grpc::Fusion::Dbsf => FusionInternal::Dbsf { weights: None },
         }
     }
 }
@@ -237,6 +246,18 @@ impl TryFrom<grpc::Rrf> for FusionInternal {
     }
 }
 
+impl From<grpc::Dbsf> for FusionInternal {
+    fn from(dbsf: grpc::Dbsf) -> Self {
+        let grpc::Dbsf { weights } = dbsf;
+        let weights = if weights.is_empty() {
+            None
+        } else {
+            Some(weights.into_iter().map(OrderedFloat).collect())
+        };
+        FusionInternal::Dbsf { weights }
+    }
+}
+
 impl TryFrom<i32> for FusionInternal {
     type Error = tonic::Status;
 
@@ -252,7 +273,7 @@ impl TryFrom<i32> for FusionInternal {
 impl From<FusionInternal> for grpc::Query {
     fn from(fusion: FusionInternal) -> Self {
         use grpc::query::Variant as QueryVariant;
-        use grpc::{Fusion, Query, Rrf};
+        use grpc::{Dbsf, Fusion, Query, Rrf};
 
         match fusion {
             // Avoid breaking rolling upgrade by keeping case of k==2 and no weights as Fusion::Rrf
@@ -267,8 +288,16 @@ impl From<FusionInternal> for grpc::Query {
                         .unwrap_or_default(),
                 })),
             },
-            FusionInternal::Dbsf => Query {
+            // Avoid breaking rolling upgrade by keeping case of no weights as Fusion::Dbsf
+            FusionInternal::Dbsf { weights: None } => Query {
                 variant: Some(QueryVariant::Fusion(i32::from(Fusion::Dbsf))),
+            },
+            FusionInternal::Dbsf {
+                weights: Some(weights),
+            } => Query {
+                variant: Some(QueryVariant::Dbsf(Dbsf {
+                    weights: weights.into_iter().map(|f| f.into_inner()).collect(),
+                })),
             },
         }
     }
@@ -278,7 +307,7 @@ impl From<FusionInternal> for grpc::query_shard_points::Query {
     fn from(fusion: FusionInternal) -> Self {
         use grpc::query_shard_points::Query;
         use grpc::query_shard_points::query::Score;
-        use grpc::{Fusion, Rrf};
+        use grpc::{Dbsf, Fusion, Rrf};
 
         match fusion {
             // Avoid breaking rolling upgrade by keeping case of k==2 and no weights as Fusion::Rrf
@@ -293,8 +322,16 @@ impl From<FusionInternal> for grpc::query_shard_points::Query {
                         .unwrap_or_default(),
                 })),
             },
-            FusionInternal::Dbsf => Query {
+            // Avoid breaking rolling upgrade by keeping case of no weights as Fusion::Dbsf
+            FusionInternal::Dbsf { weights: None } => Query {
                 score: Some(Score::Fusion(i32::from(Fusion::Dbsf))),
+            },
+            FusionInternal::Dbsf {
+                weights: Some(weights),
+            } => Query {
+                score: Some(Score::Dbsf(Dbsf {
+                    weights: weights.into_iter().map(|f| f.into_inner()).collect(),
+                })),
             },
         }
     }
@@ -353,6 +390,9 @@ impl ScoringQuery {
             }
             grpc::query_shard_points::query::Score::Rrf(rrf) => {
                 ScoringQuery::Fusion(FusionInternal::try_from(rrf)?)
+            }
+            grpc::query_shard_points::query::Score::Dbsf(dbsf) => {
+                ScoringQuery::Fusion(FusionInternal::from(dbsf))
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
@@ -1051,5 +1091,73 @@ mod text_grpc_roundtrip_tests {
             let back = ShardQueryRequest::try_from(grpc).unwrap();
             assert_eq!(queries(&back), queries(&request));
         }
+    }
+}
+
+#[cfg(test)]
+mod fusion_grpc_roundtrip_tests {
+    use super::*;
+
+    fn fusions() -> Vec<FusionInternal> {
+        vec![
+            FusionInternal::Rrf {
+                k: DEFAULT_RRF_K,
+                weights: None,
+            },
+            FusionInternal::Rrf {
+                k: 60,
+                weights: Some(vec![OrderedFloat(3.0), OrderedFloat(1.0)]),
+            },
+            FusionInternal::Dbsf { weights: None },
+            FusionInternal::Dbsf {
+                weights: Some(vec![OrderedFloat(0.3), OrderedFloat(0.7)]),
+            },
+        ]
+    }
+
+    /// Fusion params reach a remote shard as `QueryShardPoints` and must arrive unchanged.
+    #[test]
+    fn fusion_survives_internal_grpc_roundtrip() {
+        for fusion in fusions() {
+            let grpc = grpc::query_shard_points::Query::from(fusion.clone());
+            let back = ScoringQuery::try_from_grpc_query(grpc, None).unwrap();
+            assert_eq!(back, ScoringQuery::Fusion(fusion));
+        }
+    }
+
+    /// Unweighted DBSF must keep using the `Fusion` enum so that older peers understand it
+    /// during a rolling upgrade.
+    #[test]
+    fn unweighted_dbsf_uses_legacy_fusion_enum() {
+        use grpc::query_shard_points::query::Score;
+
+        let grpc = grpc::query_shard_points::Query::from(FusionInternal::Dbsf { weights: None });
+        assert_eq!(
+            grpc.score,
+            Some(Score::Fusion(i32::from(grpc::Fusion::Dbsf)))
+        );
+
+        let grpc = grpc::Query::from(FusionInternal::Dbsf { weights: None });
+        assert_eq!(
+            grpc.variant,
+            Some(grpc::query::Variant::Fusion(i32::from(grpc::Fusion::Dbsf)))
+        );
+    }
+
+    /// The public gRPC API: an empty `weights` list means "no weights".
+    #[test]
+    fn grpc_dbsf_empty_weights_is_unweighted() {
+        assert_eq!(
+            FusionInternal::from(grpc::Dbsf { weights: vec![] }),
+            FusionInternal::Dbsf { weights: None }
+        );
+        assert_eq!(
+            FusionInternal::from(grpc::Dbsf {
+                weights: vec![0.3, 0.7]
+            }),
+            FusionInternal::Dbsf {
+                weights: Some(vec![OrderedFloat(0.3), OrderedFloat(0.7)])
+            }
+        );
     }
 }

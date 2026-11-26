@@ -177,7 +177,7 @@ pub fn query_result_order<E>(
                 }
             }
             ScoringQuery::Fusion(fusion) => match fusion {
-                FusionInternal::Rrf { k: _, weights: _ } | FusionInternal::Dbsf => {
+                FusionInternal::Rrf { k: _, weights: _ } | FusionInternal::Dbsf { weights: _ } => {
                     Some(Order::LargeBetter)
                 }
             },
@@ -208,8 +208,12 @@ pub enum FusionInternal {
         /// If None, all sources are weighted equally.
         weights: Option<Vec<ordered_float::OrderedFloat<f32>>>,
     },
-    /// Distribution-based score fusion
-    Dbsf,
+    /// Distribution-based score fusion with optional weights per prefetch
+    Dbsf {
+        /// Weights for each prefetch source. Each source's normalized scores are multiplied
+        /// by its weight before summing. If None, all sources are weighted equally.
+        weights: Option<Vec<ordered_float::OrderedFloat<f32>>>,
+    },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]

@@ -552,7 +552,13 @@ pub enum Fusion {
         weights: Option<Vec<f32>>,
     },
     /// Distribution-based Score Fusion.
-    Dbsf,
+    Dbsf {
+        /// Per-prefetch weights, aligned with `QueryRequest.prefetches`.
+        /// Each branch's normalized scores are multiplied by its weight before
+        /// summing; `None`/`null` weighs all branches equally.
+        #[uniffi(default = None)]
+        weights: Option<Vec<f32>>,
+    },
 }
 
 impl TryFrom<Fusion> for FusionInternal {
@@ -574,7 +580,19 @@ impl TryFrom<Fusion> for FusionInternal {
                         .map(|ws| ws.into_iter().map(ordered_float::OrderedFloat).collect()),
                 }
             }
-            Fusion::Dbsf => FusionInternal::Dbsf,
+            Fusion::Dbsf { weights } => {
+                if let Some(weights) = &weights
+                    && let Some(pos) = weights.iter().position(|w| !w.is_finite())
+                {
+                    return Err(crate::error::EdgeError::invalid_argument(format!(
+                        "DBSF weight at index {pos} must be finite"
+                    )));
+                }
+                FusionInternal::Dbsf {
+                    weights: weights
+                        .map(|ws| ws.into_iter().map(ordered_float::OrderedFloat).collect()),
+                }
+            }
         })
     }
 }
@@ -886,8 +904,8 @@ fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
         shard::query::ScoringQuery::Fusion(f) => match f {
             // [`Fusion::Rrf`], including `weights`
             FusionInternal::Rrf { .. } => {}
-            // [`Fusion::Dbsf`]
-            FusionInternal::Dbsf => {}
+            // [`Fusion::Dbsf`], including `weights`
+            FusionInternal::Dbsf { .. } => {}
         },
         // [`ScoringQuery::OrderBy`]
         shard::query::ScoringQuery::OrderBy(o) => {

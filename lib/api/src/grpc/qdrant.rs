@@ -7315,12 +7315,28 @@ pub struct Rrf {
     #[prost(float, repeated, tag = "2")]
     pub weights: ::prost::alloc::vec::Vec<f32>,
 }
+/// Parameterized distribution-based score fusion
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Dbsf {
+    /// Weights for each prefetch source.
+    /// Normalized scores of each prefetch are multiplied by its weight before being summed.
+    /// Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches. Weights must be non-negative.
+    #[prost(float, repeated, tag = "1")]
+    pub weights: ::prost::alloc::vec::Vec<f32>,
+}
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
+    #[prost(
+        oneof = "query::Variant",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+    )]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -7366,6 +7382,9 @@ pub mod query {
         /// Rank by BM25 over the text index of the payload field named by `using`.
         #[prost(message, tag = "12")]
         Text(super::TextQuery),
+        /// Parameterized distribution-based score fusion
+        #[prost(message, tag = "13")]
+        Dbsf(super::Dbsf),
     }
 }
 /// Rank by BM25 over the text index of the payload field named by `using`,
@@ -12039,7 +12058,7 @@ pub mod query_shard_points {
     #[derive(serde::Serialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -12072,6 +12091,9 @@ pub mod query_shard_points {
             /// BM25 over the text index of a payload field
             #[prost(message, tag = "8")]
             Text(super::super::TextScoringInternal),
+            /// Parameterized DBSF fusion
+            #[prost(message, tag = "9")]
+            Dbsf(super::super::Dbsf),
         }
     }
     #[allow(clippy::all)]

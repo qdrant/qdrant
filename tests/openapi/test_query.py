@@ -485,6 +485,80 @@ def test_basic_dbsf(collection_name):
         assert isclose(point["score"], expected["score"], rel_tol=1e-5)
 
 
+def test_weighted_dbsf(collection_name):
+    """Test DBSF with weights parameter."""
+    queries = [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]]
+
+    def search(query):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/query",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={"query": query, "limit": 10},
+        )
+        assert response.ok
+        return response.json()["result"]["points"]
+
+    def fused(query):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/query",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "prefetch": [{"query": q} for q in queries],
+                "query": query,
+            },
+        )
+        assert response.ok, response.json()
+        return response.json()["result"]["points"]
+
+    def get_id(x):
+        return x["id"]
+
+    def assert_same(expected_points, result_points):
+        assert len(expected_points) == len(result_points)
+        for expected, result in zip(sorted(expected_points, key=get_id), sorted(result_points, key=get_id)):
+            assert expected["id"] == result["id"]
+            assert isclose(expected["score"], result["score"], rel_tol=1e-5)
+
+    # Weighted DBSF - first source has 3x weight
+    weights = [3.0, 1.0]
+    dbsf_expected = distribution_based_score_fusion(
+        [search(q) for q in queries], limit=10, weights=weights
+    )
+    assert_same(dbsf_expected, fused({"dbsf": {"weights": weights}}))
+
+    # No weights / unit weights are equivalent to plain `fusion: dbsf`
+    plain = fused({"fusion": "dbsf"})
+    assert_same(plain, fused({"dbsf": {}}))
+    assert_same(plain, fused({"dbsf": {"weights": [1.0, 1.0]}}))
+
+    # Zero weight disables a source: the result only contains points of the other source,
+    # scored by their normalized score.
+    only_second = distribution_based_score_fusion([search(queries[1])], limit=10)
+    result = fused({"dbsf": {"weights": [0.0, 1.0]}})
+    result_by_id = {p["id"]: p["score"] for p in result}
+    for expected in only_second:
+        assert isclose(result_by_id[expected["id"]], expected["score"], rel_tol=1e-5)
+
+
+@pytest.mark.parametrize("weights", [[1.0], [1.0, 1.0, 1.0], [-1.0, 1.0]])
+def test_dbsf_invalid_weights(weights, collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                { "query": [0.1, 0.2, 0.3, 0.4] },
+                { "query": [0.5, 0.6, 0.7, 0.8] },
+            ],
+            "query": {"dbsf": {"weights": weights}},
+        },
+    )
+    assert response.status_code == 400, response.json()
+
+
 def test_nearest_with_mmr(collection_name):
     # Regular nearest neighbor search
     response = request_with_validation(

@@ -554,6 +554,18 @@ pub struct Rrf {
     pub weights: Option<Vec<f32>>,
 }
 
+/// Parameters for Distribution-Based Score Fusion
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Dbsf {
+    /// Weights for each prefetch source. Normalized scores of each prefetch are multiplied by its weight
+    /// before being summed. Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches. Weights must be non-negative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights: Option<Vec<f32>>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum VectorInput {
@@ -663,6 +675,9 @@ pub enum Query {
 
     /// Apply reciprocal rank fusion to multiple prefetches
     Rrf(RrfQuery),
+
+    /// Apply distribution-based score fusion to multiple prefetches
+    Dbsf(DbsfQuery),
 
     /// Score boosting via an arbitrary formula
     Formula(FormulaQuery),
@@ -804,6 +819,13 @@ pub struct FusionQuery {
 pub struct RrfQuery {
     #[validate(nested)]
     pub rrf: Rrf,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct DbsfQuery {
+    #[validate(nested)]
+    pub dbsf: Dbsf,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

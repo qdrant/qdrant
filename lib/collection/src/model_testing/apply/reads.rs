@@ -719,7 +719,7 @@ pub(super) async fn apply_query_fusion(
             k: DEFAULT_RRF_K,
             weights: None,
         },
-        FusionKind::Dbsf => FusionInternal::Dbsf,
+        FusionKind::Dbsf => FusionInternal::Dbsf { weights: None },
     };
     let returned = collection
         .query(

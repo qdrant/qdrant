@@ -1078,6 +1078,16 @@ message Rrf {
   repeated float weights = 2;
 }
 
+// Parameterized distribution-based score fusion
+message Dbsf {
+  // Weights for each prefetch source.
+  // Normalized scores of each prefetch are multiplied by its weight before being summed.
+  // Higher weight gives more influence on the final ranking.
+  // If not specified, all prefetches are weighted equally.
+  // The number of weights should match the number of prefetches. Weights must be non-negative.
+  repeated float weights = 1;
+}
+
 message Query {
   oneof variant {
     // Find the nearest neighbors to this vector.
@@ -1104,6 +1114,8 @@ message Query {
     RelevanceFeedbackInput relevance_feedback = 11;
     // Rank by BM25 over the text index of the payload field named by `using`.
     TextQuery text = 12;
+    // Parameterized distribution-based score fusion
+    Dbsf dbsf = 13;
   }
 }
 

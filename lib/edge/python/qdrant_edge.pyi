@@ -2444,8 +2444,24 @@ class Fusion:
         def weights(self) -> Optional[List[float]]: ...
 
     class Dbsf:
-        """DBSF (Distribution-Based Score Fusion)."""
-        def __init__(self) -> None: ...
+        """
+        DBSF (Distribution-Based Score Fusion).
+
+        Args:
+            weights: Optional weights for each prefetch source.
+                     Normalized scores of each prefetch are multiplied by its weight before summing.
+                     If not specified, all prefetches are weighted equally.
+
+        Examples:
+            # Plain DBSF
+            Fusion.Dbsf()
+
+            # Weighted DBSF - first prefetch has 3x weight
+            Fusion.Dbsf(weights=[3.0, 1.0])
+        """
+        def __init__(self, weights: Optional[List[float]] = None) -> None: ...
+        @property
+        def weights(self) -> Optional[List[float]]: ...
 
 class OrderBy:
     """Order results by a payload field."""
