@@ -119,7 +119,6 @@ impl StructPayloadIndex {
     }
 }
 
-/// Initialized builders for every index of `field`, the null index included.
 fn field_builders(
     selector: &IndexSelector,
     field: PayloadKeyTypeRef,
@@ -145,10 +144,7 @@ fn field_builders(
     Ok(builders)
 }
 
-/// Build and flush `field`'s indexes under `dir` from a segment's payload storage and id
-/// tracker, without opening the segment; recording them in the payload config is the caller's.
-///
-/// `on_payload` sees the payload of every live point indexed.
+/// Builds without opening the segment; recording the indexes in its payload config is the caller's.
 pub fn build_detached_field_indexes(
     dir: &Path,
     storage_type: StorageType,

@@ -337,7 +337,6 @@ fn quantized_bits_per_row(config: &QuantizationConfig, dim: usize) -> usize {
     }
 }
 
-/// JSON bytes of `field`'s values in `payload`, as a field index stores them.
 pub fn indexed_value_bytes(
     payload: &impl PayloadContainer,
     field: &JsonPath,

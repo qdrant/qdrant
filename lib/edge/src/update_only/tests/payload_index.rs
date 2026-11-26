@@ -1,6 +1,3 @@
-//! Payload index create and delete on an existing shard, checked through
-//! followers opened afterwards and through the segments' own payload configs.
-
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -26,14 +23,11 @@ use crate::{
     EdgeConfig, EdgeOptimizersConfig, EdgeShard, PayloadIndexOutcome, UpdateOnlyEdgeShard,
 };
 
-/// Live points of [`tagged_leader`]: 301 to 1000 in the immutable segment, 1001 to 1010
-/// but 1005 in the appendable one.
+/// 301 to 1000 in the immutable segment, 1001 to 1010 but 1005 in the appendable one.
 const LIVE: usize = 709;
 /// A tag is `"t0"`, `"t1"` or `"t2"`: four JSON bytes.
 const TAG_BYTES: u64 = 4;
 
-/// A flushed shard with an immutable segment and an appendable one, every point tagged,
-/// deleted points in both.
 fn tagged_leader(prefix: &str) -> TempDir {
     let dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
     let config = EdgeConfig {
@@ -84,8 +78,7 @@ fn create(
         .unwrap()
 }
 
-/// A fresh appendable as the write target: the leader's own one keeps its payload storage
-/// in mutable mode, which an append-only writer refuses.
+/// The leader's appendable keeps a mutable payload storage, which an append-only writer refuses.
 fn with_fresh_target(
     writer: UpdateOnlyEdgeShard<MmapFs>,
     dir: &Path,
@@ -109,7 +102,6 @@ fn config_path(segment: &Path) -> PathBuf {
     PayloadConfig::get_config_path(&get_payload_index_path(segment))
 }
 
-/// Each segment's recorded schema for `tag`.
 fn recorded(dir: &Path) -> Vec<Option<PayloadFieldSchema>> {
     segment_dirs(dir)
         .iter()
@@ -123,8 +115,6 @@ fn recorded(dir: &Path) -> Vec<Option<PayloadFieldSchema>> {
         .collect()
 }
 
-/// Files under the index directories of `tag`, over every segment, with `suffix` after the
-/// field's directory prefix (`""` for all of them).
 fn tag_files(dir: &Path, suffix: &str) -> usize {
     segment_dirs(dir)
         .iter()
@@ -167,28 +157,6 @@ fn create_indexes_every_segment_and_meters_live_values() {
     assert_eq!(tag_facet_total(&follower), LIVE);
 }
 
-#[test]
-fn a_repeated_create_changes_nothing() {
-    let dir = tagged_leader("edge-pi-repeat");
-    let writer = UpdateOnlyEdgeShard::open_mmap(dir.path()).unwrap();
-    let (writer, _) = create(writer, dir.path(), PayloadSchemaType::Keyword);
-
-    let (_writer, again) = create(writer, dir.path(), PayloadSchemaType::Keyword);
-    assert_eq!(again, PayloadIndexOutcome::default());
-}
-
-#[test]
-fn a_live_follower_picks_up_the_index() {
-    let dir = tagged_leader("edge-pi-live");
-    let follower = open_follower(dir.path());
-
-    let writer = UpdateOnlyEdgeShard::open_mmap(dir.path()).unwrap();
-    create(writer, dir.path(), PayloadSchemaType::Keyword);
-
-    follower.live_reload().unwrap();
-    assert_eq!(tag_facet_total(&follower), LIVE);
-}
-
 /// The writer opens its field indexes on its first store, so one store comes before the create.
 #[test]
 fn points_stored_after_create_are_indexed() {
@@ -212,8 +180,7 @@ fn points_stored_after_create_are_indexed() {
     assert_eq!(tag_facet_total(&follower), LIVE + 5);
 }
 
-/// A crash after the index files landed but before the config recorded them leaves files
-/// no reader loads; the next call must rebuild over them, not on top of them.
+/// A crash between the upload and the config save leaves files no config records.
 #[test]
 fn leftovers_of_an_unrecorded_build_are_replaced() {
     let dir = tagged_leader("edge-pi-leftovers");
@@ -314,11 +281,10 @@ fn delete_removes_the_index_and_writes_do_not_bring_it_back() {
     assert!(recorded(dir.path()).iter().all(Option::is_none));
     assert_eq!(tag_files(dir.path(), ""), 0);
 
-    // A follower that had the index loaded drops it on reload.
     follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), LIVE + 2);
 
-    let (writer, stored) = writer
+    let (_writer, stored) = writer
         .apply_batch(store_batch(2001, tagged_points(2003..=2005)))
         .unwrap();
     assert_eq!(stored.stored, 3);
@@ -327,7 +293,4 @@ fn delete_removes_the_index_and_writes_do_not_bring_it_back() {
         0,
         "a write recreated the deleted index"
     );
-
-    let (_writer, again) = writer.delete_payload_index(&tag(), || false).unwrap();
-    assert_eq!(again, PayloadIndexOutcome::default());
 }

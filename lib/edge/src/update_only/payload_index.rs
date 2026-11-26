@@ -1,11 +1,5 @@
-//! Creating and deleting a payload index on the segments of an existing shard,
-//! built from each segment's payload storage and id tracker alone.
-//!
-//! A segment's `payload_index/config.json` is what readers load an index from,
-//! so it changes last when an index is added and first when one is removed: a
-//! follower never sees a half-built index nor one whose files are gone. Both
-//! operations are idempotent per segment, so a call that stops early, on
-//! `should_yield` or a crash, is finished by calling it again.
+//! Readers load an index from `payload_index/config.json`, so it is written last on create and
+//! first on delete; a segment already in the requested state is skipped, so a call resumes.
 
 use std::path::{Path, PathBuf};
 
@@ -27,14 +21,11 @@ use uuid::Uuid;
 use super::UpdateOnlyEdgeShard;
 use super::lifecycle::copy_dir;
 
-/// What one payload index call did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PayloadIndexOutcome {
-    /// Segments this call changed; those already in the requested state are not counted.
     pub changed: usize,
     /// Segments left unvisited because `should_yield` asked to stop.
     pub remaining: usize,
-    /// JSON bytes of the field's values over the live points this call indexed.
     pub indexed_bytes: u64,
 }
 
@@ -48,13 +39,8 @@ impl<Fs> UpdateOnlyEdgeShard<Fs>
 where
     Fs: UniversalAppendFs + UniversalWriteFsAsync,
 {
-    /// Index `field` with `schema` on every segment that does not have it, replacing an
-    /// index of another schema. Segments are visited one at a time, and `should_yield` is
-    /// asked before each.
-    ///
-    /// `temp_path` is a local directory each index is built in before it is copied to the
-    /// backend; it is created if missing and left empty afterwards. An error loses the writer:
-    /// reopen the shard and call again.
+    /// Replaces an index of another schema. `temp_path` is local scratch for the build; an error
+    /// loses the writer.
     pub fn create_payload_index(
         mut self,
         field: &JsonPath,
@@ -100,8 +86,7 @@ where
         Ok((self, outcome))
     }
 
-    /// Remove `field`'s index from every segment that has it, or has files of it left
-    /// behind. `should_yield` is asked before each segment; an error loses the writer.
+    /// Also removes files a crashed call left behind; an error loses the writer.
     pub fn delete_payload_index(
         mut self,
         field: &JsonPath,
@@ -136,7 +121,6 @@ where
         Ok((self, outcome))
     }
 
-    /// Every segment, in a stable order so a resumed call walks them the same way.
     fn segment_refs(&self) -> Vec<SegmentRef> {
         let mut segments: Vec<SegmentRef> = self
             .segments
@@ -164,7 +148,6 @@ where
         Ok(self.fs.atomic_save(path, &bytes)?)
     }
 
-    /// Objects under `field`'s index directories, whether a config records them or not.
     fn field_files(&self, segment_path: &Path, field: &JsonPath) -> OperationResult<Vec<PathBuf>> {
         let prefix = get_payload_index_path(segment_path).join(format!("{}-", field.filename()));
         let listed = self.fs.list_files(&prefix).ok_not_found()?;
@@ -217,8 +200,7 @@ where
         Ok((types, bytes))
     }
 
-    /// An appendable writer caches its field indexes once it stores a point, so it must not
-    /// outlive a change to them.
+    /// An appendable writer keeps its field indexes open after its first store.
     fn close_writer(&mut self, segment: &SegmentRef) {
         if segment.appendable {
             self.writers.remove(&segment.uuid);
