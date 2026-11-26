@@ -294,6 +294,11 @@ impl RecoveryPoint {
         Self { clocks }
     }
 
+    /// Check whether this recovery point has any clocks of peers other than `peer_id`
+    pub fn has_clocks_of_other_peers(&self, peer_id: PeerId) -> bool {
+        self.clocks.keys().any(|key| key.peer_id != peer_id)
+    }
+
     /// Get the clocks of this recovery point that are newer than the same clocks in `other`.
     ///
     /// A clock that is present in this recovery point, but not in the `other`,
@@ -449,6 +454,18 @@ impl RecoveryPoint {
         }
 
         is_same_operation
+    }
+
+    /// Set the clock referenced by the clock tag to the tick and token in the tag, whether the
+    /// clock is newer, older or missing.
+    pub fn set_clock(&mut self, tag: ClockTag) {
+        self.clocks
+            .insert(Key::from_tag(tag), (tag.clock_tick, tag.token));
+    }
+
+    /// Remove the clock referenced by the clock tag, whatever its tick.
+    pub fn remove_clock(&mut self, tag: ClockTag) {
+        self.clocks.remove(&Key::from_tag(tag));
     }
 
     #[cfg(test)]
@@ -799,6 +816,38 @@ mod test {
         expected.insert_with_token(2, 0, 0, 0);
 
         assert_eq!(same_clocks.clocks, expected.clocks);
+    }
+
+    #[test]
+    fn recovery_point_set_and_remove_clock() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 10, 100);
+        recovery_point.insert_with_token(1, 1, 5, 101);
+
+        // Lower an existing clock, add a missing one, remove another
+        recovery_point.set_clock(ClockTag::new_with_token(1, 0, 8, 80));
+        recovery_point.set_clock(ClockTag::new_with_token(2, 0, 3, 30));
+        recovery_point.remove_clock(ClockTag::new_with_token(1, 1, 0, 0));
+
+        let mut expected = RecoveryPoint::default();
+        expected.insert_with_token(1, 0, 8, 80);
+        expected.insert_with_token(2, 0, 3, 30);
+
+        assert_eq!(recovery_point.clocks, expected.clocks);
+    }
+
+    #[test]
+    fn recovery_point_has_clocks_of_other_peers() {
+        let mut recovery_point = RecoveryPoint::default();
+        assert!(!recovery_point.has_clocks_of_other_peers(1));
+
+        recovery_point.insert(1, 0, 10);
+        recovery_point.insert(1, 1, 5);
+        assert!(!recovery_point.has_clocks_of_other_peers(1));
+        assert!(recovery_point.has_clocks_of_other_peers(2));
+
+        recovery_point.insert(2, 0, 7);
+        assert!(recovery_point.has_clocks_of_other_peers(1));
     }
 
     proptest! {

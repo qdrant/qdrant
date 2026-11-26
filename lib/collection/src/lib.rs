@@ -9,6 +9,7 @@ pub mod hash_ring;
 pub mod lookup;
 pub mod operations;
 pub mod optimizers_builder;
+pub mod orphan_points;
 pub mod problems;
 pub mod recommendations;
 pub mod shards;

@@ -1,3 +1,4 @@
+pub mod affected_points;
 pub mod operation_name;
 pub mod optimization;
 pub mod payload_ops;

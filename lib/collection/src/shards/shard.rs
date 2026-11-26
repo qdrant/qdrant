@@ -19,6 +19,7 @@ use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
 use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
+use crate::orphan_points::{MAX_ORPHAN_POINTS, OrphanPoints};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::{LocalShard, LocalShardOptimizations};
@@ -373,6 +374,33 @@ impl Shard {
                 "Failed to resolve WAL delta on local shard: {err}"
             ))),
         }
+    }
+
+    /// Find the points changed by orphan operations in the WAL of the local shard
+    ///
+    /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
+    pub async fn find_orphan_points(
+        &self,
+        source_clocks: &RecoveryPoint,
+    ) -> CollectionResult<OrphanPoints> {
+        let wal = match self {
+            Self::Local(local_shard) => &local_shard.wal,
+
+            Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot find orphan points on {}",
+                    self.variant_name(),
+                )));
+            }
+        };
+
+        wal.find_orphan_points(source_clocks, MAX_ORPHAN_POINTS)
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to find orphan points on local shard: {err}"
+                ))
+            })
     }
 
     pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {

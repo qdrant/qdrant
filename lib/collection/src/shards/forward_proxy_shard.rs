@@ -13,8 +13,8 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, StrictModeConfig,
-    WithPayload, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint, SizeStats,
+    SnapshotFormat, StrictModeConfig, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
@@ -68,7 +68,8 @@ pub struct TransferBatchResult {
 ///
 /// Use [`PreparedTransferBatch::send`] to send the batch to a remote shard.
 pub struct PreparedTransferBatch {
-    pub operation: CollectionUpdateOperations,
+    /// Operations to send, in order
+    pub operations: Vec<CollectionUpdateOperations>,
     pub next_page_offset: Option<PointIdType>,
     pub count: usize,
     pub read_duration: Duration,
@@ -83,22 +84,40 @@ impl PreparedTransferBatch {
     ///
     /// The shared update lock guard is released after sending completes.
     pub async fn send(self, remote_shard: &RemoteShard) -> CollectionResult<TransferBatchResult> {
+        let Self {
+            operations,
+            next_page_offset,
+            count,
+            read_duration,
+            wait,
+            _update_lock,
+        } = self;
+
         let send_start = Instant::now();
-        remote_shard
-            .update(
-                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
-                OperationWithClockTag::from(self.operation),
-                WaitUntil::from(self.wait),
-                None,
-            )
-            .unmeasured(reason("Internal operation"))
-            .await?;
+
+        // Send operations one by one, in order. The remote applies them in order, so waiting on the
+        // last one is enough.
+        let last_index = operations.len().saturating_sub(1);
+        for (index, operation) in operations.into_iter().enumerate() {
+            let wait = wait && index == last_index;
+
+            remote_shard
+                .update(
+                    // Don't add clock tag, this transfers points out of regular order (SyncPoints)
+                    OperationWithClockTag::from(operation),
+                    WaitUntil::from(wait),
+                    None,
+                )
+                .unmeasured(reason("Internal operation"))
+                .await?;
+        }
+
         let send_duration = send_start.elapsed();
 
         Ok(TransferBatchResult {
-            next_page_offset: self.next_page_offset,
-            count: self.count,
-            read_duration: self.read_duration,
+            next_page_offset,
+            count,
+            read_duration,
             send_duration,
         })
     }
@@ -217,18 +236,7 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let update_lock = self.update_lock.clone().read_owned().await;
 
-        // When any named vector uses a TurboQuant (`Turbo4`) storage datatype,
-        // ship storage-native (raw) vector bytes instead of decoded floats.
-        // This avoids a lossy TQ decode -> encode round-trip on the receiving
-        // node, which would drift the encoding and degrade recall. The feature flag
-        // extends that to every collection, where it is a plain saving.
-        let transfer_raw = feature_flags().transfer_raw_points
-            || self
-                .wrapped_shard
-                .collection_config
-                .read()
-                .await
-                .has_turbo_vector_storage();
+        let transfer_raw = self.is_transfer_raw().await;
 
         let read_start = Instant::now();
         let (point_operation, next_page_offset, count) = if transfer_raw {
@@ -248,14 +256,7 @@ impl ForwardProxyShard {
                 }
             };
 
-            // A raw read hands out the payload as its stored blob. Shipping it is
-            // feature-flagged for the same reason as raw points: the receiving node has
-            // to understand it first.
-            if !feature_flags().transfer_raw_payloads {
-                for point in &mut points {
-                    point.decode_payload_raw()?;
-                }
-            }
+            decode_raw_payloads_if_needed(&mut points)?;
 
             let count = points.len();
             let point_operation = if !merge_points {
@@ -304,13 +305,101 @@ impl ForwardProxyShard {
         let operation = CollectionUpdateOperations::PointOperation(point_operation);
 
         Ok(PreparedTransferBatch {
-            operation,
+            operations: vec![operation],
             next_page_offset,
             count,
             read_duration,
             wait,
             _update_lock: update_lock,
         })
+    }
+
+    /// Read a batch of points by ID to transfer, without sending it yet.
+    ///
+    /// The batch overwrites these points on the remote shard with our versions of them: it
+    /// upserts the points we have, and deletes the ones we don't. Like
+    /// [`Self::read_transfer_batch`], it holds a shared guard on the update lock until it is sent.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn read_points_transfer_batch(
+        &self,
+        point_ids: &[PointIdType],
+        wait: bool,
+        runtime_handle: &AdaptiveSearchHandle,
+    ) -> CollectionResult<PreparedTransferBatch> {
+        let update_lock = self.update_lock.clone().read_owned().await;
+
+        let transfer_raw = self.is_transfer_raw().await;
+
+        let has_id = point_ids.iter().copied().collect::<HasIdCondition>();
+        let filter = Filter::new_must(Condition::HasId(has_id));
+
+        let read_start = Instant::now();
+        let (upsert, found_ids) = if transfer_raw {
+            let (mut points, _) = self
+                .read_batch_raw(None, point_ids.len(), Some(&filter), runtime_handle)
+                .await?;
+
+            decode_raw_payloads_if_needed(&mut points)?;
+
+            let found_ids: HashSet<_> = points.iter().map(|point| point.id).collect();
+            (PointOperations::UpsertPointsRaw(points), found_ids)
+        } else {
+            let (points, _) = self
+                .read_batch(None, point_ids.len(), Some(&filter), runtime_handle)
+                .await?;
+
+            let found_ids: HashSet<_> = points.iter().map(|point| point.id).collect();
+            let upsert =
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points));
+            (upsert, found_ids)
+        };
+        let read_duration = read_start.elapsed();
+
+        let missing_ids: Vec<_> = point_ids
+            .iter()
+            .copied()
+            .filter(|point_id| !found_ids.contains(point_id))
+            .collect();
+
+        let mut operations = Vec::with_capacity(2);
+
+        if !found_ids.is_empty() {
+            operations.push(CollectionUpdateOperations::PointOperation(upsert));
+        }
+
+        if !missing_ids.is_empty() {
+            let delete = PointOperations::DeletePoints { ids: missing_ids };
+            operations.push(CollectionUpdateOperations::PointOperation(delete));
+        }
+
+        Ok(PreparedTransferBatch {
+            operations,
+            next_page_offset: None,
+            count: point_ids.len(),
+            read_duration,
+            wait,
+            _update_lock: update_lock,
+        })
+    }
+
+    /// Whether to transfer storage-native (raw) points instead of decoded ones
+    ///
+    /// When any named vector uses a TurboQuant (`Turbo4`) storage datatype,
+    /// ship storage-native (raw) vector bytes instead of decoded floats.
+    /// This avoids a lossy TQ decode -> encode round-trip on the receiving
+    /// node, which would drift the encoding and degrade recall. The feature flag
+    /// extends that to every collection, where it is a plain saving.
+    async fn is_transfer_raw(&self) -> bool {
+        feature_flags().transfer_raw_points
+            || self
+                .wrapped_shard
+                .collection_config
+                .read()
+                .await
+                .has_turbo_vector_storage()
     }
 
     /// Read a batch of points to transfer to the remote shard
@@ -643,6 +732,21 @@ impl ForwardProxyShard {
     pub async fn memory_report(&self) -> CollectionResult<CollectionMemoryReport> {
         self.wrapped_shard.memory_report().await
     }
+}
+
+/// Decode the payloads of raw points read for a transfer, unless raw payloads may be transferred
+///
+/// A raw read hands out the payload as its stored blob. Shipping it is
+/// feature-flagged for the same reason as raw points: the receiving node has
+/// to understand it first.
+fn decode_raw_payloads_if_needed(points: &mut [PointStructRawPersisted]) -> CollectionResult<()> {
+    if !feature_flags().transfer_raw_payloads {
+        for point in points {
+            point.decode_payload_raw()?;
+        }
+    }
+
+    Ok(())
 }
 
 #[async_trait]

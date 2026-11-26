@@ -288,6 +288,10 @@ mod tests {
             "syncing queued updates"
         );
         assert_eq!(
+            TransferStage::OverwritingPoints.as_str(),
+            "overwriting points"
+        );
+        assert_eq!(
             TransferStage::WaitingConsensus.as_str(),
             "waiting consensus"
         );

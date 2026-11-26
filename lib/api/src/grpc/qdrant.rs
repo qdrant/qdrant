@@ -4495,6 +4495,48 @@ pub struct UpdateShardCutoffPointRequest {
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetShardOrphanPointsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(
+        length(min = 1, max = 255),
+        custom(function = "common::validation::validate_collection_name_legacy")
+    )]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Transfer source's tick for each clock the shard is ahead on,
+    /// or tick 0 for a clock the source doesn't know
+    #[prost(message, optional, tag = "3")]
+    pub source_clocks: ::core::option::Option<RecoveryPoint>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetShardOrphanPointsResponse {
+    /// Points changed by orphan operations
+    #[prost(message, optional, tag = "1")]
+    pub orphan_points: ::core::option::Option<OrphanPoints>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrphanPoints {
+    /// Points the orphan operations can have changed
+    #[prost(message, repeated, tag = "1")]
+    pub point_ids: ::prost::alloc::vec::Vec<PointId>,
+    /// For each clock the source knows, the tag of the last record at or below the source's tick
+    #[prost(message, repeated, tag = "2")]
+    pub clocks: ::prost::alloc::vec::Vec<RecoveryPointClockTag>,
+}
+#[allow(clippy::all)]
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetShardOptimizationsRequest {
     /// Name of the collection
@@ -4783,6 +4825,33 @@ pub mod collections_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Get points changed by orphan operations in the shard's WAL
+        pub async fn get_shard_orphan_points(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetShardOrphanPointsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetShardOrphanPointsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/GetShardOrphanPoints",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("qdrant.CollectionsInternal", "GetShardOrphanPoints"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Get shard optimizations info
         pub async fn get_shard_optimizations(
             &mut self,
@@ -4893,6 +4962,14 @@ pub mod collections_internal_server {
             request: tonic::Request<super::UpdateShardCutoffPointRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        >;
+        /// Get points changed by orphan operations in the shard's WAL
+        async fn get_shard_orphan_points(
+            &self,
+            request: tonic::Request<super::GetShardOrphanPointsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetShardOrphanPointsResponse>,
             tonic::Status,
         >;
         /// Get shard optimizations info
@@ -5213,6 +5290,55 @@ pub mod collections_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateShardCutoffPointSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/GetShardOrphanPoints" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetShardOrphanPointsSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::GetShardOrphanPointsRequest>
+                    for GetShardOrphanPointsSvc<T> {
+                        type Response = super::GetShardOrphanPointsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetShardOrphanPointsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CollectionsInternal>::get_shard_orphan_points(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetShardOrphanPointsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
