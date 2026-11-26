@@ -275,7 +275,8 @@ pub enum IndexingOnFailure {
     #[default]
     Local,
     /// Submit again with a new token, up to `max_retries` times, then build locally. A task
-    /// the indexer refuses for good (e.g. too large for it) is built locally right away.
+    /// the indexer refuses for good (e.g. too large for it), or uploads an invalid graph for,
+    /// is built locally right away.
     Retry,
 }
 

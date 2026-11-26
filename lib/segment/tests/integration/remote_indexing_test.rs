@@ -467,6 +467,17 @@ fn check_recovers(
 }
 
 #[test]
+fn rejected_graph_is_not_retried() {
+    // Every attempt would upload the same invalid graph
+    let indexer = check_recovers(
+        OnFailure::Retry,
+        vec![LoopbackBehavior::Corrupt],
+        Duration::from_secs(10),
+    );
+    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn corrupted_graph_is_rejected() {
     let indexer = check_recovers(
         OnFailure::Local,

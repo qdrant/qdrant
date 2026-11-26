@@ -291,6 +291,9 @@ impl<'a> RemoteBuilder<'a> {
                         "Remote indexing task {} graph rejected: {reason}",
                         handle.task_id(),
                     );
+                    // The indexer would read the same vectors and build an invalid graph
+                    // again: build locally right away
+                    break;
                 }
                 Err(WaitInterrupt::Stopped) => {
                     REMOTE_INDEXING_METRICS

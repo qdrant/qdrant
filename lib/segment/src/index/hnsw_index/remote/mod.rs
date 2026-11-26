@@ -38,7 +38,8 @@ pub enum OnFailure {
     /// Build locally right away.
     Local,
     /// Submit again with a new token, up to `max_retries` times, then build locally. A
-    /// [`SubmitError::Permanent`] refusal is built locally right away.
+    /// [`SubmitError::Permanent`] refusal is built locally right away, and so is a task the
+    /// indexer uploaded an invalid graph for.
     Retry,
 }
 
