@@ -183,12 +183,9 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
                 .saturating_sub(total_excluded_value_count),
         );
 
-        let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
-
-        let max = self
-            .get_indexed_points()
-            .saturating_sub(max_excluded_value_count)
-            .min(non_excluded_values_count);
+        // A point holding an excluded value can still match through another of its values, so
+        // only two caps hold: each matching point is indexed and has a non-excluded value.
+        let max = self.get_indexed_points().min(non_excluded_values_count);
 
         let exp = number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
             .max(min)

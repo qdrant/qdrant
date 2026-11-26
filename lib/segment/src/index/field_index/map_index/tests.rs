@@ -250,27 +250,36 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
     );
 }
 
-/// An `except` list may name values the index does not hold. Those must not count against the
-/// index's unique values, or the estimate collapses to zero while points still match.
+/// The `except` estimate must bracket the true number of matching points.
+/// - The list may name values the index does not hold. Those must not count against the index's
+///   unique values, or the estimate collapses to zero while points still match.
+/// - A point holding an excluded value still matches through any other value it has.
 #[rstest]
 #[case(IndexType::MutableGridstore)]
 #[case(IndexType::Mmap)]
 #[case(IndexType::RamMmap)]
-fn test_except_cardinality_with_absent_values(#[case] index_type: IndexType) {
+fn test_except_cardinality_bounds(#[case] index_type: IndexType) {
     let _scope = ambient::test_guard();
-    let data = vec![vec![1], vec![2], vec![3]];
+    let cases: [(Vec<Vec<IntPayloadType>>, &[IntPayloadType], usize); 3] = [
+        // Excludes one of the three points, with as many absent values as unique ones.
+        (vec![vec![1], vec![2], vec![3]], &[1, 100, 200, 300], 2),
+        // The first point matches through 2, absent values included.
+        (vec![vec![1, 2], vec![1]], &[1, 100, 200], 1),
+        // Every point holds the excluded value, and every point matches through 2.
+        (vec![vec![1, 2], vec![1, 2]], &[1], 2),
+    ];
 
-    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-    save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
-    let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
+    for (data, excluded, matching) in cases {
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
-    // Excludes one of the three points, with as many absent values as the index has unique ones.
-    let estimation = index.except_cardinality([1, 100, 200, 300].iter());
-    let matching = 2;
-    assert!(
-        estimation.min <= matching && matching <= estimation.max,
-        "{matching} points match, estimated {estimation:?}",
-    );
+        let estimation = index.except_cardinality(excluded.iter());
+        assert!(
+            estimation.min <= matching && matching <= estimation.max,
+            "{data:?} except {excluded:?}: {matching} points match, estimated {estimation:?}",
+        );
+    }
 }
 
 #[rstest]
