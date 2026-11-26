@@ -40,7 +40,7 @@ use tonic::{Request, Response, Status};
 
 use crate::common::auth::AuthKeys;
 use crate::common::helpers;
-use crate::common::http_client::HttpClient;
+use crate::common::http_client::{HttpClient, ServerCertVerification};
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
@@ -262,7 +262,9 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
-    let http_client = HttpClient::from_settings(&settings)?;
+    // Only used to download shard snapshots from other peers during shard transfers
+    let http_client =
+        HttpClient::from_settings(&settings, ServerCertVerification::SkipForPeersWithoutCaCert)?;
 
     runtime
         .block_on(async {
