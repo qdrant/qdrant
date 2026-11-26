@@ -255,6 +255,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> Result<(), EncodingError> {
+        let error = Mutex::new(None);
         rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("pq-encoding-{idx}"))
             .num_threads(std::cmp::max(1, max_threads))
@@ -273,12 +274,22 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     centroids,
                     max_threads,
                     stopped,
+                    &error,
                 )
-            })
+            });
+
+        // Read the error only after `scope` returns: it joins the spawned workers on exit, so
+        // checking inside the scope closure would miss errors from workers still running.
+        match error.into_inner() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// Encode whole storage inside rayon context
-    /// This function should be called inside `rayon::scope`
+    /// This function should be called inside `rayon::scope`.
+    /// Workers record the first push error in `error`; read it after the scope has joined them.
+    #[allow(clippy::too_many_arguments)]
     fn encode_storage_rayon<'a: 'b, 'b>(
         scope: &rayon::Scope<'b>,
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'b,
@@ -287,7 +298,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         centroids: &'b [Vec<f32>],
         max_threads: usize,
         stopped: &'b AtomicBool,
-    ) -> Result<(), EncodingError> {
+        error: &'b Mutex<Option<EncodingError>>,
+    ) {
         let storage_builder = Arc::new(Mutex::new(storage_builder));
 
         // Synchronization between threads: a ring of channels passes a "turn" token, so thread
@@ -299,12 +311,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         senders[0].send(()).unwrap(); // Allow first thread to use storage
         senders.rotate_left(1); // Thread `N` sends to thread `N + 1`
 
-        let error = Arc::new(Mutex::new(None));
         for (thread_index, (turn, next_turn)) in receivers.into_iter().zip(senders).enumerate() {
             // Thread process vectors `N` that `(N + thread_index) % max_threads == 0`.
             let data = data.clone().skip(thread_index);
             let storage_builder = storage_builder.clone();
-            let error = error.clone();
 
             scope.spawn(move |_| {
                 let mut encoded_vector = Vec::with_capacity(vector_division.len());
@@ -339,12 +349,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     let _ = next_turn.send(());
                 }
             });
-        }
-
-        if let Some(error) = error.lock().take() {
-            Err(error)
-        } else {
-            Ok(())
         }
     }
 
