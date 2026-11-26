@@ -75,7 +75,7 @@ use fs_err::File;
 use segment::types::PointIdType;
 use serde_json::{Value, json};
 
-use super::op::{NamedVectors, Op, OptimizerState};
+use super::op::{ModelFilter as _, NamedVectors, Op, OptimizerState};
 
 pub(super) struct Trace {
     writer: BufWriter<File>,
@@ -324,6 +324,21 @@ fn op_payload(op: &Op) -> Value {
         Op::ScrollFilteredByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
         Op::CountByUrlSubstring(substring) => json!({ "url_substring": substring }),
         Op::ScrollFilteredByUrlSubstring(substring) => json!({ "url_substring": substring }),
+        Op::CountByExpr(expr) | Op::ScrollByExpr(expr) | Op::DeleteByExpr(expr) => json!({
+            "filter": expr.filter(),
+        }),
+        Op::SearchByExpr {
+            vector_name,
+            limit,
+            exact,
+            expr,
+            ..
+        } => json!({
+            "vector_name": vector_name,
+            "limit": limit,
+            "exact": exact,
+            "filter": expr.filter(),
+        }),
         Op::CountByNested(filter) | Op::ScrollFilteredByNested(filter) => {
             json!({ "nested": filter })
         }
