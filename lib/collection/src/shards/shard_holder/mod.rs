@@ -49,6 +49,8 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: Arc<SaveOnDisk<HashSet<ShardTransfer>>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
+    // Lets snapshots detect scale-up write ring commits even after resharding finishes.
+    resharding_up_commit_generation: u64,
     /// Hash rings per shard key
     ///
     /// In case of auto sharding, this only hash a `None` hash ring. In case of custom sharding,
@@ -101,6 +103,7 @@ impl ShardHolder {
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
+            resharding_up_commit_generation: 0,
             rings,
             key_mapping,
             shard_id_to_key_mapping,
@@ -366,6 +369,7 @@ common::impl_send_sync_checked!(ShardHolder {
     shard_transfers,
     shard_transfer_changes,
     resharding_state,
+    resharding_up_commit_generation,
     rings,
     key_mapping,
     shard_id_to_key_mapping,

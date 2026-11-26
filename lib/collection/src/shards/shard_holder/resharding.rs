@@ -39,6 +39,10 @@ impl ShardHolder {
         self.resharding_state.read().clone()
     }
 
+    pub(crate) fn resharding_up_commit_generation(&self) -> u64 {
+        self.resharding_up_commit_generation
+    }
+
     pub fn get_resharding_operations_info(&self) -> Option<Vec<ReshardingInfo>> {
         let mut resharding_operations = vec![];
 
@@ -85,10 +89,18 @@ impl ShardHolder {
             None
         };
 
-        self.resharding_state
+        let state_changed = self
+            .resharding_state
             .write_optional(|current| (current != &state).then(|| state.clone()))?;
 
         if let Some((key, ring)) = ring {
+            if state.as_ref().is_some_and(|state| {
+                state.direction == ReshardingDirection::Up
+                    && state.stage >= ReshardingStage::WriteHashRingCommitted
+            }) && (state_changed || self.rings.get(&key) != Some(&ring))
+            {
+                self.resharding_up_commit_generation += 1;
+            }
             self.rings.insert(key, ring);
         }
 

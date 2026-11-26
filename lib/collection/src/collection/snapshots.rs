@@ -84,7 +84,7 @@ impl Collection {
         let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
 
         // Create snapshot of each shard
-        {
+        let resharding_up_commit_generation = {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
                 .prefix(&format!("{snapshot_name}-temp-"))
                 .tempdir_in(global_temp_dir)
@@ -97,7 +97,7 @@ impl Collection {
                 })?;
 
             let mut futures = Vec::new();
-            {
+            let generation = {
                 let shards_holder = self.shards_holder.read().await;
 
                 // Create snapshot of each shard
@@ -118,14 +118,19 @@ impl Collection {
                         .await?;
                     futures.push(future);
                 }
-            }
+                shards_holder.resharding_up_commit_generation()
+            };
+
+            #[cfg(test)]
+            tests::pause_after_listing_shards(global_temp_dir).await;
 
             for future in futures {
                 future.await.map_err(|err| {
                     CollectionError::service_error(format!("failed to create snapshot: {err}"))
                 })?;
             }
-        }
+            generation
+        };
 
         // Save collection config and version
         tar.append_data(
@@ -153,6 +158,21 @@ impl Collection {
         tar.finish().await.map_err(|err| {
             CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
         })?;
+
+        // Once a scale-up commits its write ring, cleanup can delete points from a
+        // source shard before we archive it. The destination may already have been
+        // archived or may be absent from the snapshot altogether.
+        if self
+            .shards_holder
+            .read()
+            .await
+            .resharding_up_commit_generation()
+            != resharding_up_commit_generation
+        {
+            return Err(CollectionError::service_error(
+                "Collection write hash ring changed during snapshot creation, please retry",
+            ));
+        }
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
         snapshot_manager
@@ -524,3 +544,6 @@ impl Collection {
             .await
     }
 }
+
+#[cfg(test)]
+mod tests;
