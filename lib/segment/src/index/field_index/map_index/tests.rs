@@ -9,6 +9,7 @@ use common::ambient::hw::{self, HwMetric};
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use ecow::EcoString;
+use indexmap::IndexSet;
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::Builder;
@@ -245,7 +246,7 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
 
     assert!(
         !index
-            .except_cardinality(std::iter::empty())
+            .except_cardinality(&IndexSet::<IntPayloadType>::new())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -285,7 +286,7 @@ fn test_string_disk_map_index(#[case] index_type: IndexType) {
 
     assert!(
         !index
-            .except_cardinality(vec![].into_iter())
+            .except_cardinality(&IndexSet::<String>::new())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -303,7 +304,7 @@ fn test_empty_index(#[case] index_type: IndexType) {
 
     assert!(
         index
-            .except_cardinality(std::iter::empty())
+            .except_cardinality(&IndexSet::<String>::new())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -1023,8 +1024,8 @@ fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: In
     index.remove_point(3).unwrap();
 
     // Excluding absent values + 1 present value (10) leaves point 2 (value 20) matching.
-    let excluded = [1i64, 2, 3, 4, 5, 10];
-    let est = index.except_cardinality(excluded.iter());
+    let excluded = IndexSet::from([1i64, 2, 3, 4, 5, 10]);
+    let est = index.except_cardinality(&excluded);
     assert_eq!(est.min, 1);
     if index_type != IndexType::Mmap {
         assert_eq!(est.max, 1);
@@ -1032,26 +1033,16 @@ fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: In
         assert!(est.min <= est.exp && est.exp <= est.max);
     }
 
-    // Excluding duplicate keys present in the index must not double-subtract.
-    let excluded_dups = [10i64, 10, 10, 10];
-    let est_dups = index.except_cardinality(excluded_dups.iter());
-    assert_eq!(est_dups.min, 1);
-    if index_type != IndexType::Mmap {
-        assert_eq!(est_dups.max, 1);
-    } else {
-        assert!(est_dups.min <= est_dups.exp && est_dups.exp <= est_dups.max);
-    }
-
     // Excluding all keys in the segment (10, 20, 30) yields exact 0 across all storage types.
-    let excluded_all = [10i64, 20, 30];
-    let est_zero = index.except_cardinality(excluded_all.iter());
+    let excluded_all = IndexSet::from([10i64, 20, 30]);
+    let est_zero = index.except_cardinality(&excluded_all);
     assert!(est_zero.equals_min_exp_max(&CardinalityEstimation::exact(0)));
 
     // Excluding only the live keys (10, 20) while deleted key 30 remains in the index
     // must not panic; MutableGridstore and RamMmap decrement `values_count` on delete so
     // they return exact 0 immediately.
-    let excluded_live = [10i64, 20];
-    let est_live = index.except_cardinality(excluded_live.iter());
+    let excluded_live = IndexSet::from([10i64, 20]);
+    let est_live = index.except_cardinality(&excluded_live);
     if index_type != IndexType::Mmap {
         assert!(est_live.equals_min_exp_max(&CardinalityEstimation::exact(0)));
     } else {
@@ -1063,7 +1054,7 @@ fn test_except_cardinality_with_absent_and_deleted_values(#[case] index_type: In
     let multi_dir = Builder::new().prefix("except_multi_dir").tempdir().unwrap();
     save_map_index::<IntPayloadType>(&multi_data, multi_dir.path(), index_type, |v| (*v).into());
     let multi_index = load_map_index::<IntPayloadType>(&multi_data, multi_dir.path(), index_type);
-    let est_multi = multi_index.except_cardinality([1i64, 2, 10].iter());
+    let est_multi = multi_index.except_cardinality(&IndexSet::from([1i64, 2, 10]));
     assert_eq!(est_multi.min, 1);
     assert_eq!(est_multi.exp, 1);
     assert_eq!(est_multi.max, 1);

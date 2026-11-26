@@ -141,23 +141,25 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     ///
     /// # Arguments
     ///
-    /// * 'excluded' - values, which are not considered as matching
+    /// * 'excluded' - distinct values, which are not considered as matching
     ///
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality<'b>(&self, excluded: impl Iterator<Item = &'b N>) -> CardinalityEstimation
+    fn except_cardinality<K, A>(&self, excluded: &IndexSet<K, A>) -> CardinalityEstimation
     where
-        N: 'b,
+        A: BuildHasher,
+        K: Borrow<N> + Hash + Eq,
     {
         // Minimal case: we exclude as many points as possible.
-        // Only count distinct excluded values that actually exist in this segment's index,
+        // Only count excluded values that actually exist in this segment's index,
         // otherwise values present only in other segments would inflate the subtraction
         // against `get_unique_values_count()` and falsely collapse `max_values_per_point` to 0.
+        // `excluded` is a set, so every value is counted at most once.
         let mut total_excluded_value_count = 0usize;
         let mut excluded_unique_values_count = 0usize;
-        for val in excluded.unique() {
-            if let Some(count) = self.get_count_for_value(val) {
+        for val in excluded {
+            if let Some(count) = self.get_count_for_value(val.borrow()) {
                 excluded_unique_values_count += 1;
                 total_excluded_value_count += count;
             }
