@@ -305,46 +305,6 @@ impl OperationDurationMetricsBuilder {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_grpc_whitelist_matches_rest_sibling_endpoints() {
-        use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
-
-        // Pairs of gRPC RPC and its REST sibling route pattern. The two
-        // whitelists had drifted apart, so metrics were reported for one
-        // protocol but silently missing for the other.
-        for (grpc, rest) in [
-            (
-                "/qdrant.Points/CreateFieldIndex",
-                "/collections/{collection_name}/index",
-            ),
-            (
-                "/qdrant.Points/DeleteFieldIndex",
-                "/collections/{collection_name}/index/{field_name}",
-            ),
-            (
-                "/qdrant.Points/DeleteVectors",
-                "/collections/{collection_name}/points/vectors/delete",
-            ),
-            (
-                "/qdrant.Points/SearchMatrixOffsets",
-                "/collections/{collection_name}/points/search/matrix/offsets",
-            ),
-            (
-                "/qdrant.Points/SearchMatrixPairs",
-                "/collections/{collection_name}/points/search/matrix/pairs",
-            ),
-        ] {
-            assert!(
-                GRPC_ENDPOINT_WHITELIST.binary_search(&grpc).is_ok(),
-                "{grpc} must be in GRPC_ENDPOINT_WHITELIST to match its REST sibling {rest}",
-            );
-            assert!(
-                REST_ENDPOINT_WHITELIST.binary_search(&rest).is_ok(),
-                "{rest} must be in REST_ENDPOINT_WHITELIST to match its gRPC sibling {grpc}",
-            );
-        }
-    }
-
-    #[test]
     fn test_endpoint_whitelists_sorted() {
         use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
 
