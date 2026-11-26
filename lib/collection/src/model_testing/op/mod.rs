@@ -976,6 +976,65 @@ impl Op {
         }
     }
 
+    /// Whether the op may be submitted with `wait=false` without the model losing track: a write
+    /// addressed by point id, whose effect depends only on the order of the writes to that point.
+    /// Writes selected or guarded by a filter are left out: the engine evaluates the filter when
+    /// the op is submitted, against segments the queued writes have not reached yet.
+    pub(super) fn nowait_safe(&self) -> bool {
+        match self {
+            Op::Upsert(..)
+            | Op::UpsertBatch(_)
+            | Op::Delete(_)
+            | Op::SetPayload(..)
+            | Op::OverwritePayload(..)
+            | Op::DeletePayload(..)
+            | Op::ClearPayload(_)
+            | Op::SetPayloadByKey { .. }
+            | Op::DeleteVectors { .. } => true,
+            Op::UpdateVectors { condition_num, .. } => condition_num.is_none(),
+            Op::DeleteByFilter { .. }
+            | Op::CreateIndex(..)
+            | Op::DropIndex(_)
+            | Op::RetrieveRandom(_)
+            | Op::RetrieveExisting(_)
+            | Op::RetrieveSelective { .. }
+            | Op::CountByNum(_)
+            | Op::Search { .. }
+            | Op::Query { .. }
+            | Op::UpsertConditional { .. }
+            | Op::DeleteVectorsByFilter { .. }
+            | Op::ScrollFilteredByNum(_)
+            | Op::CountByTag(_)
+            | Op::CountByUrlPrefix(_)
+            | Op::CountBySlice { .. }
+            | Op::ScrollFilteredByTag(_)
+            | Op::ScrollFilteredByUrlPrefix(_)
+            | Op::ScrollOrdered(_)
+            | Op::Recommend { .. }
+            | Op::CreateVectorName { .. }
+            | Op::DeleteVectorName(_)
+            | Op::SetPayloadByFilter { .. }
+            | Op::OverwritePayloadByFilter { .. }
+            | Op::DeletePayloadByFilter { .. }
+            | Op::ClearPayloadByFilter(_)
+            | Op::Facet { .. }
+            | Op::ScrollPaged { .. }
+            | Op::QueryFusion { .. }
+            | Op::CreateSnapshot
+            | Op::SetFlushInterval(_)
+            | Op::QueryText { .. }
+            | Op::CountByUrlSubstring(_)
+            | Op::ScrollFilteredByUrlSubstring(_)
+            | Op::CountByNested(_)
+            | Op::ScrollFilteredByNested(_)
+            | Op::CountByExpr(_)
+            | Op::ScrollByExpr(_)
+            | Op::SearchByExpr { .. }
+            | Op::DeleteByExpr(_)
+            | Op::SetOptimizer(_) => false,
+        }
+    }
+
     /// Variant name only, no payload — suitable for the progress bar message
     /// (the full `{:?}` is hundreds of characters per op).
     pub(super) fn kind(&self) -> &'static str {
