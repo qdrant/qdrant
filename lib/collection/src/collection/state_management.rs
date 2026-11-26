@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashSet;
 
 use ahash::AHashMap;
@@ -16,6 +19,7 @@ use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardTransferChange;
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_trait::WaitUntil;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -48,7 +52,7 @@ impl Collection {
         // Used to detect which named vectors have changed after applying new config
         let old_collection_config = self.collection_config.read().await.params.clone();
 
-        // Apply config first — this updates the collection-level vector definitions
+        // Apply config first so that any replica created by apply_shard_info uses the target schema.
         let new_config = config.clone();
         self.apply_config(config).await?;
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
@@ -439,18 +443,31 @@ impl Collection {
             }
         }
 
-        // Delete first (includes changed vectors), then create
-        for vector_name in to_delete {
-            self.delete_named_vector(vector_name).await?;
+        if to_delete.is_empty() && to_create.is_empty() {
+            return Ok(());
         }
 
-        for (vector_name, config) in to_create {
-            self.create_named_vector(vector_name, config)
-                .unmeasured(reason("Internal operation"))
-                .await?;
-        }
+        // The collection config already contains the target schema. Apply the changes only to
+        // shards, deleting old storages before creating replacements for the same names.
+        let update_result = async {
+            for vector_name in to_delete {
+                self.delete_named_vector_on_shards(vector_name, WaitUntil::Segment)
+                    .await?;
+            }
 
-        Ok(())
+            for (vector_name, config) in to_create {
+                self.create_named_vector_on_shards(vector_name, config, WaitUntil::Segment)
+                    .unmeasured(reason("Raft snapshot vector schema reconciliation"))
+                    .await?;
+            }
+
+            Ok(())
+        }
+        .await;
+
+        // Refresh optimizers after segment updates, including when only some shards succeeded.
+        self.recreate_optimizers_background();
+        update_result
     }
 
     /// Truncate unapplied WAL records for all local shards in the collection.

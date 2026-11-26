@@ -32,15 +32,8 @@ impl Collection {
             })
             .await?;
 
-        let operation = CollectionUpdateOperations::VectorNameOperation(
-            VectorNameOperations::CreateVectorName(CreateVectorName {
-                vector_name,
-                config,
-            }),
-        );
-
         let update_result = self
-            .update_all_local(operation, WaitUntil::from(false), true)
+            .create_named_vector_on_shards(vector_name, config, WaitUntil::Wal)
             .await;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
@@ -70,17 +63,8 @@ impl Collection {
         })
         .await?;
 
-        let operation = CollectionUpdateOperations::VectorNameOperation(
-            VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
-        );
-
-        self.update_all_local(
-            operation,
-            WaitUntil::from(true),
-            true, // Delete even in dead shards
-        )
-        .unmeasured(reason("Schema changes aren't measured"))
-        .await?;
+        self.delete_named_vector_on_shards(vector_name, WaitUntil::Visible)
+            .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
         // removed vector. Without this, optimization keeps allocating storage for it
@@ -90,6 +74,38 @@ impl Collection {
         // whole cluster.
         self.recreate_optimizers_background();
 
+        Ok(())
+    }
+
+    pub(super) async fn create_named_vector_on_shards(
+        &self,
+        vector_name: VectorNameBuf,
+        config: VectorNameConfig,
+        wait: WaitUntil,
+    ) -> CollectionResult<()> {
+        let operation = CollectionUpdateOperations::VectorNameOperation(
+            VectorNameOperations::CreateVectorName(CreateVectorName {
+                vector_name,
+                config,
+            }),
+        );
+
+        self.update_all_local(operation, wait, true).await?;
+        Ok(())
+    }
+
+    pub(super) async fn delete_named_vector_on_shards(
+        &self,
+        vector_name: VectorNameBuf,
+        wait: WaitUntil,
+    ) -> CollectionResult<()> {
+        let operation = CollectionUpdateOperations::VectorNameOperation(
+            VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
+        );
+
+        self.update_all_local(operation, wait, true) // Delete even in dead shards
+            .unmeasured(reason("Schema changes aren't measured"))
+            .await?;
         Ok(())
     }
 
