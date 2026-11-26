@@ -1,3 +1,4 @@
+pub mod clause_order;
 pub mod expected_checks;
 pub mod filter_checks;
 pub mod optimized_filter;
