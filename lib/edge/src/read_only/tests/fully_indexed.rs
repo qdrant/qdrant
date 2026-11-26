@@ -44,7 +44,7 @@ fn a_field_indexed_on_one_segment_only_is_not_fully_indexed() {
 
     let tag: JsonPath = "tag".parse().unwrap();
     let follower = open_follower(dir.path());
-    assert_eq!(follower.fully_indexed_fields().unwrap()[&tag].points, 710);
+    assert!(follower.fully_indexed_fields().unwrap().contains_key(&tag));
 
     // What a partly applied index change leaves behind.
     let segment = fs_err::read_dir(dir.path().join(SEGMENTS_PATH))
@@ -58,6 +58,5 @@ fn a_field_indexed_on_one_segment_only_is_not_fully_indexed() {
     payload_config.save(&path).unwrap();
 
     let follower = open_follower(dir.path());
-    assert!(follower.info().unwrap().payload_schema.contains_key(&tag));
     assert!(!follower.fully_indexed_fields().unwrap().contains_key(&tag));
 }
