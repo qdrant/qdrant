@@ -21,11 +21,10 @@ use crate::vector_storage::quantized::quantized_ram_storage::{
 };
 
 impl QuantizedVectors {
-    /// How the codes were encoded, if a remote build can use them instead of the original
-    /// vectors: scalar and binary builds score from the codes alone, TurboQuant builds
-    /// reconstruct their queries from them, as a TurboQuant vector storage does. `None` for
-    /// product quantization, which encodes queries from the original vectors, and for
-    /// multivectors.
+    /// How the codes were encoded, for the quantizations whose codes a remote indexer can
+    /// rebuild quantized vectors from: scalar, binary and TurboQuant. `None` for product
+    /// quantization and for multivectors. Whether a build can do without the original vectors
+    /// is a separate question, see [`Self::builds_from_codes`].
     pub fn remote_quantization(&self) -> Option<RemoteQuantization> {
         let parameters = match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(q) => QuantizerParameters::Scalar(q.parameters()),

@@ -59,45 +59,15 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
-    /// Whether graph builds score from the quantized vectors alone: the query of an inserted
-    /// point is encoded from its quantized vector, so the original vectors are not read.
-    /// Product and TurboQuant quantization encode queries from the original vector.
-    pub fn builds_without_originals(&self) -> bool {
-        match &self.config.quantization_config {
-            QuantizationConfig::Scalar(_) | QuantizationConfig::Binary(_) => true,
-            QuantizationConfig::Product(_) | QuantizationConfig::Turbo(_) => false,
-        }
-    }
-
-    /// Approximate original vector of `id`, reconstructed from its code, as a TurboQuant
-    /// vector storage reconstructs its vectors. `None` for other quantizations, and for
-    /// multivectors.
-    pub fn dequantize_vector(&self, id: PointOffsetType) -> Option<Vec<f32>> {
-        match &self.storage_impl {
-            QuantizedVectorStorage::TQRam(q) => Some(q.dequantize_vector(id)),
-            QuantizedVectorStorage::TQMmap(q) => Some(q.dequantize_vector(id)),
-            QuantizedVectorStorage::TQChunkedMmap(q) => Some(q.dequantize_vector(id)),
-            QuantizedVectorStorage::ScalarRam(_)
-            | QuantizedVectorStorage::ScalarMmap(_)
-            | QuantizedVectorStorage::ScalarChunkedMmap(_)
-            | QuantizedVectorStorage::PQRam(_)
-            | QuantizedVectorStorage::PQMmap(_)
-            | QuantizedVectorStorage::PQChunkedMmap(_)
-            | QuantizedVectorStorage::BinaryRam(_)
-            | QuantizedVectorStorage::BinaryMmap(_)
-            | QuantizedVectorStorage::BinaryChunkedMmap(_)
-            | QuantizedVectorStorage::ScalarRamMulti(_)
-            | QuantizedVectorStorage::ScalarMmapMulti(_)
-            | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
-            | QuantizedVectorStorage::PQRamMulti(_)
-            | QuantizedVectorStorage::PQMmapMulti(_)
-            | QuantizedVectorStorage::PQChunkedMmapMulti(_)
-            | QuantizedVectorStorage::BinaryRamMulti(_)
-            | QuantizedVectorStorage::BinaryMmapMulti(_)
-            | QuantizedVectorStorage::BinaryChunkedMmapMulti(_)
-            | QuantizedVectorStorage::TQRamMulti(_)
-            | QuantizedVectorStorage::TQMmapMulti(_)
-            | QuantizedVectorStorage::TQChunkedMmapMulti(_) => None,
+    /// Whether graph builds score from the quantized vectors alone and never read an original
+    /// vector. Asked of the quantization itself: this makes, for the stored point `probe`, the
+    /// scorer a build makes for each point it inserts, so the answer can't drift from what the
+    /// build does. It is the same for every point. Not so for product quantization, whose
+    /// queries are encoded from the original vectors.
+    pub fn builds_from_codes(&self, probe: PointOffsetType) -> bool {
+        match self.raw_internal_scorer(probe) {
+            Ok(_) => true,
+            Err(InternalScorerUnsupported) => false,
         }
     }
 

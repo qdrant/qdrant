@@ -52,11 +52,16 @@ pub(super) fn build_args(
         return None;
     }
 
-    // Send the quantized codes if the indexer can build from them (O2): scalar and binary
-    // score from them alone, TurboQuant queries are reconstructed from them as a TurboQuant
-    // storage does. Product quantization: the storage's vectors, and the indexer builds
-    // without PQ.
-    let quantization = quantized_vectors_ref.and_then(QuantizedVectors::remote_quantization);
+    // Send the quantized codes if the build scores from them alone (O2), as scalar, binary and
+    // TurboQuant quantization do: the indexer then builds what a local build would, from a
+    // fraction of the bytes. Product quantization encodes its queries from the original
+    // vectors: the storage's vectors are sent, and the indexer builds without PQ.
+    let builds_from_codes = |quantized: &&QuantizedVectors| {
+        vector_storage_ref.total_vector_count() == 0 || quantized.builds_from_codes(0)
+    };
+    let quantization = quantized_vectors_ref
+        .filter(builds_from_codes)
+        .and_then(QuantizedVectors::remote_quantization);
     let (source, quantized_vectors) = match &quantization {
         Some(_) => (VectorSource::Quantized, Some(quantized_vectors.clone())),
         None => (VectorSource::Storage, None),

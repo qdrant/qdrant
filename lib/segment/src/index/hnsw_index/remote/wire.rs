@@ -40,8 +40,8 @@ pub enum VectorSource {
     Storage,
     /// The quantized codes through `ReadVectors`, as the quantizer stores them, read with
     /// [`RemoteGraphParams::quantization`]. No original vectors. Used when the build scores
-    /// from the codes alone (scalar and binary quantization), or reconstructs its queries
-    /// from them (TurboQuant), so the remote graph is the same, from a fraction of the bytes.
+    /// from the codes alone (scalar, binary and TurboQuant quantization), so the remote graph
+    /// is the one a local build makes, from a fraction of the bytes.
     Quantized,
 }
 

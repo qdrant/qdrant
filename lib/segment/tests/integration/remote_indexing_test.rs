@@ -655,9 +655,8 @@ fn quantized_codes_do_not_depend_on_how_core_stores_them() {
 
 #[test]
 fn turbo_quantization_sends_quantized_vectors_only() {
-    // 8 bits per dimension plus a 4-byte trailer, for the points to index. The indexer reconstructs
-    // query vectors from the codes, as a TurboQuant vector storage does; the local build uses
-    // the originals, hence the tolerance of `check_remote_matches_local`
+    // 8 bits per dimension plus a 4-byte trailer, for the points to index. The indexer scores
+    // the codes alone, as the local build does
     check_remote_matches_local(
         None,
         Some(QuantizationConfig::Turbo(TurboQuantization {
