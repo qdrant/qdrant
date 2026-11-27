@@ -102,8 +102,12 @@ where
         ))
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files_async(prefix_path).await
+    async fn list_files_async(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files_async(dir).await
+    }
+
+    async fn prefix_list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.prefix_list_files_async(prefix_path).await
     }
 
     async fn select_files_async<P: AsRef<Path> + Send + Sync>(

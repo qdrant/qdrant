@@ -68,7 +68,7 @@ impl<S: UniversalRead> Pages<S> {
         populate: Populate,
     ) -> Result<()> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join("page_"))?
+            .prefix_list_files(&dir.join("page_"))?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -92,7 +92,7 @@ impl<S: UniversalRead> Pages<S> {
         let mut pages = Self::new(dir.to_path_buf(), writeable);
 
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join("page_"))?
+            .prefix_list_files(&dir.join("page_"))?
             .into_iter()
             .map(|listed| listed.path)
             .collect();

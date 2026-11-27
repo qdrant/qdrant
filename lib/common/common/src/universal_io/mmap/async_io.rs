@@ -32,9 +32,16 @@ impl UniversalReadFsAsync for MmapFs {
 
     fn list_files_async<'a>(
         &'a self,
+        dir: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
+        ready(self.list_files(dir))
+    }
+
+    fn prefix_list_files_async<'a>(
+        &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
-        ready(self.list_files(prefix_path))
+        ready(self.prefix_list_files(prefix_path))
     }
 
     fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(

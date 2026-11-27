@@ -160,8 +160,12 @@ where
         })
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files(prefix_path)
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files(dir)
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.prefix_list_files(prefix_path)
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {

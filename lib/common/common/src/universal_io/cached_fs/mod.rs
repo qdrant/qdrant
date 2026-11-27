@@ -185,6 +185,28 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
         self.previous_files_info.as_ref()?.get(path)
     }
 
+    /// Files under directory `dir` in the snapshot; empty before
+    /// [`CachedFs::cache_file_info`].
+    ///
+    /// Component-based prefix match, immune to mixed `/` and `\` separators
+    /// on Windows.
+    fn cached_list_files(&self, dir: &Path) -> Vec<ListedFile> {
+        self.files_info
+            .iter()
+            .flatten()
+            .filter(|(path, _)| {
+                path.strip_prefix(dir)
+                    .is_ok_and(|rel| rel.components().next().is_some())
+            })
+            .map(|(path, info)| ListedFile {
+                path: path.clone(),
+                size: info.size,
+                last_modified: info.last_modified,
+                etag: info.etag.clone(),
+            })
+            .collect()
+    }
+
     /// Files matching `prefix_path` in the snapshot; empty before
     /// [`CachedFs::cache_file_info`].
     ///
@@ -193,7 +215,7 @@ impl<Fs: UniversalReadFs> CachedFs<Fs> {
     /// `dir/chunk_1.dat` and everything under `dir/chunk_extra/`) — the
     /// same name-based matching as the local backends, immune to mixed
     /// `/` and `\` separators on Windows.
-    fn cached_list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
+    fn cached_prefix_list_files(&self, prefix_path: &Path) -> Vec<ListedFile> {
         let dir = prefix_path.parent().unwrap_or(Path::new(""));
         let name_prefix = prefix_path
             .file_name()
@@ -282,7 +304,7 @@ impl<Fs: UniversalReadFsAsync> CachedFs<Fs> {
         Ok(())
     }
 
-    /// Selectively populate the file info cache for `paths` instead of listing the whole prefix.
+    /// Selectively populate the file info cache for `paths` instead of listing the whole directory.
     pub async fn select_cache_file_info_async<P: AsRef<Path> + Send + Sync>(
         &mut self,
         paths: &[P],
@@ -453,7 +475,7 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
 }
 
 /// Construction context for [`CachedReadFs`]: the inner filesystem's own
-/// construction context plus the prefix path under which the file listing
+/// construction context plus the directory under which the file listing
 /// snapshot is taken. Always constructed explicitly.
 pub struct CachedReadFsContext<C> {
     pub inner: C,
@@ -473,10 +495,17 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
         Self::new(Fs::from_context(inner)?, &prefix_path)
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
         match &self.files_info {
-            Some(_) => Ok(self.cached_list_files(prefix_path)),
-            None => self.fs.list_files(prefix_path),
+            Some(_) => Ok(self.cached_list_files(dir)),
+            None => self.fs.list_files(dir),
+        }
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        match &self.files_info {
+            Some(_) => Ok(self.cached_prefix_list_files(prefix_path)),
+            None => self.fs.prefix_list_files(prefix_path),
         }
     }
 

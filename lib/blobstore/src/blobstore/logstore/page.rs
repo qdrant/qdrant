@@ -50,7 +50,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         populate: Populate,
     ) -> Result<()> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
+            .prefix_list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -80,7 +80,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         populate: Populate,
     ) -> Result<Self> {
         let page_files: HashSet<_> = fs
-            .list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
+            .prefix_list_files(&dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
             .map(|listed| listed.path)
             .collect();
@@ -215,7 +215,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         populate: Populate,
     ) -> Result<()> {
         let page_list: HashMap<_, _> = fs
-            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .prefix_list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
             .map(|listed| (listed.path, listed.size))
             .collect();
@@ -272,7 +272,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         populate: Populate,
     ) -> Result<Vec<PreloadFuture>> {
         let page_list: HashMap<_, _> = fs
-            .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
+            .prefix_list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
             .map(|listed| (listed.path, listed.size))
             .collect();

@@ -36,9 +36,16 @@ impl AsyncRead for LazyLocalSource {
 
     fn list_files(
         &self,
+        dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        std::future::ready(MmapFs.list_files(dir))
+    }
+
+    fn prefix_list_files(
+        &self,
         prefix: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
-        std::future::ready(MmapFs.list_files(prefix))
+        std::future::ready(MmapFs.prefix_list_files(prefix))
     }
 
     fn exists(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {

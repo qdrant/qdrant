@@ -50,6 +50,13 @@ pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
     /// Build a filesystem handle from its context.
     fn from_context(context: Self::ContextConfig) -> UioResult<Self>;
 
+    /// List all files under directory `dir` (recursing into subdirectories),
+    /// alongside their sizes in bytes.
+    ///
+    /// Example: `./gridstore` returns all files inside `./gridstore/...`,
+    /// without matching sibling paths such as `./gridstore_old/...`.
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>>;
+
     /// List files in the filesystem matching the given prefix, alongside
     /// their sizes in bytes.
     ///
@@ -57,7 +64,7 @@ pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
     /// - `./gridstore/page_1.dat` (size in bytes)
     /// - `./gridstore/page_2.dat` (size in bytes)
     /// - `./gridstore/page_3.dat` (size in bytes)
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>>;
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>>;
 
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> UioResult<bool>;
