@@ -32,7 +32,7 @@ use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardin
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::index::payload_config::StorageType;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{CheckGeoPoint, FieldCondition, GeoPoint, PayloadKeyType};
+use crate::types::{CheckGeoPoint, FieldCondition, GeoPoint, GeoRadius, PayloadKeyType};
 
 /// Shared read-only surface over the geo index variants.
 ///
@@ -193,6 +193,20 @@ pub trait GeoIndexRead {
     }
 }
 
+fn radius_candidate_hashes(radius: &GeoRadius) -> OperationResult<Vec<GeoHash>> {
+    // The encoder maps 90° and the next float below it to the southernmost row.
+    // If the circle can match either latitude, include every bucket so the
+    // exact distance check can find those points in existing indexes.
+    let nearest_wrapped_latitude = radius.center.lat.0.max(90.0_f64.next_down());
+    let nearest_wrapped_point =
+        GeoPoint::new_unchecked(radius.center.lon.0, nearest_wrapped_latitude);
+    if radius.check_point(&nearest_wrapped_point) {
+        return Ok(vec![GeoHash::default()]);
+    }
+
+    circle_hashes(radius, GEO_QUERY_MAX_REGION)
+}
+
 pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
     condition: &FieldCondition,
@@ -211,7 +225,7 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
-        let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
+        let geo_hashes = radius_candidate_hashes(geo_radius)?;
         let geo_condition_copy = *geo_radius;
         return Ok(Some(Box::new(geo.iterator(geo_hashes)?.filter(
             move |&point| {
@@ -255,7 +269,7 @@ pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
     }
 
     if let Some(geo_radius) = &condition.geo_radius {
-        let Some(geo_hashes) = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok() else {
+        let Some(geo_hashes) = radius_candidate_hashes(geo_radius).ok() else {
             return Ok(None);
         };
         let mut estimation = geo.match_cardinality(&geo_hashes)?;
