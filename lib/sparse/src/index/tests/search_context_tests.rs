@@ -1,25 +1,33 @@
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::collections::HashSet;
+use std::mem::offset_of;
 use std::sync::atomic::AtomicBool;
 
+use blink_alloc::Blink;
 use common::ambient;
 use common::ambient::AmbientContext;
 use common::ambient::hw::HwMetric;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, UniversalReadFs};
 use tempfile::TempDir;
+use zerocopy::FromBytes;
 
 use crate::SearchScratch;
 use crate::common::sparse_vector::RemappedSparseVector;
-use crate::common::types::QuantizedU8;
-use crate::index::inverted_index::InvertedIndex;
+use crate::common::types::{QuantizedU8, Weight};
+use crate::index::compressed_posting_list::{CHUNK_SIZE, CompressedPostingChunk};
 use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
-use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
+use crate::index::inverted_index::inverted_index_compressed_mmap::{
+    InvertedIndexCompressedMmap, PostingListFileHeader, index_file_path,
+};
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use crate::index::posting_list_common::PostingListIter;
+use crate::index::inverted_index::{InvertedIndex, InvertedIndexReadOnly};
+use crate::index::posting_list::PostingList;
+use crate::index::posting_list_common::{GenericPostingElement, PostingElementEx, PostingListIter};
 use crate::index::search_context::SearchContext;
 
 /// Match all filter condition for testing
@@ -658,5 +666,242 @@ mod test_mod {
         if index.index.is_cold() {
             assert!(ctx.hw_data()[HwMetric::VectorIoRead] > 0);
         }
+    }
+}
+
+fn posting_list(ids: &[PointOffsetType]) -> PostingList {
+    PostingList {
+        elements: ids
+            .iter()
+            .map(|&record_id| PostingElementEx {
+                record_id,
+                weight: 1.0,
+                max_next_weight: 1.0,
+            })
+            .collect(),
+    }
+}
+
+/// A corrupt index may have posting lists that are not sorted by record id. Searching it must not
+/// panic or index out of bounds.
+#[test]
+fn test_search_unsorted_posting_lists() {
+    let cases = [
+        // An id below the batch start
+        [posting_list(&[9, 4, 20]), posting_list(&[10, 30])],
+        // Last ids below the first ids
+        [posting_list(&[10, 5]), posting_list(&[9, 4])],
+    ];
+
+    let _scope = ambient::test_guard();
+    for [first, second] in cases {
+        let ids: HashSet<_> = [&first, &second]
+            .into_iter()
+            .flat_map(|list| list.elements.iter().map(|element| element.record_id))
+            .collect();
+        let index = InvertedIndexRam {
+            postings: vec![PostingList::default(), first, second],
+            vector_count: ids.len(),
+            total_sparse_size: 0,
+        };
+
+        let is_stopped = AtomicBool::new(false);
+        let mut scratch = SearchScratch::new_for_test();
+        let mut search_context = SearchContext::new(
+            RemappedSparseVector {
+                indices: vec![1, 2],
+                values: vec![1.0, 1.0],
+            },
+            10,
+            &index,
+            &mut scratch,
+            &is_stopped,
+            1,
+        )
+        .unwrap();
+
+        let results = search_context.search(&match_all);
+        assert!(results.iter().all(|result| ids.contains(&result.idx)));
+    }
+}
+
+/// A persisted compressed index, e.g. from a crafted snapshot, may have posting lists that are not
+/// sorted by record id. Searching it must not panic or index out of bounds.
+mod test_search_unsorted_persisted_posting_lists {
+    use super::*;
+
+    #[duplicate::duplicate_item(
+         test_name   W              Idx                                                      Fs         cfg_pred;
+        [iram_f32 ][f32          ][InvertedIndexCompressedImmutableRam::<f32>             ][MmapFs   ][cfg(true)];
+        [iram_f16 ][half::f16    ][InvertedIndexCompressedImmutableRam::<half::f16>       ][MmapFs   ][cfg(true)];
+        [iram_u8  ][u8           ][InvertedIndexCompressedImmutableRam::<u8>              ][MmapFs   ][cfg(true)];
+        [iram_q8  ][QuantizedU8  ][InvertedIndexCompressedImmutableRam::<QuantizedU8>     ][MmapFs   ][cfg(true)];
+        [mmap_f32 ][f32          ][InvertedIndexCompressedMmap::<f32, MmapFile>           ][MmapFs   ][cfg(true)];
+        [mmap_f16 ][half::f16    ][InvertedIndexCompressedMmap::<half::f16, MmapFile>     ][MmapFs   ][cfg(true)];
+        [mmap_u8  ][u8           ][InvertedIndexCompressedMmap::<u8, MmapFile>            ][MmapFs   ][cfg(true)];
+        [mmap_q8  ][QuantizedU8  ][InvertedIndexCompressedMmap::<QuantizedU8, MmapFile>   ][MmapFs   ][cfg(true)];
+        [uring_f32][f32          ][InvertedIndexCompressedMmap::<f32, IoUringFile>        ][IoUringFs][cfg(target_os = "linux")];
+        [uring_f16][half::f16    ][InvertedIndexCompressedMmap::<half::f16, IoUringFile>  ][IoUringFs][cfg(target_os = "linux")];
+        [uring_u8 ][u8           ][InvertedIndexCompressedMmap::<u8, IoUringFile>         ][IoUringFs][cfg(target_os = "linux")];
+        [uring_q8 ][QuantizedU8  ][InvertedIndexCompressedMmap::<QuantizedU8, IoUringFile>][IoUringFs][cfg(target_os = "linux")];
+    )]
+    #[cfg_pred]
+    #[test]
+    fn test_name() {
+        check::<W, Idx, Fs>();
+    }
+
+    /// Writes sorted posting lists to disk, corrupts the file, and searches it through `Idx`.
+    fn check<W: Weight, Idx, Fs>()
+    where
+        Idx: InvertedIndexReadOnly<Fs::File>,
+        Fs: UniversalReadFs + Default,
+    {
+        struct Case {
+            /// Sorted posting lists of dimensions 1 and 2
+            postings: [PostingList; 2],
+            /// Corrupts the index file
+            corrupt: fn(&mut [u8]),
+        }
+
+        let chunked: Vec<_> = (1000..1000 + 2 * CHUNK_SIZE as PointOffsetType).collect();
+        let cases = [
+            // A remainder id below the batch start
+            Case {
+                postings: [posting_list(&[10, 20, 30]), posting_list(&[10, 40])],
+                corrupt: |data| set_remainder_id::<W>(data, 1, 1, 4),
+            },
+            // A chunk below the batch start
+            Case {
+                postings: [posting_list(&chunked), posting_list(&[1000, 2000])],
+                corrupt: |data| set_chunk_initial::<W>(data, 1, 1, 1),
+            },
+            // Last ids below the first ids
+            Case {
+                postings: [posting_list(&[10, 20]), posting_list(&[9, 30])],
+                corrupt: |data| {
+                    set_last_id::<W>(data, 1, 4);
+                    set_last_id::<W>(data, 2, 5);
+                },
+            },
+        ];
+
+        let _scope = ambient::test_guard();
+        for Case {
+            postings: [first, second],
+            corrupt,
+        } in cases
+        {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("test_index_dir")
+                .tempdir()
+                .unwrap();
+            let vector_count = [&first, &second]
+                .into_iter()
+                .flat_map(|list| list.elements.iter().map(|element| element.record_id))
+                .collect::<HashSet<_>>()
+                .len();
+            let ram_index = InvertedIndexRam {
+                postings: vec![PostingList::default(), first, second],
+                vector_count,
+                total_sparse_size: 0,
+            };
+            InvertedIndexCompressedMmap::<W, MmapFile>::from_ram_index(
+                &MmapFs,
+                Cow::Owned(ram_index),
+                temp_dir.path(),
+            )
+            .unwrap();
+
+            let file_path = index_file_path(temp_dir.path());
+            let mut data = fs_err::read(&file_path).unwrap();
+            corrupt(&mut data);
+            fs_err::write(&file_path, data).unwrap();
+
+            let index = Idx::open_ro(&Fs::default(), temp_dir.path()).unwrap();
+
+            // Read back the posting lists, and check the corruption took effect
+            let arena = Blink::new();
+            let mut ids = HashSet::new();
+            let mut is_valid = true;
+            index
+                .get_batch([((), 1), ((), 2)].into_iter(), &arena, |(), iter| {
+                    let last_id = iter.last_id();
+                    let list: Vec<_> = iter.into_std_iter().map(|e| e.record_id).collect();
+                    is_valid &= list.is_sorted() && list.last().copied() == last_id;
+                    ids.extend(list);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(!is_valid, "posting lists must be corrupt");
+
+            let is_stopped = AtomicBool::new(false);
+            let mut scratch = SearchScratch::new_for_test();
+            let mut search_context = SearchContext::new(
+                RemappedSparseVector {
+                    indices: vec![1, 2],
+                    values: vec![1.0, 1.0],
+                },
+                10,
+                &index,
+                &mut scratch,
+                &is_stopped,
+                1,
+            )
+            .unwrap();
+
+            let results = search_context.search(&match_all);
+            assert!(results.iter().all(|result| ids.contains(&result.idx)));
+        }
+    }
+
+    // Helpers to edit an index file, see `InvertedIndexCompressedMmap::convert_and_save` for the
+    // layout
+
+    fn header<W: Weight>(data: &[u8], dim: usize) -> PostingListFileHeader<W> {
+        let offset = dim * size_of::<PostingListFileHeader<W>>();
+        PostingListFileHeader::read_from_prefix(&data[offset..])
+            .unwrap()
+            .0
+    }
+
+    fn set_u32(data: &mut [u8], offset: usize, value: u32) {
+        data[offset..offset + size_of::<u32>()].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn set_last_id<W: Weight>(data: &mut [u8], dim: usize, last_id: PointOffsetType) {
+        let offset = dim * size_of::<PostingListFileHeader<W>>()
+            + offset_of!(PostingListFileHeader<W>, last_id);
+        // Stored plus one, zero means an empty posting list
+        set_u32(data, offset, last_id + 1);
+    }
+
+    fn set_chunk_initial<W: Weight>(
+        data: &mut [u8],
+        dim: usize,
+        chunk: usize,
+        initial: PointOffsetType,
+    ) {
+        let header = header::<W>(data, dim);
+        // `initial` is the first field of the chunk
+        let offset = header.ids_start as usize
+            + header.ids_len as usize
+            + chunk * size_of::<CompressedPostingChunk<W>>();
+        set_u32(data, offset, initial);
+    }
+
+    fn set_remainder_id<W: Weight>(
+        data: &mut [u8],
+        dim: usize,
+        remainder: usize,
+        record_id: PointOffsetType,
+    ) {
+        let header = header::<W>(data, dim);
+        let offset = header.ids_start as usize
+            + header.ids_len as usize
+            + header.chunks_count as usize * size_of::<CompressedPostingChunk<W>>()
+            + remainder * size_of::<GenericPostingElement<W>>()
+            + offset_of!(GenericPostingElement<W>, record_id);
+        set_u32(data, offset, record_id);
     }
 }
