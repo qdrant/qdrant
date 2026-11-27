@@ -900,7 +900,7 @@ mod tests {
             "#,
         );
 
-        // extract and retain structure for arrays arrays
+        // extract and retain structure for arrays
         assert_eq!(
             JsonPath::new("arr[].a").value_get(&map).into_vec(),
             vec![

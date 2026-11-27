@@ -368,7 +368,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                             return false;
                         }
                         Ordering::Less => {
-                            // we can't prune as there the other posting lists contains smaller smaller ids that need to scored first
+                            // we can't prune as there the other posting lists contains smaller ids that need to be scored first
                             return false;
                         }
                         Ordering::Greater => {

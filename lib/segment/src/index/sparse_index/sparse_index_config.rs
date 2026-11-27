@@ -69,7 +69,7 @@ impl SparseIndexType {
 )]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexConfig {
-    /// We prefer a full scan search upto (excluding) this number of vectors.
+    /// We prefer a full scan search up to (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[anonymize(false)]

@@ -4292,7 +4292,7 @@ impl NestedCondition {
 pub enum Condition {
     /// Check if field satisfies provided condition
     Field(FieldCondition),
-    /// Check if payload field is empty: equals to empty array, or does not exists
+    /// Check if payload field is empty: equals to empty array, or does not exist
     IsEmpty(IsEmptyCondition),
     /// Check if payload field equals `NULL`
     IsNull(IsNullCondition),

@@ -18,7 +18,7 @@ pub struct HnswGraphConfig {
     pub ef_construct: usize,
     /// Number of neighbours to hold in the candidate list during search (initialized to `ef_construct`)
     pub ef: usize,
-    /// We prefer a full scan search upto (excluding) this number of vectors.
+    /// We prefer a full scan search up to (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[serde(alias = "indexing_threshold")]

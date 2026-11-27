@@ -25,7 +25,7 @@ pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 #[derive(Default, Debug)]
 pub struct VolatileSparseVectorStorage {
     vectors: Vec<Option<SparseVector>>,
-    /// BitVec for deleted flags. Grows dynamically upto last set flag.
+    /// BitVec for deleted flags. Grows dynamically up to last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
