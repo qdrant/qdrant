@@ -135,17 +135,17 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
             i += 16;
         }
 
-        let mut length = hsum128_ps_sse(sum128_1)
+        let mut length_squared = hsum128_ps_sse(sum128_1)
             + hsum128_ps_sse(sum128_2)
             + hsum128_ps_sse(sum128_3)
             + hsum128_ps_sse(sum128_4);
         for i in 0..n - m {
-            length += (*ptr.add(i)).powi(2);
+            length_squared += (*ptr.add(i)).powi(2);
         }
+        let length = length_squared.sqrt();
         if is_length_zero_or_normalized(length) {
             return vector;
         }
-        length = length.sqrt();
         vector.into_iter().map(|x| x / length).collect()
     }
 }
@@ -236,6 +236,12 @@ mod tests {
             let cosine_simd = unsafe { cosine_preprocess_sse(v1.clone()) };
             let cosine = cosine_preprocess(v1);
             assert_eq!(cosine_simd, cosine);
+
+            let mut small_vector = vec![0.0; 16];
+            small_vector[0] = 1.0e-4;
+            let cosine_simd = unsafe { cosine_preprocess_sse(small_vector) };
+            assert_eq!(cosine_simd[0], 1.0);
+            assert!(cosine_simd[1..].iter().all(|&value| value == 0.0));
         } else {
             println!("sse test skipped");
         }
