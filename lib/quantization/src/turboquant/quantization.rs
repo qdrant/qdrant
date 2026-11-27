@@ -252,16 +252,25 @@ impl TurboQuantizer {
             distance,
             padded_dim,
             folded_factors: Self::folded_factors(bits, error_correction.as_ref()),
-            angular: Self::angular(bits, distance, padded_dim, error_correction.as_ref()),
+            angular: Self::angular(
+                bits,
+                distance,
+                padded_dim,
+                rotation_dim,
+                error_correction.as_ref(),
+            ),
             error_correction,
         }
     }
 
     /// TQ+ 1 and 1.5 bits for Euclid: the correction of the symmetric scores, `None` otherwise.
+    /// `rotation_dim` is the coordinates the rotation fills, fewer than `padded_dim` with
+    /// [`TQRotation::Unpadded`].
     fn angular(
         bits: TQBits,
         distance: DistanceType,
         padded_dim: usize,
+        rotation_dim: usize,
         error_correction: Option<&ErrorCorrection>,
     ) -> Option<AngularCorrection> {
         match bits {
@@ -272,9 +281,17 @@ impl TurboQuantizer {
             DistanceType::L2 => {}
             DistanceType::Cosine | DistanceType::Dot | DistanceType::L1 => return None,
         }
+        let ec = error_correction?;
+        // The rotation leaves the other coordinates at zero in every vector, so their shift is
+        // zero too: the angle and `symmetric_vector` take it to be
+        debug_assert!(
+            ec.shift[rotation_dim..].iter().all(|&shift| shift == 0.0),
+            "TQ+ shift past the {rotation_dim} rotated coordinates",
+        );
         Some(AngularCorrection::new(
             padded_dim,
-            error_correction?.mm_const,
+            rotation_dim,
+            ec.mm_const,
         ))
     }
 
@@ -614,9 +631,10 @@ impl TurboQuantizer {
     ///
     /// Their squared distance is L2's score only where a vector's stored length is its own. At 1
     /// and 1.5 bits with TQ+, L2 scores the vectors that [`AngularCorrection`] rebuilds around
-    /// the shift, so those are returned: the shift plus the signs at the vector's radius, times
-    /// its length. Their distance is only close to the score, which takes the cosine of the
-    /// angle between the signs where the vectors have its linear estimate.
+    /// the shift, so those are returned: the shift plus the signs at the vector's radius in the
+    /// coordinates the rotation fills, the shift alone (zero) in the others, times its length.
+    /// Their distance is only close to the score, which takes the cosine of the angle between
+    /// the signs where the vectors have its linear estimate.
     ///
     /// L1 isn't represented at any width: its score is taken after the inverse rotation, which
     /// doesn't preserve L1 distances.
@@ -630,14 +648,23 @@ impl TurboQuantizer {
             Centroid,
             /// With the TQ+ correction reverted
             Reverted(&'a ErrorCorrection),
-            /// Its sign, `step` away from the shift
-            Rebuilt(&'a ErrorCorrection, f64),
+            /// Its sign, `step` away from the shift, in the `rotation_dim` coordinates the
+            /// rotation fills; the shift in the others
+            Rebuilt {
+                ec: &'a ErrorCorrection,
+                step: f64,
+                rotation_dim: usize,
+            },
         }
         let (centroids, extras) = self.unpack_vector(quantized);
         let (scale, decode) = match (&self.angular, &self.error_correction) {
             (Some(angular), Some(ec)) => (
                 angular.scale(extras.l2_length()),
-                Decode::Rebuilt(ec, f64::from(angular.step(extras.ec_correction()))),
+                Decode::Rebuilt {
+                    ec,
+                    step: f64::from(angular.step(extras.ec_correction())),
+                    rotation_dim: self.rotation.dim(),
+                },
             ),
             (None, Some(ec)) if self.scores_correction() => {
                 (extras.scaling_factor(), Decode::Reverted(ec))
@@ -649,7 +676,18 @@ impl TurboQuantizer {
             let c = match decode {
                 Decode::Centroid => c,
                 Decode::Reverted(ec) => c / f64::from(ec.scale[i]) - f64::from(ec.shift[i]),
-                Decode::Rebuilt(ec, step) => step.copysign(c) - f64::from(ec.shift[i]),
+                Decode::Rebuilt {
+                    ec,
+                    step,
+                    rotation_dim,
+                } => {
+                    let sign = if i < rotation_dim {
+                        step.copysign(c)
+                    } else {
+                        0.0
+                    };
+                    sign - f64::from(ec.shift[i])
+                }
             };
             (c * scale) as f32
         })
@@ -2053,6 +2091,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// TQ+ 1 bit for L2 with [`TQRotation::Unpadded`] at a dim that isn't a multiple of 8: a
+    /// vector and its negation, with the shift at zero. The padding stays zero in both, so their
+    /// signs agree there and differ in every rotated coordinate, which is the opposite direction.
+    /// The score and the vectors PiPNN partitions by both give their exact distance, and those
+    /// vectors are zero in the padding, like the vectors they stand for.
+    #[test]
+    fn unpadded_angle_counts_rotated_coordinates() {
+        let dim = 100;
+        let padded_dim = TurboQuantizer::padded_dim(dim, TQBits::Bits1);
+        assert!(padded_dim > dim);
+        let tq = TurboQuantizer::new(
+            dim,
+            TQBits::Bits1,
+            TQMode::Plus,
+            DistanceType::L2,
+            TQRotation::Unpadded,
+            Some(ErrorCorrection::new(
+                vec![0.0; padded_dim],
+                vec![1.0; padded_dim],
+            )),
+        );
+        let v = random_vector(dim, &mut StdRng::seed_from_u64(42));
+        let negated: Vec<f32> = v.iter().map(|&x| -x).collect();
+        let mut buf = vec![0.0; padded_dim];
+        let (a, b) = (tq.quantize(&v, &mut buf), tq.quantize(&negated, &mut buf));
+        let distance = 4.0 * l2_norm(&v).powi(2);
+
+        let score = f64::from(tq.score_symmetric(&a, &b));
+        assert!(
+            (score - distance).abs() < 1e-4 * distance,
+            "score {score}, distance {distance}",
+        );
+
+        let vector_a: Vec<f32> = tq.symmetric_vector(&a).collect();
+        let vector_b: Vec<f32> = tq.symmetric_vector(&b).collect();
+        let of_vectors: f64 = (vector_a.iter().zip(&vector_b))
+            .map(|(&x, &y)| (f64::from(x) - f64::from(y)).powi(2))
+            .sum();
+        let padding = &vector_a[dim..];
+        assert!(
+            (of_vectors - distance).abs() < 1e-4 * distance,
+            "distance of the vectors {of_vectors}, distance {distance}, padding {padding:?}",
+        );
+        assert!(padding.iter().all(|&x| x == 0.0), "padding {padding:?}");
     }
 
     /// Sanity-check that [`TurboQuantizer::precompute_query`] +
