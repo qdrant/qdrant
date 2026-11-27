@@ -241,6 +241,45 @@ async fn text_query_fuses_with_a_dense_prefetch() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn hybrid_query_breaks_rrf_ties_by_id_at_limit() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 1).await;
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![1.0, 0.0, 0.0, 0.0].into(),
+        "",
+    )));
+    let prefetch = |query, id: u64| ShardPrefetch {
+        prefetches: Vec::new(),
+        query: Some(query),
+        limit: 1,
+        params: None,
+        filter: Some(Filter::new_must(Condition::HasId(HasIdCondition::from(
+            AHashSet::from([id.into()]),
+        )))),
+        score_threshold: None,
+    };
+    let request = ShardQueryRequest {
+        prefetches: vec![prefetch(dense, 1), prefetch(text_query("alpha"), 2)],
+        ..request(
+            ScoringQuery::Fusion(FusionInternal::Rrf {
+                k: 2,
+                weights: None,
+            }),
+            1,
+            0,
+        )
+    };
+
+    // Both points are first in their own prefetch, so they score 1 / k.
+    // Repeat to exercise the hash map's varying order on the fusion path.
+    for _ in 0..32 {
+        let points = query(&collection, request.clone(), ShardSelectorInternal::All).await;
+        let ranked = points.iter().map(|p| (id_of(p), p.score)).collect_vec();
+        assert_eq!(ranked, [(2, 0.5)]);
+    }
+}
+
 /// BM25 as a rescore of a dense prefetch, over two shards: each shard scores
 /// the points it prefetched against its own statistics, as the text query
 /// would score them under a filter on those ids. A prefetched point holding

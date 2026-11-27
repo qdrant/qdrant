@@ -471,3 +471,43 @@ async fn test_score_bm25_across_segments() {
         "the moved point ranks, by its newer copy",
     );
 }
+
+#[tokio::test]
+async fn test_score_bm25_breaks_ties_by_id_at_limit() {
+    use segment::data_types::index::TextIndexParams;
+
+    let _scoring = TextIndexParams::override_scoring(true);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut holder = SegmentHolder::default();
+    for (name, ids) in [("a", [1, 4]), ("b", [2, 3])] {
+        // Start each segment with a point outside the expected top two. This
+        // exercises the cutoff regardless of which segment completes first.
+        let docs = ids
+            .into_iter()
+            .enumerate()
+            .map(|(i, id)| (id, i as u64 + 1, "alpha".to_owned()));
+        holder.add_new(text_segment(&dir.path().join(name), docs));
+    }
+
+    let points = SegmentsSearcher::score_bm25(
+        LockedSegmentHolder::new(holder),
+        JsonPath::new("text"),
+        vec!["alpha".to_owned()],
+        Bm25Params::default(),
+        None,
+        None,
+        2,
+        WithPayload::from(false),
+        WithVector::Bool(false),
+        &AdaptiveSearchHandle::current_for_tests(),
+        &StoppingGuard::new(),
+        TEST_TIMEOUT,
+    )
+    .measured(AmbientContext::new())
+    .await
+    .unwrap();
+
+    let ids: Vec<_> = points.iter().map(|point| point.id).collect();
+    assert_eq!(ids, [4.into(), 3.into()]);
+    assert_eq!(points[0].score, points[1].score);
+}
