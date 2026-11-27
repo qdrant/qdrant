@@ -4,7 +4,7 @@ use std::arch::aarch64::*;
 #[cfg(target_feature = "neon")]
 use common::types::ScoreType;
 
-use super::tools::is_length_zero_or_normalized;
+use super::tools::{cosine_preprocess_underflowing_norm, is_length_zero_or_normalized};
 use crate::data_types::vectors::DenseVector;
 #[cfg(target_feature = "neon")]
 use crate::data_types::vectors::VectorElementType;
@@ -124,6 +124,10 @@ pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVec
 
         for v in vector.iter().take(n).skip(m) {
             length += v.powi(2);
+        }
+        if length == 0.0 {
+            cosine_preprocess_underflowing_norm(&mut vector);
+            return vector;
         }
         if is_length_zero_or_normalized(length) {
             return vector;
