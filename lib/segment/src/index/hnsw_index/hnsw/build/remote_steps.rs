@@ -194,13 +194,26 @@ pub(super) fn build_fallback_field_blocks(
     builder.build_loaded_field_blocks(&counter, skip, blocks)
 }
 
+/// A lower bound on the average number of level 0 links per point of the finished main graph,
+/// as [`BlockFilter`](super::block_filter::BlockFilter) measures it.
+///
+/// A point of the graph has at least `m0 / 4` links on average. The measured average is over
+/// all `total` points though, and only the `indexed` ones have links: deleted points and
+/// points without this vector have none.
+fn min_average_links(m0: usize, indexed: usize, total: usize) -> usize {
+    if total == 0 {
+        return 0;
+    }
+    m0 * indexed / (4 * total)
+}
+
 /// Prepare the payload blocks of a remote build and append them to `stream`, in build order,
 /// while the indexer builds the main graph. Does not finish the stream.
 ///
 /// Leaves out mostly deleted blocks, and blocks too large to ever be built. The local size
 /// limit depends on the average connectivity of the finished main graph, which is remote, so
-/// this uses a bound that is never below it: average connectivity is at least `m0 / 4`. The
-/// indexer applies the exact limit, and the connectivity check (O1).
+/// this uses a bound that is not below it, see [`min_average_links`]. The indexer applies the
+/// exact limit, and the connectivity check (O1).
 fn stream_payload_blocks<'f>(
     fields: impl IntoIterator<Item = (&'f PayloadKeyType, &'f PayloadFieldSchema)>,
     payload_index: &StructPayloadIndex,
@@ -210,10 +223,15 @@ fn stream_payload_blocks<'f>(
     stopped: &AtomicBool,
     stream: &BlockStream,
 ) -> OperationResult<()> {
-    // The limit of `BlockFilter`, with the lower bound on connectivity above
+    // The limit of `BlockFilter`, with a lower bound on connectivity
+    let total_vector_count = vector_storage.total_vector_count();
     let max_block_size = max_block_size(
-        vector_storage.total_vector_count(),
-        config.m0 / 4,
+        total_vector_count,
+        min_average_links(
+            config.m0,
+            vector_storage.available_vector_count(),
+            total_vector_count,
+        ),
         has_main_graph,
     );
 
@@ -274,4 +292,33 @@ fn vector_name_from_index_path(path: &Path) -> String {
             .join("/");
     }
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Core must not leave out a block that a local build would link. A local build measures
+    /// the average links over all points, with and without the vector.
+    #[test]
+    fn block_limit_follows_the_share_of_indexed_points() {
+        let m0 = 32;
+        let total = 100_000;
+        // Every point has the vector: at least `m0 / 4` links on average
+        assert_eq!(min_average_links(m0, total, total), 8);
+        assert_eq!(
+            max_block_size(total, min_average_links(m0, total, total), true),
+            50_000,
+        );
+
+        // A tenth of the points has the vector, with 30 links each: a local build measures 3
+        // links on average, so its limit is above the point count and it links every block
+        let indexed = total / 10;
+        let local_limit = max_block_size(total, 3, true);
+        assert!(local_limit > total);
+        let core_limit = max_block_size(total, min_average_links(m0, indexed, total), true);
+        assert!(core_limit >= local_limit);
+
+        assert_eq!(min_average_links(m0, 0, 0), 0);
+    }
 }
