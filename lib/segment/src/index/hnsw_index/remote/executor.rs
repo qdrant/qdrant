@@ -431,7 +431,6 @@ fn build(
         params,
         stopped,
         next: 0,
-        last_block: Instant::now(),
         error: None,
     };
     let graph = build_requested_graph(
@@ -467,8 +466,6 @@ struct BlockReader<'a> {
     stopped: &'a AtomicBool,
     /// Sequence number of the next block.
     next: u64,
-    /// When the last block arrived, or reading started: the wait limit counts from it.
-    last_block: Instant,
     /// The source error that ended reading, if any.
     error: Option<SourceError>,
 }
@@ -480,6 +477,10 @@ impl BlockReader<'_> {
         if !self.params.has_payload_blocks {
             return Ok(None);
         }
+        // The limit is on waiting for core. Counted from the last block, it would also take
+        // the time the indexer spent building: the main graph before the first request, and
+        // the blocks of a batch before the next one.
+        let asked = Instant::now();
         loop {
             check_process_stopped(self.stopped)?;
             let batch = match self.source.read_payload_blocks(self.next) {
@@ -494,11 +495,10 @@ impl BlockReader<'_> {
                 BlocksBatch::Blocks { first, blocks } => {
                     self.check(first, &blocks)?;
                     self.next += blocks.len() as u64;
-                    self.last_block = Instant::now();
                     return Ok(Some(blocks));
                 }
                 BlocksBatch::NotReady => {
-                    let waited = self.last_block.elapsed();
+                    let waited = asked.elapsed();
                     if waited > self.params.max_block_wait {
                         let reason = format!(
                             "no payload block from core in {:?} (limit {:?})",
@@ -810,7 +810,6 @@ mod tests {
             params: &params,
             stopped: &stopped,
             next: 0,
-            last_block: Instant::now(),
             error: None,
         };
         let started = Instant::now();
@@ -819,6 +818,61 @@ mod tests {
         assert!(
             matches!(reader.error, Some(SourceError::Other(ref reason)) if reason.contains("no payload block"))
         );
+    }
+
+    /// A core that needs a few requests to get its last block ready.
+    struct AlmostReadyCore(std::sync::atomic::AtomicUsize);
+
+    impl TaskSource for AlmostReadyCore {
+        fn get_task(&self) -> SourceResult<FetchedTask> {
+            unimplemented!()
+        }
+
+        fn read_vectors(
+            &self,
+            _start: PointOffsetType,
+            _end: PointOffsetType,
+            _sink: &mut dyn FnMut(PointOffsetType, &[u8]) -> SourceResult<()>,
+        ) -> SourceResult<()> {
+            unimplemented!()
+        }
+
+        fn read_payload_blocks(&self, _next: u64) -> SourceResult<BlocksBatch> {
+            if self.0.fetch_add(1, Ordering::Relaxed) < 2 {
+                Ok(BlocksBatch::NotReady)
+            } else {
+                Ok(BlocksBatch::Finished)
+            }
+        }
+
+        fn heartbeat(&self, _progress: TaskProgress) -> SourceResult<HeartbeatAction> {
+            unimplemented!()
+        }
+
+        fn upload(&self, _graph: WireGraph) -> SourceResult<()> {
+            unimplemented!()
+        }
+
+        fn fail(&self, _reason: &str) -> SourceResult<()> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn building_does_not_count_as_waiting_for_payload_blocks() {
+        let params = params(Duration::from_millis(300));
+        let stopped = AtomicBool::new(false);
+        let source = AlmostReadyCore(std::sync::atomic::AtomicUsize::new(0));
+        let mut reader = BlockReader {
+            source: &source,
+            params: &params,
+            stopped: &stopped,
+            next: 0,
+            error: None,
+        };
+        // The main graph takes longer to build than the wait limit
+        std::thread::sleep(params.max_block_wait + Duration::from_millis(100));
+        assert_eq!(reader.next_batch().unwrap(), None);
     }
 
     #[test]
@@ -830,7 +884,6 @@ mod tests {
             params: &params,
             stopped: &stopped,
             next: 3,
-            last_block: Instant::now(),
             error: None,
         };
         let block = |points: Vec<PointOffsetType>| StreamedBlock {
