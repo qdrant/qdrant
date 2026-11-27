@@ -9,7 +9,8 @@ use common::cpu::linux_low_thread_priority;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use log::debug;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng as _};
 use rayon::ThreadPool;
 
 use super::old_index::{OldIndexCandidate, payload_hnsw_m};
@@ -28,6 +29,7 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod block;
 mod block_filter;
+mod build_vectors;
 mod context;
 #[cfg(feature = "gpu")]
 mod gpu_builder;
@@ -49,6 +51,7 @@ mod remote_steps;
 mod remote_steps;
 
 use self::block_filter::BlockSkip;
+use self::build_vectors::BuildVectors;
 use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
 use self::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
 use self::payload_blocks::{BlockLoader, FieldBlocks, field_payload_blocks, payload_block_fields};
@@ -101,6 +104,16 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
+        // MEASUREMENT REFERENCE, NOT FOR MERGE: vectors to build from in place of the segment's
+        // own, see `build_vectors.rs`. Saving and searching the graph still use the own ones.
+        let build_vectors =
+            BuildVectors::from_env(path, &vector_storage_ref, permit.num_cpus as usize, stopped)?;
+        let (build_storage, build_quantized) = BuildVectors::select(
+            build_vectors.as_ref(),
+            &vector_storage_ref,
+            quantized_vectors_ref.as_ref(),
+        );
+
         let payload_m = payload_hnsw_m(&config);
         let num_entries = std::cmp::max(
             1,
@@ -111,9 +124,9 @@ impl HNSWIndex {
         );
         let mut ctx = GraphBuildContext {
             id_tracker: &id_tracker_ref,
-            vector_storage: &vector_storage_ref,
+            vector_storage: build_storage,
             vector_deleted: vector_storage_ref.deleted_vector_bitslice(),
-            quantized_vectors: quantized_vectors_ref.as_ref(),
+            quantized_vectors: build_quantized,
             progress: None,
             main_params: GraphParams {
                 hnsw_m: HnswM::new(config.m, config.m0),
@@ -147,7 +160,9 @@ impl HNSWIndex {
             &quantized_vectors,
             quantized_vectors_ref.as_ref(),
             &progress,
-        );
+        )
+        // A remote indexer would build from the segment's own vectors
+        .filter(|_| build_vectors.is_none());
         let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
             let progress_additional_links = progress.subtask("additional_links");
             let fields = payload_block_fields
@@ -186,10 +201,15 @@ impl HNSWIndex {
 
         // `R` may be unsized, while `&mut R` is not
         let mut rng = rng;
+        let mut seeded_rng = build_vectors::seed_from_env()?.map(StdRng::seed_from_u64);
+        let rng: &mut dyn Rng = match seeded_rng.as_mut() {
+            Some(seeded_rng) => seeded_rng,
+            None => &mut rng,
+        };
         let mut builder = GraphBuilder::select(
             ctx,
             &pool,
-            &mut rng as &mut dyn Rng,
+            rng,
             GraphBuildOptions {
                 old_index: old_index.as_ref(),
                 gpu_device,
@@ -278,6 +298,8 @@ impl HNSWIndex {
         // Consumes the builder: what it holds is released before the graph is saved
         let (graph_layers_builder, indexed_vectors) = builder.finalize()?;
         drop(old_index);
+        // Deletes the copy or quantized vectors the graph was built from
+        drop(build_vectors);
 
         config.indexed_vector_count.replace(indexed_vectors);
 
