@@ -45,6 +45,7 @@ use crate::collection_manager::fixtures::{
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::TrackerStatus;
+use crate::collection_manager::optimizers::segment_optimizer::PlanMode;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -91,6 +92,7 @@ async fn test_optimization_process() {
         segments.clone(),
         || {},
         None,
+        PlanMode::Ingest,
     );
 
     // We expect a total of 2 optimizations for the above segments
@@ -134,6 +136,7 @@ async fn test_optimization_process() {
         segments.clone(),
         || {},
         None,
+        PlanMode::Ingest,
     );
 
     // Because we may not have completed all optimizations due to limited CPU budget, we may expect
@@ -232,6 +235,7 @@ async fn optimization_keeps_manifest_consistent_with_live_segments() {
             segments.clone(),
             || {},
             None,
+            PlanMode::Ingest,
         );
         if handles.is_empty() {
             break;
@@ -294,6 +298,7 @@ async fn test_cancel_optimization() {
         segments.clone(),
         || {},
         None,
+        PlanMode::Ingest,
     );
 
     sleep(Duration::from_millis(100)).await;

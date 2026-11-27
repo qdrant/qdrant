@@ -77,7 +77,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, PostFlushOutcome, SegmentHolder,
 };
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
+use crate::collection_manager::optimizers::segment_optimizer::{PlanMode, plan_optimizations};
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::file_utils::{move_dir, move_file};
@@ -1376,7 +1376,7 @@ impl LocalShard {
         let segments = self.segments.read();
 
         let mut remaining: HashMap<_, _> = segments.iter_original().collect();
-        let scheduled = plan_optimizations(&segments, &self.optimizers.load());
+        let scheduled = plan_optimizations(&segments, &self.optimizers.load(), PlanMode::Ingest);
         let queued = scheduled
             .into_iter()
             .map(|(optimizer, segment_ids)| PendingOptimization {

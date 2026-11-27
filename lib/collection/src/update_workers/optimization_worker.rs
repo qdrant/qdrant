@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::budget::ResourceBudget;
 use common::reason::reason;
@@ -23,7 +23,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
+use crate::collection_manager::optimizers::segment_optimizer::{PlanMode, plan_optimizations};
 use crate::collection_manager::optimizers::{
     Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
 };
@@ -32,6 +32,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
+use crate::update_workers::ingest_activity::IngestActivity;
 use crate::wal_delta::LockedWal;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
@@ -70,6 +71,8 @@ impl UpdateWorkers {
         // Asynchronous task to trigger optimizers once CPU budget is available again
         let mut resource_available_trigger: Option<JoinHandle<()>> = None;
 
+        let mut ingest_activity = IngestActivity::new(Instant::now());
+
         loop {
             let result = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv()).await;
 
@@ -83,7 +86,10 @@ impl UpdateWorkers {
             // 3. break here and stop the optimization worker
             let ignore_max_handles = match result {
                 // Regular optimizer signal: run optimizers: do 1
-                Ok(Some(OptimizerSignal::Operation(_))) => false,
+                Ok(Some(OptimizerSignal::Operation(_))) => {
+                    ingest_activity.record_update(Instant::now());
+                    false
+                }
                 // Optimizer signal ignoring max handles: do 1
                 Ok(Some(OptimizerSignal::Nop)) => true,
                 // Hit optimizer cleanup interval, did clean up a task: do 1
@@ -98,6 +104,13 @@ impl UpdateWorkers {
                         "Cleaned an optimization handle after timeout, explicitly triggering optimizers",
                     );
                     true
+                }
+                // Hit optimizer cleanup interval, updates stopped a while ago: do 1
+                // Nothing else triggers optimizers on an idle shard, and planning differs
+                // from the last time they ran, see `PlanMode`.
+                Err(Elapsed { .. }) if ingest_activity.take_idle_pass(Instant::now()) => {
+                    log::debug!("No updates for a while, checking optimizers for an idle shard");
+                    false
                 }
                 // Hit optimizer cleanup interval, did not clean up a task: do 2
                 Err(Elapsed { .. }) => continue,
@@ -201,6 +214,7 @@ impl UpdateWorkers {
                 sender.clone(),
                 optimization_finished_sender.clone(),
                 limit,
+                ingest_activity.plan_mode(Instant::now()),
             )
             .await;
             let mut handles = optimization_handles.lock().await;
@@ -250,6 +264,7 @@ impl UpdateWorkers {
         sender: Sender<OptimizerSignal>,
         optimization_finished_sender: watch::Sender<()>,
         limit: usize,
+        mode: PlanMode,
     ) -> Vec<StoppableTaskHandle<bool>> {
         // Planning takes the segment holder read lock and builds the optimization plan
         // synchronously - keep it off the async worker.
@@ -272,6 +287,7 @@ impl UpdateWorkers {
                     let _ = sender.try_send(OptimizerSignal::Nop);
                 },
                 Some(limit),
+                mode,
             )
         })
         .await;
@@ -290,6 +306,7 @@ impl UpdateWorkers {
     /// Checks conditions for all optimizers until there is no suggested segment
     /// Starts a task for each optimization
     /// Returns handles for started tasks
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
@@ -298,6 +315,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         callback: F,
         limit: Option<usize>,
+        mode: PlanMode,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
         F: Fn() + Send + Clone + Sync + 'static,
@@ -305,7 +323,7 @@ impl UpdateWorkers {
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        let scheduled = plan_optimizations(&segments.read(), &optimizers);
+        let scheduled = plan_optimizations(&segments.read(), &optimizers, mode);
         for (optimizer, segments_to_merge) in scheduled {
             // Return early if we reached the optimization job limit
             if limit.is_some_and(|extra| handles.len() >= extra) {

@@ -43,7 +43,7 @@ mod tests {
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::config::{DenseVectorOptimizerConfig, SegmentOptimizerConfig};
-    use shard::optimizers::segment_optimizer::SegmentOptimizer;
+    use shard::optimizers::segment_optimizer::{PlanMode, SegmentOptimizer};
     use shard::segment_holder::FlushMode;
     use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
@@ -142,6 +142,14 @@ mod tests {
 
     /// Plan merges for segments of the given sizes (KiB == vectors at dim 256).
     fn plan_sizes(sizes: &[usize], max_segment_size_kb: usize) -> Vec<Vec<usize>> {
+        plan_sizes_in_mode(sizes, max_segment_size_kb, PlanMode::Ingest)
+    }
+
+    fn plan_sizes_in_mode(
+        sizes: &[usize],
+        max_segment_size_kb: usize,
+        mode: PlanMode,
+    ) -> Vec<Vec<usize>> {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dim = 256;
@@ -158,7 +166,7 @@ mod tests {
             .max_segment_size_kb = max_segment_size_kb;
         let locked_holder = LockedSegmentHolder::new(holder);
         merge_optimizer
-            .plan_optimizations_for_test(&locked_holder)
+            .plan_optimizations_for_test_in_mode(&locked_holder, mode)
             .into_iter()
             .map(|batch| batch.iter().map(|id| id_to_size[id]).sorted().collect())
             .collect()
@@ -212,6 +220,25 @@ mod tests {
         );
         // A segment already at 90% of the cap is not padded again.
         assert_eq!(plan_sizes(&[20, 30, 1900], 2000), Vec::<Vec<usize>>::new());
+    }
+
+    #[test]
+    fn test_merge_ignores_the_size_ratio_on_an_idle_shard() {
+        // What an upload leaves behind: segments too far apart in size for the
+        // ratio, next to full ones. They are held while more may arrive.
+        let leftovers = [20, 100, 400, 1900, 1900, 1900];
+        assert_eq!(plan_sizes(&leftovers, 2000), Vec::<Vec<usize>>::new());
+        // Nothing more arrives on an idle shard, so they merge.
+        assert_eq!(
+            plan_sizes_in_mode(&leftovers, 2000, PlanMode::Idle),
+            vec![vec![20, 100, 400]]
+        );
+        // The size cap still holds (1900 does not fit), and a merge of two
+        // segments would not reduce the segment count.
+        assert_eq!(
+            plan_sizes_in_mode(&[20, 400, 1900], 2000, PlanMode::Idle),
+            Vec::<Vec<usize>>::new()
+        );
     }
 
     #[test]

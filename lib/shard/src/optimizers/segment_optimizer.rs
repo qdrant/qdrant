@@ -47,6 +47,20 @@ pub fn max_num_indexing_threads(segment_optimizer_config: &SegmentOptimizerConfi
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
+/// What the shard is doing while optimizations are planned.
+///
+/// Planning for an ongoing upload favors low write amplification: more
+/// segments keep arriving, so a merge that rewrites a lot of data to absorb a
+/// little can wait for a better batch. Once uploads stop no better batch will
+/// come, and the remaining segments are consolidated for search instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanMode {
+    /// Updates are arriving, or arrived recently.
+    Ingest,
+    /// No update arrived for a while.
+    Idle,
+}
+
 struct ShardOptimizationStrategy<'a, O: SegmentOptimizer + ?Sized> {
     optimizer: &'a O,
 }
@@ -110,9 +124,19 @@ pub trait SegmentOptimizer: Sync {
     /// Simplified interface and extra checks.
     #[cfg(any(test, feature = "testing"))]
     fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
+        self.plan_optimizations_for_test_in_mode(segments, PlanMode::Ingest)
+    }
+
+    /// Like [`SegmentOptimizer::plan_optimizations_for_test`], for a given [`PlanMode`].
+    #[cfg(any(test, feature = "testing"))]
+    fn plan_optimizations_for_test_in_mode(
+        &self,
+        segments: &LockedSegmentHolder,
+        mode: PlanMode,
+    ) -> Vec<Vec<SegmentId>> {
         let segments = segments.read();
 
-        let mut planner = OptimizationPlanner::new(0, segments.iter_original());
+        let mut planner = OptimizationPlanner::new(0, segments.iter_original(), mode);
         self.plan_optimizations(&mut planner);
         let result = planner.into_scheduled_for_test();
 
@@ -122,8 +146,11 @@ pub trait SegmentOptimizer: Sync {
             for &id in batch {
                 remaining.remove(&id);
             }
-            let mut planner =
-                OptimizationPlanner::new(i + 1, remaining.iter().map(|(&id, &seg)| (id, seg)));
+            let mut planner = OptimizationPlanner::new(
+                i + 1,
+                remaining.iter().map(|(&id, &seg)| (id, seg)),
+                mode,
+            );
             self.plan_optimizations(&mut planner);
             let actual = planner.into_scheduled_for_test();
             let expected = &result[i + 1..];
@@ -430,10 +457,12 @@ pub struct OptimizationPlanner<'a> {
     /// This goes into [`Self::scheduled`].
     /// Should be set before calling [`Self::plan`].
     optimizer: Option<Arc<Optimizer>>,
+
+    mode: PlanMode,
 }
 
 impl<'a> OptimizationPlanner<'a> {
-    pub fn new<I>(running: usize, segments: I) -> Self
+    pub fn new<I>(running: usize, segments: I, mode: PlanMode) -> Self
     where
         I: IntoIterator<Item = (SegmentId, &'a Arc<RwLock<Segment>>)>,
     {
@@ -442,7 +471,12 @@ impl<'a> OptimizationPlanner<'a> {
             scheduled: Vec::new(),
             running,
             optimizer: None,
+            mode,
         }
+    }
+
+    pub fn mode(&self) -> PlanMode {
+        self.mode
     }
 
     pub fn remaining(&self) -> &BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>> {
@@ -482,10 +516,12 @@ impl<'a> OptimizationPlanner<'a> {
 pub fn plan_optimizations(
     segments: &SegmentHolder,
     optimizers: &[Arc<Optimizer>],
+    mode: PlanMode,
 ) -> Vec<(Arc<Optimizer>, Vec<SegmentId>)> {
     let mut planner = OptimizationPlanner::new(
         segments.running_optimizations.count(),
         segments.iter_original(),
+        mode,
     );
     for optimizer in optimizers {
         planner.optimizer = Some(Arc::clone(optimizer));
