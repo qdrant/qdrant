@@ -3323,10 +3323,21 @@ fn lifecycle_additions_work() {
     // `create` on an occupied path must fail; on a fresh path it must work.
     // `.err().expect()`: see note above — the Ok type is a non-`Debug`
     // UniFFI object.
+    // While `shard` holds the path, its directory lock refuses `create` first.
+    let err = EdgeShard::create(path_string.clone(), make_config())
+        .err()
+        .expect("create over a held shard must fail");
+    assert!(matches!(err, EdgeError::ShardLocked), "got {err:?}");
+    // Once it is released, the existing segments refuse it.
+    shard.unload().expect("unload failed");
+    drop(shard);
     let err = EdgeShard::create(path_string, make_config())
         .err()
         .expect("create over an existing shard must fail");
-    assert!(matches!(err, EdgeError::OperationError { .. }));
+    assert!(
+        matches!(err, EdgeError::OperationError { .. }),
+        "got {err:?}"
+    );
 
     let dir2 = tempfile::tempdir().expect("tempdir failed");
     let fresh = EdgeShard::create(dir2.path().to_string_lossy().into_owned(), make_config())
@@ -4815,4 +4826,477 @@ fn nested_field_index_through_ffi() {
 
     let shard: Arc<EdgeShard> = EdgeShard::load(path, None).expect("reload failed");
     assert_nested(&shard);
+}
+
+// ── Unreadable + ShardLocked + clear ──────────────────────────────────────────
+
+/// Existing on-disk data that is present but won't open surfaces as the distinct
+/// `Unreadable`, not a generic `OperationError`, so a caller can tell it apart
+/// from an empty path and refuse to recreate over recoverable data.
+#[test]
+fn load_of_corrupt_config_reports_unreadable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    // Corrupt the persisted config: the shard data is present, but load can't
+    // read it — must be `Unreadable`, never a silent empty-start.
+    fs_err::write(dir.path().join("edge_config.json"), b"{ this is not valid")
+        .expect("corrupt config");
+
+    let Err(err) = EdgeShard::load(path, None) else {
+        panic!("load must fail on a corrupt persisted config");
+    };
+    let EdgeError::Unreadable { reason } = err else {
+        panic!("expected Unreadable, got {err:?}");
+    };
+    assert!(
+        !reason.is_empty(),
+        "Unreadable must carry the underlying cause as `reason`",
+    );
+}
+
+/// Corrupt *segments* (not the config) — the data-safety-critical path — must
+/// also surface `Unreadable`. The `version.info` marker is left intact so the
+/// loader tries to open the segment (a marker-less dir is silently reclaimed);
+/// corrupting the segment metadata then fails the open.
+#[test]
+fn load_of_corrupt_segment_reports_unreadable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    // Find the persisted segment dir and corrupt its metadata, leaving
+    // `version.info` in place so the dir is opened rather than reclaimed.
+    let seg_dir = fs_err::read_dir(dir.path().join("segments"))
+        .expect("segments dir")
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.is_dir())
+        .expect("a persisted segment dir");
+    fs_err::write(seg_dir.join("segment.json"), b"{ not valid segment json")
+        .expect("corrupt segment metadata");
+
+    let Err(err) = EdgeShard::load(path, None) else {
+        panic!("load must fail on a corrupt persisted segment");
+    };
+    assert!(
+        matches!(err, EdgeError::Unreadable { .. }),
+        "corrupt segments must be Unreadable (do-not-overwrite), got {err:?}",
+    );
+}
+
+/// The recoverable counter-case: when only the `edge_config.json` sidecar is
+/// missing but the segments are intact, `load(path, None)` must rebuild the
+/// config from the segments and reopen the data — NOT fail, and NOT be treated
+/// as empty. This is the "present but readable, do not overwrite" property that
+/// makes `Unreadable` meaningful.
+#[test]
+fn load_recovers_when_only_config_sidecar_is_deleted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    fs_err::remove_file(dir.path().join("edge_config.json")).expect("remove config sidecar");
+
+    let shard = EdgeShard::load(path, None).expect("must recover config from segments");
+    assert_eq!(
+        shard.info().expect("info").points_count,
+        3,
+        "all points must survive a config-sidecar deletion",
+    );
+}
+
+/// A corrupt WAL (segments intact) is a *non-lock* WAL-open failure, distinct
+/// from `ShardLocked`. It must surface as `Unreadable` — a caller that recreates
+/// on any non-`Unreadable` error would otherwise clobber the intact segments.
+#[test]
+fn load_of_corrupt_wal_reports_unreadable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    // Scribble over every WAL file, leaving the segments untouched.
+    for entry in fs_err::read_dir(dir.path().join("wal"))
+        .expect("wal dir")
+        .filter_map(Result::ok)
+    {
+        if entry.path().is_file() {
+            fs_err::write(entry.path(), b"\x00\x01\x02 not a valid wal file")
+                .expect("corrupt wal file");
+        }
+    }
+
+    let Err(err) = EdgeShard::load(path, None) else {
+        panic!("load must fail on a corrupt WAL");
+    };
+    assert!(
+        matches!(err, EdgeError::Unreadable { .. }),
+        "corrupt WAL must be Unreadable (do-not-overwrite), got {err:?}",
+    );
+}
+
+/// Regression: a corrupt WAL must stay `Unreadable` even when the shard path
+/// itself contains the substring "WouldBlock" — the WAL-lock classification must
+/// match the io-error tail, not the path in the error's outer wrap.
+#[test]
+fn corrupt_wal_under_wouldblock_path_is_unreadable_not_locked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shard_dir = dir.path().join("WouldBlock");
+    fs_err::create_dir(&shard_dir).expect("create WouldBlock dir");
+    let path = shard_dir.to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    for entry in fs_err::read_dir(shard_dir.join("wal"))
+        .expect("wal dir")
+        .filter_map(Result::ok)
+    {
+        if entry.path().is_file() {
+            fs_err::write(entry.path(), b"\x00\x01\x02 not a valid wal file")
+                .expect("corrupt wal file");
+        }
+    }
+
+    let Err(err) = EdgeShard::load(path, None) else {
+        panic!("load must fail on a corrupt WAL");
+    };
+    assert!(
+        matches!(err, EdgeError::Unreadable { .. }),
+        "corrupt WAL under a 'WouldBlock' path must be Unreadable, not ShardLocked; got {err:?}",
+    );
+}
+
+/// A second load of a shard another handle already holds fails with the distinct
+/// `ShardLocked`, not a generic `OperationError` (and not `Unreadable` — the data
+/// is fine, another handle just holds the WAL lock).
+#[test]
+fn load_of_locked_shard_reports_shard_locked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    // First handle holds the WAL flock for its lifetime (not unloaded).
+    let s1 = EdgeShard::load(path.clone(), Some(make_config())).expect("first load");
+    upsert_three(&s1);
+
+    // `Arc<EdgeShard>` is not Debug, so `let...else` instead of `expect_err`.
+    let Err(err) = EdgeShard::load(path.clone(), None) else {
+        panic!("second load must fail while the first handle holds the shard");
+    };
+    assert!(
+        matches!(err, EdgeError::ShardLocked),
+        "expected ShardLocked, got {err:?}",
+    );
+
+    s1.unload().expect("unload");
+}
+
+/// A provided config that contradicts intact, readable stored segments is a
+/// bad-argument case, not do-not-overwrite: the data reads fine. It must surface
+/// as `InvalidArgument` ("fix your config") — never `Unreadable` (wrong advice,
+/// the data is fine) and never a silent empty-start (which would strand the
+/// mismatched data). This pins the last "data is present" branch of the
+/// do-not-overwrite contract at load.
+#[test]
+fn load_with_config_incompatible_with_segments_reports_invalid_argument() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    {
+        let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+        upsert_three(&shard);
+        shard.flush().expect("flush");
+        shard.unload().expect("unload");
+    }
+    // Reopen with a config whose vector size (8) contradicts the stored data (4).
+    let mut mismatched = make_config();
+    mismatched
+        .vector_data
+        .get_mut("vec")
+        .expect("make_config has a \"vec\" vector")
+        .size = 8;
+
+    let Err(err) = EdgeShard::load(path, Some(mismatched)) else {
+        panic!("load must reject a config that contradicts stored segments");
+    };
+    assert!(
+        matches!(err, EdgeError::InvalidArgument { .. }),
+        "config-vs-stored-segments mismatch must be InvalidArgument (fix your config), \
+         not Unreadable and not a silent empty-start; got {err:?}",
+    );
+}
+
+/// `clear()` deletes every point, leaves the shard writable, and the empty state
+/// persists across a reload.
+#[test]
+fn clear_deletes_all_points_and_keeps_shard_writable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let count = |shard: &EdgeShard| {
+        shard
+            .count(CountRequest {
+                filter: None,
+                exact: true,
+            })
+            .expect("count")
+    };
+
+    let shard = EdgeShard::load(path.clone(), Some(make_config())).expect("load");
+    upsert_three(&shard);
+    assert_eq!(count(&shard), 3);
+
+    shard.clear().expect("clear");
+    assert_eq!(count(&shard), 0, "clear() must remove every point");
+
+    // Still writable after clear.
+    upsert_three(&shard);
+    assert_eq!(count(&shard), 3, "shard must stay writable after clear()");
+
+    // Empty state persists across reload.
+    shard.clear().expect("clear again");
+    shard.flush().expect("flush");
+    shard.unload().expect("unload");
+    let reopened = EdgeShard::load(path, None).expect("reopen");
+    assert_eq!(
+        reopened.info().expect("info").points_count,
+        0,
+        "clear() must persist",
+    );
+}
+
+/// An empty directory holds no shard: `load(path, None)` fails with a plain
+/// `OperationError`, never `Unreadable` (nothing is there to protect) or
+/// `ShardLocked`. A host telling "no shard yet" apart from "present but
+/// unreadable" relies on this, so the category and wording are pinned here.
+#[test]
+fn load_of_empty_dir_without_config_is_operation_error_not_unreadable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    let Err(err) = EdgeShard::load(path, None) else {
+        panic!("load(None) of an empty directory must fail");
+    };
+    let EdgeError::OperationError { reason } = &err else {
+        panic!("expected OperationError, got {err:?}");
+    };
+    assert!(
+        reason.contains("no segments were loaded"),
+        "unexpected reason: {reason}",
+    );
+    // Asking must not answer differently next time: nothing was created.
+    assert_eq!(
+        fs_err::read_dir(dir.path()).expect("read_dir").count(),
+        0,
+        "load(None) left files behind",
+    );
+}
+
+/// The engine locks the shard directory for WAL-less shards too, and the FFI
+/// reports a held directory as `ShardLocked`.
+#[test]
+fn second_load_of_wal_less_shard_reports_shard_locked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let mut config = make_config();
+    config.wal_enabled = Some(false);
+
+    let first = EdgeShard::create(path.clone(), config).expect("create");
+    upsert_three(&first);
+
+    let Err(err) = EdgeShard::load(path.clone(), None) else {
+        panic!("a second load of a live WAL-less shard must fail");
+    };
+    assert!(
+        matches!(err, EdgeError::ShardLocked),
+        "expected ShardLocked, got {err:?}",
+    );
+
+    first.unload().expect("unload");
+    let reopened = EdgeShard::load(path, None).expect("load after unload");
+    assert_eq!(reopened.info().expect("info").points_count, 3);
+}
+
+// ── BM25 embeddings and shared optimizer budgets ─────────────────────────────
+
+/// Documents embedded with `Bm25` into an IDF sparse field are found by the
+/// embedding of a query that shares their words, best match first.
+#[test]
+fn bm25_embeddings_search_a_sparse_field() {
+    use qdrant_edge_ffi::config::{Modifier, SparseVectorDataConfig};
+    use qdrant_edge_ffi::{Bm25, Bm25Config};
+
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    let config = EdgeConfig {
+        vector_data: HashMap::new(),
+        sparse_vector_data: HashMap::from([(
+            "bm25".to_string(),
+            SparseVectorDataConfig {
+                full_scan_threshold: None,
+                datatype: None,
+                modifier: Some(Modifier::Idf),
+                memory: None,
+            },
+        )]),
+        payload_memory: None,
+        id_tracker_memory: None,
+        wal_enabled: None,
+    };
+    let shard = EdgeShard::load(dir.path().to_string_lossy().into_owned(), Some(config))
+        .expect("load failed");
+    let bm25 = Bm25::new(Some(Bm25Config {
+        language: Some("english".to_string()),
+        ..Default::default()
+    }))
+    .expect("bm25 failed");
+
+    let docs = [
+        (1, "The cat sat on the mat"),
+        (2, "Cats are chasing cats around the garden"),
+        (3, "A dog barked at the mailman"),
+    ];
+    let points = docs
+        .iter()
+        .map(|(id, text)| Point {
+            id: PointId::NumId { value: *id },
+            vector: Vector::Named {
+                map: HashMap::from([(
+                    "bm25".to_string(),
+                    NamedVector::Sparse {
+                        vector: bm25.embed_document(text.to_string()),
+                    },
+                )]),
+            },
+            payload: None,
+        })
+        .collect();
+    shard
+        .update(UpdateOperation::upsert_points(points, None, None).expect("upsert_points failed"))
+        .expect("update failed");
+
+    let hits = shard
+        .search(SearchRequest {
+            query: Query::Nearest {
+                vector: NamedVector::Sparse {
+                    vector: bm25.embed_query("cats".to_string()),
+                },
+                using: Some("bm25".to_string()),
+            },
+            limit: 10,
+            offset: None,
+            filter: None,
+            params: None,
+            with_vector: None,
+            with_payload: None,
+            score_threshold: None,
+        })
+        .expect("search failed");
+    let ids: Vec<_> = hits
+        .iter()
+        .map(|hit| match hit.id {
+            PointId::NumId { value } => value,
+            PointId::Uuid { .. } => panic!("unexpected uuid id"),
+        })
+        .collect();
+    // English stemming matches `cat` and `cats`; the document saying it twice
+    // ranks first, and the one without it is not a hit.
+    assert_eq!(ids, vec![2, 1]);
+}
+
+/// One budget shared by two shards, optimizing from two threads, takes both
+/// through a real vacuum, and is reusable afterwards: a permit that leaked
+/// would hang the second call.
+#[test]
+fn optimize_with_a_shared_budget() {
+    use qdrant_edge_ffi::ResourceBudget;
+    use qdrant_edge_ffi::config::OptimizersConfig;
+
+    let budget = ResourceBudget::new(1, 1).expect("budget failed");
+    let dirs: Vec<_> = (0..2)
+        .map(|_| tempfile::tempdir().expect("tempdir failed"))
+        .collect();
+    let shards: Vec<Arc<EdgeShard>> = dirs
+        .iter()
+        .map(|dir| {
+            let shard = EdgeShard::load(
+                dir.path().to_string_lossy().into_owned(),
+                Some(make_config()),
+            )
+            .expect("load failed");
+            shard
+                .set_optimizers_config(OptimizersConfig {
+                    deleted_threshold: Some(0.1),
+                    vacuum_min_vector_number: Some(10),
+                    default_segment_number: None,
+                    max_segment_size_kb: None,
+                    indexing_threshold_kb: None,
+                    prevent_unoptimized: None,
+                })
+                .expect("set_optimizers_config failed");
+            let points = (1..=200u64)
+                .map(|i| Point {
+                    id: PointId::NumId { value: i },
+                    vector: named_vec([i as f32, 1.0, 0.0, 0.0]),
+                    payload: None,
+                })
+                .collect();
+            shard
+                .update(UpdateOperation::upsert_points(points, None, None).expect("upsert failed"))
+                .expect("update failed");
+            let deleted = (1..=100u64).map(|i| PointId::NumId { value: i }).collect();
+            shard
+                .update(UpdateOperation::delete_points(deleted).expect("delete failed"))
+                .expect("delete update failed");
+            shard
+        })
+        .collect();
+
+    let optimized: Vec<bool> = std::thread::scope(|scope| {
+        let handles: Vec<_> = shards
+            .iter()
+            .map(|shard| {
+                let budget = Arc::clone(&budget);
+                scope.spawn(move || {
+                    shard
+                        .optimize_with_budget(budget)
+                        .expect("optimize_with_budget failed")
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    assert_eq!(optimized, vec![true, true], "each shard must be vacuumed");
+
+    for shard in &shards {
+        assert!(
+            !shard
+                .optimize_with_budget(Arc::clone(&budget))
+                .expect("second optimize failed"),
+            "an optimized shard has nothing left to do",
+        );
+        let count = shard
+            .count(CountRequest {
+                filter: None,
+                exact: true,
+            })
+            .expect("count failed");
+        assert_eq!(count, 100);
+    }
 }
