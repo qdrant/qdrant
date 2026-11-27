@@ -9,6 +9,7 @@ mod memory;
 #[cfg(target_os = "linux")]
 mod procfs_metrics;
 mod quota;
+mod remote_indexing;
 mod requests;
 
 use prometheus::TextEncoder;
@@ -77,6 +78,10 @@ impl MetricsProvider for TelemetryData {
         }
         if let Some(quota) = &self.quota {
             quota.add_metrics(metrics, prefix);
+        }
+
+        if segment::index::hnsw_index::remote::remote_indexer().is_some() {
+            remote_indexing::add_metrics(metrics, prefix);
         }
 
         #[cfg(target_os = "linux")]

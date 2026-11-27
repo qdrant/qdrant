@@ -18,6 +18,7 @@ use ::api::grpc::grpc_health_v1::{
 };
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
+use ::api::grpc::qdrant::indexing_task_server::IndexingTaskServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_internal_server::QdrantInternalServer;
@@ -40,7 +41,7 @@ use tonic::{Request, Response, Status};
 
 use crate::common::auth::AuthKeys;
 use crate::common::helpers;
-use crate::common::http_client::HttpClient;
+use crate::common::http_client::{HttpClient, ServerCertVerification};
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
@@ -61,6 +62,13 @@ use crate::tonic::api::telemetry_wrapper::{
 type StorageBackend = common::universal_io::IoUringFile;
 #[cfg(not(target_os = "linux"))]
 type StorageBackend = common::universal_io::MmapFile;
+
+/// Maximum size of a health check request message, after decompression.
+///
+/// Health check requests are tiny, and health check endpoints skip authentication. Keep this
+/// limit low, so that an unauthenticated client can't make us decompress and allocate a huge
+/// message.
+const HEALTH_CHECK_MAX_DECODING_MESSAGE_SIZE: usize = 4 * 1024;
 
 #[derive(Default)]
 pub struct QdrantService {}
@@ -185,7 +193,7 @@ pub fn init(
                 QdrantServer::new(qdrant_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(usize::MAX),
+                    .max_decoding_message_size(HEALTH_CHECK_MAX_DECODING_MESSAGE_SIZE),
             )
             .add_service(
                 CollectionsServer::new(collections_service)
@@ -209,7 +217,7 @@ pub fn init(
                 HealthServer::new(health_service)
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
-                    .max_decoding_message_size(usize::MAX),
+                    .max_decoding_message_size(HEALTH_CHECK_MAX_DECODING_MESSAGE_SIZE),
             )
             .add_service(
                 StorageReadServer::new(storage_read_service)
@@ -255,7 +263,9 @@ pub fn init_internal(
 
     use crate::tonic::api::raft_api::RaftService;
 
-    let http_client = HttpClient::from_settings(&settings)?;
+    // Only used to download shard snapshots from other peers during shard transfers
+    let http_client =
+        HttpClient::from_settings(&settings, ServerCertVerification::SkipForPeersWithoutCaCert)?;
 
     runtime
         .block_on(async {
@@ -277,10 +287,11 @@ pub fn init_internal(
 
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
+            let shard_snapshots_service =
+                ShardSnapshotsService::new(toc.clone(), http_client, settings.service.clone());
             let qdrant_internal_service =
                 QdrantInternalService::new(telemetry_collector, settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
-            let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service =
                 RaftService::new(to_consensus, consensus_state, tls_config.is_some());
 
@@ -324,7 +335,7 @@ pub fn init_internal(
                     QdrantServer::new(qdrant_service)
                         .send_compressed(CompressionEncoding::Gzip)
                         .accept_compressed(CompressionEncoding::Gzip)
-                        .max_decoding_message_size(usize::MAX),
+                        .max_decoding_message_size(HEALTH_CHECK_MAX_DECODING_MESSAGE_SIZE),
                 )
                 .add_service(
                     QdrantInternalServer::new(qdrant_internal_service)
@@ -348,6 +359,14 @@ pub fn init_internal(
                     ShardSnapshotsServer::new(ShardSnapshotsTelemetryWrapper::new(
                         shard_snapshots_service,
                     ))
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    IndexingTaskServer::new(
+                        crate::tonic::api::indexing_task_api::IndexingTaskService,
+                    )
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),

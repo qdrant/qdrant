@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use super::change::{MappingChange, read_entry, write_entry};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::types::PointIdType;
 
 const FILE_MAPPINGS: &str = "mutable_id_tracker.mappings";
 
@@ -122,6 +123,16 @@ fn write_mapping_changes<W: Write>(
     Ok(())
 }
 
+/// Mappings loaded from the mappings log, see [`load_mappings`].
+pub(super) struct LoadedMappings {
+    pub mappings: PointMappings,
+    /// Points whose last insert in the log was abandoned and that stay on their previous copy,
+    /// see [`replay_mappings`]. Ordered by external id.
+    pub abandoned_relocations: Vec<PointIdType>,
+    /// Byte offset just past the last complete entry, the expected length of the log.
+    pub read_to: u64,
+}
+
 /// Load point mappings from the given file.
 /// Returns loaded point mappings and the number of bytes read from the file.
 ///
@@ -129,12 +140,14 @@ fn write_mapping_changes<W: Write>(
 pub(super) fn load_mappings(
     mappings_path: &Path,
     deferred_internal_id: Option<PointOffsetType>,
-) -> OperationResult<(PointMappings, u64)> {
+    has_version: impl Fn(PointOffsetType) -> bool,
+) -> OperationResult<LoadedMappings> {
     let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
 
-    let mappings = read_mappings(&mut reader, deferred_internal_id)?;
+    let (mappings, abandoned_relocations) =
+        replay_mappings(&mut reader, deferred_internal_id, has_version)?;
 
     let read_to = reader.stream_position()?;
     reader.into_inner().drop_cache()?;
@@ -156,7 +169,11 @@ pub(super) fn load_mappings(
         file.sync_all()?;
     }
 
-    Ok((mappings, read_to))
+    Ok(LoadedMappings {
+        mappings,
+        abandoned_relocations,
+        read_to,
+    })
 }
 
 /// Iterate over mapping changes from the given reader
@@ -200,11 +217,44 @@ where
 
 /// Read point mappings from the given reader
 ///
-/// Returns loaded point mappings.
+/// Returns loaded point mappings, see [`replay_mappings`].
+#[cfg(test)]
 pub(super) fn read_mappings<R>(
     reader: R,
     deferred_internal_id: Option<PointOffsetType>,
+    has_version: impl Fn(PointOffsetType) -> bool,
 ) -> OperationResult<PointMappings>
+where
+    R: Read + Seek,
+{
+    Ok(replay_mappings(reader, deferred_internal_id, has_version)?.0)
+}
+
+/// Replay the mappings log from the given reader.
+///
+/// `has_version` tells whether a slot has a persisted version. An insert into a slot without one
+/// is abandoned: its flush stopped between mappings and versions. For a point still linked
+/// elsewhere, which is how an append-only mutation relocates a point to a fresh slot of the same
+/// segment, the abandoned insert is not applied and the point stays on its previous copy, the
+/// last one fully persisted. Linking the fresh slot would tombstone the previous copy, and the
+/// inconsistency fix would then drop the point altogether. A point linked nowhere else is linked
+/// as before, and the inconsistency fix drops it.
+///
+/// `has_version` is only reliable on the first load after the crash: a later version write for a
+/// higher slot zero-fills the abandoned slot's entry and makes it look committed.
+///
+/// Returns the mappings, and the points whose last insert was abandoned and that stay on their
+/// previous copy. The log still names the abandoned slot as theirs: the caller has to relink them
+/// to their previous copy in the log, see
+/// [`MutableIdTracker::open`](super::MutableIdTracker::open).
+///
+/// See <https://github.com/qdrant/qdrant/pull/11633> for how points were lost and why keeping the
+/// previous copy is safe, and <https://github.com/qdrant/qdrant/pull/11641> for the relink.
+fn replay_mappings<R>(
+    reader: R,
+    deferred_internal_id: Option<PointOffsetType>,
+    has_version: impl Fn(PointOffsetType) -> bool,
+) -> OperationResult<(PointMappings, Vec<PointIdType>)>
 where
     R: Read + Seek,
 {
@@ -226,18 +276,33 @@ where
         deferred_internal_id,
     );
 
+    // Points whose last insert so far was abandoned while they stayed on their previous copy
+    let mut abandoned = HashSet::new();
+
     for change in read_mappings_iter(reader) {
         match change? {
+            MappingChange::Insert(external_id, internal_id)
+                if !has_version(internal_id) && mappings.heads(&external_id).next().is_some() =>
+            {
+                // Keep the slot allocated: its storages may already hold data written for it
+                mappings.reserve_slot(internal_id);
+                abandoned.insert(external_id);
+            }
             MappingChange::Insert(external_id, internal_id) => {
                 mappings.set_link(external_id, internal_id);
+                abandoned.remove(&external_id);
             }
             MappingChange::Delete(external_id) | MappingChange::DeleteVersioned(external_id, _) => {
                 mappings.drop(external_id);
+                abandoned.remove(&external_id);
             }
         }
     }
 
-    Ok(mappings)
+    let mut abandoned = abandoned.into_iter().collect_vec();
+    abandoned.sort_unstable();
+
+    Ok((mappings, abandoned))
 }
 
 pub(super) fn reconcile_persisted_mapping_changes(

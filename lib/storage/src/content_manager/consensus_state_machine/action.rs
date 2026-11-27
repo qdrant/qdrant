@@ -26,6 +26,8 @@ use crate::content_manager::collection_meta_ops::{TestSlowDown, TestTransientErr
 use crate::content_manager::errors::StorageResult;
 use crate::quota::QuotaConfig;
 
+mod display;
+
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -360,11 +362,14 @@ impl CollectionConfigDiff {
                 });
             }
 
-            // Metadata is merged, not replaced, and a null value removes its key
-            CollectionConfigDiff::Metadata(metadata) => match &mut config.metadata {
-                Some(current) => current.merge(metadata),
-                None => config.metadata = Some(metadata.clone()),
-            },
+            // Metadata update is merged into existing metadata, and a `null` value removes its key.
+            //
+            // If collection has no metadata yet, saving the update as is would store `null` values:
+            // `{"a": 1, "b": null}` would be saved with `"b": null`.
+            // Merging into empty metadata removes `null` values on the first update too.
+            CollectionConfigDiff::Metadata(metadata) => {
+                config.metadata.get_or_insert_default().merge(metadata);
+            }
         }
 
         Ok(())

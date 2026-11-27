@@ -18,6 +18,7 @@ use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
@@ -79,6 +80,16 @@ impl Metadata {
             }
         }
     }
+}
+
+/// Encoder parameters of int8 scalar quantization: with the vector parameters, everything
+/// needed to score its codes. See [`EncodedVectorsU8::from_parameters`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScalarParameters {
+    pub actual_dim: usize,
+    pub alpha: f32,
+    pub offset: f32,
+    pub multiplier: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -345,6 +356,62 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         // fixed offset) also holds in release builds without a per-score check.
         validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
+        Ok(result)
+    }
+
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> ScalarParameters {
+        match &self.metadata {
+            Metadata::Int8(MetadataInt8 {
+                actual_dim,
+                alpha,
+                offset,
+                multiplier,
+                vector_parameters: _,
+            }) => ScalarParameters {
+                actual_dim: *actual_dim,
+                alpha: *alpha,
+                offset: *offset,
+                multiplier: *multiplier,
+            },
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: ScalarParameters,
+    ) -> std::io::Result<Self> {
+        let ScalarParameters {
+            actual_dim,
+            alpha,
+            offset,
+            multiplier,
+        } = parameters;
+        if actual_dim != get_actual_dim(&vector_parameters) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "scalar quantization: actual dim {actual_dim} does not match dim {}",
+                    vector_parameters.dim,
+                ),
+            ));
+        }
+        let result = Self {
+            encoded_vectors,
+            metadata: Metadata::Int8(MetadataInt8 {
+                actual_dim,
+                alpha,
+                offset,
+                multiplier,
+                vector_parameters,
+            }),
+            metadata_path: None,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
         Ok(result)
     }
 
@@ -733,6 +800,28 @@ pub fn get_actual_dim(vector_parameters: &VectorParameters) -> usize {
 pub fn get_quantized_vector_size(vector_parameters: &VectorParameters) -> usize {
     let actual_dim = get_actual_dim(vector_parameters);
     actual_dim + ADDITIONAL_CONSTANT_SIZE
+}
+
+/// Each code `c` as `alpha · c + offset`, over the dimensions a vector stores, padding included.
+/// Dot and Cosine score the dot product of two such vectors, L2 their squared distance, and L1
+/// their distance.
+impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsU8<TStorage> {
+    fn symmetric_dim(&self) -> usize {
+        self.metadata.actual_dim()
+    }
+
+    fn symmetric_vector<'a>(&'a self, data: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        let Metadata::Int8(metadata) = &self.metadata;
+        let (alpha, offset) = (metadata.alpha, metadata.offset);
+        let (_, code) = Self::parse_vec_data(data);
+        code[..metadata.actual_dim]
+            .iter()
+            .map(move |&c| alpha * f32::from(c) + offset)
+    }
+
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        DuplicateKey::Bytes(code)
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {

@@ -267,7 +267,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
                     return Ok(None);
                 };
 
-                Some(index.except_cardinality(excluded_uuids.iter()))
+                Some(index.except_cardinality(&excluded_uuids))
             }
             AnyVariants::Integers(_) => None,
         },

@@ -218,36 +218,33 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
+    /// Scorer against stored point `point_id`, for graph building. `not_deleted` tells which
+    /// points it may return: a build passes its own flags, not necessarily those of `vectors`.
     pub fn new_internal<V, Q>(
         point_id: PointOffsetType,
         vectors: &'a V,
         quantized_vectors: Option<&'a Q>,
         filter_context: Option<OptimizedFilter<'a>>,
-        point_deleted: &'a BitSlice,
+        not_deleted: NotDeletedChecker<'a>,
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
         Q: QuantizedVectorsRead,
     {
-        // This is a fallback function, which is used if quantized vector storage
-        // is not capable of reconstructing the query vector.
-        let original_query_fn = || {
-            let query = vectors.get_vector::<Random>(point_id);
-            let query: QueryVector = query.as_vec_ref().into();
-            query
-        };
         let raw_scorer = match quantized_vectors {
+            // Quantizations that can't score from their codes alone, such as PQ, score a copy of
+            // the stored vector as a query.
             Some(quantized_vectors) => quantized_vectors.raw_internal_scorer(point_id).or_else(
-                |InternalScorerUnsupported| quantized_vectors.raw_scorer(original_query_fn()),
+                |InternalScorerUnsupported| {
+                    let query = vectors.get_vector::<Random>(point_id);
+                    quantized_vectors.raw_scorer(QueryVector::from(query.as_vec_ref()))
+                },
             )?,
-            None => {
-                let query = original_query_fn();
-                vectors.build_raw_scorer(query)?
-            }
+            None => vectors.build_raw_internal_scorer(point_id)?,
         };
         Ok(FilteredScorer {
             raw_scorer,
-            filters: ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted)),
+            filters: ScorerFilters::new(filter_context, not_deleted),
             scores_buffer: Vec::new(),
         })
     }
@@ -266,19 +263,23 @@ impl<'a> FilteredScorer<'a> {
         V: VectorStorageRead + RawScorerBuilder,
         Q: QuantizedVectorsRead,
     {
-        let scorer = Self::new_internal(point_id, vectors, quantized_vectors, None, block_deleted)?;
+        let block_not_deleted = NotDeletedChecker {
+            point_deleted: block_deleted,
+            vec_deleted: block_deleted,
+        };
+        let scorer = Self::new_internal(
+            point_id,
+            vectors,
+            quantized_vectors,
+            None,
+            block_not_deleted,
+        )?;
         Ok(FilteredScorer {
             raw_scorer: Box::new(RemappedRawScorer {
                 inner: scorer.raw_scorer,
                 to_global,
             }),
-            filters: ScorerFilters::new(
-                None,
-                NotDeletedChecker {
-                    point_deleted: block_deleted,
-                    vec_deleted: block_deleted,
-                },
-            ),
+            filters: ScorerFilters::new(None, block_not_deleted),
             scores_buffer: Vec::new(),
         })
     }
@@ -622,13 +623,24 @@ fn score_chunk(
 mod tests {
     use common::ambient;
     use common::bitvec::{BitSliceExt as _, BitVec};
+    use quantization::turboquant::TQBits;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::types::Distance;
+    use crate::data_types::vectors::{MultiDenseVectorInternal, VectorElementType, VectorRef};
+    use crate::types::{
+        Distance, MultiVectorConfig, QuantizationConfig, TurboQuantBitSize,
+        TurboQuantQuantizationConfig, TurboQuantization,
+    };
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
-    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
+    use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
+    use crate::vector_storage::quantized::quantized_vectors::{
+        QuantizedVectors, QuantizedVectorsStorageType,
+    };
+    use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
+    use crate::vector_storage::turbo::multi_turbo::appendable_mmap_multi_turbo_vector_storage::open_appendable_turbo_multi_vector_storage;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _, VectorStorageEnum};
 
     fn random_mask(rng: &mut StdRng, len: usize, rate: f64) -> BitVec {
         let mut mask = BitVec::repeat(false, len);
@@ -745,6 +757,136 @@ mod tests {
                     .unwrap();
 
             assert_eq!(visible, reference, "case {case_idx}");
+        }
+    }
+
+    /// Where the build's vectors are TurboQuant codes.
+    #[derive(Clone, Copy, Debug)]
+    enum TurboVectors {
+        /// TurboQuant quantization of dense f32 vectors
+        Quantized(TurboQuantBitSize),
+        /// TurboQuant quantization of multivectors
+        MultiQuantized(TurboQuantBitSize),
+        /// A dense Turbo datatype storage
+        Datatype(TQBits),
+        /// A multivector Turbo datatype storage
+        MultiDatatype(TQBits),
+    }
+
+    /// The build scores from a stored point exactly as `score_internal` scores two stored points:
+    /// TurboQuant codes against codes, never an original vector against codes.
+    #[rstest::rstest]
+    fn internal_scorer_scores_turbo_codes_symmetrically(
+        #[values(
+            TurboVectors::Quantized(TurboQuantBitSize::Bits1),
+            TurboVectors::Quantized(TurboQuantBitSize::Bits2),
+            TurboVectors::Quantized(TurboQuantBitSize::Bits4),
+            TurboVectors::Quantized(TurboQuantBitSize::Bits8),
+            TurboVectors::MultiQuantized(TurboQuantBitSize::Bits4),
+            TurboVectors::Datatype(TQBits::Bits4),
+            TurboVectors::Datatype(TQBits::Bits8),
+            TurboVectors::Datatype(TQBits::Bits16),
+            TurboVectors::MultiDatatype(TQBits::Bits8)
+        )]
+        vectors: TurboVectors,
+        #[values(Distance::Dot, Distance::Cosine, Distance::Euclid, Distance::Manhattan)]
+        distance: Distance,
+    ) {
+        const POINTS: usize = 80;
+        const DIM: usize = 48;
+        const INNER: usize = 3;
+
+        let _scope = ambient::test_guard();
+        let mut rng = StdRng::seed_from_u64(42);
+        let dir = tempfile::tempdir().unwrap();
+        let multi_config = MultiVectorConfig::default();
+        let mut storage = match vectors {
+            TurboVectors::Quantized(_) => new_volatile_dense_vector_storage(DIM, distance),
+            TurboVectors::MultiQuantized(_) => {
+                new_volatile_multi_dense_vector_storage(DIM, distance, multi_config)
+            }
+            TurboVectors::Datatype(bits) => {
+                VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
+                    open_appendable_turbo_vector_storage(dir.path(), DIM, distance, bits, true)
+                        .unwrap(),
+                ))
+            }
+            TurboVectors::MultiDatatype(bits) => VectorStorageEnum::MultiDenseTurbo(Box::new(
+                open_appendable_turbo_multi_vector_storage(
+                    dir.path(),
+                    DIM,
+                    distance,
+                    bits,
+                    multi_config,
+                    true,
+                )
+                .unwrap(),
+            )),
+        };
+        let mut random_vector = || -> Vec<f32> {
+            let vector = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
+            distance.preprocess_vector::<VectorElementType>(vector)
+        };
+        for id in 0..POINTS as PointOffsetType {
+            match vectors {
+                TurboVectors::Quantized(_) | TurboVectors::Datatype(_) => {
+                    let vector = random_vector();
+                    storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
+                }
+                TurboVectors::MultiQuantized(_) | TurboVectors::MultiDatatype(_) => {
+                    let flattened: Vec<f32> = (0..INNER).flat_map(|_| random_vector()).collect();
+                    let multivector = MultiDenseVectorInternal::new(flattened, DIM);
+                    storage
+                        .insert_vector(id, VectorRef::from(&multivector))
+                        .unwrap();
+                }
+            }
+        }
+        let quantization_bits = match vectors {
+            TurboVectors::Quantized(bits) | TurboVectors::MultiQuantized(bits) => Some(bits),
+            TurboVectors::Datatype(_) | TurboVectors::MultiDatatype(_) => None,
+        };
+        #[expect(deprecated, reason = "always_ram")]
+        let quantized = quantization_bits.map(|bits| {
+            let config = QuantizationConfig::Turbo(TurboQuantization {
+                turbo: TurboQuantQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    bits: Some(bits),
+                },
+            });
+            QuantizedVectors::create(
+                &storage,
+                &config,
+                QuantizedVectorsStorageType::Immutable,
+                &dir.path().join("quantized"),
+                1,
+                &DEFAULT_STOPPED,
+            )
+            .unwrap()
+        });
+
+        let deleted = BitVec::repeat(false, POINTS);
+        let ids: Vec<PointOffsetType> = (0..POINTS as PointOffsetType).collect();
+        for point in [0, 13] {
+            let scorer = FilteredScorer::new_internal(
+                point,
+                &storage,
+                quantized.as_ref(),
+                None,
+                storage.not_deleted_checker(&deleted),
+            )
+            .unwrap();
+            let mut scores = vec![0.0; POINTS];
+            scorer.raw_scorer.score_points(&ids, &mut scores).unwrap();
+            for (&id, &score) in ids.iter().zip(&scores) {
+                // Equal values: the sums of a multivector may differ in the sign of a zero
+                let internal = scorer.raw_scorer.score_internal(point, id);
+                assert!(
+                    score == internal,
+                    "{vectors:?}, {distance:?}, point {point}, id {id}: {score} != {internal}",
+                );
+            }
         }
     }
 }

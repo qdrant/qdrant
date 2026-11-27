@@ -37,9 +37,9 @@ pub(super) fn compare(
     }
 
     if report.is_empty() {
-        log::debug!("Consensus state machine matches applied state");
         None
     } else {
+        let report: Vec<_> = report.iter().map(ToString::to_string).collect();
         Some(report.join(", "))
     }
 }

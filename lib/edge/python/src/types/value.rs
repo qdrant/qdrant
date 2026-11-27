@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
@@ -15,13 +14,6 @@ use crate::repr::*;
 pub struct PyValue(serde_json::Value);
 
 impl PyValue {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, serde_json::Value>
-    where
-        Self: TransparentWrapper<serde_json::Value>,
-    {
-        unsafe { mem::transmute(map) }
-    }
-
     pub fn new(value: serde_json::Value) -> Self {
         Self(value)
     }

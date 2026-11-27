@@ -180,6 +180,12 @@ mod tests {
         let extra_len = extra_len(distance, mode);
         let (data_v1, extra_v1) = v1.split_at(v1.len() - extra_len);
         let (data_v2, extra_v2) = v2.split_at(v2.len() - extra_len);
+        if let (TQMode::Plus, TQBits::Bits1 | TQBits::Bits1_5, DistanceType::L2) =
+            (mode, bits, distance)
+        {
+            let ec = ec.expect("TQ+ reference requires error correction metadata");
+            return score_angular_reference(data_v1, extra_v1, data_v2, extra_v2, ec);
+        }
         let raw_dot = match (mode, bits) {
             (TQMode::Plus, TQBits::Bits2) => {
                 let ec = ec.expect("TQ+ reference requires error correction metadata");
@@ -218,6 +224,32 @@ mod tests {
             }
             DistanceType::L1 => unreachable!("L1 reference needs inverse rotation"),
         }
+    }
+
+    /// TQ+ 1 and 1.5 bits for Euclid: the dot of the vectors as rescaled to length `sqrt(d)`
+    /// is `‖X_a − M‖ · ‖X_b − M‖ · cos(π · h / d) + xm_a + xm_b − ⟨M, M⟩`, with `h` the
+    /// Hamming distance of the codes and `‖X − M‖² = d − 2·xm + ⟨M, M⟩`.
+    fn score_angular_reference(
+        data_v1: &[u8],
+        extra_v1: &[u8],
+        data_v2: &[u8],
+        extra_v2: &[u8],
+        ec: &ErrorCorrectionMetadata,
+    ) -> f32 {
+        let d = (data_v1.len() * 8) as f32;
+        let differing: u32 = data_v1
+            .iter()
+            .zip(data_v2)
+            .map(|(a, b)| (a ^ b).count_ones())
+            .sum();
+        let cos = (std::f32::consts::PI * differing as f32 / d).cos();
+        let mm: f32 = ec.shift.iter().map(|&s| s * s).sum();
+        let (xm_a, xm_b) = (ec_correction(extra_v1), ec_correction(extra_v2));
+        let radius = |xm: f32| (d - 2.0 * xm + mm).sqrt();
+        let rescaled_dot = radius(xm_a) * radius(xm_b) * cos + xm_a + xm_b - mm;
+        let l2_a = read_f32(extra_v1, size_of::<f32>());
+        let l2_b = read_f32(extra_v2, size_of::<f32>());
+        l2_a * l2_a + l2_b * l2_b - 2.0 * l2_a * l2_b / d * rescaled_dot
     }
 
     #[test]
@@ -283,6 +315,85 @@ mod tests {
                             "bits={bits:?}, mode={mode:?}, distance={distance:?}, i={i}: \
                              optimized={optimized}, reference={reference}, tolerance={tolerance}"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A stored vector as a query scores every point exactly as `score_internal` does, in runs of
+    /// consecutive ids and in scattered ones.
+    #[test]
+    fn test_tq_internal_query_matches_score_internal() {
+        let dim = 100;
+        let vectors_count = 64;
+        let _scope = ambient::test_guard();
+        let distances = [
+            (DistanceType::Dot, false),
+            (DistanceType::Cosine, false),
+            (DistanceType::L2, true),
+            (DistanceType::L1, true),
+        ];
+
+        for &bits in BITS {
+            for (distance, invert) in distances {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let vector_data: Vec<Vec<f32>> = (0..vectors_count)
+                    .map(|_| {
+                        let vector: Vec<f32> =
+                            (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                        match distance {
+                            DistanceType::Cosine => normalize(&vector),
+                            DistanceType::Dot | DistanceType::L1 | DistanceType::L2 => vector,
+                        }
+                    })
+                    .collect();
+                let vector_parameters = VectorParameters {
+                    dim,
+                    deprecated_count: None,
+                    distance_type: distance,
+                    invert,
+                };
+                for mode in [TQMode::Normal, TQMode::Plus] {
+                    if !supported(bits, mode) {
+                        continue;
+                    }
+                    let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
+                        &vector_parameters,
+                        bits,
+                        mode,
+                    );
+                    let encoded = EncodedVectorsTQ::encode(
+                        vector_data.iter(),
+                        std::iter::repeat_n(true, vectors_count),
+                        TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                        &vector_parameters,
+                        bits,
+                        mode,
+                        TQRotation::Padded,
+                        false,
+                        1,
+                        None,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
+
+                    let consecutive: Vec<u32> = (0..vectors_count as u32).collect();
+                    let scattered: Vec<u32> = (0..vectors_count as u32).rev().step_by(3).collect();
+                    for point in [0, 17] {
+                        let query = encoded.encode_internal_vector(point).unwrap();
+                        for ids in [&consecutive, &scattered] {
+                            let mut scores = vec![0.0; ids.len()];
+                            encoded.score_points(&query, ids, &mut scores).unwrap();
+                            for (&id, &score) in ids.iter().zip(&scores) {
+                                assert_eq!(
+                                    score.to_bits(),
+                                    encoded.score_internal(point, id).to_bits(),
+                                    "bits={bits:?}, mode={mode:?}, distance={distance:?}, \
+                                     point={point}, id={id}",
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -1125,6 +1236,81 @@ mod tests {
         // Plus must not be meaningfully worse than Normal. We allow a small
         // 2% slack since the codebook is the same and EC's value comes from
         // distribution fit, which on this seed is marginal.
+        assert!(
+            plus >= normal - 0.02,
+            "bits={bits:?}: Plus recall regressed (Normal={normal:.3}, Plus={plus:.3})"
+        );
+    }
+
+    /// Euclid recall of `score_internal` on data that is off center and of varying norm: every
+    /// vector is a common offset plus noise, times its own factor. A symmetric score whose
+    /// cross term misses the offset ranks by norm there, and its neighbors are the shortest
+    /// vectors. Plus must keep up with Normal, which has no offset to miss.
+    #[rstest::rstest]
+    #[case::bits1(TQBits::Bits1)]
+    #[case::bits1_5(TQBits::Bits1_5)]
+    #[case::bits2(TQBits::Bits2)]
+    #[case::bits4(TQBits::Bits4)]
+    fn recall_l2_internal_off_center(#[case] bits: TQBits) {
+        use rand::prelude::StdRng;
+        let dim = 256;
+        let n = 1000;
+        let n_queries = 50;
+        let topk = 10;
+        let mut rng = StdRng::seed_from_u64(42);
+        let offset: Vec<f32> = (0..dim).map(|_| rng.random_range(1.0..3.0)).collect();
+        let vectors: Vec<Vec<f32>> = (0..n)
+            .map(|_| {
+                let factor = rng.random_range(0.5..1.5);
+                offset
+                    .iter()
+                    .map(|&o| factor * (o + rng.random_range(-1.0..1.0)))
+                    .collect()
+            })
+            .collect();
+
+        let recall_for = |mode: TQMode| -> f32 {
+            let vp = VectorParameters {
+                dim,
+                distance_type: DistanceType::L2,
+                invert: false,
+                deprecated_count: None,
+            };
+            let qsize = encoded_vectors_tq::get_quantized_vector_size(&vp, bits, mode);
+            let encoded = EncodedVectorsTQ::encode(
+                vectors.iter(),
+                std::iter::repeat_n(true, n),
+                TestEncodedStorageBuilder::new(None, qsize),
+                &vp,
+                bits,
+                mode,
+                TQRotation::Padded,
+                false,
+                1,
+                None,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            let _scope = ambient::test_guard();
+            let nearest = |query: usize, score: &dyn Fn(usize) -> f32| -> Vec<usize> {
+                let mut scores: Vec<(usize, f32)> = (0..n)
+                    .filter(|&i| i != query)
+                    .map(|i| (i, score(i)))
+                    .collect();
+                scores.sort_by(|a, b| a.1.total_cmp(&b.1));
+                scores.iter().take(topk).map(|x| x.0).collect()
+            };
+            let mut hits = 0;
+            for query in 0..n_queries {
+                let truth = nearest(query, &|i| l2_similarity(&vectors[query], &vectors[i]));
+                let found = nearest(query, &|i| encoded.score_internal(query as u32, i as u32));
+                hits += truth.iter().filter(|i| found.contains(i)).count();
+            }
+            hits as f32 / (n_queries * topk) as f32
+        };
+
+        let normal = recall_for(TQMode::Normal);
+        let plus = recall_for(TQMode::Plus);
         assert!(
             plus >= normal - 0.02,
             "bits={bits:?}: Plus recall regressed (Normal={normal:.3}, Plus={plus:.3})"

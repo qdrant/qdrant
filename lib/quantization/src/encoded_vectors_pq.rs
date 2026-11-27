@@ -4,11 +4,10 @@ use std::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 use std::borrow::Cow;
-use std::iter::repeat_with;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 
 use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
@@ -19,12 +18,12 @@ use fs_err as fs;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
     EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::kmeans::kmeans;
-use crate::{ConditionalVariable, EncodingError};
 
 pub const KMEANS_SAMPLE_SIZE: usize = 10_000;
 pub const KMEANS_MAX_ITERATIONS: usize = 100;
@@ -49,6 +48,65 @@ pub struct Metadata {
     pub centroids: Vec<Vec<f32>>,
     pub vector_division: Vec<Range<usize>>,
     pub vector_parameters: VectorParameters,
+}
+
+impl Metadata {
+    /// Validate metadata read from disk against the invariants scoring relies on, so a corrupted
+    /// or crafted `quantized.meta.json` fails to load instead of failing at search time.
+    ///
+    /// The encoder always writes metadata that passes: `CENTROIDS_COUNT` centroids of `dim`
+    /// floats each, and divisions that split `0..dim` into consecutive non-empty chunks.
+    fn validate(&self) -> std::io::Result<()> {
+        let invalid = |message: String| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid PQ metadata: {message}"),
+            )
+        };
+
+        // Every stored byte is a centroid index into a LUT row of `centroids.len()` entries, and
+        // the scoring hot path does not bounds check it. With exactly `CENTROIDS_COUNT` (256)
+        // centroids any `u8` index stays inside its row, so reject metadata with any other count.
+        let centroids_count = self.centroids.len();
+        if centroids_count != CENTROIDS_COUNT {
+            return Err(invalid(format!(
+                "{centroids_count} centroids, but {CENTROIDS_COUNT} are expected",
+            )));
+        }
+
+        // Query encoding, `score_internal` and the GPU shader slice every centroid with the
+        // division ranges, and the shader takes the first centroid's length as the stride.
+        let dim = self.vector_parameters.dim;
+        for (index, centroid) in self.centroids.iter().enumerate() {
+            if centroid.len() != dim {
+                return Err(invalid(format!(
+                    "centroid {index} has {} components, but the vector dimension is {dim}",
+                    centroid.len(),
+                )));
+            }
+        }
+
+        // The divisions must split `0..dim` into consecutive non-empty chunks, which keeps every
+        // range inside each centroid. Queries are sliced with the same ranges, so they stay in
+        // bounds as long as the caller's dimension matches `dim`, which is not checked here.
+        let mut expected_start = 0;
+        for (index, range) in self.vector_division.iter().enumerate() {
+            if range.start != expected_start || range.end <= range.start || range.end > dim {
+                return Err(invalid(format!(
+                    "vector division {index} is {range:?}, but a non-empty range starting at \
+                     {expected_start} and ending at most at {dim} is expected",
+                )));
+            }
+            expected_start = range.end;
+        }
+        if expected_start != dim {
+            return Err(invalid(format!(
+                "vector divisions cover 0..{expected_start}, but the vector dimension is {dim}",
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
@@ -154,6 +212,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         meta_path: &Path,
     ) -> UioResult<Self> {
         let metadata: Metadata = read_json_via(fs, meta_path)?;
+        metadata.validate()?;
         let result = Self {
             encoded_vectors,
             metadata,
@@ -196,6 +255,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> Result<(), EncodingError> {
+        let error = Mutex::new(None);
         rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("pq-encoding-{idx}"))
             .num_threads(std::cmp::max(1, max_threads))
@@ -214,12 +274,22 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     centroids,
                     max_threads,
                     stopped,
+                    &error,
                 )
-            })
+            });
+
+        // Read the error only after `scope` returns: it joins the spawned workers on exit, so
+        // checking inside the scope closure would miss errors from workers still running.
+        match error.into_inner() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// Encode whole storage inside rayon context
-    /// This function should be called inside `rayon::scope`
+    /// This function should be called inside `rayon::scope`.
+    /// Workers record the first push error in `error`; read it after the scope has joined them.
+    #[allow(clippy::too_many_arguments)]
     fn encode_storage_rayon<'a: 'b, 'b>(
         scope: &rayon::Scope<'b>,
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send + 'b,
@@ -228,26 +298,23 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         centroids: &'b [Vec<f32>],
         max_threads: usize,
         stopped: &'b AtomicBool,
-    ) -> Result<(), EncodingError> {
+        error: &'b Mutex<Option<EncodingError>>,
+    ) {
         let storage_builder = Arc::new(Mutex::new(storage_builder));
 
-        // Synchronization between threads. Use conditional variable for
-        // each thread. Each condvar is blocked instead of first.
-        // While encoding, thread `N` after `storage_builder` usage blocks themself and
-        // unblock thread `N+1`.
-        // In summary, access to `storage_builder` is ordered by `thread_index` below.
-        let mut condvars: Vec<ConditionalVariable> =
-            repeat_with(Default::default).take(max_threads).collect();
-        condvars[0].notify(); // Allow first thread to use storage
+        // Synchronization between threads: a ring of channels passes a "turn" token, so thread
+        // `N` pushes to `storage_builder` after thread `N-1` and before thread `N+1`.
+        // A thread that exits early (stopped, error or panic) drops its sender, so the next
+        // thread's `recv` fails instead of blocking forever.
+        let (mut senders, receivers): (Vec<_>, Vec<_>) =
+            (0..max_threads).map(|_| mpsc::channel::<()>()).unzip();
+        senders[0].send(()).unwrap(); // Allow first thread to use storage
+        senders.rotate_left(1); // Thread `N` sends to thread `N + 1`
 
-        let error = Arc::new(Mutex::new(None));
-        for thread_index in 0..max_threads {
+        for (thread_index, (turn, next_turn)) in receivers.into_iter().zip(senders).enumerate() {
             // Thread process vectors `N` that `(N + thread_index) % max_threads == 0`.
             let data = data.clone().skip(thread_index);
             let storage_builder = storage_builder.clone();
-            let condvar = condvars[thread_index].clone();
-            let next_condvar = condvars[(thread_index + 1) % max_threads].clone();
-            let error = error.clone();
 
             scope.spawn(move |_| {
                 let mut encoded_vector = Vec::with_capacity(vector_division.len());
@@ -263,7 +330,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                         &mut encoded_vector,
                     );
                     // wait for permission from prev thread to use storage
-                    let is_disconnected = condvar.wait();
+                    if turn.recv().is_err() {
+                        return;
+                    }
                     // push encoded vector to storage
                     let insert_result = storage_builder.lock().push_vector_data(&encoded_vector);
 
@@ -273,26 +342,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                         *error = Some(EncodingError::EncodingError(format!(
                             "Failed to push encoded vector: {e}",
                         )));
-                        // Notify next thread to allow them to exit
-                        next_condvar.notify();
                         return;
                     }
 
-                    // Notify next thread to use storage
-                    next_condvar.notify();
-                    if is_disconnected {
-                        return;
-                    }
+                    // Notify next thread to use storage (fails if it has no vectors left)
+                    let _ = next_turn.send(());
                 }
             });
-        }
-        // free condvars to allow threads to exit when panicking
-        condvars.clear();
-
-        if let Some(error) = error.lock().take() {
-            Err(error)
-        } else {
-            Ok(())
         }
     }
 

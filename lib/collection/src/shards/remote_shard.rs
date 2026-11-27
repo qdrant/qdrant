@@ -12,11 +12,12 @@ use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     CountResponse, FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
-    GetPoints, GetPointsInternal, GetShardOptimizationsRequest, GetShardRecoveryPointRequest,
-    HealthCheckRequest, InitiateShardTransferRequest, QueryBatchPointsInternal,
-    QueryBatchResponseInternal, QueryShardPoints, RecoverShardSnapshotRequest,
-    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, SearchBatchResponse,
-    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    GetPoints, GetPointsInternal, GetShardOptimizationsRequest, GetShardOrphanPointsRequest,
+    GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
+    QueryBatchPointsInternal, QueryBatchResponseInternal, QueryShardPoints,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
+    SearchBatchResponse, ShardSnapshotLocation, UpdateShardCutoffPointRequest,
+    WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolInterceptor};
 use api::grpc::update_operation::Update;
@@ -65,6 +66,7 @@ use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{
     CollectionUpdateOperations, FieldIndexOperations, OperationWithClockTag, VectorNameOperations,
 };
+use crate::orphan_points::OrphanPoints;
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::conversions::{
@@ -1133,6 +1135,37 @@ impl RemoteShard {
         };
 
         Ok(recovery_point.try_into()?)
+    }
+
+    /// Request the points changed by orphan operations on the remote shard
+    ///
+    /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
+    pub async fn shard_orphan_points(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        source_clocks: &RecoveryPoint,
+    ) -> CollectionResult<OrphanPoints> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .get_shard_orphan_points(GetShardOrphanPointsRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                        source_clocks: Some(source_clocks.into()),
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let Some(orphan_points) = res.orphan_points else {
+            return Err(CollectionError::service_error(
+                "Orphan points data is missing in orphan points response",
+            ));
+        };
+
+        Ok(orphan_points.try_into()?)
     }
 
     /// Update the shard cutoff point on the remote shard

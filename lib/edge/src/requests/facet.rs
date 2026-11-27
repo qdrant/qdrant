@@ -31,6 +31,6 @@ impl FacetRequest {
     /// this facet: no vector components are warmed, and only the field indexes the filter
     /// and facet key read keep their configured placement.
     pub fn load_profile(&self) -> LoadProfile {
-        LoadProfile::for_scroll(self.filter.as_ref(), Some(&self.key), false)
+        LoadProfile::for_scroll(self.filter.as_ref(), Some(&self.key))
     }
 }

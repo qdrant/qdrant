@@ -49,6 +49,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
+use crate::orphan_points::OrphanPoints;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
@@ -631,6 +632,22 @@ impl Collection {
             shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.shard_recovery_point().await
+    }
+
+    /// Find the points changed by orphan operations in the WAL of a local shard
+    ///
+    /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
+    pub async fn find_orphan_points(
+        &self,
+        shard_id: ShardId,
+        source_clocks: &RecoveryPoint,
+    ) -> CollectionResult<OrphanPoints> {
+        // Don't hold the shard holder lock while reading the whole WAL
+        let replica_set = self.shards_holder.read().await.get_shard(shard_id).cloned();
+        let replica_set =
+            replica_set.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+
+        replica_set.find_orphan_points(source_clocks).await
     }
 
     pub async fn update_shard_cutoff_point(

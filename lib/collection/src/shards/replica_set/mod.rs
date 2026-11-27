@@ -6,6 +6,8 @@ mod read_ops;
 pub mod replica_set_state;
 mod shard_transfer;
 pub mod snapshots;
+#[cfg(feature = "staging")]
+mod staging;
 mod telemetry;
 mod update;
 

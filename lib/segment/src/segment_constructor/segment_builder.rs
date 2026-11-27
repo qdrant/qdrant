@@ -21,7 +21,8 @@ use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::MmapFs;
 use fs_err as fs;
 use itertools::Itertools;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng as _};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -58,6 +59,10 @@ use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead, graph_inline};
+
+/// Seed of the random number generator of the index builds. Fixed, so that building the same
+/// segment again gives the same graph wherever the builder is deterministic, as PiPNN is.
+pub const INDEX_BUILD_SEED: u64 = 42;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -547,7 +552,7 @@ impl SegmentBuilder {
             true,
             ResourcePermit::dummy(get_num_indexing_threads(0) as u32),
             &AtomicBool::new(false),
-            &mut rand::rng(),
+            &mut StdRng::seed_from_u64(INDEX_BUILD_SEED),
             ProgressTracker::new_for_test(),
         )
         .unwrap()
@@ -733,6 +738,9 @@ impl SegmentBuilder {
             check_process_stopped(stopped)?;
 
             progress_vector_index.start();
+            // Every vector's index gets a generator with this same seed, so that it does not
+            // depend on the other vectors of the segment or the order they are built in
+            let vector_seed = rng.next_u64();
             for (vector_name, vector_config) in segment_config.vector_data.iter_mut() {
                 let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
                 let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
@@ -753,7 +761,7 @@ impl SegmentBuilder {
                         old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
-                        rng,
+                        rng: &mut StdRng::seed_from_u64(vector_seed),
                         hnsw_global_config: &hnsw_global_config,
                         feature_flags,
                         inline_vectors: vector_config.inline_vectors_in_graph(),
@@ -874,7 +882,7 @@ impl SegmentBuilder {
 
         // Move fully constructed segment into collection directory and load back to RAM
         let destination_path = segments_path.join(segment_uuid.to_string());
-        fs::rename(temp_dir.keep(), &destination_path)
+        common::fs::rename_while_held(&temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
         load_segment(

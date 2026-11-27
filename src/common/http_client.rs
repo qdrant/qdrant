@@ -13,10 +13,30 @@ use crate::settings::{Settings, TlsConfig};
 pub struct HttpClient {
     tls_config: Option<TlsConfig>,
     verify_https_client_certificate: bool,
+    server_cert_verification: ServerCertVerification,
+}
+
+/// How to verify the server certificate of outgoing HTTPS requests.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ServerCertVerification {
+    /// Always verify the server certificate and hostname.
+    ///
+    /// Use this for any URL a user can provide.
+    Strict,
+    /// Accept any server certificate and hostname if TLS is enabled without a CA certificate.
+    ///
+    /// Only use this for requests to other peers in this cluster. Without a CA certificate we
+    /// cannot verify their certificates, and their certificates may not match peer hostnames.
+    /// Peer-to-peer TLS requires a CA certificate, so peer communication is unencrypted in this
+    /// case anyway.
+    SkipForPeersWithoutCaCert,
 }
 
 impl HttpClient {
-    pub fn from_settings(settings: &Settings) -> Result<Self> {
+    pub fn from_settings(
+        settings: &Settings,
+        server_cert_verification: ServerCertVerification,
+    ) -> Result<Self> {
         let tls_config = if settings.service.enable_tls {
             let Some(tls_config) = settings.tls.clone() else {
                 return Err(Error::TlsConfigUndefined);
@@ -32,6 +52,7 @@ impl HttpClient {
         let http_client = Self {
             tls_config,
             verify_https_client_certificate,
+            server_cert_verification,
         };
 
         Ok(http_client)
@@ -54,6 +75,7 @@ impl HttpClient {
             api_key,
             self.tls_config.as_ref(),
             self.verify_https_client_certificate,
+            self.server_cert_verification,
         )
     }
 }
@@ -62,6 +84,7 @@ fn https_client(
     api_key: Option<&str>,
     tls_config: Option<&TlsConfig>,
     verify_https_client_certificate: bool,
+    server_cert_verification: ServerCertVerification,
 ) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder().user_agent(APP_USER_AGENT.as_str());
 
@@ -88,13 +111,19 @@ fn https_client(
                 }
             }
         } else if !verify_https_client_certificate {
-            // If ca_cert is not provided, and we are not verifying client certificate,
-            // there is no way to verify https connection.
-            //
-            // So we have to disable certificate verification in order to be able to connect to the server.
-            builder = builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true);
+            match server_cert_verification {
+                // Verify against the system root certificates
+                ServerCertVerification::Strict => {}
+                // If ca_cert is not provided, and we are not verifying client certificate,
+                // there is no way to verify https connection to other peers.
+                //
+                // So we have to disable certificate verification in order to be able to connect to the peer.
+                ServerCertVerification::SkipForPeersWithoutCaCert => {
+                    builder = builder
+                        .danger_accept_invalid_certs(true)
+                        .danger_accept_invalid_hostnames(true);
+                }
+            }
         }
 
         if verify_https_client_certificate {
@@ -184,3 +213,6 @@ impl From<Error> for io::Error {
         io::Error::other(err)
     }
 }
+
+#[cfg(test)]
+mod tests;

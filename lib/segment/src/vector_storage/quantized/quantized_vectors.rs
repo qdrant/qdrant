@@ -6,6 +6,8 @@ mod load;
 mod pq;
 mod read_access;
 mod read_only;
+#[cfg(feature = "remote-indexing")]
+pub mod remote;
 mod scalar;
 mod storage;
 mod turbo;
@@ -60,6 +62,18 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    /// Whether graph builds score from the quantized vectors alone and never read an original
+    /// vector. Asked of the quantization itself: this makes, for the stored point `probe`, the
+    /// scorer a build makes for each point it inserts, so the answer can't drift from what the
+    /// build does. It is the same for every point. Not so for product quantization, whose
+    /// queries are encoded from the original vectors.
+    pub fn builds_from_codes(&self, probe: PointOffsetType) -> bool {
+        match self.raw_internal_scorer(probe) {
+            Ok(_) => true,
+            Err(InternalScorerUnsupported) => false,
+        }
+    }
+
     pub fn config(&self) -> &QuantizedVectorsConfig {
         &self.config
     }

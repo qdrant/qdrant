@@ -294,6 +294,10 @@ async fn _do_recover_from_snapshot(
             snapshot_shard_path.display(),
         );
 
+        // Restoring the shard also triggers its optimizers, so an unoptimized snapshot does not
+        // remain in grey state (see `ShardReplicaSet::restore_local_replica_from`).
+        // See: <https://github.com/qdrant/qdrant/issues/5139>
+        //
         // TODO:
         //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
         //   but `recover_local_shard_from` requires `cancel::CancellationToken` argument *now*,
@@ -440,11 +444,6 @@ async fn _do_recover_from_snapshot(
             }
         }
     }
-
-    // Explicitly trigger optimizers for the collection we have recovered. This prevents them from
-    // remaining in grey state if the snapshot is not optimized.
-    // See: <https://github.com/qdrant/qdrant/issues/5139>
-    collection.trigger_optimizers().await;
 
     // Remove tmp collection dir
     tokio_fs::remove_dir_all(&tmp_collection_dir).await?;

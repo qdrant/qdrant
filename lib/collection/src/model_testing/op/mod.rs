@@ -256,6 +256,19 @@ pub(super) enum Op {
     /// when a restart hits, plus the worker stop/start race in `on_optimizer_config_update`.
     /// The new value is persisted to `config.json`, so it survives the run's restarts.
     SetFlushInterval(u64),
+    /// Turn the segment optimizer on or off mid-run, through the same path a user's
+    /// `update_collection` with `optimizers_config.max_optimization_threads` takes: persist the
+    /// optimizer-config diff (`Some(1)` / `Some(0)`), then recreate the optimizers in the background.
+    ///
+    /// Not a data op: the model is untouched and every verification op must keep passing. It
+    /// exercises stopping the optimizer while it may be mid-optimization, the worker stop/start
+    /// race in `on_optimizer_config_update`, and waking the optimizer up again after it was
+    /// parked. The value is persisted to `config.json`, so it survives the run's restarts.
+    ///
+    /// Only drawn when the run starts with the optimizer on (masked off under
+    /// `--disable-optimizer`, see `Swarm::OPTIMIZER_OPS`): turning it on would end the
+    /// never-optimized state those runs check exactly.
+    SetOptimizer(OptimizerState),
     /// Verification op: BM25 over the text index of `t` via `ScoringQuery::Text`, the path a
     /// text query takes through the planner, the shards and the per-source merge. Scores come
     /// from shard-wide statistics the model does not reproduce (deleted documents stay in the
@@ -299,6 +312,24 @@ pub(super) struct Prefetch {
     pub(super) query: VectorValue,
     pub(super) limit: usize,
     pub(super) filter_num: Option<i64>,
+}
+
+/// Target state of a `SetOptimizer` op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OptimizerState {
+    Enabled,
+    Disabled,
+}
+
+impl OptimizerState {
+    /// `max_optimization_threads` value that puts the optimizer in this state (`Some(0)` disables
+    /// the optimizer worker entirely; the fixture starts with `Some(1)`).
+    pub(super) fn max_optimization_threads(self) -> usize {
+        match self {
+            OptimizerState::Enabled => 1,
+            OptimizerState::Disabled => 0,
+        }
+    }
 }
 
 /// Fusion method for `QueryFusion` (the engine's `api::rest::Fusion` isn't `Clone`, which `Op`
@@ -365,7 +396,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 45;
+    const N: usize = 46;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -414,6 +445,7 @@ impl Swarm {
         "ScrollFilteredByUrlSubstring",
         "CountByNested",
         "ScrollFilteredByNested",
+        "SetOptimizer",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -477,6 +509,9 @@ impl Swarm {
         3, // ScrollFilteredByUrlSubstring
         3, // CountByNested
         3, // ScrollFilteredByNested
+        // Config change, like `SetFlushInterval`: restarts every shard's update workers, so keep
+        // it rare. Half the draws disable the optimizer, so a run spends long stretches with it off.
+        1, // SetOptimizer
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -492,6 +527,10 @@ impl Swarm {
     /// Must stay aligned with `NAMES`/`BASE`.
     const SNAPSHOT_OPS: [usize; 1] = [37];
 
+    /// Index of the optimizer toggle (`SetOptimizer`), masked off when the run starts with the
+    /// optimizer disabled. Must stay aligned with `NAMES`/`BASE`.
+    const OPTIMIZER_OPS: [usize; 1] = [45];
+
     /// Draw a per-run config: each non-forced op is included with probability 0.5 (keeping its
     /// base weight); omitted ops get weight 0.
     ///
@@ -504,10 +543,14 @@ impl Swarm {
     /// With `disable_snapshots`, the snapshot ops are forced to weight 0. The masking is applied
     /// *after* the draw loop so each op (snapshots included) still draws its `random_bool` — the
     /// rng-draw count is unchanged, so toggling the flag doesn't shift the other ops' swarm draws.
+    ///
+    /// With `disable_optimizer`, the optimizer toggle is forced to weight 0 the same way, so a run
+    /// that starts with the optimizer off keeps it off.
     pub(super) fn random(
         rng: &mut impl Rng,
         enable_force_off: bool,
         disable_snapshots: bool,
+        disable_optimizer: bool,
     ) -> Self {
         let mut weights = Self::BASE;
         for (i, w) in weights.iter_mut().enumerate() {
@@ -524,6 +567,11 @@ impl Swarm {
         }
         if disable_snapshots {
             for i in Self::SNAPSHOT_OPS {
+                weights[i] = 0;
+            }
+        }
+        if disable_optimizer {
+            for i in Self::OPTIMIZER_OPS {
                 weights[i] = 0;
             }
         }
@@ -871,6 +919,11 @@ impl Op {
             42 => Op::ScrollFilteredByUrlSubstring(random_url_substring_probe(rng).to_string()),
             43 => Op::CountByNested(NestedFilter::random(rng)),
             44 => Op::ScrollFilteredByNested(NestedFilter::random(rng)),
+            45 => Op::SetOptimizer(if rng.random_bool(0.5) {
+                OptimizerState::Enabled
+            } else {
+                OptimizerState::Disabled
+            }),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -924,6 +977,7 @@ impl Op {
             Op::ScrollFilteredByUrlSubstring(_) => "ScrollFilteredByUrlSubstring",
             Op::CountByNested(_) => "CountByNested",
             Op::ScrollFilteredByNested(_) => "ScrollFilteredByNested",
+            Op::SetOptimizer(_) => "SetOptimizer",
         }
     }
 }

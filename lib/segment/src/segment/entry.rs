@@ -479,6 +479,10 @@ impl StorageSegmentEntry for Segment {
         // 2. Flush vectors and payloads.
         // 3. Flush id versions last. So presence of version indicates that all other data is up-to-date.
         //
+        // Loading the ID tracker relies on this order too: a point relocated within this segment
+        // whose version never reached disk is kept on its previous copy, see
+        // <https://github.com/qdrant/qdrant/pull/11633>.
+        //
         // Example of recovery from WAL in case of partial flush:
         //
         // In-memory state:

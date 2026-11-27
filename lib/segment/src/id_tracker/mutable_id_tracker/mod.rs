@@ -22,7 +22,8 @@ use parking_lot::Mutex;
 
 use self::change::MappingChange;
 use self::mappings_storage::{
-    load_mappings, mappings_path, reconcile_persisted_mapping_changes, store_mapping_changes,
+    LoadedMappings, load_mappings, mappings_path, reconcile_persisted_mapping_changes,
+    store_mapping_changes,
 };
 use self::versions_storage::{
     load_versions, reconcile_persisted_version_changes, store_version_changes, versions_path,
@@ -115,21 +116,7 @@ impl MutableIdTracker {
             );
         }
 
-        let (mappings, mappings_expected_len) = if has_mappings {
-            load_mappings(&mappings_path, deferred_internal_id).map_err(|err| {
-                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
-            })?
-        } else {
-            let mappings = PointMappings::new(
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                deferred_internal_id,
-            );
-            (mappings, 0)
-        };
-
+        // Versions are loaded first: replaying the mappings needs to know which slots have one
         let internal_to_version = if has_versions {
             load_versions(&versions_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
@@ -137,6 +124,57 @@ impl MutableIdTracker {
         } else {
             vec![]
         };
+
+        // A slot "has a version" when the versions file reaches it: the file's length is the commit
+        // mark, see `versions_storage`. Zero-filled gaps count as having one, so this only tells
+        // abandoned inserts apart on the first load after a crash, before any later version write
+        // grows the file over them, which is why they are relinked in the log below.
+        // See <https://github.com/qdrant/qdrant/pull/11633>.
+        let has_version =
+            |internal_id: PointOffsetType| (internal_id as usize) < internal_to_version.len();
+        let LoadedMappings {
+            mappings,
+            abandoned_relocations,
+            read_to: mappings_expected_len,
+        } = if has_mappings {
+            load_mappings(&mappings_path, deferred_internal_id, has_version).map_err(|err| {
+                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
+            })?
+        } else {
+            LoadedMappings {
+                mappings: PointMappings::new(
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    deferred_internal_id,
+                ),
+                abandoned_relocations: Vec::new(),
+                read_to: 0,
+            }
+        };
+
+        // Points whose last insert was abandoned stay on their previous copy, but the log still
+        // names the abandoned slot as theirs. Relink them to their previous copy in the log too,
+        // like an update-only writer does with the inserts it inherits. Otherwise, once a later
+        // version write covers the abandoned slot, a reader of the log (this tracker on its next
+        // load, or a read-only follower) takes the abandoned insert for committed and serves
+        // whatever its slot holds. Flushed with the next mappings flush, before any version.
+        // See <https://github.com/qdrant/qdrant/pull/11641>.
+        let mut relinks = Vec::new();
+        for &external_id in &abandoned_relocations {
+            relinks.extend(
+                mappings
+                    .heads(&external_id)
+                    .map(|internal_id| MappingChange::Insert(external_id, internal_id)),
+            );
+        }
+        if !relinks.is_empty() {
+            log::warn!(
+                "Mutable ID tracker found {} points relocated without a persisted version, keeping their previous copy and assuming automatic recovery by WAL",
+                abandoned_relocations.len(),
+            );
+        }
 
         // Compare internal point mappings and versions count, report warning if we don't
         debug_assert!(
@@ -159,7 +197,7 @@ impl MutableIdTracker {
             internal_to_version,
             mappings,
             pending_versions: Default::default(),
-            pending_mappings: Default::default(),
+            pending_mappings: Arc::new(Mutex::new(relinks)),
             delete_versioning,
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),

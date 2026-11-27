@@ -141,31 +141,41 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     ///
     /// # Arguments
     ///
-    /// * 'excluded' - values, which are not considered as matching
+    /// * 'excluded' - distinct values, which are not considered as matching
     ///
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality<'b>(&self, excluded: impl Iterator<Item = &'b N>) -> CardinalityEstimation
+    fn except_cardinality<K, A>(&self, excluded: &IndexSet<K, A>) -> CardinalityEstimation
     where
-        N: 'b,
+        A: BuildHasher,
+        K: Borrow<N> + Hash + Eq,
     {
         // Minimal case: we exclude as many points as possible.
-        let excluded_value_counts: Vec<_> = excluded
-            .map(|val| self.get_count_for_value(val).unwrap_or(0))
-            .collect();
-        let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
+        // Only count excluded values that actually exist in this segment's index,
+        // otherwise values present only in other segments would inflate the subtraction
+        // against `get_unique_values_count()` and falsely collapse `max_values_per_point` to 0.
+        // `excluded` is a set, so every value is counted at most once.
+        let mut total_excluded_value_count = 0usize;
+        let mut excluded_unique_values_count = 0usize;
+        for val in excluded {
+            if let Some(count) = self.get_count_for_value(val.borrow()) {
+                excluded_unique_values_count += 1;
+                total_excluded_value_count += count;
+            }
+        }
 
         debug_assert!(total_excluded_value_count <= self.get_values_count());
+        debug_assert!(excluded_unique_values_count <= self.get_unique_values_count());
 
         let non_excluded_values_count = self
             .get_values_count()
             .saturating_sub(total_excluded_value_count);
         let max_values_per_point = self
             .get_unique_values_count()
-            .saturating_sub(excluded_value_counts.len());
+            .saturating_sub(excluded_unique_values_count);
 
-        if max_values_per_point == 0 {
+        if non_excluded_values_count == 0 || max_values_per_point == 0 {
             debug_assert_eq!(non_excluded_values_count, 0);
             return CardinalityEstimation::exact(0);
         }
@@ -177,12 +187,7 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
                 .saturating_sub(total_excluded_value_count),
         );
 
-        let max_excluded_value_count = excluded_value_counts.iter().max().copied().unwrap_or(0);
-
-        let max = self
-            .get_indexed_points()
-            .saturating_sub(max_excluded_value_count)
-            .min(non_excluded_values_count);
+        let max = self.get_indexed_points().min(non_excluded_values_count);
 
         let exp = number_of_selected_points(self.get_indexed_points(), non_excluded_values_count)
             .max(min)

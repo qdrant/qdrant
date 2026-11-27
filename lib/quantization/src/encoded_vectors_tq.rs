@@ -21,6 +21,7 @@ use crate::encoded_vectors::{
     validate_vector_parameters,
 };
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::matrix::{CODES_IN_F32, StorageSource, TurboMatrixOperands};
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -34,6 +35,16 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
 
     // Buffer used when encoding vectors.
     encoding_buffer: Vec<f64>,
+}
+
+/// Encoder parameters of TurboQuant: with the vector parameters, everything needed to score
+/// its codes. See [`EncodedVectorsTQ::from_parameters`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurboParameters {
+    pub bits: TQBits,
+    pub mode: TQMode,
+    pub rotation: TQRotation,
+    pub error_correction: Option<ErrorCorrectionMetadata>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -97,7 +108,7 @@ fn new_error_correction_from_metadata(
 /// On-disk form of TQ+'s [`ErrorCorrection`]. Stores only `shift` and `scale`
 /// — derived caches like `D'_i²` and `⟨M, M⟩` are recomputed at load time so
 /// `shift` / `scale` remain the single source of truth.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ErrorCorrectionMetadata {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
@@ -382,6 +393,56 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         Ok(result)
     }
 
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> TurboParameters {
+        let Metadata {
+            vector_parameters: _,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        } = &self.metadata;
+        TurboParameters {
+            bits: *bits,
+            mode: *mode,
+            rotation: *rotation,
+            error_correction: error_correction.clone(),
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: TurboParameters,
+    ) -> std::io::Result<Self> {
+        let TurboParameters {
+            bits,
+            mode,
+            rotation,
+            error_correction,
+        } = parameters;
+        let metadata = Metadata {
+            vector_parameters,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        };
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: None,
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+        Ok(result)
+    }
+
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
         self.encoded_vectors.get_vector_data(i)
     }
@@ -430,6 +491,33 @@ pub fn get_quantized_vector_size(
         vector_parameters.distance_type,
         mode,
     )
+}
+
+/// The vectors of the rotated, padded space, see [`TurboQuantizer::symmetric_vector`]. Exact for
+/// Dot and Cosine except at 2 and 4 bits with TQ+, whose score adds a correction stored with each
+/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ the distance is only close: the
+/// score takes the cosine of the angle between the signs. Not score-equivalent for L1 at any width.
+impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
+    fn symmetric_dim(&self) -> usize {
+        self.quantizer.get_padded_dim()
+    }
+
+    fn symmetric_vector<'a>(&'a self, code: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        self.quantizer.symmetric_vector(code)
+    }
+
+    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits,
+    /// except for L2), and
+    /// none where a NaN in the vector it encodes left its scale or correction NaN.
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        if self.quantizer.score_symmetric(code, code).is_nan() {
+            DuplicateKey::ScoresNan
+        } else if self.quantizer.stores_ignored_correction() {
+            DuplicateKey::Values
+        } else {
+            DuplicateKey::Bytes(code)
+        }
+    }
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
@@ -534,12 +622,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
             + encoding_buffer.capacity() * size_of::<f64>()
     }
 
-    fn encode_internal_vector(&self, _id: PointOffsetType) -> Option<EncodedQueryTQ> {
-        // Turbo quant is asymmetric, so we cannot encode internal vectors, only queries.
-        // This method is used for symmetric quantization,
-        // where we can encode internal vectors without access to original vector data,
-        // which may require disk access.
-        None
+    /// The stored vector `id` as a query that scores the others as [`Self::score_internal`] does,
+    /// so that an index is built from the codes alone, without reading the originals.
+    fn encode_internal_vector(&self, id: PointOffsetType) -> Option<EncodedQueryTQ> {
+        let record = self.encoded_vectors.get_vector_data(id);
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(record.len() * mul);
+        Some(self.quantizer.stored_query(&record))
     }
 
     fn vectors_count(&self) -> usize {

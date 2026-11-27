@@ -41,10 +41,18 @@ where
 
     fn list_files_async<'a>(
         &'a self,
+        dir: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
+        // The remote is the source of truth; mirrors are ephemeral.
+        self.blob_fs.list_files_async(dir)
+    }
+
+    fn prefix_list_files_async<'a>(
+        &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
         // The remote is the source of truth; mirrors are ephemeral.
-        self.blob_fs.list_files_async(prefix_path)
+        self.blob_fs.prefix_list_files_async(prefix_path)
     }
 
     fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(

@@ -23,13 +23,15 @@ use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockReadGuard, RwLockUpgradableReadGuard};
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::{ReadSegmentEntry as _, StorageSegmentEntry as _};
 use segment::segment::{Segment, SegmentVersion};
-use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::segment_builder::{INDEX_BUILD_SEED, SegmentBuilder};
 use segment::types::{PointIdType, VectorNameBuf};
 use uuid::Uuid;
 
@@ -332,7 +334,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         })?;
     drop(progress_wait_permit);
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(INDEX_BUILD_SEED);
     segment_builder.build(
         segments_path,
         output_segment_uuid,

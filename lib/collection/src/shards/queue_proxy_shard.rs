@@ -21,7 +21,8 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
-use tokio::sync::Mutex;
+use shard::wal::SerdeWal;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::task::AbortOnDropHandle;
 
 use super::remote_shard::RemoteShard;
@@ -80,14 +81,27 @@ impl QueueProxyShard {
     /// Queue proxy the given local shard and point to the remote shard.
     ///
     /// This starts queueing all new updates on the local shard at the point of creation.
-    pub async fn new(
+    ///
+    /// `wal_lock` must be the locked WAL of `wrapped_shard`. It is taken by the caller so that
+    /// this function doesn't have to await while owning the local shard.
+    pub fn new(
         wrapped_shard: LocalShard,
+        wal_lock: &MutexGuard<'_, SerdeWal<OperationWithClockTag>>,
         remote_shard: RemoteShard,
         wal_ack_pins: &WalAckPins,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
+        debug_assert_wal_of_shard(wal_lock, &wrapped_shard);
+
+        let start_from = wal_lock.last_index() + 1;
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_ack_pins, progress).await),
+            inner: Some(Inner::new_from_version(
+                wrapped_shard,
+                remote_shard,
+                wal_ack_pins,
+                start_from,
+                progress,
+            )),
         }
     }
 
@@ -98,21 +112,23 @@ impl QueueProxyShard {
     /// specific point in our WAL. The `version` may be in the past, but must always be within
     /// range of the current WAL.
     ///
+    /// `wal_lock` must be the locked WAL of `wrapped_shard`. It is taken by the caller so that
+    /// this function doesn't have to await while owning the local shard.
+    ///
     /// # Errors
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
     /// `version` is too old or too new, queue proxy creation is rejected.
     #[allow(clippy::result_large_err)]
-    pub async fn new_from_version(
+    pub fn new_from_version(
         wrapped_shard: LocalShard,
+        wal_lock: &MutexGuard<'_, SerdeWal<OperationWithClockTag>>,
         remote_shard: RemoteShard,
         wal_ack_pins: &WalAckPins,
         version: u64,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
-        // Lock WAL until we've successfully created the queue proxy shard
-        let wal = wrapped_shard.wal.wal.clone();
-        let wal_lock = wal.lock().await;
+        debug_assert_wal_of_shard(wal_lock, &wrapped_shard);
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
         // Allow it to be one higher than the last index to only send new updates
@@ -441,6 +457,17 @@ impl ShardOperation for QueueProxyShard {
     }
 }
 
+/// Debug check that `wal_lock` is a lock on the WAL of the given `shard`.
+fn debug_assert_wal_of_shard(
+    wal_lock: &MutexGuard<'_, SerdeWal<OperationWithClockTag>>,
+    shard: &LocalShard,
+) {
+    debug_assert!(
+        std::ptr::eq(MutexGuard::mutex(wal_lock), Arc::as_ptr(&shard.wal.wal)),
+        "WAL lock must be of the WAL of the wrapped shard",
+    );
+}
+
 // Safe guard in debug mode to ensure that `finalize()` is called before dropping
 #[cfg(debug_assertions)]
 impl Drop for QueueProxyShard {
@@ -489,22 +516,6 @@ struct Inner {
 }
 
 impl Inner {
-    pub async fn new(
-        wrapped_shard: LocalShard,
-        remote_shard: RemoteShard,
-        wal_ack_pins: &WalAckPins,
-        progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
-        Self::new_from_version(
-            wrapped_shard,
-            remote_shard,
-            wal_ack_pins,
-            start_from,
-            progress,
-        )
-    }
-
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,

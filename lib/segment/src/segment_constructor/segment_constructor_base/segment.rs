@@ -96,7 +96,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
                 "Segment name is not a valid UUID: {}. Renaming to {segment_uuid}",
                 path.display(),
             );
-            fs::rename(path, &new_path)?;
+            common::fs::rename_while_held(path, &new_path)?;
             sync_parent_dir(&new_path)?;
             Ok(Some((new_path, segment_uuid)))
         }

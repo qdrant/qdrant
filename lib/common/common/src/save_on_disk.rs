@@ -1,10 +1,9 @@
-use std::io::{BufReader, BufWriter, Write};
+use std::io::BufReader;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use atomicwrites::OverwriteBehavior::AllowOverwrite;
-use atomicwrites::{AtomicFile, Error as AtomicWriteError};
+use atomicwrites::Error as AtomicWriteError;
 use fs_err::{File, tokio as tokio_fs};
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
@@ -150,11 +149,7 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
-        AtomicFile::new(path, AllowOverwrite).write(|file| {
-            let mut writer = BufWriter::new(file);
-            serde_json::to_writer(&mut writer, data)?;
-            writer.flush().map_err(serde_json::Error::io)
-        })?;
+        crate::fs::atomic_save_json(&path, data)?;
         Ok(())
     }
 

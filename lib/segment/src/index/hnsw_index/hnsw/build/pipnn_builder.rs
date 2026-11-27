@@ -11,11 +11,12 @@ use super::context::MainGraphProgress;
 use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
+use crate::index::hnsw_index::graph_algorithm::{MainGraphAlgorithm, PipnnSettings};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
+use crate::index::hnsw_index::pipnn::vectors::IndexBuildVectors;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
-use crate::vector_storage::matrix_scorer::{MatrixScorer, new_matrix_scorer};
+use crate::vector_storage::matrix_scorer::MatrixScorer;
 
 /// Fewest points for a PiPNN main graph. At 5,000 points PiPNN built slower than HNSW, and
 /// level 0 graphs of about 1,025 to 4,000 points come out much worse than HNSW's.
@@ -28,9 +29,19 @@ thread_local! {
     static MIN_POINTS_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
+/// The main graph algorithm of a build started on this thread, also sent to a remote indexer:
+/// PiPNN with its defaults if it is enabled, HNSW if not.
+pub(super) fn main_graph_algorithm() -> MainGraphAlgorithm {
+    if enabled() {
+        MainGraphAlgorithm::Pipnn(PipnnSettings::default())
+    } else {
+        MainGraphAlgorithm::Hnsw
+    }
+}
+
 /// Whether PiPNN may build on this thread: the `pipnn_graph_building` feature flag, or
 /// always within [`with_pipnn_min_points`].
-pub(super) fn enabled() -> bool {
+fn enabled() -> bool {
     #[cfg(feature = "testing")]
     if MIN_POINTS_OVERRIDE.get().is_some() {
         return true;
@@ -67,8 +78,14 @@ pub fn with_pipnn_min_points<R>(min_points: usize, f: impl FnOnce() -> R) -> R {
 /// products, without searching the graph. Payload blocks are built with HNSW.
 pub(super) struct PipnnBuilder<'a> {
     pub local: LocalBuilder<'a>,
-    /// Scores what HNSW scores: the quantized vectors where configured.
+    /// The vectors HNSW scores: the quantized ones where configured. Every phase of the PiPNN
+    /// main graph reads these and no others. Payload blocks are built with HNSW insertion, which
+    /// reads the original vector of each point to make its query where the quantization can't
+    /// encode a stored point as one (TurboQuant).
+    source: IndexBuildVectors<'a>,
+    /// Scores `source`.
     scorer: MatrixScorer<'a>,
+    settings: PipnnSettings,
 }
 
 impl<'a> PipnnBuilder<'a> {
@@ -77,7 +94,10 @@ impl<'a> PipnnBuilder<'a> {
     /// Otherwise `local` comes back.
     ///
     /// Boxed: `LocalBuilder` is large enough to trip `clippy::result_large_err`.
-    pub fn new(local: LocalBuilder<'a>) -> Result<Self, Box<LocalBuilder<'a>>> {
+    pub fn new(
+        local: LocalBuilder<'a>,
+        settings: PipnnSettings,
+    ) -> Result<Self, Box<LocalBuilder<'a>>> {
         // No main graph (`m == 0`): blocks are HNSW either way
         if !local.ctx.has_main_graph() {
             return Err(Box::new(local));
@@ -90,12 +110,17 @@ impl<'a> PipnnBuilder<'a> {
             );
             return Err(Box::new(local));
         }
-        let Some(scorer) = new_matrix_scorer(local.ctx.vector_storage, local.ctx.quantized_vectors)
-        else {
+        let source = IndexBuildVectors::new(local.ctx.vector_storage, local.ctx.quantized_vectors);
+        let Some(scorer) = source.matrix_scorer() else {
             debug!("No PiPNN: no matrix scorer for these vectors");
             return Err(Box::new(local));
         };
-        Ok(Self { local, scorer })
+        Ok(Self {
+            local,
+            source,
+            scorer,
+            settings,
+        })
     }
 }
 
@@ -116,17 +141,17 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         drop(migrate);
 
         // The first draw after the levels, which `LocalBuilder::new` drew from the same rng
-        let params = PipnnParams::new(self.local.rng.random());
+        let params = PipnnParams::new(self.settings.clone(), self.local.rng.random());
 
         let timer = Instant::now();
         // Parts of the builder, so that the build does not borrow the rng, which is not `Sync`
         let local = &self.local;
         let (ctx, points, graph) = (&local.ctx, &local.points, &local.graph);
+        let not_deleted = ctx.not_deleted();
         let links = local.pool.install(|| {
             pipnn::build_links(
-                ctx.vector_storage,
-                ctx.quantized_vectors,
-                ctx.id_tracker.deleted_point_bitslice(),
+                self.source,
+                &not_deleted,
                 &self.scorer,
                 points,
                 |point| graph.get_point_level(point),
@@ -171,7 +196,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
     }
 
     fn seeds_payload_blocks(&self) -> bool {
-        // Never picked with an old index
+        // Never heals: picked without an old index, or when the old one covers too few points
         false
     }
 }

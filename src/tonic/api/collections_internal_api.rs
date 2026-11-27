@@ -5,8 +5,9 @@ use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
     CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
     GetShardMemoryReportRequest, GetShardMemoryReportResponse, GetShardOptimizationsRequest,
-    GetShardOptimizationsResponse, GetShardRecoveryPointRequest, GetShardRecoveryPointResponse,
-    InitiateShardTransferRequest, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    GetShardOptimizationsResponse, GetShardOrphanPointsRequest, GetShardOrphanPointsResponse,
+    GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
@@ -210,6 +211,50 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let response = CollectionOperationResponse {
             result: true,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn get_shard_orphan_points(
+        &self,
+        mut request: Request<GetShardOrphanPointsRequest>,
+    ) -> Result<Response<GetShardOrphanPointsResponse>, Status> {
+        validate_and_log(request.get_ref());
+        let auth = extract_auth(&mut request);
+
+        let timing = Instant::now();
+        let GetShardOrphanPointsRequest {
+            collection_name,
+            shard_id,
+            source_clocks,
+        } = request.into_inner();
+
+        let source_clocks =
+            source_clocks.ok_or_else(|| Status::invalid_argument("Missing source clocks"))?;
+
+        let collection_read = self
+            .toc
+            .get_collection(&access_pass(&auth, &collection_name)?)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        // Find the points changed by orphan operations
+        let orphan_points = collection_read
+            .find_orphan_points(shard_id, &source_clocks.try_into()?)
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to find orphan points for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let response = GetShardOrphanPointsResponse {
+            orphan_points: Some(orphan_points.into()),
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))

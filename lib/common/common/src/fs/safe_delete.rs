@@ -27,6 +27,8 @@ use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use tempfile::TempDir;
 
+use super::rename_while_held;
+
 /// Safe delete a directory by moving it into a temporary directory first.
 ///
 /// Allows deleting in the background without blocking the main thread.
@@ -48,7 +50,7 @@ pub fn safe_delete_in_tmp(path: &Path, temp_dir: &Path) -> io::Result<TempDir> {
     fs::create_dir_all(temp_dir)?;
     let to_delete = tempfile::Builder::new().prefix("").tempdir_in(temp_dir)?;
     // Append /x as older Windows can't rename onto an existing dir. See #5924.
-    fs::rename(path, to_delete.path().join("x"))?;
+    rename_while_held(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -72,7 +74,7 @@ pub fn safe_delete_with_suffix(path: &Path) -> io::Result<()> {
         .prefix(file_name)
         .suffix(".deleted")
         .tempdir_in(parent)?;
-    fs::rename(path, to_delete.path().join("x"))?;
+    rename_while_held(path, &to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }

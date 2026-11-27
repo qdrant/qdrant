@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
+use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -14,6 +15,7 @@ use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
 use super::{
     DenseVectorStorageRead, MultiVectorStorageRead, SparseVectorStorageRead, VectorStorageEnum,
+    VectorStorageRead,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -141,6 +143,15 @@ pub trait RawScorerBuilder {
         &'a self,
         query: QueryVector,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>;
+
+    /// Scorer of the stored vector of `point_id` against the others, as
+    /// [`RawScorer::score_internal`] scores two stored vectors, for building an index. The Turbo
+    /// datatypes score their codes symmetrically; the others score a copy of the vector as a
+    /// query.
+    fn build_raw_internal_scorer<'a>(
+        &'a self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>>;
 }
 
 impl RawScorerBuilder for VectorStorageEnum {
@@ -150,6 +161,87 @@ impl RawScorerBuilder for VectorStorageEnum {
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         new_raw_scorer(query, self)
     }
+
+    fn build_raw_internal_scorer<'a>(
+        &'a self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        match self {
+            VectorStorageEnum::DenseTurboMemmap(vs) => {
+                raw_turbo_internal_scorer(point_id, vs.as_ref())
+            }
+            VectorStorageEnum::DenseTurboGraphInline(vs) => {
+                raw_turbo_internal_scorer(point_id, vs.as_ref())
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(vs) => {
+                raw_turbo_internal_scorer(point_id, vs.as_ref())
+            }
+            VectorStorageEnum::DenseTurboAppendableMemmap(vs) => {
+                raw_turbo_internal_scorer(point_id, vs.as_ref())
+            }
+            VectorStorageEnum::MultiDenseTurbo(vs) => {
+                raw_turbo_multi_internal_scorer(point_id, vs.as_ref())
+            }
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseGraphInline(_)
+            | VectorStorageEnum::DenseGraphInlineByte(_)
+            | VectorStorageEnum::DenseGraphInlineHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => raw_copy_internal_scorer(point_id, self),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_) => raw_copy_internal_scorer(point_id, self),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {
+                raw_copy_internal_scorer(point_id, self)
+            }
+        }
+    }
+}
+
+/// [`RawScorerBuilder::build_raw_internal_scorer`] from a copy of the stored vector as a query.
+pub(crate) fn raw_copy_internal_scorer<'a, V>(
+    point_id: PointOffsetType,
+    vector_storage: &'a V,
+) -> OperationResult<Box<dyn RawScorer + 'a>>
+where
+    V: VectorStorageRead + RawScorerBuilder,
+{
+    let query = vector_storage.get_vector::<Random>(point_id);
+    vector_storage.build_raw_scorer(QueryVector::from(query.as_vec_ref()))
+}
+
+/// [`RawScorerBuilder::build_raw_internal_scorer`] of a dense Turbo datatype storage.
+pub(crate) fn raw_turbo_internal_scorer<'a, TStorage: TurboScoring>(
+    point_id: PointOffsetType,
+    vector_storage: &'a TStorage,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    raw_scorer_from_query_scorer(TurboQueryScorer::stored(point_id, vector_storage))
+}
+
+/// [`RawScorerBuilder::build_raw_internal_scorer`] of a multivector Turbo datatype storage.
+pub(crate) fn raw_turbo_multi_internal_scorer<'a, TStorage: TurboMultiScoring>(
+    point_id: PointOffsetType,
+    vector_storage: &'a TStorage,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    raw_scorer_from_query_scorer(TurboMultiQueryScorer::stored(point_id, vector_storage))
 }
 
 pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
@@ -509,6 +601,7 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
 }
 
 /// A [`ConditionChecker`] matching points that not deleted.
+#[derive(Clone, Copy)]
 pub struct NotDeletedChecker<'a> {
     /// [`BitSlice`] defining flags for deleted points (and thus their vectors).
     ///

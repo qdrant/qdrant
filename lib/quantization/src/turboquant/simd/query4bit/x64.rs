@@ -3,7 +3,8 @@
 //! The codebook is stored as unsigned u8 ∈ [0, 255] (`CODEBOOK_U8`); the
 //! kernels XOR it with 0x80 to recover the signed form in-register.
 
-use super::{CODEBOOK_U8, FOLDED_MAX_DIM, centroid_dot};
+use super::super::{BLOCK_BYTES, BlockedFactors};
+use super::{CODEBOOK_OFFSET, CODEBOOK_U8, FOLDED_MAX_DIM, centroid_dot};
 
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_i32_sse(v: core::arch::x86_64::__m128i) -> i32 {
@@ -445,6 +446,309 @@ pub(super) unsafe fn fold_codes_avx2(
         }
     }
     groups * 32
+}
+
+// ------------------------------------------------------------------
+// Block order — the TQ+ symmetric score of `super::super::BlockedFactors` and
+// `super::super::FoldedQuery`, the same sum as `score_4bit_internal_folded`. A
+// block of `BLOCK_BYTES` code bytes is read as its 32 low nibbles, then its 32
+// high nibbles (its even, then its odd dimensions), not interleaved back into
+// dimension order: the factors and a folded query are stored in that order.
+// The folded values stay within ±128 (`|c| ≤ 128`, `D' ≤ 1` in Q15):
+//   per product:   |q_a · q_b| ≤ 128 · 128 = 2¹⁴
+//   total:         ≤ 2¹⁶ · 2¹⁴ = 2³⁰ at `FOLDED_MAX_DIM` ✓
+// ------------------------------------------------------------------
+
+/// 16-bit lanes of a 512-bit vector.
+const LANES_512: usize = 32;
+/// 16-bit lanes of a 256-bit vector.
+const LANES_256: usize = 16;
+
+/// The signed codebook (`CODEBOOK_U8 − CODEBOOK_OFFSET`) as words, zero-padded, for `vpermw`.
+const SIGNED_CODEBOOK_WORDS: [i16; 32] = {
+    let mut words = [0; 32];
+    let mut code = 0;
+    while code < CODEBOOK_U8.len() {
+        words[code] = CODEBOOK_U8[code] as i16 - CODEBOOK_OFFSET as i16;
+        code += 1;
+    }
+    words
+};
+
+/// The 32 values of `values` from `position` on.
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn load_i16_512(values: &[i16], position: usize) -> core::arch::x86_64::__m512i {
+    use core::arch::x86_64::*;
+    debug_assert!(position + LANES_512 <= values.len());
+    unsafe { _mm512_loadu_si512(values.as_ptr().add(position).cast()) }
+}
+
+/// Signed codebook values of the codes of block `block` of `codes`: the low nibbles, then the
+/// high ones.
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw")]
+unsafe fn unpack_blocked_avx512(
+    codebook: core::arch::x86_64::__m512i,
+    codes: &[u8],
+    block: usize,
+) -> [core::arch::x86_64::__m512i; 2] {
+    use core::arch::x86_64::*;
+    debug_assert!((block + 1) * BLOCK_BYTES <= codes.len());
+    unsafe {
+        let bytes = _mm256_loadu_si256(codes.as_ptr().add(block * BLOCK_BYTES).cast());
+        let words = _mm512_cvtepu8_epi16(bytes);
+        let low = _mm512_and_si512(words, _mm512_set1_epi16(0x0F));
+        let high = _mm512_srli_epi16(words, 4);
+        [
+            _mm512_permutexvar_epi16(low, codebook),
+            _mm512_permutexvar_epi16(high, codebook),
+        ]
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn reduce_512(accumulators: &[core::arch::x86_64::__m512i]) -> i64 {
+    use core::arch::x86_64::*;
+    let mut sum = _mm512_setzero_si512();
+    for &acc in accumulators {
+        sum = _mm512_add_epi32(sum, acc);
+    }
+    i64::from(_mm512_reduce_add_epi32(sum))
+}
+
+/// [`super::fold_4bit_blocked`] on AVX-512.
+///
+/// # Safety
+///
+/// The CPU must support AVX-512 BW; `codes`, `values` and the factors must cover the factors'
+/// blocks.
+#[target_feature(enable = "avx512f,avx512bw")]
+pub(super) unsafe fn fold_4bit_blocked_avx512(
+    factors: &BlockedFactors,
+    codes: &[u8],
+    values: &mut [i16],
+) {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = _mm512_loadu_si512(SIGNED_CODEBOOK_WORDS.as_ptr().cast());
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_avx512(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (2 * block + part) * LANES_512;
+                let folded = _mm512_mulhrs_epi16(code, load_i16_512(&factors.factors, position));
+                _mm512_storeu_si512(values.as_mut_ptr().add(position).cast(), folded);
+            }
+        }
+    }
+}
+
+/// [`super::score_4bit_blocked`] on AVX-512, one accumulator per half of a block, so that
+/// consecutive `vpdpwssd` don't wait for each other.
+///
+/// # Safety
+///
+/// The CPU must support AVX-512 BW and VNNI; `codes`, `query` and the factors must cover the
+/// factors' blocks.
+#[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+pub(super) unsafe fn score_4bit_blocked_avx512(
+    query: &[i16],
+    factors: &BlockedFactors,
+    codes: &[u8],
+) -> i64 {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = _mm512_loadu_si512(SIGNED_CODEBOOK_WORDS.as_ptr().cast());
+        let mut acc = [_mm512_setzero_si512(); 2];
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_avx512(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (2 * block + part) * LANES_512;
+                let folded = _mm512_mulhrs_epi16(code, load_i16_512(&factors.factors, position));
+                acc[part] = _mm512_dpwssd_epi32(acc[part], load_i16_512(query, position), folded);
+            }
+        }
+        reduce_512(&acc)
+    }
+}
+
+/// [`super::score_4bit_internal_blocked`] on AVX-512.
+///
+/// # Safety
+///
+/// The CPU must support AVX-512 BW and VNNI; `a`, `b` and the factors must cover the factors'
+/// blocks.
+#[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+pub(super) unsafe fn score_4bit_internal_blocked_avx512(
+    factors: &BlockedFactors,
+    a: &[u8],
+    b: &[u8],
+) -> i64 {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = _mm512_loadu_si512(SIGNED_CODEBOOK_WORDS.as_ptr().cast());
+        let mut acc = [_mm512_setzero_si512(); 2];
+        for block in 0..factors.layout.blocks() {
+            let codes_a = unpack_blocked_avx512(codebook, a, block);
+            let codes_b = unpack_blocked_avx512(codebook, b, block);
+            for part in 0..2 {
+                let factor = load_i16_512(&factors.factors, (2 * block + part) * LANES_512);
+                acc[part] = _mm512_dpwssd_epi32(
+                    acc[part],
+                    _mm512_mulhrs_epi16(codes_a[part], factor),
+                    _mm512_mulhrs_epi16(codes_b[part], factor),
+                );
+            }
+        }
+        reduce_512(&acc)
+    }
+}
+
+/// The 16 values of `values` from `position` on.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn load_i16_256(values: &[i16], position: usize) -> core::arch::x86_64::__m256i {
+    use core::arch::x86_64::*;
+    debug_assert!(position + LANES_256 <= values.len());
+    unsafe { _mm256_loadu_si256(values.as_ptr().add(position).cast()) }
+}
+
+/// The two 128-bit halves of 32 signed bytes, widened to 16-bit lanes.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn widen_halves_avx2(
+    bytes: core::arch::x86_64::__m256i,
+) -> [core::arch::x86_64::__m256i; 2] {
+    use core::arch::x86_64::*;
+    [
+        _mm256_cvtepi8_epi16(_mm256_castsi256_si128(bytes)),
+        _mm256_cvtepi8_epi16(_mm256_extracti128_si256(bytes, 1)),
+    ]
+}
+
+/// Signed codebook values of the codes of block `block` of `codes`: the low nibbles, then the
+/// high ones, 16 per vector.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn unpack_blocked_avx2(
+    codebook: core::arch::x86_64::__m256i,
+    codes: &[u8],
+    block: usize,
+) -> [core::arch::x86_64::__m256i; 4] {
+    use core::arch::x86_64::*;
+    debug_assert!((block + 1) * BLOCK_BYTES <= codes.len());
+    unsafe {
+        let bytes = _mm256_loadu_si256(codes.as_ptr().add(block * BLOCK_BYTES).cast());
+        let mask = _mm256_set1_epi8(0x0F);
+        let low = _mm256_shuffle_epi8(codebook, _mm256_and_si256(bytes, mask));
+        let high = _mm256_shuffle_epi8(
+            codebook,
+            _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask),
+        );
+        let [low_0, low_1] = widen_halves_avx2(low);
+        let [high_0, high_1] = widen_halves_avx2(high);
+        [low_0, low_1, high_0, high_1]
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn reduce_256(accumulators: &[core::arch::x86_64::__m256i]) -> i64 {
+    use core::arch::x86_64::*;
+    let mut sum = _mm256_setzero_si256();
+    for &acc in accumulators {
+        sum = _mm256_add_epi32(sum, acc);
+    }
+    let sum = _mm_add_epi32(
+        _mm256_castsi256_si128(sum),
+        _mm256_extracti128_si256(sum, 1),
+    );
+    i64::from(unsafe { hsum_i32_sse(sum) })
+}
+
+/// [`super::fold_4bit_blocked`] on AVX2.
+///
+/// # Safety
+///
+/// The CPU must support AVX2; `codes`, `values` and the factors must cover the factors' blocks.
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn fold_4bit_blocked_avx2(
+    factors: &BlockedFactors,
+    codes: &[u8],
+    values: &mut [i16],
+) {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = signed_codebook_avx2();
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_avx2(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (4 * block + part) * LANES_256;
+                let folded = _mm256_mulhrs_epi16(code, load_i16_256(&factors.factors, position));
+                _mm256_storeu_si256(values.as_mut_ptr().add(position).cast(), folded);
+            }
+        }
+    }
+}
+
+/// [`super::score_4bit_blocked`] on AVX2.
+///
+/// # Safety
+///
+/// The CPU must support AVX2; `codes`, `query` and the factors must cover the factors' blocks.
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn score_4bit_blocked_avx2(
+    query: &[i16],
+    factors: &BlockedFactors,
+    codes: &[u8],
+) -> i64 {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = signed_codebook_avx2();
+        let mut acc = [_mm256_setzero_si256(); 2];
+        for block in 0..factors.layout.blocks() {
+            let codes = unpack_blocked_avx2(codebook, codes, block);
+            for (part, code) in codes.into_iter().enumerate() {
+                let position = (4 * block + part) * LANES_256;
+                let folded = _mm256_mulhrs_epi16(code, load_i16_256(&factors.factors, position));
+                let products = _mm256_madd_epi16(load_i16_256(query, position), folded);
+                acc[part % 2] = _mm256_add_epi32(acc[part % 2], products);
+            }
+        }
+        reduce_256(&acc)
+    }
+}
+
+/// [`super::score_4bit_internal_blocked`] on AVX2.
+///
+/// # Safety
+///
+/// The CPU must support AVX2; `a`, `b` and the factors must cover the factors' blocks.
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn score_4bit_internal_blocked_avx2(
+    factors: &BlockedFactors,
+    a: &[u8],
+    b: &[u8],
+) -> i64 {
+    use core::arch::x86_64::*;
+    unsafe {
+        let codebook = signed_codebook_avx2();
+        let mut acc = [_mm256_setzero_si256(); 2];
+        for block in 0..factors.layout.blocks() {
+            let codes_a = unpack_blocked_avx2(codebook, a, block);
+            let codes_b = unpack_blocked_avx2(codebook, b, block);
+            for part in 0..4 {
+                let factor = load_i16_256(&factors.factors, (4 * block + part) * LANES_256);
+                let products = _mm256_madd_epi16(
+                    _mm256_mulhrs_epi16(codes_a[part], factor),
+                    _mm256_mulhrs_epi16(codes_b[part], factor),
+                );
+                acc[part % 2] = _mm256_add_epi32(acc[part % 2], products);
+            }
+        }
+        reduce_256(&acc)
+    }
 }
 
 #[cfg(test)]

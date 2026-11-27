@@ -199,6 +199,21 @@ fn create_shard_key_reject_empty_placement() {
 }
 
 #[test]
+fn create_shard_key_reject_empty_replica_list() {
+    let mut state = custom_sharding_state();
+    add_peer(&mut state, PEER_ID, None);
+
+    create_shard_key_rejects_without_change(
+        state,
+        create_shard_key_op(
+            "north".into(),
+            vec![vec![PEER_ID], Vec::new()],
+            Some(ReplicaState::Active),
+        ),
+    );
+}
+
+#[test]
 fn create_shard_key_reject_unknown_peer() {
     create_shard_key_rejects_without_change(
         custom_sharding_state(),

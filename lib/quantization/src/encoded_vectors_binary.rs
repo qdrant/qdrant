@@ -19,6 +19,7 @@ use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
+use crate::symmetric_vectors::{DuplicateKey, SymmetricVectors};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -252,6 +253,15 @@ impl<TBitsStoreType: BitsStoreType> EncodedBinVector<TBitsStoreType> {
 /// This idea was taken from http://arxiv.org/pdf/2405.12497, see Figure 2.
 pub struct EncodedScalarVector<TBitsStoreType: BitsStoreType> {
     pub encoded_vector: Vec<TBitsStoreType>,
+}
+
+/// Encoder parameters of binary quantization: with the vector parameters, everything needed
+/// to score its codes. See [`EncodedVectorsBin::from_parameters`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinaryParameters {
+    pub encoding: Encoding,
+    pub query_encoding: QueryEncoding,
+    pub vector_stats: Option<VectorStats>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -718,6 +728,61 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Ok(result)
     }
 
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> BinaryParameters {
+        let Metadata {
+            vector_parameters: _,
+            encoding,
+            query_encoding,
+            vector_stats,
+        } = &self.metadata;
+        BinaryParameters {
+            encoding: *encoding,
+            query_encoding: *query_encoding,
+            vector_stats: vector_stats.clone(),
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: BinaryParameters,
+    ) -> std::io::Result<Self> {
+        let BinaryParameters {
+            encoding,
+            query_encoding,
+            vector_stats,
+        } = parameters;
+        if let Some(stats) = &vector_stats
+            && stats.elements_stats.len() != vector_parameters.dim
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "binary quantization: {} element stats for dim {}",
+                    stats.elements_stats.len(),
+                    vector_parameters.dim,
+                ),
+            ));
+        }
+        let result = Self {
+            metadata: Metadata {
+                vector_parameters,
+                encoding,
+                query_encoding,
+                vector_stats,
+            },
+            metadata_path: None,
+            encoded_vectors,
+            bits_store_type: PhantomData,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.get_quantized_vector_size())?;
+        Ok(result)
+    }
+
     fn get_quantized_vector_size(&self) -> usize {
         get_quantized_vector_size_from_params::<TBitsStoreType>(
             self.metadata.vector_parameters.dim,
@@ -846,15 +911,48 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 }
 
+/// Each stored bit as 1 if set and -1 if not, over the bits a vector stores. Two such vectors of
+/// `n` bits have the dot product `n - 2 · differing bits` and the squared distance
+/// `4 · differing bits`.
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> SymmetricVectors
+    for EncodedVectorsBin<TBitsStoreType, TStorage>
+{
+    fn symmetric_dim(&self) -> usize {
+        stored_bits(self.metadata.vector_parameters.dim, self.metadata.encoding)
+    }
+
+    fn symmetric_vector<'a>(&'a self, code: &'a [u8]) -> impl Iterator<Item = f32> + 'a {
+        let word_bits = u8::BITS as usize * size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        // Bit `i` is bit `i % word_bits` of word `i / word_bits`, as the encoders set it
+        code.chunks_exact(size_of::<TBitsStoreType>())
+            .flat_map(move |word| {
+                let word: TBitsStoreType = bytemuck::pod_read_unaligned(word);
+                (0..word_bits).map(move |bit| (word >> bit) & one)
+            })
+            .take(self.symmetric_dim())
+            .map(|bit| if bit.to_u8() == Some(1) { 1.0 } else { -1.0 })
+    }
+
+    fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
+        DuplicateKey::Bytes(code)
+    }
+}
+
+/// Bits a vector of `dim` dimensions stores in `encoding`, without the padding of its last word.
+fn stored_bits(dim: usize, encoding: Encoding) -> usize {
+    match encoding {
+        Encoding::OneBit => dim,
+        Encoding::TwoBits => dim * 2,
+        Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
+    }
+}
+
 pub fn get_quantized_vector_size_from_params<TBitsStoreType: BitsStoreType>(
     dim: usize,
     encoding: Encoding,
 ) -> usize {
-    let extended_dim = match encoding {
-        Encoding::OneBit => dim,
-        Encoding::TwoBits => dim * 2,
-        Encoding::OneAndHalfBits => (dim * 3).div_ceil(2), // ceil(dim * 1.5)
-    };
+    let extended_dim = stored_bits(dim, encoding);
     TBitsStoreType::get_storage_size(extended_dim.max(1)) * std::mem::size_of::<TBitsStoreType>()
 }
 

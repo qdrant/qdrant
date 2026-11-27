@@ -19,9 +19,7 @@ use quantization::turboquant::matrix::{TurboMatrixOperands, TurboSource};
 use self::dense_operands::{DenseOperands, MatrixElement};
 use self::turbo_source::TurboStorageSource;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectorStorage, QuantizedVectors,
-};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorStorage;
 use crate::vector_storage::turbo::shared::invert_score;
 use crate::vector_storage::{DenseVectorStorageRead, TurboScoring, VectorStorageEnum};
 
@@ -59,22 +57,11 @@ impl<'a> MatrixScorer<'a> {
     }
 }
 
-/// Pairwise scoring of stored points for index building: the quantized vectors if configured,
-/// otherwise the original ones. `None` if those have no matrix operands (Manhattan, sparse,
-/// multivectors, and quantizations without them yet), so the caller builds with HNSW.
-pub fn new_matrix_scorer<'a>(
-    vector_storage: &'a VectorStorageEnum,
-    quantized_vectors: Option<&'a QuantizedVectors>,
-) -> Option<MatrixScorer<'a>> {
-    match quantized_vectors {
-        Some(quantized_vectors) => quantized_matrix_scorer(quantized_vectors.get_storage()),
-        None => original_matrix_scorer(vector_storage),
-    }
-}
-
-/// Quantized vectors without operands return `None` instead of falling back to the originals,
-/// so PiPNN never scores with other vectors than HNSW would.
-fn quantized_matrix_scorer(storage: &QuantizedVectorStorage) -> Option<MatrixScorer<'_>> {
+/// Pairwise scoring of quantized vectors for index building. `None` for those without matrix
+/// operands: product quantization, multivectors, and Manhattan, except with binary quantization,
+/// whose XOR count scores L1 too. It doesn't fall back to the original vectors, so PiPNN never
+/// scores with other vectors than HNSW would.
+pub fn quantized_matrix_scorer(storage: &QuantizedVectorStorage) -> Option<MatrixScorer<'_>> {
     match storage {
         QuantizedVectorStorage::ScalarRam(q) => {
             ScalarOperands::new(q).map(MatrixScorer::from_operands)
@@ -115,7 +102,9 @@ fn quantized_matrix_scorer(storage: &QuantizedVectorStorage) -> Option<MatrixSco
     }
 }
 
-fn original_matrix_scorer(storage: &VectorStorageEnum) -> Option<MatrixScorer<'_>> {
+/// Pairwise scoring of original vectors for index building. `None` for those without matrix
+/// operands: sparse vectors, multivectors, the empty storage, and Manhattan.
+pub fn original_matrix_scorer(storage: &VectorStorageEnum) -> Option<MatrixScorer<'_>> {
     match storage {
         VectorStorageEnum::DenseVolatile(vs) => dense_matrix_scorer(vs),
         #[cfg(test)]

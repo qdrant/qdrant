@@ -8,6 +8,8 @@ use object_store::ClientOptions;
 use object_store::client::{HttpClient, HttpConnector as _, ReqwestConnector};
 use url::Url;
 
+use crate::http_stats::CountingConnector;
+
 /// State for issuing hand-signed S3 requests — the operations the
 /// `object_store` crate does not expose (write-offset appends,
 /// `UploadPartCopy`): a lazily-built shared HTTP client plus the resolved
@@ -87,7 +89,7 @@ pub(super) fn build_http_client(allow_http: bool) -> UioResult<HttpClient> {
     if allow_http {
         options = options.with_allow_http(true);
     }
-    ReqwestConnector::default()
+    CountingConnector(ReqwestConnector::default())
         .connect(&options)
         .map_err(|err| UniversalIoError::S3Config {
             description: format!("append http client: {err}"),

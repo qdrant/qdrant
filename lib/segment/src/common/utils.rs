@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::marker::PhantomData;
 
 use ahash::AHashMap;
 use schemars::JsonSchema;
+use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use smallvec::SmallVec;
@@ -105,13 +109,35 @@ impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
     where
         D: serde::Deserializer<'de>,
     {
-        use serde_untagged::UntaggedEnumVisitor;
+        deserializer.deserialize_any(MaybeOneOrManyVisitor(PhantomData))
+    }
+}
 
-        UntaggedEnumVisitor::new()
-            .unit(|| Ok(None))
-            .seq(|x| x.deserialize().map(Some))
-            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))
-            .deserialize(deserializer)
+/// Visitor for [`MaybeOneOrMany`]: `null` is none, an array is many and a map is one.
+///
+/// Passes the original map or sequence access through without type erasure. Erasing it (as
+/// `serde_untagged` does) wraps it in one more layer per nesting level, and every value then
+/// goes through all layers. That makes stack use grow quadratically with nesting depth, letting
+/// a small request of deeply nested prefetches or filters overflow the stack.
+struct MaybeOneOrManyVisitor<T>(PhantomData<T>);
+
+impl<'de, T: Deserialize<'de>> Visitor<'de> for MaybeOneOrManyVisitor<T> {
+    type Value = Option<Vec<T>>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("null, an array or a map")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        Vec::deserialize(SeqAccessDeserializer::new(seq)).map(Some)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        T::deserialize(MapAccessDeserializer::new(map)).map(|value| Some(vec![value]))
     }
 }
 
@@ -200,6 +226,41 @@ mod tests {
 
         assert_eq!(res.data.as_ref().unwrap().len(), 1);
         assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
+    }
+
+    /// Stack use must grow linearly with nesting depth, so a small deeply nested request (such as
+    /// REST prefetches or filters) cannot overflow the stack.
+    #[test]
+    fn test_deserialize_one_or_many_deeply_nested() {
+        #[derive(Deserialize)]
+        struct Node {
+            #[serde(default, with = "MaybeOneOrMany")]
+            child: Option<Vec<Node>>,
+        }
+
+        // Just below serde_json's recursion limit of 128
+        const DEPTH: usize = 125;
+        // Takes about 200 KiB in debug builds, quadratic growth took more than 4 MiB
+        const STACK_SIZE: usize = 1024 * 1024;
+
+        let json = format!("{}null{}", r#"{"child":"#.repeat(DEPTH), "}".repeat(DEPTH),);
+
+        let depth = std::thread::Builder::new()
+            .stack_size(STACK_SIZE)
+            .spawn(move || {
+                let mut node = serde_json::from_str::<Node>(&json).unwrap();
+                let mut depth = 1;
+                while let Some(mut children) = node.child.take() {
+                    node = children.pop().unwrap();
+                    depth += 1;
+                }
+                depth
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+
+        assert_eq!(depth, DEPTH);
     }
 
     #[test]

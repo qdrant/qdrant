@@ -33,9 +33,16 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
 
     fn list_files_async<'a>(
         &'a self,
+        dir: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
+        self.spawn(self.list_files_traced(dir))
+    }
+
+    fn prefix_list_files_async<'a>(
+        &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
-        self.spawn(self.list_files_traced(prefix_path))
+        self.spawn(self.prefix_list_files_traced(prefix_path))
     }
 
     fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(

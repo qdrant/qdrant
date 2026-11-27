@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -13,22 +13,6 @@ use crate::repr::*;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPointId(pub PointIdType);
-
-impl PyPointId {
-    pub fn peel_set(set: ahash::HashSet<Self>) -> ahash::HashSet<PointIdType>
-    where
-        Self: TransparentWrapper<PointIdType>,
-    {
-        unsafe { mem::transmute(set) }
-    }
-
-    pub fn wrap_set_ref(set: &ahash::HashSet<PointIdType>) -> &ahash::HashSet<Self>
-    where
-        Self: TransparentWrapper<PointIdType>,
-    {
-        unsafe { mem::transmute(set) }
-    }
-}
 
 impl FromPyObject<'_, '_> for PyPointId {
     type Error = PyErr;

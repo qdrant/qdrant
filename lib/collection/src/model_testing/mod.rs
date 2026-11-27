@@ -659,7 +659,7 @@ pub async fn run(
     // reproducible; each redraw is logged with its op tick so a failure is attributable to the
     // config that was live. (This consumes rng draws, so the op stream differs from a non-swarm
     // build for the same seed.)
-    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
+    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, disable_optimizer);
     let initial_enabled = swarm.enabled_ops();
     trace.swarm(0, &initial_enabled);
     println!("model_testing: op:0 swarm -> {initial_enabled:?}");
@@ -709,6 +709,14 @@ pub async fn run(
     // restart on the last iteration doesn't send us back to `wait_for_optimizer`
     // with a zero counter even though the optimizer already ran earlier.
     let mut optimizer_ran_during_run = false;
+    // Current optimizer state: starts from `disable_optimizer` and follows `SetOptimizer` ops
+    // (persisted in `config.json`, so restarts keep it). Never `Enabled` under
+    // `disable_optimizer`: the swarm masks the toggle off there.
+    let mut optimizer_state = if disable_optimizer {
+        op::OptimizerState::Disabled
+    } else {
+        op::OptimizerState::Enabled
+    };
     loop {
         if shutdown.load(Ordering::Relaxed) {
             log::info!("shutdown received at op:{i}, exiting loop");
@@ -731,7 +739,7 @@ pub async fn run(
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
         if i > 0 && i.is_multiple_of(swarm_interval) {
             let prev = swarm.enabled_ops();
-            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
+            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, disable_optimizer);
             let next = swarm.enabled_ops();
             // Trace keeps the full enabled set (for reproducibility); the console shows only the
             // delta vs. the previous config — that's what changed.
@@ -897,6 +905,9 @@ pub async fn run(
                         .as_ref()
                         .is_none_or(JoinHandle::is_finished);
                 apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
+                if let op::Op::SetOptimizer(state) = op {
+                    optimizer_state = state;
+                }
             }
         }
         // Reap a finished background snapshot (non-blocking check); panics if it errored.
@@ -943,6 +954,15 @@ pub async fn run(
         &live_missing,
     );
     verify::assert_matches_model(&live, &model, "live");
+
+    // A `SetOptimizer` op may have left the optimizer off. Turn it back on, so the check below can
+    // wait for it and a run that never optimized before still proves the optimizer wakes up
+    // after being parked; the final reload then also opens with the optimizer on.
+    if !disable_optimizer && optimizer_state == op::OptimizerState::Disabled {
+        stage_breadcrumb(&bar, "live: re-enable optimizer");
+        let op = op::Op::SetOptimizer(op::OptimizerState::Enabled);
+        apply::apply(&collection, &mut model, &mut active_names, &op, false).await;
+    }
 
     // Confirm the segment optimizer actually fired — but skip on shutdown (short run may
     // not have triggered), when the optimizer is intentionally disabled, or when we
@@ -1097,7 +1117,11 @@ async fn edge_checkpoint(
 }
 
 /// Shared wall-clock budget for proxy wait + flush/observe retries at one checkpoint.
-const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(30);
+///
+/// Sized for the worst case of a `SetOptimizer` op turning the optimizer back on just before a
+/// restart, after a long stretch with it off: the backlog of small segments it then works
+/// through can take more than 30s. Quiet checkpoints still finish in a few seconds.
+const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(120);
 const EDGE_CHECKPOINT_RETRY_SLEEP: Duration = Duration::from_millis(100);
 
 /// Poll until no local shard holds proxy segments, or `deadline` is reached.

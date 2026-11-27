@@ -23,8 +23,16 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
     pub fn new(query: DenseVector, storage: &'a TStorage) -> Self {
         // Preprocess (per distance) and precompute the query once, so the
         // Hadamard rotation runs here rather than per scored point.
-        let query = storage.preprocess_query(query);
+        Self::with_query(storage.preprocess_query(query), storage)
+    }
 
+    /// Scores the stored vector of `point` against the others as
+    /// [`TurboScoring::score_internal_encoded`] does, for building an index from the codes alone.
+    pub fn stored(point: PointOffsetType, storage: &'a TStorage) -> Self {
+        Self::with_query(storage.stored_query(point), storage)
+    }
+
+    fn with_query(query: EncodedQueryTQ, storage: &'a TStorage) -> Self {
         Self {
             hw: HwScale {
                 cpu: storage.quantized_vector_size(),

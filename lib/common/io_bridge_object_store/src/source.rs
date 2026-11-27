@@ -93,17 +93,12 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
 
     fn list_files(
         &self,
-        prefix: &Path,
+        dir: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         let store = self.store.clone();
-        let prefix_path = prefix.to_path_buf();
-        // object_store lists by whole path segment; emulate the byte-prefix
-        // contract (list the parent dir, then filter) — see `local_list_files`.
-        let prefix_str = prefix.to_string_lossy().into_owned();
-        let dir_prefix = prefix
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .map(build_dir_prefix);
+        let dir_path = dir.to_path_buf();
+        let dir_str = dir.to_string_lossy().into_owned();
+        let dir_prefix = Some(build_dir_prefix(dir)).filter(|p| !p.as_ref().is_empty());
 
         async move {
             use futures::TryStreamExt;
@@ -115,21 +110,39 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
             {
                 Ok(entries) => Ok(entries
                     .into_iter()
-                    .filter_map(|e| {
-                        let location = e.location.to_string();
-                        location.starts_with(&prefix_str).then(|| ListedFile {
-                            path: PathBuf::from(location),
-                            size: e.size,
-                            last_modified: Some(SystemTime::from(e.last_modified)),
-                            etag: e.e_tag,
-                        })
+                    .filter(|e| dir_prefix.as_ref().is_none_or(|p| e.location != *p))
+                    .map(|e| ListedFile {
+                        path: PathBuf::from(e.location.to_string()),
+                        size: e.size,
+                        last_modified: Some(SystemTime::from(e.last_modified)),
+                        etag: e.e_tag,
                     })
                     .collect()),
                 Err(object_store::Error::NotFound { .. }) => {
-                    Err(UniversalIoError::NotFound { path: prefix_path })
+                    Err(UniversalIoError::NotFound { path: dir_path })
                 }
-                Err(other) => Err(UniversalIoError::s3_at(prefix_str, other)),
+                Err(other) => Err(UniversalIoError::s3_at(dir_str, other)),
             }
+        }
+    }
+
+    fn prefix_list_files(
+        &self,
+        prefix: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        // object_store lists by whole path segment; emulate the byte-prefix
+        // contract by listing the parent directory and filtering — see
+        // `local_prefix_list_files`.
+        let prefix_str = prefix.to_string_lossy().into_owned();
+        let dir = prefix.parent().unwrap_or(Path::new(""));
+        let list_fut = self.list_files(dir);
+
+        async move {
+            let entries = list_fut.await?;
+            Ok(entries
+                .into_iter()
+                .filter(|entry| entry.path.to_string_lossy().starts_with(&prefix_str))
+                .collect())
         }
     }
 
@@ -580,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn list_files_byte_prefixes_final_component() {
+    fn prefix_list_files_byte_prefixes_final_component() {
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(
             &runtime,
@@ -594,8 +607,8 @@ mod tests {
         );
         let source = ObjectStoreSource::new(store);
         let mut files: Vec<(String, u64)> = runtime
-            .block_on(source.list_files(Path::new("dir/page_")))
-            .expect("list_files")
+            .block_on(source.prefix_list_files(Path::new("dir/page_")))
+            .expect("prefix_list_files")
             .into_iter()
             .map(
                 |ListedFile {
@@ -615,6 +628,46 @@ mod tests {
             [
                 ("dir/page_0.dat".to_string(), 1),
                 ("dir/page_1.dat".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn list_files_lists_directory_only() {
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(
+            &runtime,
+            &[
+                ("dir", b"x"),
+                ("dir/a.dat", b"a"),
+                ("dir/sub/b.dat", b"bb"),
+                ("dir_other/c.dat", b"ccc"),
+                ("other/d.dat", b"dddd"),
+            ],
+        );
+        let source = ObjectStoreSource::new(store);
+        let mut files: Vec<(String, u64)> = runtime
+            .block_on(source.list_files(Path::new("dir")))
+            .expect("list_files")
+            .into_iter()
+            .map(
+                |ListedFile {
+                     path,
+                     size,
+                     last_modified: _,
+                     etag,
+                 }| {
+                    assert!(etag.is_some(), "object store listings must carry etags");
+                    (path.to_string_lossy().into_owned(), size)
+                },
+            )
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            [
+                ("dir/a.dat".to_string(), 1),
+                ("dir/sub/b.dat".to_string(), 2),
             ]
         );
     }

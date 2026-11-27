@@ -3,6 +3,7 @@
 use ahash::AHashMap;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::json_path::JsonPath;
 use segment::types::{Filter, PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::payload_ops::PayloadOps;
@@ -213,6 +214,7 @@ impl UpdateBatchPlan {
     ) -> OperationResult<()> {
         match operation {
             PayloadOps::SetPayload(operation) => {
+                JsonPath::check_value_set_depth(operation.key.as_ref(), &operation.payload.0)?;
                 let points = require_points(operation.points, operation.filter.is_some())?;
                 for id in points {
                     self.push(

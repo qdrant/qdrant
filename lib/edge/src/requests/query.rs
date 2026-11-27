@@ -46,14 +46,13 @@ impl QueryRequest {
 
     /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
     /// this query: the union of the profiles of its stages, the root and every prefetch,
-    /// each warming what its scoring and filter read. Only the root returns payloads.
+    /// each warming what its scoring and filter read.
     pub fn load_profile(&self) -> LoadProfile {
         let mut profile = stage_load_profile(
             self.query.as_ref(),
             self.filter.as_ref(),
             self.params.as_ref(),
             !self.prefetches.is_empty(),
-            self.with_payload.is_required(),
         );
         for prefetch in &self.prefetches {
             prefetch.merge_load_profile(&mut profile);
@@ -99,7 +98,6 @@ impl Prefetch {
             self.filter.as_ref(),
             self.params.as_ref(),
             !self.prefetches.is_empty(),
-            false,
         ));
         for prefetch in &self.prefetches {
             prefetch.merge_load_profile(profile);
@@ -117,24 +115,19 @@ fn stage_load_profile(
     filter: Option<&Filter>,
     params: Option<&SearchParams>,
     rescores: bool,
-    with_payload: bool,
 ) -> LoadProfile {
     let mut profile = match query {
         Some(ScoringQuery::Vector(query)) if !rescores || is_sparse(query) => {
-            LoadProfile::for_search(query.get_vector_name(), filter, with_payload)
+            LoadProfile::for_search(query.get_vector_name(), filter)
         }
-        Some(ScoringQuery::Mmr(mmr)) if !rescores => {
-            LoadProfile::for_search(&mmr.using, filter, with_payload)
-        }
+        Some(ScoringQuery::Mmr(mmr)) if !rescores => LoadProfile::for_search(&mmr.using, filter),
         Some(ScoringQuery::Vector(_) | ScoringQuery::Mmr(_)) => {
-            LoadProfile::for_scroll(filter, None, with_payload)
+            LoadProfile::for_scroll(filter, None)
         }
         // BM25 reads the text index of the field, which stays warm like an ordering key.
-        Some(ScoringQuery::Text(text)) => {
-            LoadProfile::for_scroll(filter, Some(&text.field), with_payload)
-        }
+        Some(ScoringQuery::Text(text)) => LoadProfile::for_scroll(filter, Some(&text.field)),
         Some(ScoringQuery::OrderBy(order_by)) => {
-            LoadProfile::for_scroll(filter, Some(&order_by.key), with_payload)
+            LoadProfile::for_scroll(filter, Some(&order_by.key))
         }
         // A formula reads its variables and evaluates its conditions per candidate, from
         // the payload indexes or the payload storage.
@@ -143,15 +136,15 @@ fn stage_load_profile(
                 should: Some(formula.conditions.clone()),
                 ..Filter::new()
             };
-            let mut profile = LoadProfile::for_scroll(filter, None, true);
-            profile.merge(LoadProfile::for_scroll(Some(&conditions), None, true));
+            let mut profile = LoadProfile::for_scroll(filter, None);
+            profile.merge(LoadProfile::for_scroll(Some(&conditions), None));
             for var in &formula.payload_vars {
-                profile.merge(LoadProfile::for_scroll(None, Some(var), true));
+                profile.merge(LoadProfile::for_scroll(None, Some(var)));
             }
             profile
         }
         Some(ScoringQuery::Fusion(_) | ScoringQuery::Sample(_)) | None => {
-            LoadProfile::for_scroll(filter, None, with_payload)
+            LoadProfile::for_scroll(filter, None)
         }
     };
     if query.is_some_and(scores_with_idf)
@@ -159,7 +152,7 @@ fn stage_load_profile(
             .and_then(|params| params.idf.as_ref())
             .and_then(|idf| idf.corpus())
     {
-        profile.merge(LoadProfile::for_scroll(Some(corpus), None, false));
+        profile.merge(LoadProfile::for_scroll(Some(corpus), None));
     }
     profile
 }
@@ -263,6 +256,27 @@ mod tests {
             text: "alpha".to_string(),
             params: Bm25Params::default(),
         })
+    }
+
+    /// Returning payloads reads only the result points' payloads, which serve fine
+    /// cold: a query and the same query returning payloads share one profile, so
+    /// neither forces a reopen of a shard opened for the other.
+    #[test]
+    fn with_payload_leaves_the_profile_unchanged() {
+        let plain = QueryRequest {
+            query: Some(nearest("dense")),
+            ..QueryRequest::new(10)
+        };
+        let with_payload = QueryRequest {
+            with_payload: WithPayloadInterface::Bool(true),
+            ..plain.clone()
+        };
+
+        assert_eq!(plain.load_profile(), with_payload.load_profile());
+        assert_eq!(
+            with_payload.load_profile().payload_storage_placement(),
+            Some(Populate::No),
+        );
     }
 
     /// A root that rescores prefetched candidates leaves its vector cold; the

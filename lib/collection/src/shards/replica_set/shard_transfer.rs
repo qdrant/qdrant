@@ -7,6 +7,7 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::orphan_points::OrphanPoints;
 use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
@@ -160,6 +161,10 @@ impl ShardReplicaSet {
 
         let wal_ack_pins = local_shard.update_handler.lock().await.wal_ack_pins.clone();
 
+        // Lock WAL before taking the local shard, queue proxy creation needs it
+        let wal = Arc::clone(&local_shard.wal.wal);
+        let wal_lock = wal.lock().await;
+
         // Proxify local shard
         //
         // Making `await` calls between `local.take()` and `local.insert(...)` is *not* cancel safe!
@@ -171,19 +176,21 @@ impl ShardReplicaSet {
 
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
-            None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, &wal_ack_pins, progress).await)
-            }
-            Some(from_version) => {
-                QueueProxyShard::new_from_version(
-                    local_shard,
-                    remote_shard,
-                    &wal_ack_pins,
-                    from_version,
-                    progress,
-                )
-                .await
-            }
+            None => Ok(QueueProxyShard::new(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                progress,
+            )),
+            Some(from_version) => QueueProxyShard::new_from_version(
+                local_shard,
+                &wal_lock,
+                remote_shard,
+                &wal_ack_pins,
+                from_version,
+                progress,
+            ),
         };
 
         // Insert queue proxy shard on success or revert to local shard on failure
@@ -402,6 +409,32 @@ impl ShardReplicaSet {
             .await
     }
 
+    /// Read a transfer batch that overwrites the given points, without sending it yet.
+    ///
+    /// See [`ForwardProxyShard::read_points_transfer_batch`].
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn read_points_transfer_batch(
+        &self,
+        point_ids: &[PointIdType],
+        wait: bool,
+    ) -> CollectionResult<PreparedTransferBatch> {
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Cannot transfer points from shard {} because it is not proxified",
+                self.shard_id
+            )));
+        };
+
+        proxy
+            .read_points_transfer_batch(point_ids, wait, &self.search_runtime)
+            .await
+    }
+
     /// Custom operation for transferring indexes from one shard to another during transfer
     ///
     /// # Cancel safety
@@ -538,6 +571,38 @@ impl ShardReplicaSet {
         local_shard.resolve_wal_delta(recovery_point).await
     }
 
+    /// Get the remote shards of the other active replicas
+    ///
+    /// Active replicas are `Active` and `ReshardingScaleDown` ones, like in [`Self::active_shards`].
+    pub async fn active_remote_shards(&self) -> Vec<RemoteShard> {
+        let active_peers = self.active_shards(true);
+
+        self.remotes
+            .read()
+            .await
+            .iter()
+            .filter(|remote| active_peers.contains(&remote.peer_id))
+            .cloned()
+            .collect()
+    }
+
+    /// Find the points changed by orphan operations in the WAL of the local shard
+    ///
+    /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
+    pub async fn find_orphan_points(
+        &self,
+        source_clocks: &RecoveryPoint,
+    ) -> CollectionResult<OrphanPoints> {
+        let local_shard_read = self.local.read().await;
+        let Some(local_shard) = local_shard_read.deref() else {
+            return Err(CollectionError::service_error(
+                "Cannot find orphan points, shard replica set does not have local shard",
+            ));
+        };
+
+        local_shard.find_orphan_points(source_clocks).await
+    }
+
     pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {
         let local_shard_read = self.local.read().await;
         let Some(local_shard) = local_shard_read.deref() else {
@@ -549,3 +614,6 @@ impl ShardReplicaSet {
         local_shard.wal_version().await
     }
 }
+
+#[cfg(test)]
+mod tests;

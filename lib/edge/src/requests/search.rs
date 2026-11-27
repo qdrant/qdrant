@@ -47,10 +47,6 @@ impl SearchRequest {
     /// this search: only the queried vector's components and the filter's field indexes
     /// keep their configured placement.
     pub fn load_profile(&self) -> LoadProfile {
-        search_load_profile(
-            &self.query,
-            self.filter.as_ref(),
-            self.with_payload.as_ref(),
-        )
+        search_load_profile(&self.query, self.filter.as_ref())
     }
 }

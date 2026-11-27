@@ -13,10 +13,10 @@ use api::grpc::qdrant::{
     CollectionOperationResponse, CreateShardSnapshotRequest, CreateSnapshotResponse,
     DeleteShardSnapshotRequest, DeleteSnapshotResponse, GetCollectionInfoRequestInternal,
     GetCollectionInfoResponse, GetShardMemoryReportRequest, GetShardMemoryReportResponse,
-    GetShardOptimizationsRequest, GetShardOptimizationsResponse, GetShardRecoveryPointRequest,
-    GetShardRecoveryPointResponse, HealthCheckReply, HealthCheckRequest,
-    InitiateShardTransferRequest, ListShardSnapshotsRequest, ListSnapshotsResponse,
-    RecoverShardSnapshotRequest, RecoverSnapshotResponse, RecoveryPoint,
+    GetShardOptimizationsRequest, GetShardOptimizationsResponse, GetShardOrphanPointsRequest,
+    GetShardOrphanPointsResponse, GetShardRecoveryPointRequest, GetShardRecoveryPointResponse,
+    HealthCheckReply, HealthCheckRequest, InitiateShardTransferRequest, ListShardSnapshotsRequest,
+    ListSnapshotsResponse, RecoverShardSnapshotRequest, RecoverSnapshotResponse, RecoveryPoint,
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use collection::operations::CollectionUpdateOperations;
@@ -278,6 +278,13 @@ impl CollectionsInternal for MockPeer {
         &self,
         _request: Request<UpdateShardCutoffPointRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+        Err(Status::unimplemented("not exercised by sender lock tests"))
+    }
+
+    async fn get_shard_orphan_points(
+        &self,
+        _request: Request<GetShardOrphanPointsRequest>,
+    ) -> Result<Response<GetShardOrphanPointsResponse>, Status> {
         Err(Status::unimplemented("not exercised by sender lock tests"))
     }
 

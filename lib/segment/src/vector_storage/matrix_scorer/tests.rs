@@ -28,7 +28,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::{
     new_volatile_dense_vector_storage,
 };
 use crate::vector_storage::quantized::quantized_vectors::{
-    QuantizedVectorStorage, QuantizedVectorsStorageType,
+    QuantizedVectorStorage, QuantizedVectors, QuantizedVectorsStorageType,
 };
 use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
@@ -115,9 +115,14 @@ impl Fixture {
     /// The best `K` columns of each row by brute force, as `(column position, score)`.
     fn expected(&self, rows: &[PointOffsetType], cols: MatrixCols) -> Vec<Vec<(u32, f32)>> {
         let deleted = BitVec::repeat(false, POINTS);
-        let scorer =
-            FilteredScorer::new_internal(0, &self.storage, self.quantized.as_ref(), None, &deleted)
-                .unwrap();
+        let scorer = FilteredScorer::new_internal(
+            0,
+            &self.storage,
+            self.quantized.as_ref(),
+            None,
+            self.storage.not_deleted_checker(&deleted),
+        )
+        .unwrap();
         let col_ids = match cols {
             MatrixCols::Rows => rows,
             MatrixCols::Other(cols) => cols,
@@ -150,8 +155,11 @@ impl Fixture {
     }
 
     fn check(&self, tolerance: Tolerance) {
-        let scorer = new_matrix_scorer(&self.storage, self.quantized.as_ref())
-            .expect("storage has a matrix operands");
+        let scorer = match &self.quantized {
+            Some(quantized) => quantized_matrix_scorer(quantized.get_storage()),
+            None => original_matrix_scorer(&self.storage),
+        }
+        .expect("storage has matrix operands");
         self.check_scorer(&scorer, tolerance);
     }
 
@@ -395,9 +403,10 @@ fn turbo16_storage(
 fn no_matrix_form() {
     let _scope = ambient::test_guard();
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, None);
-    assert!(new_matrix_scorer(&fixture.storage, None).is_none());
+    assert!(original_matrix_scorer(&fixture.storage).is_none());
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, Some(scalar()));
-    assert!(new_matrix_scorer(&fixture.storage, fixture.quantized.as_ref()).is_none());
+    let quantized = fixture.quantized.as_ref().unwrap();
+    assert!(quantized_matrix_scorer(quantized.get_storage()).is_none());
     let fixture = Fixture::new(Element::Turbo(TQBits::Bits16), Distance::Manhattan, None);
-    assert!(new_matrix_scorer(&fixture.storage, None).is_none());
+    assert!(original_matrix_scorer(&fixture.storage).is_none());
 }
