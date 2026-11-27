@@ -16,6 +16,7 @@ crc-fast = { workspace = true }
 data-encoding = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+http-body = { workspace = true }
 io_bridge = { workspace = true }
 object_store = { workspace = true }
 sha2 = { workspace = true }

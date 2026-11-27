@@ -3,13 +3,17 @@
 //! [`RemoteIoStats`](crate::RemoteIoStats) counts logical operations. Here every attempt is
 //! counted: retries, list pages, coalesced range GETs, multipart parts and hand-signed appends.
 
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use http::Method;
+use http_body::{Body, Frame, SizeHint};
 use object_store::ClientOptions;
 use object_store::client::{
-    HttpClient, HttpConnector, HttpError, HttpRequest, HttpResponse, HttpService,
+    HttpClient, HttpConnector, HttpError, HttpRequest, HttpResponse, HttpResponseBody, HttpService,
 };
 use strum::{EnumCount, EnumIter, IntoEnumIterator as _, IntoStaticStr};
 
@@ -64,7 +68,9 @@ pub struct HttpRequestStatsSnapshot {
     requests: [[u64; STATUSES]; CLASSES],
     /// Request body bytes of every attempt.
     pub bytes_sent: u64,
-    /// Response `Content-Length` of every response, which a dropped download may not have read.
+    /// Response body bytes actually read, counted as the caller consumes them: a HEAD adds
+    /// nothing (its `Content-Length` is the object's size, not a body), and a download dropped
+    /// halfway adds only what was read.
     pub bytes_received: u64,
 }
 
@@ -146,17 +152,46 @@ impl HttpService for CountingService {
             Ok(response) => {
                 record(class, status_of(response.status()));
                 STATS.bytes_sent.fetch_add(sent, Ordering::Relaxed);
-                let received = response
-                    .headers()
-                    .get(http::header::CONTENT_LENGTH)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse::<u64>().ok())
-                    .unwrap_or(0);
-                STATS.bytes_received.fetch_add(received, Ordering::Relaxed);
             }
             Err(_) => record(class, RequestStatus::TransportError),
         }
-        result
+        result.map(|response| {
+            let (parts, body) = response.into_parts();
+            HttpResponse::from_parts(parts, HttpResponseBody::new(CountingBody(body)))
+        })
+    }
+}
+
+/// A response body that adds the bytes of each data frame to `bytes_received` as it is read.
+/// `Content-Length` would count a HEAD's object size and the unread rest of a dropped download.
+#[derive(Debug)]
+struct CountingBody(HttpResponseBody);
+
+impl Body for CountingBody {
+    type Data = Bytes;
+    type Error = HttpError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, HttpError>>> {
+        let polled = Pin::new(&mut self.0).poll_frame(cx);
+        if let Poll::Ready(Some(Ok(frame))) = &polled
+            && let Some(data) = frame.data_ref()
+        {
+            STATS
+                .bytes_received
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.0.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.0.size_hint()
     }
 }
 
