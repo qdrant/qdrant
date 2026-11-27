@@ -123,7 +123,7 @@ pub fn min_max_norm(points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
 /// # Panics
 ///
 /// Panics if the given vector of points has less than 2 elements.
-fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
+fn welfords_mean_variance(points: &[ScoredPoint]) -> (f64, f64) {
     debug_assert!(
         points.len() > 1,
         "Not enough points to calculate mean and variance"
@@ -132,20 +132,20 @@ fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
     let mut mean = 0.0;
     let mut aggregate = 0.0;
     for (p, k) in points.iter().zip(1usize..) {
-        let old_delta = p.score - mean;
-        mean += old_delta / (k as f32);
+        let score = f64::from(p.score);
+        let old_delta = score - mean;
+        mean += old_delta / (k as f64);
 
-        let delta = p.score - mean;
+        let delta = score - mean;
         aggregate += old_delta * delta;
     }
 
-    let sample_variance = aggregate / (points.len() as f32 - 1.0);
+    let sample_variance = aggregate / (points.len() as f64 - 1.0);
 
     (mean, sample_variance)
 }
 
-/// Estimates the mean and variance of the given points and normalizes them between 0.0 and 1.0, using the 3rd
-/// standard deviation as extremes.
+/// Maps the mean score to 0.5 and scores three sample standard deviations away to 0.0 and 1.0.
 pub fn distr_norm(mut points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
     if points.len() < 2 {
         if points.len() == 1 {
@@ -155,12 +155,17 @@ pub fn distr_norm(mut points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
     }
 
     let (mean, variance) = welfords_mean_variance(&points);
+    if variance == 0.0 {
+        points.iter_mut().for_each(|p| p.score = 0.5);
+        return points;
+    }
 
-    let std_dev = variance.sqrt();
-    let min = mean - 3.0 * std_dev;
-    let max = mean + 3.0 * std_dev;
+    let scale = 6.0 * variance.sqrt();
+    points.iter_mut().for_each(|p| {
+        p.score = (0.5 + (f64::from(p.score) - mean) / scale) as ScoreType;
+    });
 
-    norm(points, min, max)
+    points
 }
 
 #[cfg(test)]
@@ -197,6 +202,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dbsf_preserves_ranking_after_score_offset() {
+        let fuse = |offset: ScoreType| {
+            // Reproduce the two exact dot-product score lists in search result order.
+            let first = (1..=3)
+                .rev()
+                .map(|id| point(id, offset + id as ScoreType * ScoreType::EPSILON))
+                .collect();
+            let second = vec![point(1, 0.75), point(2, 0.5), point(3, 0.125)];
+            score_fusion([first, second], ScoreFusion::dbsf())
+        };
+
+        let original = fuse(0.0);
+        let shifted = fuse(1.0);
+        let expected_ids = [2, 3, 1].map(PointIdType::NumId);
+        for (offset, points) in [(0.0, &original), (1.0, &shifted)] {
+            assert_eq!(
+                points.iter().map(|p| p.id).collect_vec(),
+                expected_ids,
+                "DBSF ranking at offset {offset}, with scores {:?}",
+                points.iter().map(|p| p.score).collect_vec(),
+            );
+            for (p, expected_score) in points.iter().zip([1.0220755, 0.9900624, 0.9878621]) {
+                assert_close(p.score, expected_score);
+            }
+        }
+        assert_eq!(shifted, original);
+    }
+
+    #[test]
+    fn dbsf_handles_empty_singleton_and_constant_sources() {
+        for source in [
+            vec![],
+            vec![point(1, 42.0)],
+            vec![point(1, 42.0), point(2, 42.0)],
+        ] {
+            let count = source.len();
+            let fused = score_fusion([source], ScoreFusion::dbsf());
+            assert_eq!(fused.len(), count);
+            assert!(fused.iter().all(|p| p.score == 0.5));
+        }
+    }
+
     proptest! {
         #[test]
         fn welford_calc_vs_naive(scores in prop::collection::vec(-100.0..100.0f32, 2..1000)) {
@@ -211,8 +259,8 @@ mod tests {
                 .collect_vec();
             let (mean, variance) = welfords_mean_variance(&points);
 
-            assert_close(mean, naive_mean);
-            assert_close(variance, naive_variance);
+            assert_close(mean as ScoreType, naive_mean);
+            assert_close(variance as ScoreType, naive_variance);
         }
     }
 }
