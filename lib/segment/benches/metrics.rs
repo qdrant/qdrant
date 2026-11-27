@@ -414,10 +414,63 @@ fn half_metrics_bench(c: &mut Criterion) {
     });
 }
 
+/// f32 cosine over vectors far larger than the caches, in random batches of 64 like an
+/// HNSW neighbor read: one vector per call vs `similarity_4`, which reads the query once
+/// for four stored vectors. Vectors start 4 bytes past a 64-byte boundary, as in the file.
+fn f32_batch_bench(c: &mut Criterion) {
+    const DIM: usize = 1024;
+    const BATCH: usize = 64;
+    const BYTES: usize = 512 << 20;
+    let count = BYTES / (DIM * size_of::<f32>());
+
+    let mut rng = SmallRng::seed_from_u64(42);
+    let mut data = vec![0f32; count * DIM + 64];
+    let start = data.as_ptr().align_offset(64) + 1;
+    for x in &mut data[start..] {
+        *x = rng.random_range(-0.1..0.1);
+    }
+    let data = &data[start..start + count * DIM];
+    let vector = |id: usize| &data[id * DIM..(id + 1) * DIM];
+    let query = vector(0).to_vec();
+    let mut batches = std::iter::repeat_with(move || -> [usize; BATCH] {
+        std::array::from_fn(|_| rng.random_range(0..count))
+    });
+
+    let mut group = c.benchmark_group("f32-batch-1024");
+    group.throughput(criterion::Throughput::Elements(BATCH as u64));
+    group.bench_function("one-per-call", |b| {
+        b.iter_batched(
+            || batches.next().unwrap(),
+            |ids| ids.map(|id| CosineMetric::similarity(&query, vector(id))),
+            criterion::BatchSize::SmallInput,
+        )
+    });
+    let mut batches = std::iter::repeat_with({
+        let mut rng = SmallRng::seed_from_u64(7);
+        move || -> [usize; BATCH] { std::array::from_fn(|_| rng.random_range(0..count)) }
+    });
+    group.bench_function("four-per-call", |b| {
+        b.iter_batched(
+            || batches.next().unwrap(),
+            |ids| {
+                let mut scores = [0.0; BATCH];
+                let (groups, _) = ids.as_chunks::<4>();
+                let (outs, _) = scores.as_chunks_mut::<4>();
+                for (group, out) in groups.iter().zip(outs) {
+                    *out = CosineMetric::similarity_4(&query, group.map(vector));
+                }
+                scores
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = byte_metrics_bench, half_metrics_bench
+    targets = byte_metrics_bench, half_metrics_bench, f32_batch_bench
 }
 
 criterion_main!(benches);

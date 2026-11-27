@@ -154,6 +154,28 @@ impl Metric<VectorElementType> for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
+    fn similarity_4(v1: &[VectorElementType], v2: [&[VectorElementType]; 4]) -> [ScoreType; 4] {
+        // Same dispatch as `similarity`, so every score comes from the same kernel
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { dot_similarity_avx_4(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
+                return unsafe { dot_similarity_neon_4(v1, v2) };
+            }
+        }
+
+        v2.map(|v2| Self::similarity(v1, v2))
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
@@ -173,6 +195,10 @@ impl Metric<VectorElementType> for CosineMetric {
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         DotProductMetric::similarity(v1, v2)
+    }
+
+    fn similarity_4(v1: &[VectorElementType], v2: [&[VectorElementType]; 4]) -> [ScoreType; 4] {
+        DotProductMetric::similarity_4(v1, v2)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
@@ -243,6 +269,41 @@ mod tests {
     use rand::RngExt;
 
     use super::*;
+
+    /// Four vectors at once score bit for bit like four single calls, on every
+    /// dispatch path: scalar, SSE, AVX or NEON, with and without a tail.
+    #[test]
+    fn similarity_4_matches_similarity() {
+        let mut rng = rand::rng();
+        for dim in [
+            1, 7, 15, 16, 17, 31, 32, 33, 47, 64, 100, 128, 1024, 1027, 3072,
+        ] {
+            for _ in 0..20 {
+                let mut vector =
+                    || -> Vec<f32> { (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect() };
+                let query = vector();
+                let others = [vector(), vector(), vector(), vector()];
+                let others = others.each_ref().map(Vec::as_slice);
+
+                let dot = DotProductMetric::similarity_4(&query, others);
+                let cosine = CosineMetric::similarity_4(&query, others);
+                for (i, other) in others.iter().enumerate() {
+                    let expected = DotProductMetric::similarity(&query, other);
+                    assert_eq!(
+                        dot[i].to_bits(),
+                        expected.to_bits(),
+                        "dot, dim {dim}, vector {i}"
+                    );
+                    let expected = CosineMetric::similarity(&query, other);
+                    assert_eq!(
+                        cosine[i].to_bits(),
+                        expected.to_bits(),
+                        "cosine, dim {dim}, vector {i}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_cosine_preprocessing() {
