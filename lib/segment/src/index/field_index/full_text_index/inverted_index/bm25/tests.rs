@@ -15,7 +15,7 @@ use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::immutable_postings_enum::ImmutablePostings;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
 use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
-use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
+use super::super::on_disk_inverted_index::{OnDiskInvertedIndex, VocabFormat};
 use super::super::term_frequencies::TermFrequencies;
 use super::*;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -79,6 +79,35 @@ fn query(index: &MutableInvertedIndex, terms: &[&str], params: Bm25Params) -> Bm
         })
     });
     Bm25Query::new(terms, params, Some(avg)).unwrap()
+}
+
+/// `query`, built against `from`, with its terms resolved in `index`, as a
+/// segment resolves them: the immutable shapes renumber tokens, so the
+/// mutable index's ids do not carry over.
+fn local(query: &Bm25Query, from: &MutableInvertedIndex, index: &impl InvertedIndex) -> Bm25Query {
+    let tokens: HashMap<TokenId, &str> = from
+        .vocab
+        .iter()
+        .map(|(token, &id)| (id, token.as_str()))
+        .collect();
+    let mut terms = Vec::new();
+    // The hash map vocabulary bills its reads.
+    let _scope = ambient::test_guard();
+    index
+        .for_each_token_id(
+            query
+                .terms()
+                .iter()
+                .map(|term| (term.idf, tokens[&term.token_id])),
+            |idf, token_id| {
+                // Not in `index`: matches nothing there, contributes nothing.
+                if let Some(token_id) = token_id {
+                    terms.push(Bm25Term { token_id, idf });
+                }
+            },
+        )
+        .unwrap();
+    Bm25Query::new(terms, query.params, query.avg_doc_len).unwrap()
 }
 
 /// Plain BM25 over every live document, by definition rather than by
@@ -165,7 +194,27 @@ fn on_disk_with(
     mutable: &MutableInvertedIndex,
     deleted: &BitVec,
 ) -> OnDiskInvertedIndex<MmapFile> {
-    OnDiskInvertedIndex::create(dir.to_path_buf(), mutable.clone()).unwrap();
+    on_disk_built(positions, dir, mutable, deleted, VocabFormat::Hashmap)
+}
+
+fn on_disk_in(
+    dir: &std::path::Path,
+    mutable: &MutableInvertedIndex,
+    deleted: &BitVec,
+    format: VocabFormat,
+) -> OnDiskInvertedIndex<MmapFile> {
+    on_disk_built(true, dir, mutable, deleted, format)
+}
+
+fn on_disk_built(
+    positions: bool,
+    dir: &std::path::Path,
+    mutable: &MutableInvertedIndex,
+    deleted: &BitVec,
+    format: VocabFormat,
+) -> OnDiskInvertedIndex<MmapFile> {
+    OnDiskInvertedIndex::create_with_vocab_format(dir.to_path_buf(), mutable.clone(), format)
+        .unwrap();
     OnDiskInvertedIndex::<MmapFile>::open(
         &MmapFs,
         dir.to_path_buf(),
@@ -283,6 +332,14 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
     }
     let on_disk = on_disk(dir.path(), &mutable, &after_mask);
     let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
+    // Tokens from the compact vocabulary.
+    let compact_dir = tempfile::tempdir().unwrap();
+    let compact = on_disk_in(
+        compact_dir.path(),
+        &mutable,
+        &after_mask,
+        VocabFormat::Compact,
+    );
     for &idx in &deleted_after {
         mutable.remove(idx);
         immutable.remove(idx);
@@ -294,9 +351,34 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
 
         eprintln!("{terms:?} limit {limit}");
         assert_top_k(&run(&mutable, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&immutable, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&on_disk, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&from_disk, &query, |_| true, limit), &expected, limit);
+        for actual in [
+            run(
+                &immutable,
+                &local(&query, &mutable, &immutable),
+                |_| true,
+                limit,
+            ),
+            run(
+                &on_disk,
+                &local(&query, &mutable, &on_disk),
+                |_| true,
+                limit,
+            ),
+            run(
+                &from_disk,
+                &local(&query, &mutable, &from_disk),
+                |_| true,
+                limit,
+            ),
+            run(
+                &compact,
+                &local(&query, &mutable, &compact),
+                |_| true,
+                limit,
+            ),
+        ] {
+            assert_top_k(&actual, &expected, limit);
+        }
     }
 }
 
@@ -373,8 +455,18 @@ fn the_filter_is_checked_per_block(#[values(1, 10, 1000)] limit: usize) {
         let expected = reference(&mutable, &query, is_odd);
         for actual in [
             mutable.score_bm25(&query, &accept, limit, &is_stopped),
-            immutable.score_bm25(&query, &accept, limit, &is_stopped),
-            on_disk.score_bm25(&query, &accept, limit, &is_stopped),
+            immutable.score_bm25(
+                &local(&query, &mutable, &immutable),
+                &accept,
+                limit,
+                &is_stopped,
+            ),
+            on_disk.score_bm25(
+                &local(&query, &mutable, &on_disk),
+                &accept,
+                limit,
+                &is_stopped,
+            ),
         ] {
             let actual = actual.unwrap();
             assert_top_k(&actual, &expected, limit);
@@ -433,8 +525,8 @@ fn accept_restricts_the_ranking() {
         let expected = reference(&mutable, &query, even);
         for actual in [
             run(&mutable, &query, even, 7),
-            run(&immutable, &query, even, 7),
-            run(&on_disk, &query, even, 7),
+            run(&immutable, &local(&query, &mutable, &immutable), even, 7),
+            run(&on_disk, &local(&query, &mutable, &on_disk), even, 7),
         ] {
             assert_top_k(&actual, &expected, 7);
             assert!(actual.iter().all(|hit| even(hit.idx)));
@@ -479,8 +571,13 @@ fn a_failing_filter_reports_its_error() {
     let _scope = ambient::test_guard();
     for result in [
         mutable.score_bm25(&query, &accept, 10, &is_stopped),
-        immutable.score_bm25(&query, &accept, 10, &is_stopped),
-        on_disk.score_bm25(&query, &accept, 10, &is_stopped),
+        immutable.score_bm25(
+            &local(&query, &mutable, &immutable),
+            &accept,
+            10,
+            &is_stopped,
+        ),
+        on_disk.score_bm25(&local(&query, &mutable, &on_disk), &accept, 10, &is_stopped),
     ] {
         let error = result.unwrap_err();
         assert!(error.to_string().contains("filter read failed"), "{error}");
@@ -576,9 +673,28 @@ fn counts_only_shapes_match_the_positional_reference(#[values(1, 10, 1000)] limi
 
         eprintln!("{terms:?} limit {limit}");
         assert_top_k(&run(&mutable, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&immutable, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&on_disk, &query, |_| true, limit), &expected, limit);
-        assert_top_k(&run(&from_disk, &query, |_| true, limit), &expected, limit);
+        for actual in [
+            run(
+                &immutable,
+                &local(&query, &positional, &immutable),
+                |_| true,
+                limit,
+            ),
+            run(
+                &on_disk,
+                &local(&query, &positional, &on_disk),
+                |_| true,
+                limit,
+            ),
+            run(
+                &from_disk,
+                &local(&query, &positional, &from_disk),
+                |_| true,
+                limit,
+            ),
+        ] {
+            assert_top_k(&actual, &expected, limit);
+        }
     }
 }
 
@@ -745,7 +861,8 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
 
     let exact = query(&live, &terms, Bm25Params::default());
     let expected = reference(&live, &exact, |_| true);
-    assert_top_k(&run(&immutable, &exact, |_| true, 20), &expected, 20);
+    let exact_local = local(&exact, &live, &immutable);
+    assert_top_k(&run(&immutable, &exact_local, |_| true, 20), &expected, 20);
 
     // The statistics as a gather reads them off the immutable index:
     // posting lengths still count the removed documents, the document
@@ -996,6 +1113,9 @@ fn dense_matches_document_at_a_time(
     for terms in queries() {
         let query = query(&mutable, &terms, Bm25Params::default());
         let expected = reference(&mutable, &query, |idx| idx % 5 != 2);
+        // The immutable shapes number tokens their own way.
+        let on_disk_query = local(&query, &mutable, &on_disk);
+        let query = local(&query, &mutable, &immutable);
         let dense = rank(&query, 0.0);
         let by_document = rank(&query, f32::INFINITY);
         eprintln!("{terms:?} limit {limit}");
@@ -1017,7 +1137,7 @@ fn dense_matches_document_at_a_time(
             limit,
         );
         assert_top_k(
-            &run(&on_disk, &query, |idx| idx % 5 != 2, limit),
+            &run(&on_disk, &on_disk_query, |idx| idx % 5 != 2, limit),
             &expected,
             limit,
         );
