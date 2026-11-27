@@ -123,7 +123,7 @@ fn build_index_from(
                 hnsw_config,
             },
             VectorIndexBuildArgs {
-                permit: Arc::new(ResourcePermit::dummy(threads)),
+                permit: &mut ResourcePermit::dummy(threads),
                 old_indices,
                 gpu_device: None,
                 rng: &mut rng,

@@ -4,7 +4,6 @@
 
 use std::assert_matches;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -167,7 +166,7 @@ fn test_byte_storage_hnsw(
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hnsw_index_byte = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir_byte.path(),
@@ -182,7 +181,7 @@ fn test_byte_storage_hnsw(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

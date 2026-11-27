@@ -2,7 +2,6 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -99,7 +98,7 @@ fn hnsw_discover_precision() {
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
@@ -113,7 +112,7 @@ fn hnsw_discover_precision() {
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,
@@ -220,7 +219,7 @@ fn filtered_hnsw_discover_precision() {
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
@@ -234,7 +233,7 @@ fn filtered_hnsw_discover_precision() {
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

@@ -202,7 +202,7 @@ fn build_hnsw(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(permit_cpu_count as u32)),
+            permit: &mut ResourcePermit::dummy(permit_cpu_count as u32),
             old_indices: &[],
             gpu_device: None,
             rng,

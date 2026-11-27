@@ -28,6 +28,7 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod block;
 mod block_filter;
+mod build_pool;
 mod context;
 #[cfg(feature = "gpu")]
 mod gpu_builder;
@@ -49,6 +50,7 @@ mod remote_steps;
 mod remote_steps;
 
 use self::block_filter::BlockSkip;
+use self::build_pool::BuildPool;
 use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
 use self::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
 use self::payload_blocks::{BlockLoader, FieldBlocks, field_payload_blocks, payload_block_fields};
@@ -182,7 +184,7 @@ impl HNSWIndex {
             permit.num_cpus,
         );
 
-        let pool = build_thread_pool(permit.num_cpus as usize)?;
+        let pool = BuildPool::new(permit.num_cpus as usize);
 
         // `R` may be unsized, while `&mut R` is not
         let mut rng = rng;

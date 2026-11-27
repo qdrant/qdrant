@@ -733,8 +733,8 @@ impl SegmentBuilder {
             #[cfg(not(feature = "gpu"))]
             let gpu_device = None;
 
-            // Arc permit to share it with each vector store
-            let permit = Arc::new(permit);
+            // Each vector index gets the permit in turn
+            let mut permit = permit;
             check_process_stopped(stopped)?;
 
             progress_vector_index.start();
@@ -757,7 +757,7 @@ impl SegmentBuilder {
                         quantized_vectors: quantized_vectors.clone(),
                     },
                     VectorIndexBuildArgs {
-                        permit: permit.clone(),
+                        permit: &mut permit,
                         old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
@@ -855,11 +855,6 @@ impl SegmentBuilder {
             }
 
             // We're done with CPU-intensive tasks, release CPU permit
-            debug_assert_eq!(
-                Arc::strong_count(&permit),
-                1,
-                "Must release CPU permit Arc everywhere",
-            );
             drop(permit);
 
             // Finalize the newly created segment by saving config and version

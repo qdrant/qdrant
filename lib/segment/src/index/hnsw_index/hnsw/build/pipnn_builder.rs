@@ -148,7 +148,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         let local = &self.local;
         let (ctx, points, graph) = (&local.ctx, &local.points, &local.graph);
         let not_deleted = ctx.not_deleted();
-        let links = local.pool.install(|| {
+        let links = local.pool.get()?.install(|| {
             pipnn::build_links(
                 self.source,
                 &not_deleted,
@@ -186,7 +186,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
     ) -> OperationResult<()> {
         let block = Block::new(&self.local.ctx, points);
         let local_ids = (0..points.len() as PointOffsetType).collect::<Vec<_>>();
-        block.insert(&local_ids, self.local.pool, counter)?;
+        block.insert(&local_ids, self.local.pool.get()?, counter)?;
         block.merge_into(&mut self.local.graph);
         Ok(())
     }

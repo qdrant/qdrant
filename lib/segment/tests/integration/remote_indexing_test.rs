@@ -138,7 +138,7 @@ fn segment_of(
 
 fn build(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    permit: ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
 ) -> OperationResult<(TempDir, HNSWIndex)> {
@@ -148,7 +148,7 @@ fn build(
 /// Like [`build`], with main graph `m` and `payload_m`.
 fn build_m(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    permit: ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
     m: usize,
@@ -160,7 +160,7 @@ fn build_m(
 /// Like [`build_m`], with the graphs of `old_indices` to heal.
 fn build_healing(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    mut permit: ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
     m: usize,
@@ -188,7 +188,7 @@ fn build_healing(
             },
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices,
             gpu_device: None,
             rng,
@@ -210,7 +210,7 @@ fn build_with(
 ) -> OperationResult<(TempDir, HNSWIndex)> {
     let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
     with_thread_remote_indexer(dyn_indexer, || {
-        build(segment, Arc::new(ResourcePermit::dummy(2)), stopped, rng)
+        build(segment, ResourcePermit::dummy(2), stopped, rng)
     })
 }
 
@@ -281,13 +281,8 @@ fn remote_build_matches_local_quality() {
     let (_dir, segment) = segment(&mut rng);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(LoopbackIndexer::new(
@@ -318,13 +313,8 @@ fn remote_pipnn_graph_is_accepted() {
     let (_dir, segment) = segment(&mut rng);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(
@@ -369,7 +359,7 @@ fn payload_blocks_only_graph_is_built_remotely() {
     let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
         build_m(
             &segment,
-            Arc::new(ResourcePermit::dummy(2)),
+            ResourcePermit::dummy(2),
             &stopped,
             &mut rng,
             0,
@@ -396,7 +386,7 @@ fn submissions_with_old_graph(old_points: u64) -> usize {
         segment_of(&mut StdRng::seed_from_u64(44), old_points, None, None);
     let (_old_hnsw_dir, old_index) = build(
         &old_segment,
-        Arc::new(ResourcePermit::dummy(2)),
+        ResourcePermit::dummy(2),
         &stopped,
         &mut StdRng::seed_from_u64(1),
     )
@@ -414,7 +404,7 @@ fn submissions_with_old_graph(old_points: u64) -> usize {
     let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
         build_healing(
             &segment,
-            Arc::new(ResourcePermit::dummy(2)),
+            ResourcePermit::dummy(2),
             &stopped,
             &mut StdRng::seed_from_u64(2),
             16,
@@ -577,13 +567,8 @@ fn check_remote_matches_local(
     let (_dir, segment) = segment_with(&mut rng, datatype, quantization);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(LoopbackIndexer::new(

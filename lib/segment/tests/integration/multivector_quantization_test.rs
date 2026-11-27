@@ -320,7 +320,7 @@ fn test_multivector_quantization_hnsw(
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
@@ -335,7 +335,7 @@ fn test_multivector_quantization_hnsw(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

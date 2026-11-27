@@ -153,7 +153,7 @@ fn hnsw_quantized_search_test(
     // edge. Higher-bit / higher-fidelity quantization has enough margin to absorb
     // the jitter and runs with `deterministic = false` for build speed.
     let permit_cpu_count = if deterministic { 1 } else { 2 };
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -169,7 +169,7 @@ fn hnsw_quantized_search_test(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,
@@ -954,7 +954,7 @@ fn build_quantized_hnsw_for_compare(
         inline_storage: None,
     };
 
-    let permit = Arc::new(ResourcePermit::dummy(2));
+    let mut permit = ResourcePermit::dummy(2);
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
@@ -969,7 +969,7 @@ fn build_quantized_hnsw_for_compare(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng,

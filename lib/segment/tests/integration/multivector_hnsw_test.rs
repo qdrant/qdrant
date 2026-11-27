@@ -120,7 +120,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     };
 
     // single threaded mode to guarantee equivalency between single and multi hnsw
-    let permit = Arc::new(ResourcePermit::dummy(1));
+    let mut permit = ResourcePermit::dummy(1);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
@@ -134,7 +134,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit: permit.clone(),
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

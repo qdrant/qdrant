@@ -91,7 +91,7 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
 
         let counter = migrate.track_progress(Some(healer.to_heal_count() as u64));
         healer.heal(
-            local.pool,
+            local.pool.get()?,
             &old_vector_storage,
             old_quantized_vectors.as_ref(),
             local.ctx.stopped,
@@ -154,10 +154,10 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
             )
         });
         let block = Block::new(&local.ctx, points);
-        let to_insert = seeds.seed_block(&block, &local.graph, local.pool, counter)?;
+        let to_insert = seeds.seed_block(&block, &local.graph, local.pool.get()?, counter)?;
         self.block_points += points.len();
         self.seeded_points += points.len() - to_insert.len();
-        block.insert(&to_insert, local.pool, counter)?;
+        block.insert(&to_insert, local.pool.get()?, counter)?;
         block.merge_into(&mut local.graph);
         Ok(())
     }

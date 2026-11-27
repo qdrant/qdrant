@@ -3,7 +3,6 @@
 #![allow(deprecated)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -145,7 +144,7 @@ fn test_multi_filterable_hnsw(
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
@@ -159,7 +158,7 @@ fn test_multi_filterable_hnsw(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

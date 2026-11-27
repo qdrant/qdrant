@@ -3,7 +3,6 @@
 #![allow(deprecated)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -117,7 +116,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
         inline_storage: None,
     };
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let hnsw_index = HNSWIndex::build(
@@ -130,7 +129,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,

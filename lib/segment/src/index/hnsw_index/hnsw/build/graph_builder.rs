@@ -2,9 +2,9 @@ use std::sync::atomic::AtomicU64;
 
 use common::types::PointOffsetType;
 use rand::Rng;
-use rayon::ThreadPool;
 
 use super::block_filter::BlockSkip;
+use super::build_pool::BuildPool;
 use super::context::GraphBuildContext;
 #[cfg(feature = "gpu")]
 use super::gpu_builder::{GpuBuilder, GpuState};
@@ -93,7 +93,7 @@ impl<'a> GraphBuilder<'a> {
     /// method of rules 4 and 5 as its local fallback; it does not hold a GPU while it waits.
     pub fn select(
         ctx: GraphBuildContext<'a>,
-        pool: &'a ThreadPool,
+        pool: &'a BuildPool,
         rng: &'a mut dyn Rng,
         options: GraphBuildOptions<'a>,
     ) -> OperationResult<Self> {

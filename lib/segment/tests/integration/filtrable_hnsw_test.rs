@@ -3,7 +3,6 @@
 #![allow(deprecated)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -145,7 +144,7 @@ fn test_filterable_hnsw() {
     );
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
@@ -156,7 +155,7 @@ fn test_filterable_hnsw() {
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,
@@ -311,7 +310,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     }
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
@@ -322,7 +321,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,
@@ -412,7 +411,7 @@ fn acorn_searches_are_counted_separately() {
             },
         },
         VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(1)),
+            permit: &mut ResourcePermit::dummy(1),
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

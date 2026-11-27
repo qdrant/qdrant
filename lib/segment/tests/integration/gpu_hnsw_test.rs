@@ -4,7 +4,6 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -61,7 +60,7 @@ fn build_hnsw_with_progress(
     progress: ProgressTracker,
 ) -> HNSWIndex {
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let mut build_rng = StdRng::seed_from_u64(100);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
@@ -77,7 +76,7 @@ fn build_hnsw_with_progress(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device,
             rng: &mut build_rng,
