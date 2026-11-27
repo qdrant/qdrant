@@ -6,6 +6,7 @@ use tokio::sync::mpsc::{self, Receiver};
 use super::optimizer_config_update_tests::worker_restart_hooks::{
     worker_restart_fail_after_pause, worker_restart_pause_after_stop,
 };
+use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::build_optimizers;
 use crate::shards::local_shard::LocalShard;
@@ -41,10 +42,17 @@ impl LocalShard {
     /// the collection's optimizer status. This matters especially for background recreation, where
     /// the error would otherwise only be logged with no caller left to propagate it to.
     ///
+    /// `optimizers_overwrite` is the node-local `optimizers_overwrite` from the storage config. It
+    /// is applied on top of the collection's saved optimizer config, the same way it is when the
+    /// shard is created or loaded.
+    ///
     /// ## Cancel safety
     ///
     /// This function is **not** cancel safe.
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         #[cfg(test)]
         let result = if let Some(fail_after_pause) =
             worker_restart_fail_after_pause(&self.collection_name)
@@ -54,11 +62,14 @@ impl LocalShard {
                 "injected worker restart failure",
             ))
         } else {
-            self.on_optimizer_config_update_impl().await
+            self.on_optimizer_config_update_impl(optimizers_overwrite)
+                .await
         };
 
         #[cfg(not(test))]
-        let result = self.on_optimizer_config_update_impl().await;
+        let result = self
+            .on_optimizer_config_update_impl(optimizers_overwrite)
+            .await;
 
         // Surface a failed recreation as an optimizer error, so it shows up in the optimizer status
         // instead of being silently lost on the background recreation path.
@@ -71,7 +82,10 @@ impl LocalShard {
         result
     }
 
-    async fn on_optimizer_config_update_impl(&self) -> CollectionResult<()> {
+    async fn on_optimizer_config_update_impl(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         let mut update_handler = self.update_handler.lock().await;
 
         // Signal all workers to stop
@@ -111,21 +125,24 @@ impl LocalShard {
         // config if it changed again while we were waiting.
         let config = self.collection_config.read().await;
 
+        // Apply the node-local overwrite on top of the freshly read config, so it is not lost
+        let effective_optimizers_config = config.optimizer_config.update_opt(optimizers_overwrite);
+
         let new_optimizers = build_optimizers(
             &self.path,
             self.collection_config.clone(),
             &config.params,
-            &config.optimizer_config,
+            &effective_optimizers_config,
             &config.hnsw_config,
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
 
         update_handler.optimizers = new_optimizers.clone();
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
-        update_handler.prevent_unoptimized = config
-            .optimizer_config
+        update_handler.flush_interval_sec = effective_optimizers_config.flush_interval_sec;
+        update_handler.max_optimization_threads =
+            effective_optimizers_config.max_optimization_threads;
+        update_handler.prevent_unoptimized = effective_optimizers_config
             .prevent_unoptimized
             .unwrap_or_default();
 

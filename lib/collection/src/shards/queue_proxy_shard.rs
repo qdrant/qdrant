@@ -33,6 +33,7 @@ use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::memory_reporter::CollectionMemoryReport;
 use crate::operations::OperationWithClockTag;
+use crate::operations::config_diff::OptimizersConfigDiff;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
@@ -203,10 +204,13 @@ impl QueueProxyShard {
         self.inner_unchecked().transfer_all_missed_updates().await
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizers_overwrite: Option<&OptimizersConfigDiff>,
+    ) -> CollectionResult<()> {
         self.inner_unchecked()
             .wrapped_shard
-            .on_optimizer_config_update()
+            .on_optimizer_config_update(optimizers_overwrite)
             .await
     }
 
