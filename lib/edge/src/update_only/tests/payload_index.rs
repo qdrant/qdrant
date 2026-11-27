@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -213,16 +212,12 @@ fn a_yielded_call_is_finished_by_the_next() {
     let writer = UpdateOnlyEdgeShard::open_mmap(dir.path()).unwrap();
     let segments = writer.segments_count();
 
-    let asked = Cell::new(0);
     let (writer, first) = writer
         .create_payload_index(
             &tag(),
             &schema(PayloadSchemaType::Keyword),
             &dir.path().join(TEMP_SEGMENTS_PATH),
-            || {
-                asked.set(asked.get() + 1);
-                asked.get() > 1
-            },
+            || true,
         )
         .unwrap();
     assert_eq!(first.changed, 1);

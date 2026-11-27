@@ -40,7 +40,7 @@ where
     Fs: UniversalAppendFs + UniversalWriteFsAsync,
 {
     /// Replaces an index of another schema. `temp_path` is local scratch for the build; an error
-    /// loses the writer.
+    /// loses the writer. `should_yield` is asked after each segment changed, so a call progresses.
     pub fn create_payload_index(
         mut self,
         field: &JsonPath,
@@ -53,10 +53,6 @@ where
         let mut outcome = PayloadIndexOutcome::default();
         let segments = self.segment_refs();
         for (visited, segment) in segments.iter().enumerate() {
-            if should_yield() {
-                outcome.remaining = segments.len() - visited;
-                break;
-            }
             let config_path = Self::config_path(&segment.path);
             let mut config = self.load_config(&config_path)?;
             if config
@@ -82,12 +78,16 @@ where
 
             outcome.changed += 1;
             outcome.indexed_bytes = outcome.indexed_bytes.saturating_add(bytes);
+            if should_yield() {
+                outcome.remaining = segments.len() - visited - 1;
+                break;
+            }
         }
         Ok((self, outcome))
     }
 
     /// Files a crashed call leaves behind stay unloaded without a config entry, and the next
-    /// create removes them; an error loses the writer.
+    /// create removes them; an error loses the writer. Yields like [`Self::create_payload_index`].
     pub fn delete_payload_index(
         mut self,
         field: &JsonPath,
@@ -97,10 +97,6 @@ where
         let mut outcome = PayloadIndexOutcome::default();
         let segments = self.segment_refs();
         for (visited, segment) in segments.iter().enumerate() {
-            if should_yield() {
-                outcome.remaining = segments.len() - visited;
-                break;
-            }
             let config_path = Self::config_path(&segment.path);
             let mut config = self.load_config(&config_path)?;
             if config.indices.remove(field).is_none() {
@@ -112,6 +108,10 @@ where
             self.remove_field_files(&segment.path, field)?;
             self.reopen_writer(segment)?;
             outcome.changed += 1;
+            if should_yield() {
+                outcome.remaining = segments.len() - visited - 1;
+                break;
+            }
         }
         Ok((self, outcome))
     }
