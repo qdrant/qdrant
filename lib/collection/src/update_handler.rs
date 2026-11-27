@@ -303,10 +303,21 @@ impl UpdateHandler {
         }
     }
 
-    /// Gracefully wait before all optimizations stop
-    /// If some optimization is in progress - it will be finished before shutdown.
+    /// Wait until update / optimizer / flush workers and in-flight optimizations have stopped.
+    ///
+    /// Optimizations are asked to stop **before** we join the flush worker. Flush takes
+    /// `segments.read()` and then per-segment write locks; an in-flight optimize holds those
+    /// segment reads for the whole copy. Joining flush first can deadlock (nightly model testing
+    /// hung here for hours with no further logs).
+    ///
     /// Returns the receiver with any pending update operations. None if there were no update worker.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
+        // Cooperative-cancel copies that are already running so they can drop segment read
+        // locks. Do this before joining anyone: the update worker's in-flight `spawn_blocking`
+        // apply can also be waiting on those same locks.
+        self.ask_optimizations_to_stop().await;
+
+        log::info!("stop_gracefully: waiting for update worker");
         let maybe_handle = self.update_worker.take();
         let pending_receiver = if let Some(handle) = maybe_handle {
             Some(handle.await?)
@@ -314,29 +325,52 @@ impl UpdateHandler {
             None
         };
 
+        log::info!("stop_gracefully: waiting for optimizer worker");
         let maybe_handle = self.optimizer_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
 
+        // Optimizer worker may have spawned more tasks while we joined the update worker.
+        self.ask_optimizations_to_stop().await;
+
+        log::info!("stop_gracefully: waiting for flush worker");
         let maybe_handle = self.flush_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
 
-        let mut opt_handles_guard = self.optimization_handles.lock().await;
+        let to_join: Vec<_> = {
+            let mut opt_handles_guard = self.optimization_handles.lock().await;
+            let mut out = Vec::new();
+            // If the await fails, we would still keep the rest of handles.
+            while let Some(handle) = opt_handles_guard.pop() {
+                if let Some(join_handle) = handle.stop() {
+                    out.push(join_handle);
+                }
+            }
+            out
+        };
+        for (i, join_handle) in to_join.into_iter().enumerate() {
+            log::info!("stop_gracefully: waiting for optimization task {i}");
+            join_handle.await?;
+        }
+        log::info!("stop_gracefully: workers stopped");
+        Ok(pending_receiver)
+    }
 
+    async fn ask_optimizations_to_stop(&self) {
+        let opt_handles_guard = self.optimization_handles.lock().await;
+        if opt_handles_guard.is_empty() {
+            return;
+        }
+        log::info!(
+            "stop_gracefully: asking {} optimization task(s) to stop",
+            opt_handles_guard.len()
+        );
         for handle in opt_handles_guard.iter() {
             handle.ask_to_stop();
         }
-
-        // If the await fails, we would still keep the rest of handles.
-        while let Some(handle) = opt_handles_guard.pop() {
-            if let Some(join_handle) = handle.stop() {
-                join_handle.await?;
-            }
-        }
-        Ok(pending_receiver)
     }
 
     /// Checks whether all update-related workers have stopped.
