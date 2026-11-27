@@ -752,6 +752,39 @@ mod tests {
 
     use super::*;
 
+    /// The commented `indexing_service` example in the default configuration parses, and its
+    /// values are the defaults it states.
+    #[test]
+    fn test_indexing_service_example() {
+        let start = DEFAULT_CONFIG.find("# indexing_service:").unwrap();
+        let example: String = DEFAULT_CONFIG[start..]
+            .lines()
+            .take_while(|line| line.starts_with('#'))
+            // Options that are commented out inside the example stay commented out
+            .filter_map(|line| line.strip_prefix("# ").or(line.strip_prefix('#')))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let config = Config::builder()
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            .add_source(File::from_str(&example, FileFormat::Yaml))
+            .build()
+            .unwrap()
+            .try_deserialize::<Settings>()
+            .unwrap();
+        let service = config.indexing_service.unwrap();
+        assert_eq!(service.min_index_size_bytes, default_min_index_size_bytes());
+        assert_eq!(service.min_healing_coverage, default_min_healing_coverage());
+        assert_eq!(
+            service.heartbeat_timeout_sec,
+            default_heartbeat_timeout_sec()
+        );
+        assert_eq!(service.queue_timeout_sec, default_queue_timeout_sec());
+        assert_eq!(service.on_failure, IndexingOnFailure::default());
+        assert_eq!(service.max_retries, default_indexing_max_retries());
+        assert_eq!(service.max_block_wait_sec, default_max_block_wait_sec());
+        assert_eq!(service.submit_timeout_sec, default_submit_timeout_sec());
+    }
+
     /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
     #[test]
     fn test_default_config() {
