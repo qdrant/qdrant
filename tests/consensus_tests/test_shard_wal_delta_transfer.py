@@ -311,6 +311,10 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     wait_for_peer_online(peer_api_uris[3], "/")
     wait_for_peer_online(peer_api_uris[4], "/")
 
+    # Under CI load the source peer can briefly be marked Dead via healthcheck
+    # timeout while peers rejoin; wait until it is Active again before recovery.
+    wait_for_replica_state(peer_api_uris[0], COLLECTION_NAME, 0, peer_ids[0], "Active")
+
     # Recover shard with WAL delta transfer
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -331,6 +335,9 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=600000, throttle=True)
 
     sleep(1)
+
+    # Ensure the new source is Active before chaining the next WAL recovery.
+    wait_for_replica_state(peer_api_uris[3], COLLECTION_NAME, 0, peer_ids[3], "Active")
 
     # Recover shard with WAL delta transfer
     r = requests.post(
@@ -428,6 +435,10 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, port=restart_port, extra_env=env)
     wait_for_peer_online(peer_api_uris[-1], "/")
 
+    # Under CI load the source peer can briefly be marked Dead via healthcheck
+    # timeout while the restarted peer rejoins; wait until it is Active again.
+    wait_for_replica_state(peer_api_uris[0], COLLECTION_NAME, 0, from_peer_id, "Active")
+
     # Recover shard with WAL delta transfer
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -459,6 +470,8 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     # Confirm the shard is still dead
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     assert receiver_collection_cluster_info["local_shards"][0]["state"] == "Dead"
+
+    wait_for_replica_state(peer_api_uris[0], COLLECTION_NAME, 0, from_peer_id, "Active")
 
     # Retry recovery with WAL delta transfer
     r = requests.post(

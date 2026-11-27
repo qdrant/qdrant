@@ -109,7 +109,8 @@ def test_shard_snapshot_transfer_shows_stage_in_comment(tmp_path: pathlib.Path):
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
-    upsert_random_points(peer_api_uris[0], 5_000)
+    # Batch the insert to avoid flaky healthcheck timeouts under CI load (#9261).
+    upsert_random_points(peer_api_uris[0], 5_000, batch_size=1000)
 
     src = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     dst = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -268,8 +269,9 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10_000)
+    # Batch the insert: a single 10k-point request can starve consensus under CI
+    # load and blow past the 2000ms per-shard update healthcheck deadline (#9261).
+    upsert_random_points(peer_api_uris[0], 10_000, batch_size=1000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, throttle=True)
@@ -368,8 +370,9 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 10000)
+    # Batch the insert: a single 10k-point request can starve consensus under CI
+    # load and blow past the 2000ms per-shard update healthcheck deadline (#9261).
+    upsert_random_points(peer_api_uris[0], 10000, batch_size=1000)
 
     # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, duration=5)
