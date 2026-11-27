@@ -53,7 +53,7 @@ impl<'a> LocalBuilder<'a> {
         for point_id in ctx
             .id_tracker
             .point_mappings()
-            .iter_internal_excluding(ctx.vector_storage.deleted_vector_bitslice())
+            .iter_internal_excluding(ctx.vector_deleted)
         {
             check_process_stopped(ctx.stopped)?;
             let level = old

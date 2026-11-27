@@ -82,6 +82,16 @@ impl Metadata {
     }
 }
 
+/// Encoder parameters of int8 scalar quantization: with the vector parameters, everything
+/// needed to score its codes. See [`EncodedVectorsU8::from_parameters`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScalarParameters {
+    pub actual_dim: usize,
+    pub alpha: f32,
+    pub offset: f32,
+    pub multiplier: f32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy)]
 struct MetadataInt8 {
     actual_dim: usize,
@@ -346,6 +356,62 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         // fixed offset) also holds in release builds without a per-score check.
         validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
+        Ok(result)
+    }
+
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> ScalarParameters {
+        match &self.metadata {
+            Metadata::Int8(MetadataInt8 {
+                actual_dim,
+                alpha,
+                offset,
+                multiplier,
+                vector_parameters: _,
+            }) => ScalarParameters {
+                actual_dim: *actual_dim,
+                alpha: *alpha,
+                offset: *offset,
+                multiplier: *multiplier,
+            },
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: ScalarParameters,
+    ) -> std::io::Result<Self> {
+        let ScalarParameters {
+            actual_dim,
+            alpha,
+            offset,
+            multiplier,
+        } = parameters;
+        if actual_dim != get_actual_dim(&vector_parameters) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "scalar quantization: actual dim {actual_dim} does not match dim {}",
+                    vector_parameters.dim,
+                ),
+            ));
+        }
+        let result = Self {
+            encoded_vectors,
+            metadata: Metadata::Int8(MetadataInt8 {
+                actual_dim,
+                alpha,
+                offset,
+                multiplier,
+                vector_parameters,
+            }),
+            metadata_path: None,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
         Ok(result)
     }
 
