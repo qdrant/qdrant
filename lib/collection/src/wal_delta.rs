@@ -1,8 +1,10 @@
 pub mod ahead_clocks;
+pub mod tagged_from;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use parking_lot::Mutex as ParkingMutex;
 use shard::wal::{SerdeWal, WalRawRecord};
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -11,6 +13,7 @@ use tokio_util::task::AbortOnDropHandle;
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::orphan_points::{OrphanPoints, OrphanPointsError, find_orphan_points};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
+use crate::wal_delta::tagged_from::TaggedFrom;
 
 pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
 
@@ -31,6 +34,11 @@ pub struct RecoverableWal {
     ///   - (so if we advance these clocks, we have to advance `newest_clocks` as well)
     /// - this WAL cannot resolve any delta below any of these clocks
     pub(super) oldest_clocks: Arc<Mutex<ClockMap>>,
+
+    /// The first record from which every record in this WAL has a clock tag
+    ///
+    /// Only changed under the WAL lock. Take it after the WAL lock.
+    pub(super) tagged_from: Arc<ParkingMutex<TaggedFrom>>,
 }
 
 impl RecoverableWal {
@@ -38,11 +46,13 @@ impl RecoverableWal {
         wal: LockedWal,
         newest_clocks: Arc<Mutex<ClockMap>>,
         oldest_clocks: Arc<Mutex<ClockMap>>,
+        tagged_from: Arc<ParkingMutex<TaggedFrom>>,
     ) -> Self {
         Self {
             wal,
             newest_clocks,
             oldest_clocks,
+            tagged_from,
         }
     }
 
@@ -67,7 +77,9 @@ impl RecoverableWal {
         let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;
 
         let Some(clock_tag) = &mut operation.clock_tag else {
-            return wal_lock.write(&record).map(|op_num| (op_num, wal_lock));
+            let op_num = wal_lock.write(&record)?;
+            self.tagged_from.lock().mark_untagged(op_num);
+            return Ok((op_num, wal_lock));
         };
 
         let previous_clock = newest_clocks.clock_state(*clock_tag);
@@ -207,6 +219,15 @@ impl RecoverableWal {
         .map_err(|err| {
             OrphanPointsError::WalReadError(format!("failed to join WAL read task: {err}"))
         })?
+    }
+
+    /// How many records a WAL delta scan can read backwards from the end of this WAL
+    ///
+    /// See [`TaggedFrom::tagged_records`].
+    pub async fn tagged_records(&self) -> u64 {
+        let wal = self.wal.lock().await;
+        let tagged_from = self.tagged_from.lock();
+        tagged_from.tagged_records(wal.first_closed_index(), wal.len(true))
     }
 
     pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
@@ -526,6 +547,7 @@ mod tests {
                 Arc::new(Mutex::new(wal)),
                 Arc::new(Mutex::new(ClockMap::default())),
                 Arc::new(Mutex::new(ClockMap::default())),
+                Arc::new(ParkingMutex::new(TaggedFrom::default())),
             ),
             dir,
         )
@@ -1819,6 +1841,38 @@ mod tests {
         // Cannot resolve a delta for our previous clock, it now has an untagged record after it
         let mut recovery_point = RecoveryPoint::default();
         recovery_point.insert_with_token(1, 0, 2, 2);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
+    }
+
+    /// A WAL delta resolves if it has at most `tagged_records` records.
+    #[tokio::test]
+    async fn test_tagged_records_bound_wal_delta() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        // Records 0 and 1 are tagged
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        assert_eq!(wal.tagged_records().await, 2);
+
+        // Record 2 is untagged
+        write_operation(&wal, 3, None).await;
+        assert_eq!(wal.tagged_records().await, 0);
+
+        // Records 3 and 4 are tagged
+        write_operation(&wal, 4, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 5, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+        assert_eq!(wal.tagged_records().await, 2);
+
+        // A delta of records 3 and 4 resolves
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 2, 2);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, Some(3));
+
+        // A delta of records 1 to 4 does not
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert_with_token(1, 0, 1, 1);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
     }

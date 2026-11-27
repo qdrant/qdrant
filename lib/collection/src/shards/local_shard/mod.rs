@@ -96,6 +96,7 @@ use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::RecoverableWal;
+use crate::wal_delta::tagged_from::TaggedFrom;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -343,7 +344,12 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            wal: RecoverableWal::new(locked_wal, clocks.newest_clocks, clocks.oldest_clocks),
+            wal: RecoverableWal::new(
+                locked_wal,
+                clocks.newest_clocks,
+                clocks.oldest_clocks,
+                clocks.tagged_from,
+            ),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -546,7 +552,8 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
-        let clocks = LocalShardClocks::load(shard_path)?;
+        // `load_from_wal` starts reading the WAL at its first index
+        let clocks = LocalShardClocks::load(shard_path, wal.first_index())?;
 
         // Always make sure we have any appendable segments, needed for update operations
         if !segment_holder.has_appendable_segment() {
@@ -909,8 +916,9 @@ impl LocalShard {
                     self.path.display(),
                 ))
             })?;
-            if let Some(clock_tag) = update.clock_tag {
-                newest_clocks.advance_clock(clock_tag);
+            match update.clock_tag {
+                Some(clock_tag) => newest_clocks.advance_clock(clock_tag),
+                None => self.wal.tagged_from.lock().mark_untagged(op_num),
             }
 
             // A historical `CreateVectorName` makes its name valid for every operation that
@@ -1045,11 +1053,10 @@ impl LocalShard {
             // `last_wal_index` *exclusive*: it is one past the last entry (`first_index + len`).
             for entry in wal.read_range(to..last_wal_index) {
                 match entry {
-                    Ok((_op_num, update)) => {
-                        if let Some(clock_tag) = update.clock_tag {
-                            newest_clocks.advance_clock(clock_tag);
-                        }
-                    }
+                    Ok((op_num, update)) => match update.clock_tag {
+                        Some(clock_tag) => newest_clocks.advance_clock(clock_tag),
+                        None => self.wal.tagged_from.lock().mark_untagged(op_num),
+                    },
                     Err(err) => log::error!(
                         "Failed to read WAL tail entry during recovery of {}: {err}",
                         self.path.display(),
@@ -1625,26 +1632,33 @@ fn deduplicate_points_async(
 
 /// Convenience struct for combining clock maps belonging to a shard
 ///
-/// Holds a clock map for tracking the highest clocks and the cutoff clocks.
+/// Holds a clock map for tracking the highest clocks and the cutoff clocks, and the first WAL
+/// record from which every record has a clock tag.
 #[derive(Clone, Debug, Default)]
 pub struct LocalShardClocks {
     newest_clocks: Arc<Mutex<ClockMap>>,
     oldest_clocks: Arc<Mutex<ClockMap>>,
+    tagged_from: Arc<ParkingMutex<TaggedFrom>>,
 }
 
 impl LocalShardClocks {
-    fn new(newest_clocks: ClockMap, oldest_clocks: ClockMap) -> Self {
+    fn new(newest_clocks: ClockMap, oldest_clocks: ClockMap, tagged_from: TaggedFrom) -> Self {
         Self {
             newest_clocks: Arc::new(Mutex::new(newest_clocks)),
             oldest_clocks: Arc::new(Mutex::new(oldest_clocks)),
+            tagged_from: Arc::new(ParkingMutex::new(tagged_from)),
         }
     }
 
-    // Load clock maps from disk
-    pub fn load(shard_path: &Path) -> CollectionResult<Self> {
+    /// Load clock maps from disk
+    ///
+    /// `first_read_record` is the first WAL record the shard reads on load. We can't tell whether
+    /// records below it have clock tags.
+    pub fn load(shard_path: &Path, first_read_record: u64) -> CollectionResult<Self> {
         let newest_clocks = ClockMap::load_or_default(&Self::newest_clocks_path(shard_path))?;
         let oldest_clocks = ClockMap::load_or_default(&Self::oldest_clocks_path(shard_path))?;
-        Ok(Self::new(newest_clocks, oldest_clocks))
+        let tagged_from = TaggedFrom::new(first_read_record);
+        Ok(Self::new(newest_clocks, oldest_clocks, tagged_from))
     }
 
     /// Persist clock maps to disk
