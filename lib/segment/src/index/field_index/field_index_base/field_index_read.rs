@@ -51,6 +51,24 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`Memory::Cold`]: crate::types::Memory::Cold
     fn is_cold(&self) -> bool;
 
+    /// Without reading index data or materializing postings, whether
+    /// [`PayloadFieldIndexRead::filter_into`] handles `condition`.
+    fn supports_posting_filter(&self, condition: &FieldCondition) -> bool;
+
+    /// Without reading index data, whether [`PayloadFieldIndexRead::condition_checker`]
+    /// handles `condition`.
+    fn supports_condition_checker(&self, condition: &FieldCondition) -> bool;
+
+    /// Without reading index data, whether [`Self::element_condition_checker`] handles
+    /// `condition` for the array at `array_key`.
+    fn supports_element_condition(&self, array_key: &JsonPath, condition: &FieldCondition) -> bool;
+
+    /// Without reading index data, whether [`PayloadFieldIndexRead::special_check_condition`]
+    /// handles `condition` during payload-fallback evaluation (today: full-text indexes).
+    fn supports_special_check(&self, _condition: &FieldCondition) -> bool {
+        false
+    }
+
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;
 

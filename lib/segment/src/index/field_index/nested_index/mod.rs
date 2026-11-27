@@ -547,6 +547,22 @@ impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex
         self.inner.is_cold()
     }
 
+    fn supports_posting_filter(&self, condition: &FieldCondition) -> bool {
+        self.inner.supports_posting_filter(condition)
+    }
+
+    fn supports_condition_checker(&self, condition: &FieldCondition) -> bool {
+        self.inner.supports_condition_checker(condition)
+    }
+
+    fn supports_element_condition(&self, array_key: &JsonPath, condition: &FieldCondition) -> bool {
+        &self.array_key == array_key && self.inner.supports_condition_checker(condition)
+    }
+
+    fn supports_special_check(&self, condition: &FieldCondition) -> bool {
+        self.inner.supports_special_check(condition)
+    }
+
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         let telemetry = self.inner.get_telemetry_data()?;
         Ok(PayloadIndexTelemetry {

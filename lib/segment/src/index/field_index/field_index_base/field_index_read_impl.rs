@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
+use super::condition_support;
 use super::field_index::FieldIndex;
 use super::field_index_read::FieldIndexRead;
 use super::payload_field_index::PayloadFieldIndexRead;
@@ -16,6 +17,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::map_index::prefix_index::StrMapIndexPrefixRead;
 use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
@@ -184,6 +186,97 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidMapIndex(index) => index.is_cold(),
             FieldIndex::NullIndex(index) => index.is_cold(),
             FieldIndex::Nested(index) => index.is_cold(),
+        }
+    }
+
+    fn supports_posting_filter(&self, condition: &FieldCondition) -> bool {
+        match self {
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::UuidIndex(_) => {
+                condition_support::numeric_supports_posting_filter(condition)
+            }
+            FieldIndex::IntMapIndex(_) => {
+                condition_support::int_map_supports_posting_filter(condition)
+            }
+            FieldIndex::KeywordIndex(index) => condition_support::str_map_supports_posting_filter(
+                condition,
+                index.has_prefix_index(),
+            ),
+            FieldIndex::UuidMapIndex(_) => {
+                condition_support::uuid_map_supports_posting_filter(condition)
+            }
+            FieldIndex::GeoIndex(_) => condition_support::geo_supports_condition(condition),
+            FieldIndex::BoolIndex(_) => condition_support::bool_supports_condition(condition),
+            FieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            FieldIndex::NullIndex(_) => condition_support::null_supports_condition(condition),
+            FieldIndex::Nested(index) => index.supports_posting_filter(condition),
+        }
+    }
+
+    fn supports_condition_checker(&self, condition: &FieldCondition) -> bool {
+        match self {
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::UuidIndex(_) => {
+                condition_support::numeric_supports_condition_checker(condition)
+            }
+            FieldIndex::IntMapIndex(_) => {
+                condition_support::int_map_supports_condition_checker(condition)
+            }
+            FieldIndex::KeywordIndex(_) => {
+                condition_support::str_map_supports_condition_checker(condition)
+            }
+            FieldIndex::UuidMapIndex(_) => {
+                condition_support::uuid_map_supports_condition_checker(condition)
+            }
+            FieldIndex::GeoIndex(_) => condition_support::geo_supports_condition(condition),
+            FieldIndex::BoolIndex(_) => condition_support::bool_supports_condition(condition),
+            FieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            FieldIndex::NullIndex(_) => condition_support::null_supports_condition(condition),
+            FieldIndex::Nested(index) => index.supports_condition_checker(condition),
+        }
+    }
+
+    fn supports_element_condition(&self, array_key: &JsonPath, condition: &FieldCondition) -> bool {
+        match self {
+            FieldIndex::Nested(index) => index.supports_element_condition(array_key, condition),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => false,
+        }
+    }
+
+    fn supports_special_check(&self, condition: &FieldCondition) -> bool {
+        match self {
+            FieldIndex::FullTextIndex(_) => {
+                condition_support::full_text_supports_condition(condition)
+            }
+            FieldIndex::Nested(index) => index.supports_special_check(condition),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => false,
         }
     }
 

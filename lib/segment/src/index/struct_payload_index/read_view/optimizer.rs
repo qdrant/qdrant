@@ -393,4 +393,86 @@ where
         }
         Ok(None)
     }
+
+    /// Zero-IO predicate mirroring `filter_context_for_serial_checks`: whether lazy
+    /// point-by-point evaluation of `filter` would read cold on-disk storage.
+    pub(super) fn filter_lazy_checks_hit_disk(&self, filter: &Filter) -> bool {
+        filter
+            .iter_conditions()
+            .any(|condition| self.condition_lazy_checks_hit_disk(condition))
+    }
+
+    fn condition_lazy_checks_hit_disk(&self, condition: &Condition) -> bool {
+        match condition {
+            Condition::Filter(sub_filter) => self.filter_lazy_checks_hit_disk(sub_filter),
+            Condition::Field(field_condition) => {
+                self.field_condition_lazy_checks_hit_disk(field_condition)
+            }
+            Condition::IsEmpty(is_empty) => {
+                let key = &is_empty.is_empty.key;
+                let cond = FieldCondition::new_is_empty(key.clone(), true);
+                self.field_checker_hits_disk(key, &cond)
+            }
+            Condition::IsNull(is_null) => {
+                let key = &is_null.is_null.key;
+                let cond = FieldCondition::new_is_null(key.clone(), true);
+                self.field_checker_hits_disk(key, &cond)
+            }
+            Condition::Nested(nested) => self.nested_lazy_checks_hit_disk(nested),
+            Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => false,
+        }
+    }
+
+    /// Mirrors `read_posting` (with `ExpectedChecks::Serial`) followed by
+    /// `field_condition_checker` without materializing postings or opening cold files.
+    fn field_condition_lazy_checks_hit_disk(&self, condition: &FieldCondition) -> bool {
+        if reads_posting_list(condition)
+            && self
+                .field_indexes
+                .get(&condition.key)
+                .is_some_and(|indexes| {
+                    indexes
+                        .iter()
+                        .any(|index| index.is_cold() && index.supports_posting_filter(condition))
+                })
+        {
+            // Serial filter context materializes this cold posting list into an in-RAM
+            // `PointSet` up front, so lazy checks are bit tests in memory.
+            return false;
+        }
+        self.field_checker_hits_disk(&condition.key, condition)
+    }
+
+    /// Mirrors `field_condition_checker`: first index that can check `condition` decides
+    /// coldness; otherwise checks fall back to payload storage.
+    fn field_checker_hits_disk(
+        &self,
+        key: &crate::json_path::JsonPath,
+        condition: &FieldCondition,
+    ) -> bool {
+        if let Some(indexes) = self.field_indexes.get(key)
+            && let Some(index) = indexes
+                .iter()
+                .find(|index| index.supports_condition_checker(condition))
+        {
+            return index.is_cold();
+        }
+        if self.payload.borrow().is_cold() {
+            return true;
+        }
+        // Even with in-RAM payload, `check_field_condition` invokes `special_check_condition`
+        // on the first supporting index (e.g. a cold full-text index).
+        self.field_indexes
+            .get(key)
+            .and_then(|indexes| {
+                indexes
+                    .iter()
+                    .find(|index| index.supports_special_check(condition))
+            })
+            .is_some_and(FieldIndexRead::is_cold)
+    }
 }

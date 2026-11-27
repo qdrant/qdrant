@@ -371,6 +371,10 @@ where
         )
     }
 
+    fn lazy_checks_hit_disk(&self, filter: &Filter) -> bool {
+        self.filter_lazy_checks_hit_disk(filter)
+    }
+
     fn for_each_payload_block(
         &self,
         field: PayloadKeyTypeRef,

@@ -4,6 +4,7 @@
 // Deprecated storage placement params (`on_disk`) are still handled here
 #![allow(deprecated)]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -11,9 +12,13 @@ use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
+use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
 use segment::data_types::filter_user::FilterUser;
+use segment::data_types::index::{
+    GeoIndexParams, GeoIndexType, IntegerIndexParams, IntegerIndexType,
+};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
@@ -24,18 +29,23 @@ use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::query_optimization::filter_checks::FilterChecks;
 use segment::index::query_optimization::point_set::{PointSet, PointSetContext};
+use segment::index::query_optimization::resolve_filter::resolve_for_query_vectors;
 use segment::index::query_optimization::resolved_points::ResolvedPoints;
 use segment::index::{PayloadIndexRead, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
+use segment::payload_storage::PayloadStorageRead;
 use segment::segment::Segment;
-use segment::segment_constructor::VectorIndexBuildArgs;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
+use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MinShould,
-    PayloadSchemaType, Range, SeqNumberType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, GeoPoint, GeoRadius, HnswConfig, HnswGlobalConfig,
+    Indexes, Memory, MinShould, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    PayloadStorageType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
+    VectorStorageType, WithPayload,
 };
 use tempfile::Builder;
 
@@ -594,4 +604,481 @@ fn resolved_points(shared: &Filter) -> &PointSet {
         Some([Condition::ResolvedPoints(resolved)]) => resolved.points(),
         other => panic!("a shared filter is a single `ResolvedPoints` condition, got {other:?}"),
     }
+}
+
+/// Build an optimized two-vector HNSW segment with configurable payload storage and field index
+/// memory placement so tests can contrast hot vs cold lazy filter checks around the in-RAM
+/// break-even threshold.
+fn two_vector_hnsw_segment(
+    out_dir: &std::path::Path,
+    payload_storage_type: PayloadStorageType,
+    index_memory: Memory,
+    rng: &mut StdRng,
+) -> Segment {
+    const DIM: usize = 8;
+    const POINTS: u64 = 4_000;
+
+    let make_config = |index: Indexes| {
+        let vec_cfg = VectorDataConfig {
+            size: DIM,
+            distance: Distance::Cosine,
+            storage_type: VectorStorageType::InRamChunkedMmap,
+            index,
+            quantization_config: None,
+            multivector_config: None,
+            datatype: None,
+        };
+        SegmentConfig {
+            vector_data: HashMap::from([
+                (VECTOR1_NAME.to_owned(), vec_cfg.clone()),
+                (VECTOR2_NAME.to_owned(), vec_cfg),
+            ]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type,
+            id_tracker_memory: None,
+        }
+    };
+
+    let plain_dir = Builder::new().prefix("plain").tempdir().unwrap();
+    let (mut plain, _) = build_segment(
+        plain_dir.path(),
+        &make_config(Indexes::Plain {}),
+        None,
+        true,
+    )
+    .unwrap();
+
+    for n in 0..POINTS {
+        let mut vectors = NamedVectors::default();
+        vectors.insert(VECTOR1_NAME.to_owned(), random_vector(rng, DIM).into());
+        vectors.insert(VECTOR2_NAME.to_owned(), random_vector(rng, DIM).into());
+        let op = n as SeqNumberType + 1;
+        plain.upsert_point(op, n.into(), vectors).unwrap();
+
+        let items: Vec<_> = (0..2)
+            .map(|i| serde_json::json!({"cat": (n + i) % 3, "val": (n * 7 + i) % 100}))
+            .collect();
+        let lon = 13.0 + rng.random_range(0.0..0.8);
+        let lat = 52.1 + rng.random_range(0.0..0.8);
+        let payload = payload_json! {
+            "half": n % 2,
+            "score": (n % 100) as i64,
+            "loc": {"lon": lon, "lat": lat},
+            "items": items,
+        };
+        plain.set_full_payload(op, n.into(), &payload).unwrap();
+    }
+
+    let op = POINTS as SeqNumberType + 1;
+    let int_schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            r#type: IntegerIndexType::Integer,
+            lookup: Some(true),
+            range: Some(true),
+            memory: Some(index_memory),
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+    for key in ["half", "score"] {
+        plain
+            .create_field_index(op, &JsonPath::new(key), Some(&int_schema))
+            .unwrap();
+    }
+    let geo_schema = PayloadFieldSchema::FieldParams(PayloadSchemaParams::Geo(GeoIndexParams {
+        r#type: GeoIndexType::Geo,
+        memory: Some(index_memory),
+        enable_hnsw: Some(false),
+        ..Default::default()
+    }));
+    plain
+        .create_field_index(op, &JsonPath::new("loc"), Some(&geo_schema))
+        .unwrap();
+
+    // Small m and low full_scan_threshold (1 KB = 32 8-dim f32 vectors):
+    // graph search with ef=16 has 16 * 8 = 128 checks per query (+ 1000 sampling when min <= 32),
+    // so two groups stay below 4_000 in RAM (2 * 1_128 = 2_256 < 4_000) but cross the threshold
+    // once weighted by 64 on cold storage.
+    let hnsw_config = HnswConfig {
+        memory: None,
+        m: 4,
+        ef_construct: 32,
+        full_scan_threshold: 1,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+        inline_storage: None,
+    };
+
+    let temp_dir = Builder::new().prefix("builder").tempdir().unwrap();
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &make_config(Indexes::Hnsw(hnsw_config)),
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&plain], &AtomicBool::new(false)).unwrap();
+    builder.build_for_test(out_dir)
+}
+
+/// On cold payload storage (`Mmap`), a `nested` filter without per-element indexes reads
+/// payload from disk on every lazy graph check. Weighting lazy checks by 64 lets two
+/// graph-route groups share above the in-RAM break-even, while hot payload storage
+/// (`InRamMmap`) declines at the exact same check count, and shared search results match
+/// searching with the original filter.
+#[test]
+fn test_cold_payload_storage_shares_nested_filter_above_ram_break_even() {
+    let _scope = ambient::test_guard();
+    let cold_dir = Builder::new().prefix("cold_seg").tempdir().unwrap();
+    let hot_dir = Builder::new().prefix("hot_seg").tempdir().unwrap();
+
+    let cold_segment = two_vector_hnsw_segment(
+        cold_dir.path(),
+        PayloadStorageType::Mmap,
+        Memory::Cached,
+        &mut StdRng::seed_from_u64(7),
+    );
+    let hot_segment = two_vector_hnsw_segment(
+        hot_dir.path(),
+        PayloadStorageType::InRamMmap,
+        Memory::Cached,
+        &mut StdRng::seed_from_u64(7),
+    );
+
+    assert!(cold_segment.payload_storage.borrow().is_cold());
+    assert!(!hot_segment.payload_storage.borrow().is_cold());
+
+    let nested_filter = Filter::new_must(Condition::new_nested(
+        JsonPath::new("items"),
+        Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("cat"),
+            1.into(),
+        ))),
+    ));
+
+    let mut rng = StdRng::seed_from_u64(99);
+    let query1 = [QueryVector::from(random_vector(&mut rng, 8))];
+    let query2 = [QueryVector::from(random_vector(&mut rng, 8))];
+    let params = SearchParams {
+        hnsw_ef: Some(16),
+        ..Default::default()
+    };
+    let users = [
+        FilterUser {
+            vector_name: VECTOR1_NAME,
+            query_vectors: &query1,
+            top: 10,
+            params: Some(&params),
+        },
+        FilterUser {
+            vector_name: VECTOR2_NAME,
+            query_vectors: &query2,
+            top: 10,
+            params: Some(&params),
+        },
+    ];
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+
+    // Hot payload storage stays below in-RAM break-even: declines to share.
+    assert!(
+        hot_segment
+            .share_filter(&nested_filter, &users, &segment_query_context)
+            .unwrap()
+            .is_none(),
+        "hot payload storage should not share below the in-RAM break-even"
+    );
+
+    // Cold payload storage weights lazy checks by 64: shares the nested filter.
+    let shared = cold_segment
+        .share_filter(&nested_filter, &users, &segment_query_context)
+        .unwrap()
+        .expect("cold payload storage must share nested filter above the in-RAM break-even");
+
+    for (vector_name, query) in [(VECTOR1_NAME, &query1[0]), (VECTOR2_NAME, &query2[0])] {
+        let search = |filter: &Filter| {
+            cold_segment
+                .search_batch(
+                    vector_name,
+                    &[query],
+                    &WithPayload::default(),
+                    &false.into(),
+                    Some(filter),
+                    10,
+                    Some(&params),
+                    &segment_query_context,
+                )
+                .unwrap()
+        };
+        let expected = search(&nested_filter);
+        assert!(!expected[0].is_empty());
+        assert_eq!(search(&shared), expected);
+    }
+}
+
+/// Cold field indexes without serial posting-list materialization (`geo`) weight lazy checks
+/// and trigger sharing even when payload storage is in RAM, whereas cold `match` / `range`
+/// indexes are materialized into a `PointSet` up front by the serial filter context and stay
+/// unweighted.
+#[test]
+fn test_cold_geo_index_shares_while_cold_materialized_index_does_not() {
+    let _scope = ambient::test_guard();
+    let cold_idx_dir = Builder::new().prefix("cold_idx_seg").tempdir().unwrap();
+    let hot_idx_dir = Builder::new().prefix("hot_idx_seg").tempdir().unwrap();
+
+    // Hot payload storage isolates the effect of field index coldness.
+    let cold_idx_segment = two_vector_hnsw_segment(
+        cold_idx_dir.path(),
+        PayloadStorageType::InRamMmap,
+        Memory::Cold,
+        &mut StdRng::seed_from_u64(11),
+    );
+    let hot_idx_segment = two_vector_hnsw_segment(
+        hot_idx_dir.path(),
+        PayloadStorageType::InRamMmap,
+        Memory::Cached,
+        &mut StdRng::seed_from_u64(11),
+    );
+
+    let geo_filter = Filter::new_must(Condition::Field(FieldCondition::new_geo_radius(
+        JsonPath::new("loc"),
+        GeoRadius {
+            center: GeoPoint::new_unchecked(13.4, 52.5),
+            radius: OrderedFloat(60_000.0),
+        },
+    )));
+    let cold_match_filter = match_filter("half", 1);
+    let cold_range_filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
+        JsonPath::new("score"),
+        Range {
+            gte: Some(OrderedFloat(20.0)),
+            ..Default::default()
+        },
+    )));
+
+    let mut rng = StdRng::seed_from_u64(123);
+    let query1 = [QueryVector::from(random_vector(&mut rng, 8))];
+    let query2 = [QueryVector::from(random_vector(&mut rng, 8))];
+    let params = SearchParams {
+        hnsw_ef: Some(16),
+        ..Default::default()
+    };
+    let users = [
+        FilterUser {
+            vector_name: VECTOR1_NAME,
+            query_vectors: &query1,
+            top: 10,
+            params: Some(&params),
+        },
+        FilterUser {
+            vector_name: VECTOR2_NAME,
+            query_vectors: &query2,
+            top: 10,
+            params: Some(&params),
+        },
+    ];
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+
+    // Hot geo index stays below break-even.
+    assert!(
+        hot_idx_segment
+            .share_filter(&geo_filter, &users, &segment_query_context)
+            .unwrap()
+            .is_none(),
+        "hot geo index should not share below the in-RAM break-even"
+    );
+
+    // Cold geo index stays lazy on disk: weighted by 64 and shares.
+    let shared_geo = cold_idx_segment
+        .share_filter(&geo_filter, &users, &segment_query_context)
+        .unwrap()
+        .expect("cold geo index must share above the in-RAM break-even");
+
+    for (vector_name, query) in [(VECTOR1_NAME, &query1[0]), (VECTOR2_NAME, &query2[0])] {
+        let search = |filter: &Filter| {
+            cold_idx_segment
+                .search_batch(
+                    vector_name,
+                    &[query],
+                    &WithPayload::default(),
+                    &false.into(),
+                    Some(filter),
+                    10,
+                    Some(&params),
+                    &segment_query_context,
+                )
+                .unwrap()
+        };
+        let expected = search(&geo_filter);
+        assert!(!expected[0].is_empty());
+        assert_eq!(search(&shared_geo), expected);
+    }
+
+    // Cold match and range conditions are materialized up front for serial checks:
+    // lazy checks are in-RAM bit tests, so they must NOT receive the 64x cold weight.
+    assert!(
+        cold_idx_segment
+            .share_filter(&cold_match_filter, &users, &segment_query_context)
+            .unwrap()
+            .is_none(),
+        "cold match filter is materialized by serial checks and must not be weighted as cold lazy"
+    );
+    assert!(
+        cold_idx_segment
+            .share_filter(&cold_range_filter, &users, &segment_query_context)
+            .unwrap()
+            .is_none(),
+        "cold range filter is materialized by serial checks and must not be weighted as cold lazy"
+    );
+}
+
+/// Same-vector batch filter sharing (`resolve_for_query_vectors`) uses the same cost model
+/// as `share_filter`: cold lazy checks are weighted by 64, while hot lazy checks, `Full`,
+/// and zero-check `Lazy` stay unweighted, and batched search matches single-query search.
+#[test]
+fn test_resolve_for_query_vectors_weights_cold_lazy_checks() {
+    let _scope = ambient::test_guard();
+    let cold_dir = Builder::new().prefix("cold_qv_seg").tempdir().unwrap();
+    let hot_dir = Builder::new().prefix("hot_qv_seg").tempdir().unwrap();
+
+    let cold_segment = two_vector_hnsw_segment(
+        cold_dir.path(),
+        PayloadStorageType::Mmap,
+        Memory::Cached,
+        &mut StdRng::seed_from_u64(19),
+    );
+    let hot_segment = two_vector_hnsw_segment(
+        hot_dir.path(),
+        PayloadStorageType::InRamMmap,
+        Memory::Cached,
+        &mut StdRng::seed_from_u64(19),
+    );
+
+    let nested_filter = Filter::new_must(Condition::new_nested(
+        JsonPath::new("items"),
+        Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("cat"),
+            2.into(),
+        ))),
+    ));
+    let stopped = AtomicBool::new(false);
+
+    // 256 checks < 4_000 candidates (unweighted declines) < 256 * 64 = 16_384 (cold shares).
+    let lazy_checks = FilterChecks::Lazy {
+        expected_checks: 256,
+    };
+    let hot_resolved = hot_segment.payload_index.borrow().with_view(|view| {
+        let cardinality = view.estimate_cardinality(&nested_filter).unwrap();
+        resolve_for_query_vectors(
+            &view,
+            4_000,
+            &nested_filter,
+            &cardinality,
+            lazy_checks,
+            &stopped,
+        )
+        .unwrap()
+    });
+    assert!(
+        hot_resolved.is_none(),
+        "hot payload storage should not resolve below in-RAM break-even"
+    );
+
+    let cold_resolved = cold_segment.payload_index.borrow().with_view(|view| {
+        let cardinality = view.estimate_cardinality(&nested_filter).unwrap();
+        assert!(
+            resolve_for_query_vectors(
+                &view,
+                4_000,
+                &nested_filter,
+                &cardinality,
+                FilterChecks::Full,
+                &stopped,
+            )
+            .unwrap()
+            .is_none(),
+            "single Full check must never trigger resolution"
+        );
+        assert!(
+            resolve_for_query_vectors(
+                &view,
+                4_000,
+                &nested_filter,
+                &cardinality,
+                FilterChecks::Lazy { expected_checks: 0 },
+                &stopped,
+            )
+            .unwrap()
+            .is_none(),
+            "zero-check Lazy must never trigger resolution"
+        );
+        resolve_for_query_vectors(
+            &view,
+            4_000,
+            &nested_filter,
+            &cardinality,
+            lazy_checks,
+            &stopped,
+        )
+        .unwrap()
+    });
+    assert!(
+        cold_resolved.is_some(),
+        "cold payload storage must resolve when weighted lazy checks exceed candidates"
+    );
+
+    // Same-vector batch search of 2 queries through HNSW matches single-query searches.
+    let mut rng = StdRng::seed_from_u64(202);
+    let q1 = QueryVector::from(random_vector(&mut rng, 8));
+    let q2 = QueryVector::from(random_vector(&mut rng, 8));
+    let params = SearchParams {
+        hnsw_ef: Some(16),
+        ..Default::default()
+    };
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+
+    let batched = cold_segment
+        .search_batch(
+            VECTOR1_NAME,
+            &[&q1, &q2],
+            &WithPayload::default(),
+            &false.into(),
+            Some(&nested_filter),
+            10,
+            Some(&params),
+            &segment_query_context,
+        )
+        .unwrap();
+    let alone_1 = cold_segment
+        .search_batch(
+            VECTOR1_NAME,
+            &[&q1],
+            &WithPayload::default(),
+            &false.into(),
+            Some(&nested_filter),
+            10,
+            Some(&params),
+            &segment_query_context,
+        )
+        .unwrap();
+    let alone_2 = cold_segment
+        .search_batch(
+            VECTOR1_NAME,
+            &[&q2],
+            &WithPayload::default(),
+            &false.into(),
+            Some(&nested_filter),
+            10,
+            Some(&params),
+            &segment_query_context,
+        )
+        .unwrap();
+    assert!(!batched[0].is_empty());
+    assert!(!batched[1].is_empty());
+    assert_eq!(batched[0], alone_1[0]);
+    assert_eq!(batched[1], alone_2[0]);
 }

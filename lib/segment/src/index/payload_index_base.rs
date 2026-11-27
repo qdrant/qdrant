@@ -87,6 +87,18 @@ pub trait PayloadIndexRead {
         filter: &'a Filter,
     ) -> OperationResult<OptimizedFilter<'a>>;
 
+    /// Whether lazy point-by-point checks of `filter` (using the serial filter-context
+    /// rules) would read cold on-disk data, without building a filter context or
+    /// materializing any posting lists.
+    ///
+    /// Conditions on cold field indexes that [`Self::filter_context_for_serial_checks`]
+    /// materializes into an in-RAM point set return `false`. Conditions that remain lazy
+    /// on a cold field index (e.g. `geo`, `prefix` without a prefix dictionary, or
+    /// per-element nested indexes) and conditions that fall back to cold payload storage
+    /// (e.g. `nested` without per-element indexes, `values_count`, unindexed fields)
+    /// return `true`.
+    fn lazy_checks_hit_disk(&self, filter: &Filter) -> bool;
+
     /// Look up a numeric index for the given payload key, if one exists.
     ///
     /// Used by ordered reads to stream values from the index in sort order.

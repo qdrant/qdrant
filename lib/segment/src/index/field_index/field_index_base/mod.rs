@@ -1,4 +1,5 @@
 mod builder;
+mod condition_support;
 mod field_index;
 mod field_index_read;
 mod field_index_read_impl;

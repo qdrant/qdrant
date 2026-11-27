@@ -2,9 +2,11 @@
 //! [`worth_sharing`]).
 //!
 //! All costs are counted in filter checks: one check is one point tested against the filter.
-//! A check costs about the same whether it happens while materializing the filter or during a
-//! search, so the price of the filter itself (a `nested` clause or a single indexed `match`)
-//! cancels out of the comparison.
+//! In RAM, a check costs about the same whether it happens while materializing the filter or
+//! during a search, so the price of the filter itself (a `nested` clause or a single indexed
+//! `match`) cancels out of the comparison. When lazy checks hit cold storage on disk, each
+//! serial check is weighted against sequential/batched resolution via
+//! [`FilterChecks::with_lazy_weight`].
 
 /// How a search uses its filter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,20 @@ impl FilterChecks {
             FilterChecks::Lazy { expected_checks } => expected_checks,
         }
     }
+
+    /// Scale lazy checks by `weight`, leaving [`FilterChecks::Full`] at weight 1.
+    ///
+    /// Used when lazy checks hit cold storage: each serial check can be a disk round trip,
+    /// whereas resolving the filter (and full-scan searches) reads candidates sequentially
+    /// or in overlapping batches.
+    pub fn with_lazy_weight(self, weight: usize) -> Self {
+        match self {
+            FilterChecks::Full => FilterChecks::Full,
+            FilterChecks::Lazy { expected_checks } => FilterChecks::Lazy {
+                expected_checks: expected_checks.saturating_mul(weight),
+            },
+        }
+    }
 }
 
 /// Whether materializing a filter once is cheaper than letting every search in `uses` evaluate
@@ -54,6 +70,7 @@ pub fn worth_sharing(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::query_optimization::expected_checks::COLD_POSTING_TO_BATCHED_CHECKS_RATIO;
 
     const fn lazy(expected_checks: usize) -> FilterChecks {
         FilterChecks::Lazy { expected_checks }
@@ -86,5 +103,52 @@ mod tests {
     fn test_searches_without_checks_do_not_share() {
         assert!(!worth_sharing(0, [lazy(0); 3]));
         assert!(!worth_sharing(10, [lazy(0); 3]));
+    }
+
+    #[test]
+    fn test_cold_lazy_weight_scales_only_lazy_and_saturates() {
+        assert_eq!(
+            FilterChecks::Full.with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO),
+            FilterChecks::Full
+        );
+        assert_eq!(
+            lazy(0).with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO),
+            lazy(0)
+        );
+        assert_eq!(
+            lazy(1_000).with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO),
+            lazy(64_000)
+        );
+        assert_eq!(
+            lazy(usize::MAX / 2).with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO),
+            lazy(usize::MAX)
+        );
+
+        // Two lazy users of 1_000 checks each: unweighted break-even is 2_000,
+        // weighted break-even (64x) is 128_000 while resolve cost stays at weight 1.
+        let uses = [lazy(1_000); 2];
+        assert!(!worth_sharing(2_000, uses));
+        assert!(!worth_sharing(10_000, uses));
+
+        let weighted = uses.map(|c| c.with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO));
+        assert!(worth_sharing(10_000, weighted));
+        assert!(worth_sharing(127_999, weighted));
+        assert!(!worth_sharing(128_000, weighted));
+
+        // A single Full search never shares even under cold weighting.
+        assert!(!worth_sharing(
+            100,
+            [FilterChecks::Full.with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO)],
+        ));
+
+        // Zero-check lazy searches never share even under cold weighting.
+        assert!(!worth_sharing(
+            1,
+            [lazy(0).with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO); 3],
+        ));
+
+        // Saturation avoids overflow in both scaling and summation.
+        let huge = [lazy(usize::MAX / 2).with_lazy_weight(COLD_POSTING_TO_BATCHED_CHECKS_RATIO); 2];
+        assert!(worth_sharing(1_000_000, huge));
     }
 }

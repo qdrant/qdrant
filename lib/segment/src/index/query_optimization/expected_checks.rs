@@ -13,7 +13,7 @@ pub enum ExpectedChecks {
 
 /// Posting-list entries worth reading per avoided batched check on a cold index
 /// (`memory: cold`): an entry is 4 sequential bytes, a check is a random disk read.
-const COLD_POSTING_TO_BATCHED_CHECKS_RATIO: usize = 64;
+pub const COLD_POSTING_TO_BATCHED_CHECKS_RATIO: usize = 64;
 
 /// Same, for an index held in RAM (cached or pinned).
 const RAM_POSTING_TO_BATCHED_CHECKS_RATIO: usize = 4;
