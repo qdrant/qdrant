@@ -69,15 +69,44 @@ where
 mod tests {
     use std::time::Duration;
 
-    use tokio::time::sleep;
+    use tokio::sync::oneshot;
+    use tokio::time::{sleep, timeout};
 
     use super::*;
 
     const STEP_MILLIS: u64 = 5;
 
-    async fn long_task(cancel: CancellationToken) -> i32 {
+    /// Number of steps [`long_task`] runs when nothing cancels it.
+    ///
+    /// Sized so that an uncancelled task stays busy for far longer than
+    /// [`STOP_TIMEOUT`]: it cannot reach the end of its own loop while the test
+    /// is watching, so cancellation is the only thing that can make it stop.
+    const TASK_STEPS: i32 = 10_000;
+
+    /// Upper bound on how long a *cancelled* task may take to stop.
+    ///
+    /// A passing run never comes close to it, since the task checks for
+    /// cancellation once every [`STEP_MILLIS`]. It is a safety bound for a task
+    /// that ignores cancellation altogether -- the failure this test exists to
+    /// catch -- so that such a task fails the test instead of hanging it.
+    const STOP_TIMEOUT: Duration = Duration::from_secs(1);
+
+    const _: () = assert!(
+        TASK_STEPS as u128 * STEP_MILLIS as u128 > STOP_TIMEOUT.as_millis(),
+        "an uncancelled `long_task` must outlast `STOP_TIMEOUT`, otherwise the \
+         test would pass without anything having been cancelled",
+    );
+
+    /// Counts steps until it is cancelled, then reports how far it got.
+    ///
+    /// Only cancellation ends it within the time bounds of the test.
+    async fn long_task(cancel: CancellationToken, started: oneshot::Sender<()>) -> i32 {
+        // Report that the task body is running, so that the test asks a task it
+        // knows to be alive to cancel.
+        started.send(()).expect("test dropped the start signal");
+
         let mut n = 0;
-        for i in 0..10 {
+        for i in 0..TASK_STEPS {
             n = i;
             if cancel.is_cancelled() {
                 break;
@@ -89,18 +118,32 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_stop() {
-        let handle = spawn_async_cancellable(long_task);
+        let (started_tx, started_rx) = oneshot::channel();
+        let mut handle = spawn_async_cancellable(move |cancel| long_task(cancel, started_tx));
 
-        sleep(Duration::from_millis(STEP_MILLIS * 5)).await;
+        // Synchronise on the task instead of guessing how long it takes to be
+        // scheduled: once this resolves the task is running, and it still has
+        // essentially all of its steps ahead of it.
+        started_rx.await.expect("task never started");
         assert!(!handle.is_finished());
+
         handle.ask_to_cancel();
-        sleep(Duration::from_millis(STEP_MILLIS * 3)).await;
-        // If windows, we need to wait a bit more
-        #[cfg(windows)]
-        sleep(Duration::from_millis(STEP_MILLIS * 10)).await;
+
+        // Wait for the task to finish, rather than sleeping for a fixed budget
+        // and assuming that was long enough. Left alone the task would keep
+        // going for `TASK_STEPS * STEP_MILLIS`, so joining it can only succeed
+        // because the request above stopped it -- the timeout is a bound on a
+        // task that ignores cancellation, not the reason the test passes.
+        let res = timeout(STOP_TIMEOUT, &mut handle.join_handle)
+            .await
+            .expect("cancelled task did not stop")
+            .expect("task panicked");
+
+        // The task sets this flag itself, just before it returns.
         assert!(handle.is_finished());
 
-        let res = handle.cancel().await.unwrap();
-        assert!(res < 10);
+        // An uncancelled run would have returned `TASK_STEPS - 1`; anything
+        // below that means the task broke out of its loop early.
+        assert!(res < TASK_STEPS - 1, "task was not stopped early: {res}");
     }
 }
