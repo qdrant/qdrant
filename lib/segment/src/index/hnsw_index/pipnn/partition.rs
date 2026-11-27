@@ -91,10 +91,6 @@ const DEFAULT_LEADER_FRACTION: f64 = 0.01;
 /// Default [`PartitionParams::max_leaders`]: the paper's hard cap, "typically 1000" (section 4.1).
 const DEFAULT_MAX_LEADERS: usize = 1000;
 
-/// Default [`PartitionParams::fanout`]: the paper's multi-level fanout, "10 on the top level, 3 on
-/// the second level" (section 4.1).
-const DEFAULT_FANOUT: [usize; 2] = [10, 3];
-
 /// Default [`PartitionParams::max_depth`]: not in the paper, whose recursion has no limit. Carving
 /// with the default parameters ends after 2 to 3 levels, so this only stops degenerate input.
 const DEFAULT_MAX_DEPTH: usize = 16;
@@ -123,14 +119,15 @@ pub(in crate::index::hnsw_index) struct PartitionParams {
     pub max_depth: usize,
 }
 
-impl Default for PartitionParams {
-    fn default() -> Self {
+impl PartitionParams {
+    /// The defaults, with the given [`PartitionParams::fanout`].
+    pub fn with_fanout(fanout: Vec<usize>) -> Self {
         Self {
             max_leaf_size: DEFAULT_MAX_LEAF_SIZE,
             min_leaf_size: DEFAULT_MIN_LEAF_SIZE,
             leader_fraction: DEFAULT_LEADER_FRACTION,
             max_leaders: DEFAULT_MAX_LEADERS,
-            fanout: DEFAULT_FANOUT.to_vec(),
+            fanout,
             max_depth: DEFAULT_MAX_DEPTH,
         }
     }

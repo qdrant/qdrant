@@ -194,12 +194,12 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             PointOffsetType::MAX,
             &mut (),
             |_, id, weight| {
-                // do not score if filter condition is not satisfied
-                if !filter_condition(id) {
-                    return;
-                }
                 let score = weight * posting.query_weight;
-                self.top_results.push(ScoredPointOffset { score, idx: id });
+                // Test the threshold first: it rejects nearly every element, so
+                // the filter only runs for the few that could enter the top.
+                if score > self.top_results.threshold() && filter_condition(id) {
+                    self.top_results.push(ScoredPointOffset { score, idx: id });
+                }
             },
         );
     }

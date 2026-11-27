@@ -37,6 +37,16 @@ mod hnsw_builder;
 mod local_builder;
 mod payload_blocks;
 mod pipnn_builder;
+#[cfg(feature = "remote-indexing")]
+mod remote_builder;
+#[cfg(feature = "remote-indexing")]
+pub(crate) mod remote_executor;
+// Without the feature, the remote steps do nothing, so that `build` needs no `cfg`
+#[cfg(feature = "remote-indexing")]
+mod remote_steps;
+#[cfg(not(feature = "remote-indexing"))]
+#[path = "build/no_remote_steps.rs"]
+mod remote_steps;
 
 use self::block_filter::BlockSkip;
 use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
@@ -102,6 +112,7 @@ impl HNSWIndex {
         let mut ctx = GraphBuildContext {
             id_tracker: &id_tracker_ref,
             vector_storage: &vector_storage_ref,
+            vector_deleted: vector_storage_ref.deleted_vector_bitslice(),
             quantized_vectors: quantized_vectors_ref.as_ref(),
             progress: None,
             main_params: GraphParams {
@@ -127,6 +138,16 @@ impl HNSWIndex {
             main_graph: progress.subtask("main_graph"),
         });
         let payload_block_fields = payload_block_fields(&payload_index_ref, payload_m);
+
+        // Remote indexing, if configured and the vector data is large enough (§4.2)
+        let remote = remote_steps::build_args(
+            path,
+            &vector_storage,
+            &vector_storage_ref,
+            &quantized_vectors,
+            quantized_vectors_ref.as_ref(),
+            &progress,
+        );
         let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
             let progress_additional_links = progress.subtask("additional_links");
             let fields = payload_block_fields
@@ -173,11 +194,32 @@ impl HNSWIndex {
                 old_index: old_index.as_ref(),
                 gpu_device,
                 has_payload_blocks: progress_payload_blocks.is_some(),
+                remote,
+                main_graph: pipnn_builder::main_graph_algorithm(),
             },
+        )?;
+
+        // A remote builder submits first: the indexer builds the main graph while the payload
+        // blocks are prepared here and streamed to it
+        remote_steps::start(
+            &mut builder,
+            progress_payload_blocks
+                .iter()
+                .flat_map(|(_, fields)| fields.iter().map(|(_, field, schema)| (field, schema))),
+            &payload_index_ref,
+            &vector_storage_ref,
+            &config,
+            stopped,
         )?;
 
         // Links nothing when `m == 0`
         builder.build_main()?;
+
+        // Linked by the remote indexer already
+        let progress_payload_blocks =
+            progress_payload_blocks.filter(|_| !remote_steps::blocks_linked(&mut builder));
+        // A remote build that fell back prepared the blocks already
+        let fallback_blocks = remote_steps::fallback_blocks(&mut builder);
 
         check_process_stopped(stopped)?;
 
@@ -195,6 +237,19 @@ impl HNSWIndex {
 
                 debug!("building additional index for field {field}");
 
+                let skip = BlockSkip::for_field(index_pos, payload_index_ref.is_tenant(&field));
+
+                if let Some(plan) = &fallback_blocks {
+                    remote_steps::build_fallback_field_blocks(
+                        &mut builder,
+                        plan,
+                        &field,
+                        &field_progress,
+                        skip,
+                    )?;
+                    continue;
+                }
+
                 let blocks = field_payload_blocks(
                     &field,
                     &payload_schema,
@@ -203,13 +258,6 @@ impl HNSWIndex {
                     &config,
                     stopped,
                 )?;
-
-                // Tenant blocks are always built
-                let skip = if index_pos > 0 && !payload_index_ref.is_tenant(&field) {
-                    BlockSkip::IfConnected
-                } else {
-                    BlockSkip::Never
-                };
 
                 builder.build_field_blocks(FieldBlocks {
                     progress: field_progress,

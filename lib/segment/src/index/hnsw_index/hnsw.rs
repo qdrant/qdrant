@@ -21,6 +21,8 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod build;
+#[cfg(feature = "remote-indexing")]
+pub(crate) use build::remote_executor::build_requested_graph;
 mod old_index;
 pub mod read_only;
 mod read_view;
@@ -29,7 +31,7 @@ mod vector_index_impl;
 
 use self::read_view::{HNSWIndexReadView, HNSWIndexReadViewEnum};
 
-const HNSW_USE_HEURISTIC: bool = true;
+pub(crate) const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
 
 /// Build first N points in HNSW graph using only a single thread, to avoid

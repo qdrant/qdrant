@@ -46,8 +46,12 @@ impl<F: UniversalReadFs> UniversalReadFs for ReadOnlyFs<F> {
         Ok(ReadOnlyFs(F::from_context(ctx.0)?))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.0.list_files(prefix_path)
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        self.0.list_files(dir)
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.0.prefix_list_files(prefix_path)
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {

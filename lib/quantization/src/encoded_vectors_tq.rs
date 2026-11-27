@@ -37,6 +37,16 @@ pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoding_buffer: Vec<f64>,
 }
 
+/// Encoder parameters of TurboQuant: with the vector parameters, everything needed to score
+/// its codes. See [`EncodedVectorsTQ::from_parameters`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurboParameters {
+    pub bits: TQBits,
+    pub mode: TQMode,
+    pub rotation: TQRotation,
+    pub error_correction: Option<ErrorCorrectionMetadata>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
     pub vector_parameters: VectorParameters,
@@ -98,7 +108,7 @@ fn new_error_correction_from_metadata(
 /// On-disk form of TQ+'s [`ErrorCorrection`]. Stores only `shift` and `scale`
 /// — derived caches like `D'_i²` and `⟨M, M⟩` are recomputed at load time so
 /// `shift` / `scale` remain the single source of truth.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ErrorCorrectionMetadata {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
@@ -383,6 +393,56 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         Ok(result)
     }
 
+    /// The encoder parameters, to rebuild this storage elsewhere with
+    /// [`Self::from_parameters`] from its codes.
+    pub fn parameters(&self) -> TurboParameters {
+        let Metadata {
+            vector_parameters: _,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        } = &self.metadata;
+        TurboParameters {
+            bits: *bits,
+            mode: *mode,
+            rotation: *rotation,
+            error_correction: error_correction.clone(),
+        }
+    }
+
+    /// A storage of the codes in `encoded_vectors`, encoded with `parameters`. Not persisted:
+    /// it has no metadata file.
+    pub fn from_parameters(
+        encoded_vectors: TStorage,
+        vector_parameters: VectorParameters,
+        parameters: TurboParameters,
+    ) -> std::io::Result<Self> {
+        let TurboParameters {
+            bits,
+            mode,
+            rotation,
+            error_correction,
+        } = parameters;
+        let metadata = Metadata {
+            vector_parameters,
+            bits,
+            mode,
+            error_correction,
+            rotation,
+        };
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+        let result = Self {
+            encoded_vectors,
+            metadata,
+            metadata_path: None,
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        };
+        validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
+        Ok(result)
+    }
+
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
         self.encoded_vectors.get_vector_data(i)
     }
@@ -435,8 +495,8 @@ pub fn get_quantized_vector_size(
 
 /// The vectors of the rotated, padded space, see [`TurboQuantizer::symmetric_vector`]. Exact for
 /// Dot and Cosine except at 2 and 4 bits with TQ+, whose score adds a correction stored with each
-/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ only the cross term is exact, the
-/// distance a proxy. Not score-equivalent for L1 at any width.
+/// vector. For L2 the same, and at 1 and 1.5 bits with TQ+ the distance is only close: the
+/// score takes the cosine of the angle between the signs. Not score-equivalent for L1 at any width.
 impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
     fn symmetric_dim(&self) -> usize {
         self.quantizer.get_padded_dim()
@@ -446,7 +506,8 @@ impl<TStorage: EncodedStorage> SymmetricVectors for EncodedVectorsTQ<TStorage> {
         self.quantizer.symmetric_vector(code)
     }
 
-    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits), and
+    /// Its values where the code stores a TQ+ correction the score ignores (1 and 1.5 bits,
+    /// except for L2), and
     /// none where a NaN in the vector it encodes left its scale or correction NaN.
     fn duplicate_key<'c>(&self, code: &'c [u8]) -> DuplicateKey<'c> {
         if self.quantizer.score_symmetric(code, code).is_nan() {

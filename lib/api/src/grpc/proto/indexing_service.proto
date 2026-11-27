@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+// pulls the data through the `IndexingTask` service.
+service IndexingService {
+  rpc SubmitTask(IndexingTaskSubmission) returns (SubmitIndexingTaskResponse) {}
+  // Core no longer waits for a task it submitted: drop it if it was not handed to an indexer
+  // yet. Best effort: core revokes the token anyway, so a task handed off already fails at
+  // `GetTask`. A queue in front of indexers uses it to keep dead tasks out of its queue.
+  rpc CancelTask(CancelIndexingTaskRequest) returns (CancelIndexingTaskResponse) {}
+}
+
+message IndexingTaskSubmission {
+  string task_id = 1;
+  // One-time token, hex. Send it back in the `x-qdrant-indexing-token` header.
+  string token = 2;
+  // Internal gRPC address of the qdrant peer serving the task, e.g. `qdrant-0.qdrant-headless:6335`.
+  string advertise_url = 3;
+  string collection = 4;
+  uint32 shard_id = 5;
+  string vector_name = 6;
+  // Version of the qdrant core, e.g. `1.18.0`.
+  string core_version = 7;
+  // Graph formats core reads.
+  repeated uint32 graph_format_versions = 8;
+  // Size of the vector data, for scheduling and billing.
+  uint64 vector_bytes = 9;
+  uint64 point_count = 10;
+  // 0 for the first submission, then one more per retry.
+  uint32 attempt = 11;
+  // Cluster identifier, if configured, for billing.
+  optional string cluster_id = 12;
+  // The index to build and its parameters, so that the entry point can refuse what it does
+  // not build, or not that large, before any data moves. Same as in `GetTask`.
+  IndexingIndexParams index = 13;
+  // Core gives the task up if no indexer fetches it (`GetTask`) by this time, in milliseconds
+  // since the Unix epoch: its `queue_timeout_sec`. A queue does not hand the task out after
+  // that. 0: not set (older cores).
+  uint64 queue_deadline_unix_ms = 14;
+}
+
+// The index a task builds, with the parameters of its kind. A new kind of index, or a version
+// of one with other parameters, is a new case of `index`. Indexers refuse a task whose case
+// they do not know (an unset `index` included), permanently.
+message IndexingIndexParams {
+  oneof index {
+    IndexingHnswParams hnsw = 1;
+  }
+}
+
+// An HNSW graph: the main graph, and the payload block graphs merged into it.
+message IndexingHnswParams {
+  // Links per point of the main graph above level 0, and on level 0. `m` = 0: no main graph,
+  // only payload blocks link points.
+  uint64 m = 1;
+  uint64 m0 = 2;
+  // Candidates searched when inserting a point.
+  uint64 ef_construct = 3;
+  // Number of entry points the main graph keeps.
+  uint64 entry_points_num = 4;
+  // `m` and `m0` of the payload block graphs.
+  uint64 payload_m = 5;
+  uint64 payload_m0 = 6;
+  // How the main graph is built. Payload block graphs, and main graphs the algorithm does not
+  // apply to, are built by HNSW insertion with `ef_construct`.
+  IndexingGraphAlgorithm main_graph = 7;
+}
+
+// The algorithm of the main graph, with its parameters, as core resolved them from the
+// collection config and its feature flags: the indexer builds what core would build locally,
+// whatever its own version and flags. A new algorithm, or a version of one with other
+// parameters, is a new case. Indexers refuse a task whose case they do not know (an unset one
+// included), permanently.
+message IndexingGraphAlgorithm {
+  oneof algorithm {
+    IndexingHnswInsertion hnsw = 1;
+    IndexingPipnnParams pipnn = 2;
+  }
+}
+
+// Insert the points one by one. `ef_construct` controls the quality.
+message IndexingHnswInsertion {}
+
+// PiPNN where it applies (large enough segments, vectors with a matrix scorer), HNSW insertion
+// otherwise. The rest of the partitioning keeps its defaults, and the indexer draws the seed.
+message IndexingPipnnParams {
+  // Nearest neighbors each point keeps per leaf.
+  uint64 leaf_k = 1;
+  // Reservoir capacity per point, as a multiple of the level's degree limit.
+  uint64 reservoir_factor = 2;
+  // To how many nearest leaders the partitioning assigns each point, by recursion depth. 1
+  // beyond the list. Must not be empty: that is how a sender without this field reads.
+  repeated uint64 fanout = 3;
+}
+
+message SubmitIndexingTaskResponse {
+  // Whether the task was accepted. A refused task is retried or built locally by core,
+  // depending on `refusal`.
+  bool accepted = 1;
+  string message = 2;
+  // Why the task was refused. Ignored when `accepted`.
+  IndexingTaskRefusal refusal = 3;
+}
+
+message CancelIndexingTaskRequest {
+  string task_id = 1;
+  // The task's token, hex, as submitted: only the submitter may cancel.
+  string token = 2;
+}
+
+message CancelIndexingTaskResponse {
+  // Whether a task waiting to be handed out was dropped. False if it was unknown, handed off
+  // already, or the token did not match.
+  bool removed = 1;
+}
+
+enum IndexingTaskRefusal {
+  // A later submission may be accepted: queue full, shutting down. Core retries per its
+  // `on_failure` policy. Also what indexers that do not set `refusal` mean.
+  IndexingRefusalTransient = 0;
+  // This task will never be accepted by this indexer: too large, unsupported graph format.
+  // Core builds it locally right away, without retrying.
+  IndexingRefusalPermanent = 1;
+}

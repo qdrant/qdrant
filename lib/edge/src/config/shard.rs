@@ -339,7 +339,7 @@ impl EdgeConfig {
         }
     }
 
-    fn dense_vector_optimizer_config(
+    pub(super) fn dense_vector_optimizer_config(
         &self,
         params: &EdgeVectorParams,
     ) -> DenseVectorOptimizerConfig {

@@ -86,8 +86,14 @@ pub trait UniversalReadFsAsync: UniversalReadFs<File: UniversalReadAsync> {
         extra: Self::OpenExtra,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
 
-    /// List files matching `prefix_path` asynchronously.
+    /// List all files under directory `dir` asynchronously.
     fn list_files_async<'a>(
+        &'a self,
+        dir: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
+
+    /// List files matching `prefix_path` asynchronously.
+    fn prefix_list_files_async<'a>(
         &'a self,
         prefix_path: &'a Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;

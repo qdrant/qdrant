@@ -91,9 +91,14 @@ where
         ))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
         // The remote is the source of truth; mirrors are ephemeral.
-        self.blob_fs.list_files(prefix_path)
+        self.blob_fs.list_files(dir)
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        // The remote is the source of truth; mirrors are ephemeral.
+        self.blob_fs.prefix_list_files(prefix_path)
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {
