@@ -2,9 +2,18 @@ use collection::operations::point_ops::{
     BatchVectorStructPersisted, PointInsertOperationsInternal, VectorPersisted,
     VectorStructPersisted,
 };
-use collection::operations::types::VectorsConfig;
+use collection::operations::types::{VectorParams, VectorsConfig};
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use storage::content_manager::errors::StorageError;
+
+fn get_vector_params<'a>(
+    vectors_config: &'a VectorsConfig,
+    vector_name: &str,
+) -> Result<&'a VectorParams, StorageError> {
+    vectors_config.get_params(vector_name).ok_or_else(|| {
+        StorageError::bad_input(format!("Not existing vector name error: {}", vector_name))
+    })
+}
 
 /// Validate vector dimensions in an upsert operation against the collection config.
 ///
@@ -64,9 +73,7 @@ fn validate_batch_vectors(
         }
         BatchVectorStructPersisted::Named(named_vectors) => {
             for (name, vectors) in named_vectors {
-                let Some(params) = vectors_config.get_params(name) else {
-                    continue;
-                };
+                let params = get_vector_params(vectors_config, name)?;
                 let expected_dim = params.size.get() as usize;
                 for vector in vectors {
                     validate_single_vector_dim(vector, name, expected_dim)?;
@@ -110,9 +117,7 @@ fn validate_point_vectors(
         }
         VectorStructPersisted::Named(named_vectors) => {
             for (name, vector) in named_vectors {
-                let Some(params) = vectors_config.get_params(name) else {
-                    continue;
-                };
+                let params = get_vector_params(vectors_config, name)?;
                 let expected_dim = params.size.get() as usize;
                 validate_single_vector_dim(vector, name, expected_dim)?;
             }
