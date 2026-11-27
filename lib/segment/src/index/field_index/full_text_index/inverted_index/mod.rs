@@ -7,7 +7,6 @@ pub(super) mod mutable_inverted_index_builder;
 pub(super) mod on_disk_inverted_index;
 mod positions;
 mod posting_list;
-pub(crate) mod posting_lookups;
 mod postings_iterator;
 pub(super) mod term_frequencies;
 
