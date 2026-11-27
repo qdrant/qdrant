@@ -28,6 +28,10 @@ use crate::settings::{IndexingOnFailure, IndexingServiceConfig, Settings};
 /// Header with the entry point API key.
 const API_KEY_HEADER: &str = "api-key";
 
+/// Interval of the keepalive probes on the channel to the entry point: TCP ones while it
+/// idles, HTTP/2 pings while a call is in flight.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
 /// Turn remote indexing on, if configured and safe (§4.1). Returns whether it is on.
 pub fn init_remote_indexing(settings: &Settings) -> bool {
     let Some(config) = &settings.indexing_service else {
@@ -148,7 +152,13 @@ impl RemoteIndexingClient {
             let _guard = runtime.enter();
             let mut endpoint = Endpoint::from_shared(config.url.clone())?
                 .connect_timeout(timeout)
-                .timeout(timeout);
+                .timeout(timeout)
+                // The channel idles between builds, for hours. Without probes, a connection
+                // that a NAT or a load balancer dropped meanwhile is only found dead by the
+                // next submission, which then times out.
+                .tcp_keepalive(Some(KEEPALIVE_INTERVAL))
+                .http2_keep_alive_interval(KEEPALIVE_INTERVAL)
+                .keep_alive_timeout(timeout);
             if let Some(tls) = entry_point_tls(&config)? {
                 endpoint = endpoint.tls_config(tls)?;
             }
