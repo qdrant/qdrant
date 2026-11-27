@@ -136,6 +136,9 @@ impl<'a> GraphBuilder<'a> {
             && local.ctx.vector_storage.total_vector_count() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
             && let Some(gpu) = GpuState::new(&local.ctx, gpu_device)?
         {
+            // The GPU links the points, and this thread only drives it. What the GPU fails
+            // to build asks for the pool, which takes the CPUs back.
+            pool.lend_cpus();
             return Ok(Self::Gpu(Box::new(GpuBuilder {
                 cpu: Self::without_gpu(local, old_index, main_graph),
                 gpu,

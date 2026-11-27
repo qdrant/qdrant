@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
-use common::budget::ResourcePermit;
+use common::budget::{ResourceBudget, ResourcePermit};
 use common::flags::FeatureFlags;
 use common::progress_tracker::{ProgressTracker, ProgressTree, new_progress_tracker};
 use common::types::ScoredPointOffset;
@@ -61,6 +61,26 @@ fn build_hnsw_with_progress(
 ) -> HNSWIndex {
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    build_hnsw_with_permit(
+        path,
+        segment,
+        hnsw_config,
+        gpu_device,
+        stopped,
+        progress,
+        &mut permit,
+    )
+}
+
+fn build_hnsw_with_permit(
+    path: &Path,
+    segment: &Segment,
+    hnsw_config: HnswConfig,
+    gpu_device: Option<&LockedGpuDevice>,
+    stopped: &AtomicBool,
+    progress: ProgressTracker,
+    permit: &mut ResourcePermit,
+) -> HNSWIndex {
     let mut build_rng = StdRng::seed_from_u64(100);
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
@@ -76,7 +96,7 @@ fn build_hnsw_with_progress(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit: &mut permit,
+            permit,
             old_indices: &[],
             gpu_device,
             rng: &mut build_rng,
@@ -342,6 +362,53 @@ fn test_gpu_filterable_hnsw() {
 
     // Reset global GPU groups state to avoid leaking to other tests
     set_gpu_groups_count(None);
+}
+
+/// A GPU build keeps one CPU, for the thread that drives the GPU, and gives the others back
+/// to the budget.
+#[test]
+fn test_gpu_build_lends_cpus() {
+    let _scope = ambient::test_guard();
+    let stopped = AtomicBool::new(false);
+    let seg_dir = Builder::new().prefix("seg").tempdir().unwrap();
+    let segment = create_test_segment(seg_dir.path(), 8, Distance::Cosine, 10_000, "int", 2, true);
+    let hnsw_config = HnswConfig {
+        m: 8,
+        ef_construct: 16,
+        full_scan_threshold: 32,
+        max_indexing_threads: 4,
+        on_disk: Some(false),
+        memory: None,
+        payload_m: None,
+        inline_storage: None,
+    };
+    let gpu_instance = gpu::GPU_TEST_INSTANCE.clone();
+    let gpu_device = Mutex::new(
+        gpu::Device::new(gpu_instance.clone(), &gpu_instance.physical_devices()[0]).unwrap(),
+    );
+    set_gpu_groups_count(Some(64));
+
+    let budget = ResourceBudget::new(4, 4);
+    let mut permit = budget.try_acquire(4, 0).unwrap();
+    assert!(!budget.has_budget_exact(1, 0));
+
+    let hnsw_dir = Builder::new().prefix("hnsw").tempdir().unwrap();
+    let locked = LockedGpuDevice::new(gpu_device.lock());
+    let _index = build_hnsw_with_permit(
+        hnsw_dir.path(),
+        &segment,
+        hnsw_config,
+        Some(&locked),
+        &stopped,
+        ProgressTracker::new_for_test(),
+        &mut permit,
+    );
+
+    // Nothing was built on the CPU, so nothing took the CPUs back
+    assert_eq!((permit.num_cpus, permit.full_cpus()), (1, 4));
+    assert!(budget.has_budget_exact(3, 0));
+    drop(permit);
+    assert!(budget.has_budget_exact(4, 0), "budget accounting broken");
 }
 
 fn find_progress<'a>(tree: &'a ProgressTree, name: &str) -> Option<&'a ProgressTree> {

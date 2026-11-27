@@ -75,7 +75,7 @@ impl<'a> BuildPool<'a> {
     /// meanwhile, and give the others back to the budget.
     ///
     /// Does nothing once the pool exists: its threads are counted by the CPUs held.
-    #[cfg(feature = "remote-indexing")]
+    #[cfg(any(feature = "remote-indexing", feature = "gpu"))]
     pub fn lend_cpus(&self) {
         if self.pool.get().is_some() {
             return;
