@@ -21,6 +21,7 @@ use pairwise::{
 use crate::DistanceType;
 use crate::encoded_storage::EncodedStorage;
 use crate::turboquant::TQBits;
+use crate::turboquant::angular::AngularCorrection;
 use crate::turboquant::quantization::{
     SymmetricCorrection, SymmetricValues, TurboQuantizer, symmetric_score,
 };
@@ -70,7 +71,7 @@ pub struct TurboOperands<'a, S, E: KernelElem> {
     source: S,
     /// Elements per vector.
     depth: usize,
-    combine: TurboCombine,
+    combine: TurboCombine<'a>,
     param: E::Param<'a>,
     decode: Decode,
     _elem: PhantomData<fn() -> E>,
@@ -79,17 +80,19 @@ pub struct TurboOperands<'a, S, E: KernelElem> {
 /// Combines as [`TurboQuantizer::score_symmetric`], negated if `invert`: the inner product
 /// becomes the centroid dot as `centroid_dot` says, then the score as `symmetric_score` says.
 #[derive(Clone, Copy, Debug)]
-pub struct TurboCombine {
-    centroid_dot: CentroidDot,
+pub struct TurboCombine<'a> {
+    centroid_dot: CentroidDot<'a>,
     l2: bool,
     invert: bool,
 }
 
 /// How the kernels' inner product of two vectors becomes their centroid dot, by width.
 #[derive(Clone, Copy, Debug)]
-enum CentroidDot {
+enum CentroidDot<'a> {
     /// 1 and 1.5 bits
     Signs(Signs),
+    /// TQ+ 1 and 1.5 bits for Euclid
+    AngularSigns(AngularSigns<'a>),
     /// Normal 2 bits
     Codebook2(Codebook2),
     /// Normal 4 bits
@@ -100,11 +103,12 @@ enum CentroidDot {
     Corrected(SymmetricCorrection),
 }
 
-impl CombineDispatch for TurboCombine {
+impl CombineDispatch for TurboCombine<'_> {
     #[inline(always)]
     fn dispatch<F: CombineFn>(self, f: F) -> F::Output {
         match self.centroid_dot {
             CentroidDot::Signs(step) => f.call(self.with(step)),
+            CentroidDot::AngularSigns(step) => f.call(self.with(step)),
             CentroidDot::Codebook2(step) => f.call(self.with(step)),
             CentroidDot::Codebook4(step) => f.call(self.with(step)),
             CentroidDot::Grid(step) => f.call(self.with(step)),
@@ -113,7 +117,7 @@ impl CombineDispatch for TurboCombine {
     }
 }
 
-impl TurboCombine {
+impl TurboCombine<'_> {
     #[inline(always)]
     fn with<D: ToCentroidDot>(self, centroid_dot: D) -> FixedTurboCombine<D> {
         FixedTurboCombine {
@@ -162,6 +166,25 @@ impl ToCentroidDot for Signs {
     #[inline(always)]
     fn to_centroid_dot(self, dot: f32, _: &SymmetricValues, _: &SymmetricValues) -> f32 {
         query1bit::differing_to_score(self.bits, dot)
+    }
+}
+
+/// The number of differing sign bits, as the rescaled dot that TQ+ scores Euclid with.
+#[derive(Clone, Copy, Debug)]
+struct AngularSigns<'a> {
+    angular: &'a AngularCorrection,
+}
+
+impl ToCentroidDot for AngularSigns<'_> {
+    #[inline(always)]
+    fn to_centroid_dot(
+        self,
+        dot: f32,
+        values_a: &SymmetricValues,
+        values_b: &SymmetricValues,
+    ) -> f32 {
+        self.angular
+            .rescaled_dot_of_differing(dot, values_a, values_b)
     }
 }
 
@@ -286,16 +309,22 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
             invert,
         };
         let operands = match quantizer.bits {
-            // TQ+ doesn't weight 1-bit codes either
-            TQBits::Bits1 | TQBits::Bits1_5 => Self::Bits(TurboOperands::new(
-                quantizer,
-                source,
-                data_bytes,
-                combine(CentroidDot::Signs(Signs {
-                    bits: (data_bytes * 8) as f32,
-                })),
-                (),
-            )),
+            // TQ+ doesn't weight 1-bit codes either, and corrects their sign score for Euclid
+            TQBits::Bits1 | TQBits::Bits1_5 => {
+                let centroid_dot = match &quantizer.angular {
+                    Some(angular) => CentroidDot::AngularSigns(AngularSigns { angular }),
+                    None => CentroidDot::Signs(Signs {
+                        bits: (data_bytes * 8) as f32,
+                    }),
+                };
+                Self::Bits(TurboOperands::new(
+                    quantizer,
+                    source,
+                    data_bytes,
+                    combine(centroid_dot),
+                    (),
+                ))
+            }
             TQBits::Bits2 => Self::codebook(
                 quantizer,
                 source,
@@ -346,9 +375,9 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
     fn codebook<E>(
         quantizer: &'a TurboQuantizer,
         source: S,
-        combine: impl Fn(CentroidDot) -> TurboCombine,
+        combine: impl Fn(CentroidDot<'a>) -> TurboCombine<'a>,
         values: &[i8],
-        centroid_dot: CentroidDot,
+        centroid_dot: CentroidDot<'a>,
         fold: Fold,
         codes_in_f32: bool,
         stored: impl FnOnce(TurboOperands<'a, S, E>) -> Self,
@@ -399,7 +428,7 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
     fn decoded(
         quantizer: &'a TurboQuantizer,
         source: S,
-        combine: TurboCombine,
+        combine: TurboCombine<'a>,
         decode: Decode,
     ) -> Self {
         let mut operands = TurboOperands::new(quantizer, source, quantizer.padded_dim, combine, ());
@@ -441,7 +470,7 @@ impl<'a, S: TurboSource, E: KernelElem> TurboOperands<'a, S, E> {
         quantizer: &'a TurboQuantizer,
         source: S,
         depth: usize,
-        combine: TurboCombine,
+        combine: TurboCombine<'a>,
         param: E::Param<'a>,
     ) -> Self {
         Self {
@@ -472,9 +501,9 @@ impl<'a, S: TurboSource, E: KernelElem> TurboOperands<'a, S, E> {
     }
 }
 
-impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, Bits> {
+impl<'a, S: TurboSource> MatrixOperands for TurboOperands<'a, S, Bits> {
     type Elem = Bits;
-    type Combine = TurboCombine;
+    type Combine = TurboCombine<'a>;
     type Error = S::Error;
 
     /// Bytes per vector.
@@ -482,7 +511,7 @@ impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, Bits> {
         self.depth
     }
 
-    fn combine(&self) -> TurboCombine {
+    fn combine(&self) -> TurboCombine<'a> {
         self.combine
     }
 
@@ -502,16 +531,16 @@ impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, Bits> {
     }
 }
 
-impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, f32> {
+impl<'a, S: TurboSource> MatrixOperands for TurboOperands<'a, S, f32> {
     type Elem = f32;
-    type Combine = TurboCombine;
+    type Combine = TurboCombine<'a>;
     type Error = S::Error;
 
     fn depth(&self) -> usize {
         self.depth
     }
 
-    fn combine(&self) -> TurboCombine {
+    fn combine(&self) -> TurboCombine<'a> {
         self.combine
     }
 
@@ -657,9 +686,9 @@ unsafe fn codebook_values_avx2<const BITS: usize>(
 /// [`FoldedCodes`] writes them.
 macro_rules! code_operands {
     ($elem:ident, $what:literal) => {
-        impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, $elem> {
+        impl<'a, S: TurboSource> MatrixOperands for TurboOperands<'a, S, $elem> {
             type Elem = $elem;
-            type Combine = TurboCombine;
+            type Combine = TurboCombine<'a>;
             type Error = S::Error;
 
             #[doc = $what]
@@ -667,7 +696,7 @@ macro_rules! code_operands {
                 self.depth
             }
 
-            fn combine(&self) -> TurboCombine {
+            fn combine(&self) -> TurboCombine<'a> {
                 self.combine
             }
 
