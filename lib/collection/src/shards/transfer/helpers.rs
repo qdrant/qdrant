@@ -35,13 +35,7 @@ where
                 || t.from == transfer.to
                 || t.to == transfer.to);
 
-        // Transfers of different source shards can still write into the same destination
-        // replica, e.g. a resharding transfer `1 -> 0` into a replica that is the target of a
-        // regular transfer of shard `0`. Each of them sets its own state on the destination
-        // replica, so they must not overlap.
-        //
-        // Multiple resharding transfers into the same replica are allowed: resharding up
-        // migrates points from every existing shard into the new shard.
+        // Resharding up may run several resharding transfers into the new shard
         let same_destination_replica = t.to == transfer.to
             && t.to_shard_id.unwrap_or(t.shard_id) == destination_shard_id
             && !(t.is_resharding() && transfer.is_resharding());
@@ -69,10 +63,7 @@ where
     res.cloned()
 }
 
-/// Replica states a resharding transfer may target:
-/// - `Active`: regular destination of resharding down
-/// - `ReshardingScaleDown`: re-applying the same resharding down transfer (e.g. after a crash)
-/// - `Resharding`: new shard created by resharding up
+/// `ReshardingScaleDown` counts as active, so only promote replicas that already hold the full shard
 pub fn is_valid_resharding_destination(state: ReplicaState) -> bool {
     matches!(
         state,
@@ -201,11 +192,6 @@ pub fn validate_transfer(
             )));
         }
 
-        // Resharding transfer sets destination replica to `Resharding`/`ReshardingScaleDown`.
-        // `ReshardingScaleDown` counts as a source of truth, so the destination must already
-        // hold the full shard. A `Partial`/`Recovery` replica (still the target of another
-        // transfer) must not be promoted this way, or the shard can lose all its active
-        // replicas if that other transfer fails.
         if let Some(state) = destination_replicas.get(&transfer.to)
             && !is_valid_resharding_destination(*state)
         {
@@ -312,7 +298,6 @@ mod tests {
 
     #[test]
     fn resharding_transfers_into_same_replica_do_not_conflict() {
-        // Resharding up migrates points from every existing shard into the new shard
         let from_0 = transfer(
             0,
             Some(2),

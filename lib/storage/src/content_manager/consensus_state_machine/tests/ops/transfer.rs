@@ -446,8 +446,6 @@ fn transfer_abort_resharding_clears_resharding_first() {
     assert!(collection.transfers.is_empty());
 }
 
-/// Resharding down of shard 1 into shard 0, where `OTHER_PEER_ID` holds shard 0 in
-/// `destination_state`, optionally while a regular copy of shard 0 into it is running
 fn resharding_down_into_state(destination_state: ReplicaState, copy_running: bool) -> ClusterState {
     let key = resharding_key(ReshardingDirection::Down, 1);
     let mut state = transfer_state();
@@ -498,8 +496,6 @@ fn resharding_down_transfer() -> ShardTransfer {
     }
 }
 
-/// A resharding transfer into a replica that is still being copied must not overwrite its
-/// `Partial` state with `ReshardingScaleDown`, which counts as a source of truth
 #[test]
 fn transfer_start_rejects_resharding_into_replica_being_copied() {
     let state = resharding_down_into_state(ReplicaState::Partial, true);

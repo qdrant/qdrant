@@ -2214,7 +2214,6 @@ fn validate_transfer(
         )));
     }
 
-    // See `collection::shards::transfer::helpers::validate_transfer`
     if is_resharding
         && let Some(replica_state) = destination_replicas.get(&transfer.to)
         && !is_valid_resharding_destination(*replica_state)
