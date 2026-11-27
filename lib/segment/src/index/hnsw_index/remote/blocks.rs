@@ -65,7 +65,11 @@ impl BlockStream {
     pub fn push(&self, field: &str, skip_if_connected: bool, block: PlannedBlock) {
         let mut state = self.state.lock();
         debug_assert!(!state.finished, "block pushed after the stream finished");
-        let StreamState { plan, order, .. } = &mut *state;
+        let StreamState {
+            plan,
+            order,
+            finished: _,
+        } = &mut *state;
         let field_index = plan.push(field, skip_if_connected, block);
         let block_index = plan.fields[field_index].blocks.len() - 1;
         order.push((field_index, block_index));
