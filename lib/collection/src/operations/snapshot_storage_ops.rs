@@ -37,6 +37,22 @@ fn get_filename(path: &str) -> CollectionResult<String> {
         })
 }
 
+/// Returns the snapshot name stored at `location`, as it was before it became a key.
+///
+/// `trim_dot_slash` builds keys with `object_store::path::Path::from`, which percent-encodes the
+/// characters object_store treats as unsafe in a key: control characters, non-ASCII, `%`, `~` and
+/// more. Listing returns keys as stored, so a snapshot of collection `ü` would be listed as `%C3%BC`
+/// and could not be fetched by that name. Decoding reverses the encoding. `+` stays a plus sign.
+///
+/// A key that Qdrant did not write may not decode to UTF-8 (`%FF`). Its name is kept as stored, so
+/// one such object does not fail the whole listing.
+fn snapshot_name(location: &object_store::path::Path) -> CollectionResult<String> {
+    let encoded = location.filename().ok_or_else(|| {
+        CollectionError::object_storage_error(format!("Failed to get file name of {location}"))
+    })?;
+    Ok(urlencoding::decode(encoded).map_or_else(|_| encoded.to_string(), |name| name.into_owned()))
+}
+
 pub async fn get_snapshot_description(
     client: &dyn object_store::ObjectStore,
     path: &Path,
@@ -175,7 +191,7 @@ pub async fn list_snapshot_descriptions(
         .map_err(|e| CollectionError::service_error(format!("Failed to list snapshots: {e}")))?
     {
         snapshots.push(SnapshotDescription {
-            name: get_filename(meta.location.as_ref())?,
+            name: snapshot_name(&meta.location)?,
             creation_time: Some(meta.last_modified.naive_local()),
             size: meta.size,
             checksum: None,
@@ -303,5 +319,53 @@ mod tests {
             ),
             "a failed upload must not store an object",
         );
+    }
+
+    /// Snapshots are listed under the names they were stored with, though their keys are
+    /// percent-encoded.
+    #[tokio::test]
+    async fn list_snapshot_descriptions_decodes_names() {
+        let store = InMemory::new();
+        let collection = "ctl\u{1}~üé%";
+        // Built with "/" rather than `Path::join`, which inserts "\" on Windows. `Path::from`
+        // splits keys on "/" only, so a "\" would merge the whole path into one key segment.
+        let directory_str = format!("./snapshots/{collection}");
+        let directory = Path::new(&directory_str);
+        let mut names = vec![
+            format!("{collection}-1.snapshot"),
+            "tab\tlf\ncr\rdel\u{7f}-2.snapshot".to_string(),
+            "sp ace+plus-3.snapshot".to_string(),
+            "already%41encoded-4.snapshot".to_string(),
+        ];
+        for name in &names {
+            let key = trim_dot_slash(Path::new(&format!("{directory_str}/{name}"))).unwrap();
+            store
+                .put(&key, object_store::PutPayload::from_static(b"x"))
+                .await
+                .unwrap();
+        }
+        // A key Qdrant did not write, which does not decode to UTF-8, keeps its stored name.
+        let foreign = "not%FFutf8-5.snapshot".to_string();
+        let foreign_key = object_store::path::Path::parse(format!(
+            "{}/{foreign}",
+            trim_dot_slash(directory).unwrap()
+        ))
+        .unwrap();
+        store
+            .put(&foreign_key, object_store::PutPayload::from_static(b"x"))
+            .await
+            .unwrap();
+        names.push(foreign);
+
+        let mut listed: Vec<String> = list_snapshot_descriptions(&store, directory)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|description| description.name)
+            .collect();
+
+        listed.sort();
+        names.sort();
+        assert_eq!(listed, names);
     }
 }
