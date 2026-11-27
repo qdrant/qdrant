@@ -15199,9 +15199,6 @@
             }
           },
           {
-            "$ref": "#/components/schemas/SparseVector"
-          },
-          {
             "type": "array",
             "items": {
               "type": "array",
@@ -15210,6 +15207,9 @@
                 "format": "float"
               }
             }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
           },
           {
             "$ref": "#/components/schemas/ExtendedPointId"

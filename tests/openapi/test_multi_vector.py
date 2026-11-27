@@ -370,6 +370,45 @@ def test_search_legacy_api(collection_name):
     assert response.ok
     assert len(response.json()['result']['points']) == 3
 
+@pytest.mark.parametrize("query", [
+    [[1, 1, 0, 0], [0, 1, 0, 0]],
+    [[1.0, 1.0, 0.0, 0.0], [0, 1, 0, 0]],
+    [[1, 1, 0, 0], [0.0, 1.0, 0.0, 0.0]],
+    [[1.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]],
+], ids=["int-int", "float-int", "int-float", "float-float"])
+def test_query_two_row_multivector_numeric_types(collection_name, query):
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [{
+                "id": 7,
+                "vector": {"my-multivec": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]},
+            }],
+        },
+    )
+    assert response.ok, response.text
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": query,
+            "using": "my-multivec",
+            "limit": 1,
+            "params": {"exact": True},
+        },
+    )
+    assert response.ok, response.text
+    points = response.json()['result']['points']
+    assert len(points) == 1
+    assert points[0]['id'] == 7
+    assert points[0]['score'] == 2.0
+
+
 # document special case for Euclidean distance
 def test_multi_with_euclidean(collection_name):
     drop_collection(collection_name=collection_name)

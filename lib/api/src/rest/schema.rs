@@ -558,8 +558,9 @@ pub struct Rrf {
 #[serde(untagged)]
 pub enum VectorInput {
     DenseVector(DenseVector),
-    SparseVector(SparseVector),
+    // Serde can also deserialize SparseVector from a pair of arrays.
     MultiDenseVector(MultiDenseVector),
+    SparseVector(SparseVector),
     Id(segment::types::PointIdType),
     Document(Document),
     Image(Image),
