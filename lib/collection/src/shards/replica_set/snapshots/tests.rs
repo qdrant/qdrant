@@ -355,6 +355,83 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
     target_replica_set.stop_gracefully().await;
 }
 
+/// A restored shard snapshot may hold deferred points. They must become visible without
+/// further writes, so the restore has to trigger the optimizers.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_restored_shard_makes_deferred_points_visible_without_writes() {
+    let _scope = ambient::async_test_guard();
+    const NUM_POINTS: u64 = 200;
+
+    let deferred_optimizers = |max_optimization_threads| OptimizersConfig {
+        prevent_unoptimized: Some(true),
+        // One segment with a 1 KB threshold, so most of the points stay deferred
+        default_segment_number: 1,
+        indexing_threshold: Some(1),
+        max_optimization_threads,
+        ..OptimizersConfig::fixture()
+    };
+
+    // Source has optimizers disabled, so its points stay deferred
+    let source_collection_dir = Builder::new()
+        .prefix("deferred-restore-source")
+        .tempdir()
+        .unwrap();
+    let source_replica_set = new_shard_replica_set_with_optimizers(
+        &source_collection_dir,
+        TEST_SOURCE_SHARD_ID,
+        deferred_optimizers(Some(0)),
+    )
+    .await;
+    for id in 0..NUM_POINTS {
+        upsert_point_until(&source_replica_set, id, WaitUntil::Segment).await;
+    }
+    let source_visible = count_points(&source_replica_set).await;
+    assert!(
+        source_visible < NUM_POINTS as usize,
+        "fixture must hold deferred points, but all {source_visible} are visible",
+    );
+    source_replica_set.force_flush_local_for_test().await;
+    source_replica_set.stop_gracefully().await;
+    let source_shard_path = source_collection_dir
+        .path()
+        .join(TEST_SOURCE_SHARD_ID.to_string());
+
+    // Target has optimizers enabled and receives no writes after the restore
+    let target_collection_dir = Builder::new()
+        .prefix("deferred-restore-target")
+        .tempdir()
+        .unwrap();
+    let target_replica_set = new_shard_replica_set_with_optimizers(
+        &target_collection_dir,
+        TEST_TARGET_SHARD_ID,
+        deferred_optimizers(Some(1)),
+    )
+    .await;
+    let restored = target_replica_set
+        .restore_local_replica_from(
+            &source_shard_path,
+            RecoveryType::Full,
+            target_collection_dir.path(),
+            cancel::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert!(restored, "the shard snapshot should have been restored");
+
+    let mut visible = count_points(&target_replica_set).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while visible < NUM_POINTS as usize && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        visible = count_points(&target_replica_set).await;
+    }
+    assert_eq!(
+        visible, NUM_POINTS as usize,
+        "restored shard kept deferred points hidden (source showed {source_visible})",
+    );
+
+    target_replica_set.stop_gracefully().await;
+}
+
 /// Build a valid unpacked shard snapshot to recover from.
 ///
 /// Returns the temp dir - which the caller must keep alive - and the replica path
@@ -379,6 +456,10 @@ async fn new_shard_snapshot() -> (TempDir, std::path::PathBuf) {
 }
 
 async fn upsert_point(replica_set: &ShardReplicaSet, id: u64) {
+    upsert_point_until(replica_set, id, WaitUntil::Visible).await;
+}
+
+async fn upsert_point_until(replica_set: &ShardReplicaSet, id: u64, wait: WaitUntil) {
     let operation = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
         PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
             PointStructPersisted {
@@ -390,7 +471,7 @@ async fn upsert_point(replica_set: &ShardReplicaSet, id: u64) {
     ));
 
     replica_set
-        .update_local(operation, WaitUntil::Visible, None, false)
+        .update_local(operation, wait, None, false)
         .measured(AmbientContext::new())
         .await
         .expect("failed to upsert point")
@@ -428,6 +509,15 @@ fn install_restore_local_replica_before_flag_hook(
 }
 
 async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> ShardReplicaSet {
+    new_shard_replica_set_with_optimizers(collection_dir, shard_id, OptimizersConfig::fixture())
+        .await
+}
+
+async fn new_shard_replica_set_with_optimizers(
+    collection_dir: &TempDir,
+    shard_id: ShardId,
+    optimizers_config: OptimizersConfig,
+) -> ShardReplicaSet {
     let update_runtime = Handle::current();
     let search_runtime = AdaptiveSearchHandle::current_for_tests();
 
@@ -445,7 +535,6 @@ async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> S
         ..CollectionParams::empty()
     };
 
-    let optimizers_config = OptimizersConfig::fixture();
     let config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: optimizers_config.clone(),
