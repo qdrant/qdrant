@@ -22,6 +22,7 @@ use tokio::runtime::Runtime;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
 use uuid::Uuid;
+use validator::Validate as _;
 
 use crate::settings::{IndexingOnFailure, IndexingServiceConfig, Settings};
 
@@ -142,6 +143,9 @@ struct ClientInner {
 
 impl RemoteIndexingClient {
     fn new(config: IndexingServiceConfig) -> anyhow::Result<Self> {
+        // Settings validation only warns. Here an invalid value breaks every task, e.g. a
+        // zero timeout gives each one up at once, and the local build that follows hides it.
+        config.validate()?;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .thread_name("remote-indexing")
@@ -383,6 +387,21 @@ mod tests {
         };
         assert!(RemoteIndexingClient::new(config("secret")).is_ok());
         assert!(RemoteIndexingClient::new(config("line\nbreak")).is_err());
+    }
+
+    #[test]
+    fn invalid_settings_fail_at_startup() {
+        let mut zero_lease = config("http://localhost:6340");
+        zero_lease.heartbeat_timeout_sec = 0;
+        assert!(RemoteIndexingClient::new(zero_lease).is_err());
+
+        let mut zero_queue_lease = config("http://localhost:6340");
+        zero_queue_lease.queue_timeout_sec = 0;
+        assert!(RemoteIndexingClient::new(zero_queue_lease).is_err());
+
+        let mut coverage = config("http://localhost:6340");
+        coverage.min_healing_coverage = 1.5;
+        assert!(RemoteIndexingClient::new(coverage).is_err());
     }
 
     #[test]
