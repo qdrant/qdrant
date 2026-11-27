@@ -84,11 +84,13 @@ impl LinksContainer {
         let mut selected_scores: Vec<ScoreType> = Vec::with_capacity(level_m);
         'outer: for candidate in candidates {
             for (&existing, &existing_score) in self.links.iter().zip(&selected_scores) {
-                if is_redundant(
-                    score(candidate.idx, existing),
-                    candidate.score,
-                    existing_score,
-                ) {
+                if existing == candidate.idx
+                    || is_redundant(
+                        score(candidate.idx, existing),
+                        candidate.score,
+                        existing_score,
+                    )
+                {
                     continue 'outer;
                 }
             }
@@ -109,6 +111,10 @@ impl LinksContainer {
         level_m: usize,
         mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     ) {
+        if self.links.contains(&new_point_id) {
+            return;
+        }
+
         // Invalidate assumptions about the heuristic eagerly.
         self.processed_by_heuristic = 0;
 
@@ -143,6 +149,9 @@ impl LinksContainer {
         level_m: usize,
         mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     ) {
+        if self.links.contains(&new_point_id) {
+            return;
+        }
         if self.links.len() < level_m {
             self.links.push(new_point_id);
         } else {
@@ -175,8 +184,7 @@ impl LinksContainer {
         mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
         items: &mut ItemsBuffer,
     ) {
-        if level_m == 0 {
-            // Unlikely.
+        if level_m == 0 || self.links.contains(&new_point_id) {
             return;
         }
 
@@ -235,11 +243,13 @@ impl LinksContainer {
                 if candidate.order.is_some() && existing.order.is_some() {
                     continue; // See (A).
                 }
-                if is_redundant(
-                    score(candidate.idx, existing.idx),
-                    candidate.cached_score(target_point_id, &mut score),
-                    existing.cached_score(target_point_id, &mut score),
-                ) {
+                if existing.idx == candidate.idx
+                    || is_redundant(
+                        score(candidate.idx, existing.idx),
+                        candidate.cached_score(target_point_id, &mut score),
+                        existing.cached_score(target_point_id, &mut score),
+                    )
+                {
                     continue 'outer;
                 }
             }
@@ -537,5 +547,63 @@ mod tests {
                 assert_eq!(container.links, reference_container.links);
             }
         }
+    }
+
+    /// Duplicate point IDs must never be inserted into a `LinksContainer`, even under
+    /// non-self-pruning similarity functions (`score(b, b) < score(target, b)`, such as
+    /// `Distance::Dot`, multivector MaxSim, or asymmetric quantization) or when adding a
+    /// backlink onto a container that was already seeded with that neighbor.
+    #[test]
+    fn test_no_duplicate_point_ids_under_non_self_pruning_scores() {
+        let points: [[f32; 2]; 4] = [
+            [10.0, 0.0], // 0: target
+            [1.0, 0.0],  // 1: `score(1, 1) = 1.0 < score(0, 1) = 10.0`
+            [0.0, 2.0],  // 2
+            [-1.0, 0.0], // 3
+        ];
+        let dot = |a: PointOffsetType, b: PointOffsetType| {
+            let va = points[a as usize];
+            let vb = points[b as usize];
+            va[0] * vb[0] + va[1] * vb[1]
+        };
+
+        // 1. `fill_from_sorted_with_heuristic` with duplicate candidates
+        let mut container = LinksContainer::with_capacity(4);
+        container.fill_from_sorted_with_heuristic(
+            [
+                ScoredPointOffset {
+                    idx: 1,
+                    score: 10.0,
+                },
+                ScoredPointOffset {
+                    idx: 1,
+                    score: 10.0,
+                },
+                ScoredPointOffset { idx: 2, score: 0.0 },
+            ]
+            .into_iter(),
+            4,
+            dot,
+        );
+        assert_eq!(container.links(), &[1, 2]);
+
+        // 2. `connect_with_heuristic` when `< level_m` (e.g. seeded block point receiving a backlink)
+        let mut items = ItemsBuffer::default();
+        container.connect_with_heuristic(1, 0, 4, dot, &mut items);
+        assert_eq!(container.links(), &[1, 2]);
+
+        // 3. `connect_with_heuristic` when `== level_m` (matches `connect_with_heuristic_simple`)
+        let mut ref_container = LinksContainer::with_capacity(2);
+        ref_container.fill_from([1, 2].into_iter());
+        container.connect_with_heuristic(1, 0, 2, dot, &mut items);
+        ref_container.connect_with_heuristic_simple(1, 0, 2, dot);
+        assert_eq!(container.links(), &[1, 2]);
+        assert_eq!(container.links(), ref_container.links());
+
+        // 4. `connect` (without heuristic)
+        let mut plain = LinksContainer::with_capacity(4);
+        plain.connect(1, 0, 4, dot);
+        plain.connect(1, 0, 4, dot);
+        assert_eq!(plain.links(), &[1]);
     }
 }

@@ -91,6 +91,8 @@ impl<'a> GraphLayersHealer<'a> {
         &self,
         offset: PointOffsetType,
         level: usize,
+        valid_links: &[PointOffsetType],
+        deleted_links: &[PointOffsetType],
         scorer: &dyn RawScorer,
     ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.links_layers.len());
@@ -111,16 +113,10 @@ impl<'a> GraphLayersHealer<'a> {
         // Find entry into "deleted" sub-graph, do not consider non-deleted neighbors
         // as they already connected to the "healing" point.
         visited_list.check_and_update_visited(offset);
-        {
-            let links = self.links_layers[offset as usize][level].read();
-            for &point in links.links() {
-                if self.point_deleted(point) {
-                    neighbours.push(point);
-                } else {
-                    visited_list.check_and_update_visited(point);
-                }
-            }
+        for &point in valid_links {
+            visited_list.check_and_update_visited(point);
         }
+        neighbours.extend_from_slice(deleted_links);
         if scores_buffer.len() < neighbours.len() {
             scores_buffer.resize(neighbours.len(), 0.0);
         }
@@ -161,7 +157,9 @@ impl<'a> GraphLayersHealer<'a> {
                 if !self.point_deleted(idx) {
                     // This point is on the "border", as it is reachable from the deleted
                     // And is not deleted itself
-                    nearest.push(ScoredPointOffset { idx, score });
+                    if !visited_list.check_and_update_visited(idx) {
+                        nearest.push(ScoredPointOffset { idx, score });
+                    }
                 } else {
                     // This is just another deleted point
                     pending.push(ScoredPointOffset { idx, score });
@@ -180,18 +178,24 @@ impl<'a> GraphLayersHealer<'a> {
     ) -> OperationResult<()> {
         let level_m = self.hnsw_m.level_m(level);
 
-        // Get current links and filter out deleted ones
+        // Snapshot current links once so concurrent backlink insertions cannot evict a
+        // link kept in `valid_links` before `search_shortcuts_on_level` marks it visited.
         let mut valid_links = Vec::with_capacity(level_m);
-        valid_links.extend(
-            self.links_layers[offset as usize][level]
-                .read()
-                .links()
-                .iter()
-                .filter(|&&idx| !self.point_deleted(idx)),
-        );
+        let mut deleted_links = Vec::with_capacity(level_m);
+        {
+            let links = self.links_layers[offset as usize][level].read();
+            for &idx in links.links() {
+                if self.point_deleted(idx) {
+                    deleted_links.push(idx);
+                } else {
+                    valid_links.push(idx);
+                }
+            }
+        }
 
         // First: generate list of candidates using shortcuts search
-        let shortcuts = self.search_shortcuts_on_level(offset, level, scorer)?;
+        let shortcuts =
+            self.search_shortcuts_on_level(offset, level, &valid_links, &deleted_links, scorer)?;
 
         // Second: process list of candidates with heuristic
         let mut container = LinksContainer::with_capacity(level_m);
@@ -280,5 +284,135 @@ impl<'a> GraphLayersHealer<'a> {
 
             builder.add_new_point(new_offset, links_by_level);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use itertools::Itertools as _;
+    use rayon::ThreadPoolBuilder;
+
+    use super::*;
+    use crate::data_types::vectors::VectorRef;
+    use crate::index::hnsw_index::entry_points::EntryPoints;
+    use crate::index::hnsw_index::graph_layers::{SearchAlgorithm, SearchEntry};
+    use crate::index::hnsw_index::graph_links::{
+        GraphLinks, GraphLinksFormatParam, GraphLinksResidency,
+    };
+    use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::types::Distance;
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
+
+    /// A non-deleted border node reachable through multiple deleted nodes must only be
+    /// considered once when healing shortcuts. Otherwise `search_shortcuts_on_level` pushes
+    /// the same border node multiple times, and whenever `score_internal(b, b) < score(a, b)`
+    /// (e.g. `Distance::Dot`, multivectors, or asymmetric quantization), `is_redundant` does
+    /// not prune the second copy, producing duplicate outgoing links `[b, b]` and causing
+    /// `GraphLayers::search` to return the same point offset twice from one segment.
+    #[test]
+    fn test_heal_shared_border_node_does_not_duplicate_links_or_search_results() {
+        let _scope = ambient::test_guard();
+        let dim = 4;
+        let hnsw_m = HnswM::new(4, 8);
+
+        let mut old_storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
+        let vectors: [[f32; 4]; 6] = [
+            [10.0, 0.0, 0.0, 0.0], // 0: surviving node being healed
+            [1.0, 1.0, 0.0, 0.0],  // 1: deleted bridge #1
+            [1.0, -1.0, 0.0, 0.0], // 2: deleted bridge #2
+            [1.0, 0.0, 0.0, 0.0],  // 3: shared border node (`score(3,3)=1 < score(0,3)=10`)
+            [0.5, 0.2, 0.0, 0.0],  // 4: surviving neighbor
+            [0.5, -0.2, 0.0, 0.0], // 5: surviving neighbor
+        ];
+        for (idx, vec) in vectors.iter().enumerate() {
+            old_storage
+                .insert_vector(idx as PointOffsetType, VectorRef::from(vec.as_slice()))
+                .unwrap();
+        }
+
+        let edges: Vec<Vec<Vec<PointOffsetType>>> = vec![
+            vec![vec![1, 2]],    // 0 -> deleted 1, 2
+            vec![vec![0, 3, 4]], // 1 -> 0, border 3, 4
+            vec![vec![0, 3, 5]], // 2 -> 0, border 3, 5
+            vec![vec![1, 2]],    // 3
+            vec![vec![1]],       // 4
+            vec![vec![2]],       // 5
+        ];
+        let old_graph = GraphLayers {
+            hnsw_m,
+            links: GraphLinks::new_from_edges(edges, GraphLinksFormatParam::Plain, hnsw_m).unwrap(),
+            entry_points: EntryPoints::new(4),
+            visited_pool: VisitedPool::new(),
+            residency: GraphLinksResidency::Pinned,
+        };
+
+        // Points 1 and 2 are deleted; 0, 3, 4, 5 map to 0, 1, 2, 3 in the new segment.
+        let old_to_new: Vec<Option<PointOffsetType>> =
+            vec![Some(0), None, None, Some(1), Some(2), Some(3)];
+
+        let pool = ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+        let mut healer = GraphLayersHealer::new(&old_graph, &old_to_new, 16);
+        healer
+            .heal(
+                &pool,
+                &old_storage,
+                None,
+                &AtomicBool::new(false),
+                &AtomicU64::new(0),
+            )
+            .unwrap();
+
+        let mut builder = GraphLayersBuilder::new(4, hnsw_m, 16, 4, true);
+        for new_id in 0..4 {
+            builder.set_levels(new_id, 0);
+        }
+        healer.save_into_builder(&builder);
+        let healed_graph = builder.into_graph_layers_ram(GraphLinksFormatParam::Plain);
+
+        for point_id in 0..4 {
+            let links: Vec<PointOffsetType> = healed_graph.links.links(point_id, 0).collect();
+            assert!(
+                links.iter().all_unique(),
+                "point {point_id} has duplicate links after healing: {links:?}",
+            );
+        }
+
+        let mut new_storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
+        for (new_id, old_id) in [0usize, 3, 4, 5].into_iter().enumerate() {
+            new_storage
+                .insert_vector(
+                    new_id as PointOffsetType,
+                    VectorRef::from(vectors[old_id].as_slice()),
+                )
+                .unwrap();
+        }
+        let deleted = BitVec::repeat(false, 4);
+        let mut scorer =
+            FilteredScorer::new_for_test(vec![10.0, 0.0, 0.0, 0.0].into(), &new_storage, &deleted);
+        let entry = SearchEntry::Point(
+            healed_graph
+                .entry_points
+                .get_entry_point(|_| true)
+                .expect("entry point exists"),
+        );
+        let results = healed_graph
+            .search(
+                4,
+                16,
+                SearchAlgorithm::Hnsw,
+                &mut scorer,
+                &entry,
+                &DEFAULT_STOPPED,
+            )
+            .unwrap();
+        assert!(
+            results.iter().map(|p| p.idx).all_unique(),
+            "HNSW search returned duplicate point offsets: {results:?}",
+        );
     }
 }
