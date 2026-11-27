@@ -201,6 +201,82 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
+#[test]
+fn test_read_filtered_leap_second_range() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+
+    let midnight = "2017-01-01T00:00:00Z";
+    let times = [
+        "2016-12-31T23:59:59.999999Z",
+        "2016-12-31T23:59:60Z",
+        "2016-12-31T23:59:60.500000Z",
+        midnight,
+        "2017-01-01T00:00:00.500000Z",
+    ];
+    for (id, time) in (1u64..).zip(times) {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let payload = serde_json::from_value(serde_json::json!({ "time": time })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+
+    let leap_bound = "2017-01-01T00:59:60.500000999+01:00";
+    let cases = [
+        (serde_json::json!({ "lt": midnight }), vec![1u64]),
+        (
+            serde_json::json!({ "gte": midnight, "lte": midnight }),
+            vec![2, 4],
+        ),
+        (serde_json::json!({ "gt": midnight }), vec![3, 5]),
+        (
+            serde_json::json!({ "gte": leap_bound, "lte": leap_bound }),
+            vec![3, 5],
+        ),
+    ];
+    let read = |segment: &Segment| -> Vec<Vec<PointIdType>> {
+        cases
+            .iter()
+            .map(|(range, _)| {
+                let filter: Filter = serde_json::from_value(serde_json::json!({
+                    "must": [{ "key": "time", "range": range }],
+                }))
+                .unwrap();
+                segment
+                    .read_filtered(
+                        None,
+                        Some(10),
+                        Some(&filter),
+                        &AtomicBool::new(false),
+                        DeferredBehavior::VisibleOnly,
+                    )
+                    .unwrap()
+            })
+            .collect()
+    };
+    let unindexed = read(&segment);
+    segment
+        .create_field_index(
+            6,
+            &JsonPath::new("time"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)),
+        )
+        .unwrap();
+    let indexed = read(&segment);
+
+    assert_eq!(
+        unindexed, indexed,
+        "leap-second range results changed after indexing"
+    );
+    let expected: Vec<Vec<PointIdType>> = cases
+        .into_iter()
+        .map(|(_, ids)| ids.into_iter().map(PointIdType::from).collect())
+        .collect();
+    assert_eq!(indexed, expected);
+}
+
 /// A `must_not` condition equal to a primary `must` clause must still exclude its points.
 ///
 /// This is the filter a proxy segment builds when it is read with `HasId` of exactly the points
