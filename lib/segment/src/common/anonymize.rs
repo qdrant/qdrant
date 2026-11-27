@@ -151,6 +151,12 @@ impl Anonymize for bool {
     }
 }
 
+impl Anonymize for f32 {
+    fn anonymize(&self) -> Self {
+        *self
+    }
+}
+
 impl Anonymize for DateTime<Utc> {
     fn anonymize(&self) -> Self {
         let coeff: f32 = rand::random();
