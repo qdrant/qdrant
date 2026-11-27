@@ -169,7 +169,9 @@ impl IndexingTask for IndexingTaskService {
         let token = token(&request)?;
         // Bound the upload by the task, so a token cannot be used to exhaust memory
         let description = REMOTE_INDEXING_TASKS.get_task(&token).map_err(status)?;
-        let block_points = REMOTE_INDEXING_TASKS.start_upload(&token).map_err(status)?;
+        // An early upload ends the task, which waits for the reads in flight: off the async
+        // runtime
+        let block_points = blocking(move || REMOTE_INDEXING_TASKS.start_upload(&token)).await?;
         let mut assembler = GraphAssembler::new(
             description.params.point_count,
             max_upload_links(&description, block_points),
@@ -204,7 +206,8 @@ impl IndexingTask for IndexingTaskService {
     ) -> Result<Response<FailIndexingTaskResponse>, Status> {
         let token = token(&request)?;
         let FailIndexingTaskRequest { reason } = request.into_inner();
-        REMOTE_INDEXING_TASKS.fail(&token, reason).map_err(status)?;
+        // Ends the task, which waits for the reads in flight: off the async runtime
+        blocking(move || REMOTE_INDEXING_TASKS.fail(&token, reason)).await?;
         Ok(Response::new(FailIndexingTaskResponse {}))
     }
 }
