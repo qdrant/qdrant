@@ -7,7 +7,6 @@ use reqwest::Client;
 use segment::common::anonymize::Anonymize;
 use storage::content_manager::errors::StorageResult;
 use storage::rbac::{Access, Auth, AuthType};
-use tokio::sync::Mutex;
 
 use super::telemetry::TelemetryCollector;
 
@@ -20,7 +19,7 @@ const REPORTING_INTERVAL: Duration = Duration::from_secs(60 * 60); // One hour
 
 pub struct TelemetryReporter {
     telemetry_url: String,
-    telemetry: Arc<Mutex<TelemetryCollector>>,
+    telemetry: Arc<TelemetryCollector>,
 }
 
 fn full_reporter_auth() -> Auth {
@@ -34,7 +33,7 @@ fn full_reporter_auth() -> Auth {
 }
 
 impl TelemetryReporter {
-    fn new(telemetry: Arc<Mutex<TelemetryCollector>>) -> Self {
+    fn new(telemetry: Arc<TelemetryCollector>) -> Self {
         let telemetry_url = if cfg!(debug_assertions) {
             "https://staging-telemetry.qdrant.io".to_string()
         } else {
@@ -50,8 +49,6 @@ impl TelemetryReporter {
     async fn report(&self, client: &Client) -> StorageResult<()> {
         let data = self
             .telemetry
-            .lock()
-            .await
             .prepare_data(&full_reporter_auth(), DETAIL, None, None)
             .await?
             .anonymize();
@@ -72,7 +69,7 @@ impl TelemetryReporter {
         Ok(())
     }
 
-    pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
+    pub async fn run(telemetry: Arc<TelemetryCollector>) {
         let reporter = Self::new(telemetry);
         let client = Client::builder()
             .user_agent(APP_USER_AGENT.as_str())
