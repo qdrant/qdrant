@@ -20,7 +20,7 @@ use segment::index::hnsw_index::remote::{
 };
 use tokio::runtime::Runtime;
 use tonic::metadata::AsciiMetadataValue;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint};
 use uuid::Uuid;
 
 use crate::settings::{IndexingOnFailure, IndexingServiceConfig, Settings};
@@ -146,10 +146,13 @@ impl RemoteIndexingClient {
         let timeout = Duration::from_secs(config.submit_timeout_sec);
         let channel = {
             let _guard = runtime.enter();
-            Endpoint::from_shared(config.url.clone())?
+            let mut endpoint = Endpoint::from_shared(config.url.clone())?
                 .connect_timeout(timeout)
-                .timeout(timeout)
-                .connect_lazy()
+                .timeout(timeout);
+            if let Some(tls) = entry_point_tls(&config)? {
+                endpoint = endpoint.tls_config(tls)?;
+            }
+            endpoint.connect_lazy()
         };
         // Checked here, not on every submission: an invalid key is a configuration error,
         // which a local build after each failed submission would hide
@@ -249,6 +252,26 @@ impl ClientInner {
     }
 }
 
+/// TLS for an `https://` entry point, verified against `ca_cert` or the system roots.
+/// `None` for a cleartext one.
+fn entry_point_tls(config: &IndexingServiceConfig) -> anyhow::Result<Option<ClientTlsConfig>> {
+    let https = config
+        .url
+        .get(.."https://".len())
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"));
+    if !https {
+        return Ok(None);
+    }
+    let tls = match &config.ca_cert {
+        Some(path) => {
+            let pem = fs_err::read_to_string(path)?;
+            ClientTlsConfig::new().ca_certificate(Certificate::from_pem(pem))
+        }
+        None => ClientTlsConfig::new().with_native_roots(),
+    };
+    Ok(Some(tls))
+}
+
 /// `Ok` if the entry point accepted the task, otherwise whether retrying can help.
 fn refusal_to_result(response: &SubmitIndexingTaskResponse) -> Result<(), SubmitError> {
     let SubmitIndexingTaskResponse {
@@ -299,7 +322,20 @@ impl RemoteIndexer for RemoteIndexingClient {
 
 #[cfg(test)]
 mod tests {
+    use api::grpc::qdrant::CancelIndexingTaskResponse;
+    use api::grpc::qdrant::indexing_service_server::{IndexingService, IndexingServiceServer};
+    use tonic::transport::server::TcpIncoming;
+    use tonic::transport::{Identity, Server, ServerTlsConfig};
+
     use super::*;
+
+    fn config(url: &str) -> IndexingServiceConfig {
+        serde_json::from_value(serde_json::json!({
+            "url": url,
+            "advertise_url": "http://localhost:6335",
+        }))
+        .unwrap()
+    }
 
     #[test]
     fn enabled_only_where_the_indexer_can_call_back() {
@@ -331,19 +367,108 @@ mod tests {
     #[test]
     fn invalid_api_key_fails_at_startup() {
         let config = |api_key: &str| {
-            let mut settings = Settings::new(None).unwrap();
-            let mut config = settings.indexing_service.take().unwrap_or_else(|| {
-                serde_json::from_value(serde_json::json!({
-                    "url": "http://localhost:6340",
-                    "advertise_url": "http://localhost:6335",
-                }))
-                .unwrap()
-            });
+            let mut config = config("http://localhost:6340");
             config.api_key = Some(api_key.to_string());
             config
         };
         assert!(RemoteIndexingClient::new(config("secret")).is_ok());
         assert!(RemoteIndexingClient::new(config("line\nbreak")).is_err());
+    }
+
+    #[test]
+    fn https_entry_point_gets_tls() {
+        assert!(
+            entry_point_tls(&config("http://localhost:6340"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            entry_point_tls(&config("https://localhost:6340"))
+                .unwrap()
+                .is_some()
+        );
+        assert!(RemoteIndexingClient::new(config("https://localhost:6340")).is_ok());
+
+        // A CA certificate that cannot be read is an error at startup
+        let mut with_ca = config("https://localhost:6340");
+        with_ca.ca_cert = Some("/nonexistent/ca.pem".to_string());
+        assert!(RemoteIndexingClient::new(with_ca).is_err());
+    }
+
+    /// An entry point that only answers `CancelTask`, with whether the API key arrived.
+    struct FakeEntryPoint;
+
+    #[tonic::async_trait]
+    impl IndexingService for FakeEntryPoint {
+        async fn submit_task(
+            &self,
+            _request: tonic::Request<IndexingTaskSubmission>,
+        ) -> Result<tonic::Response<SubmitIndexingTaskResponse>, tonic::Status> {
+            Err(tonic::Status::unimplemented("not used"))
+        }
+
+        async fn cancel_task(
+            &self,
+            request: tonic::Request<CancelIndexingTaskRequest>,
+        ) -> Result<tonic::Response<CancelIndexingTaskResponse>, tonic::Status> {
+            let removed = request
+                .metadata()
+                .get(API_KEY_HEADER)
+                .is_some_and(|key| key == "secret");
+            Ok(tonic::Response::new(CancelIndexingTaskResponse { removed }))
+        }
+    }
+
+    #[test]
+    fn https_entry_point_is_called_over_tls() {
+        // As `main` does; another test may have installed it already
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let cert_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/e2e_tests/test_data/cert");
+        let read = |name: &str| fs_err::read_to_string(cert_dir.join(name)).unwrap();
+        let identity = Identity::from_pem(read("cert.pem"), read("key.pem"));
+
+        let server_runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let listener = server_runtime
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        server_runtime.spawn(async move {
+            Server::builder()
+                .tls_config(ServerTlsConfig::new().identity(identity))
+                .unwrap()
+                .add_service(IndexingServiceServer::new(FakeEntryPoint))
+                .serve_with_incoming(TcpIncoming::from(listener))
+                .await
+                .unwrap();
+        });
+
+        let cancel = |ca_cert: Option<&Path>| {
+            let mut config = config(&format!("https://localhost:{port}"));
+            config.api_key = Some("secret".to_string());
+            config.ca_cert = ca_cert.map(|path| path.to_string_lossy().into_owned());
+            let client = RemoteIndexingClient::new(config).unwrap();
+            let inner = client.inner.clone();
+            client.runtime.block_on(async move {
+                let mut request = tonic::Request::new(CancelIndexingTaskRequest {
+                    task_id: String::new(),
+                    token: String::new(),
+                });
+                inner.authorize(&mut request);
+                IndexingServiceClient::new(inner.channel.clone())
+                    .cancel_task(request)
+                    .await
+            })
+        };
+
+        // Verified against the configured CA, and the API key arrives
+        let response = cancel(Some(&cert_dir.join("cacert.pem"))).unwrap();
+        assert!(response.into_inner().removed);
+        // The system roots do not know the test CA
+        assert!(cancel(None).is_err());
     }
 
     #[test]

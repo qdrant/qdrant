@@ -292,9 +292,14 @@ pub struct IndexingServiceConfig {
     /// or a queue or sidecar implementing the same API, e.g. `http://indexer:6340`.
     #[validate(length(min = 1))]
     pub url: String,
-    /// Sent with every submission as `api-key`.
+    /// Sent with every submission as `api-key`. Use an `https://` URL with it, or it travels
+    /// in cleartext, along with the task tokens.
     #[serde(default)]
     pub api_key: Option<String>,
+    /// CA certificate that signed the certificate of an `https://` entry point, as a path to
+    /// a PEM file. Absent: the system root certificates.
+    #[serde(default)]
+    pub ca_cert: Option<String>,
     /// Internal gRPC address the indexer connects back to, set per pod (D10),
     /// e.g. `qdrant-0.qdrant-headless:6335`.
     #[validate(length(min = 1))]
