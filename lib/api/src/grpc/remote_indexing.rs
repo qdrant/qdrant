@@ -58,21 +58,23 @@ fn source_to_grpc(source: VectorSource) -> IndexingVectorSource {
     }
 }
 
-fn source_from_grpc(source: IndexingVectorSource) -> VectorSource {
+fn source_from_grpc(source: IndexingVectorSource) -> Result<VectorSource, String> {
     match source {
-        IndexingVectorSource::IndexingSourceStorage => VectorSource::Storage,
-        IndexingVectorSource::IndexingSourceQuantized => VectorSource::Quantized,
+        IndexingVectorSource::IndexingSourceStorage => Ok(VectorSource::Storage),
+        IndexingVectorSource::IndexingSourceQuantized => Ok(VectorSource::Quantized),
+        IndexingVectorSource::Unknown => Err("no vector source".to_string()),
     }
 }
 
-fn datatype_from_grpc(datatype: IndexingVectorDatatype) -> VectorStorageDatatype {
+fn datatype_from_grpc(datatype: IndexingVectorDatatype) -> Result<VectorStorageDatatype, String> {
     match datatype {
-        IndexingVectorDatatype::IndexingFloat32 => VectorStorageDatatype::Float32,
-        IndexingVectorDatatype::IndexingFloat16 => VectorStorageDatatype::Float16,
-        IndexingVectorDatatype::IndexingUint8 => VectorStorageDatatype::Uint8,
-        IndexingVectorDatatype::IndexingTurbo4 => VectorStorageDatatype::Turbo4,
-        IndexingVectorDatatype::IndexingTurbo8 => VectorStorageDatatype::Turbo8,
-        IndexingVectorDatatype::IndexingTurbo16 => VectorStorageDatatype::Turbo16,
+        IndexingVectorDatatype::IndexingFloat32 => Ok(VectorStorageDatatype::Float32),
+        IndexingVectorDatatype::IndexingFloat16 => Ok(VectorStorageDatatype::Float16),
+        IndexingVectorDatatype::IndexingUint8 => Ok(VectorStorageDatatype::Uint8),
+        IndexingVectorDatatype::IndexingTurbo4 => Ok(VectorStorageDatatype::Turbo4),
+        IndexingVectorDatatype::IndexingTurbo8 => Ok(VectorStorageDatatype::Turbo8),
+        IndexingVectorDatatype::IndexingTurbo16 => Ok(VectorStorageDatatype::Turbo16),
+        IndexingVectorDatatype::Unknown => Err("no datatype".to_string()),
     }
 }
 
@@ -91,7 +93,7 @@ fn distance_from_grpc(distance: IndexingDistance) -> Result<Distance, String> {
         IndexingDistance::IndexingEuclid => Ok(Distance::Euclid),
         IndexingDistance::IndexingDot => Ok(Distance::Dot),
         IndexingDistance::IndexingManhattan => Ok(Distance::Manhattan),
-        IndexingDistance::Unknown => Err("unknown distance".to_string()),
+        IndexingDistance::Unknown => Err("no distance".to_string()),
     }
 }
 
@@ -272,30 +274,33 @@ pub fn task_description_from_grpc(
         index,
     } = description;
     let vector_source = IndexingVectorSource::try_from(vector_source)
-        .map(source_from_grpc)
-        .map_err(|_| format!("unknown vector source {vector_source}"))?;
+        .map_err(|_| format!("unknown vector source {vector_source}"))
+        .and_then(source_from_grpc)?;
     let datatype = IndexingVectorDatatype::try_from(datatype)
-        .map_err(|_| format!("unknown datatype {datatype}"))?;
+        .map_err(|_| format!("unknown datatype {datatype}"))
+        .and_then(datatype_from_grpc)?;
     let distance = IndexingDistance::try_from(distance)
         .map_err(|_| format!("unknown distance {distance}"))
         .and_then(distance_from_grpc)?;
     let multivector_config = multivector_comparator
-        .map(|comparator| {
-            IndexingMultiVectorComparator::try_from(comparator)
-                .map(|comparator| match comparator {
-                    IndexingMultiVectorComparator::IndexingMaxSim => MultiVectorConfig {
-                        comparator: MultiVectorComparator::MaxSim,
-                    },
-                })
-                .map_err(|_| format!("unknown comparator {comparator}"))
-        })
+        .map(
+            |comparator| match IndexingMultiVectorComparator::try_from(comparator) {
+                Ok(IndexingMultiVectorComparator::IndexingMaxSim) => Ok(MultiVectorConfig {
+                    comparator: MultiVectorComparator::MaxSim,
+                }),
+                Ok(IndexingMultiVectorComparator::Unknown) => {
+                    Err("no multivector comparator".to_string())
+                }
+                Err(_) => Err(format!("unknown comparator {comparator}")),
+            },
+        )
         .transpose()?;
     Ok(FetchedTask {
         task_id: Uuid::parse_str(&task_id).map_err(|err| format!("task id: {err}"))?,
         params: RemoteGraphParams {
             vector_name,
             dim: dim as usize,
-            datatype: datatype_from_grpc(datatype),
+            datatype,
             distance,
             multivector_config,
             index: index_params_from_grpc(index)?,
@@ -540,6 +545,48 @@ mod tests {
         }));
         let grpc = index_params_to_grpc(&params);
         assert_eq!(index_params_from_grpc(Some(grpc)), Ok(params));
+    }
+
+    #[test]
+    fn unset_enums_are_refused() {
+        let description = TaskDescription {
+            task_id: Uuid::new_v4(),
+            params: RemoteGraphParams {
+                vector_name: String::new(),
+                dim: 4,
+                datatype: VectorStorageDatatype::Float32,
+                distance: Distance::Dot,
+                multivector_config: Some(MultiVectorConfig {
+                    comparator: MultiVectorComparator::MaxSim,
+                }),
+                index: hnsw(MainGraphAlgorithm::Hnsw),
+                point_count: 10,
+                vector_representation: "storage-native".to_string(),
+                vector_source: VectorSource::Storage,
+                quantization: None,
+                has_payload_blocks: false,
+                max_block_wait: std::time::Duration::from_secs(1),
+            },
+        };
+        let grpc = task_description_to_grpc(&description, &[GRAPH_FORMAT_VERSION_V1]).unwrap();
+        assert!(task_description_from_grpc(grpc.clone()).is_ok());
+
+        // What a sender that forgot the field puts on the wire: no value stands for a default
+        type Unset = fn(&mut IndexingTaskDescription);
+        let cases: [(&str, Unset); 4] = [
+            ("datatype", |d| d.datatype = 0),
+            ("distance", |d| d.distance = 0),
+            ("vector source", |d| d.vector_source = 0),
+            ("comparator", |d| d.multivector_comparator = Some(0)),
+        ];
+        for (name, unset) in cases {
+            let mut grpc = grpc.clone();
+            unset(&mut grpc);
+            assert!(
+                task_description_from_grpc(grpc).is_err(),
+                "unset {name} accepted"
+            );
+        }
     }
 
     #[test]

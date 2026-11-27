@@ -6404,12 +6404,14 @@ pub struct FailIndexingTaskResponse {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingVectorDatatype {
-    IndexingFloat32 = 0,
-    IndexingFloat16 = 1,
-    IndexingUint8 = 2,
-    IndexingTurbo4 = 3,
-    IndexingTurbo8 = 4,
-    IndexingTurbo16 = 5,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingFloat32 = 1,
+    IndexingFloat16 = 2,
+    IndexingUint8 = 3,
+    IndexingTurbo4 = 4,
+    IndexingTurbo8 = 5,
+    IndexingTurbo16 = 6,
 }
 impl IndexingVectorDatatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6418,6 +6420,7 @@ impl IndexingVectorDatatype {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingVectorDatatypeUnknown",
             Self::IndexingFloat32 => "IndexingFloat32",
             Self::IndexingFloat16 => "IndexingFloat16",
             Self::IndexingUint8 => "IndexingUint8",
@@ -6429,6 +6432,7 @@ impl IndexingVectorDatatype {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingVectorDatatypeUnknown" => Some(Self::Unknown),
             "IndexingFloat32" => Some(Self::IndexingFloat32),
             "IndexingFloat16" => Some(Self::IndexingFloat16),
             "IndexingUint8" => Some(Self::IndexingUint8),
@@ -6445,11 +6449,13 @@ impl IndexingVectorDatatype {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingVectorSource {
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
     /// `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
-    IndexingSourceStorage = 0,
+    IndexingSourceStorage = 1,
     /// `ReadVectors` returns the quantized code of each point, read with `quantization`; no
     /// original vectors.
-    IndexingSourceQuantized = 1,
+    IndexingSourceQuantized = 2,
 }
 impl IndexingVectorSource {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6458,6 +6464,7 @@ impl IndexingVectorSource {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingVectorSourceUnknown",
             Self::IndexingSourceStorage => "IndexingSourceStorage",
             Self::IndexingSourceQuantized => "IndexingSourceQuantized",
         }
@@ -6465,6 +6472,7 @@ impl IndexingVectorSource {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingVectorSourceUnknown" => Some(Self::Unknown),
             "IndexingSourceStorage" => Some(Self::IndexingSourceStorage),
             "IndexingSourceQuantized" => Some(Self::IndexingSourceQuantized),
             _ => None,
@@ -6513,7 +6521,9 @@ impl IndexingDistance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingMultiVectorComparator {
-    IndexingMaxSim = 0,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingMaxSim = 1,
 }
 impl IndexingMultiVectorComparator {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6522,12 +6532,14 @@ impl IndexingMultiVectorComparator {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingMultiVectorComparatorUnknown",
             Self::IndexingMaxSim => "IndexingMaxSim",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingMultiVectorComparatorUnknown" => Some(Self::Unknown),
             "IndexingMaxSim" => Some(Self::IndexingMaxSim),
             _ => None,
         }
@@ -6538,9 +6550,11 @@ impl IndexingMultiVectorComparator {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingBinaryEncoding {
-    IndexingBinaryOneBit = 0,
-    IndexingBinaryTwoBits = 1,
-    IndexingBinaryOneAndHalfBits = 2,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingBinaryOneBit = 1,
+    IndexingBinaryTwoBits = 2,
+    IndexingBinaryOneAndHalfBits = 3,
 }
 impl IndexingBinaryEncoding {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6549,6 +6563,7 @@ impl IndexingBinaryEncoding {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingBinaryEncodingUnknown",
             Self::IndexingBinaryOneBit => "IndexingBinaryOneBit",
             Self::IndexingBinaryTwoBits => "IndexingBinaryTwoBits",
             Self::IndexingBinaryOneAndHalfBits => "IndexingBinaryOneAndHalfBits",
@@ -6557,6 +6572,7 @@ impl IndexingBinaryEncoding {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingBinaryEncodingUnknown" => Some(Self::Unknown),
             "IndexingBinaryOneBit" => Some(Self::IndexingBinaryOneBit),
             "IndexingBinaryTwoBits" => Some(Self::IndexingBinaryTwoBits),
             "IndexingBinaryOneAndHalfBits" => Some(Self::IndexingBinaryOneAndHalfBits),
@@ -6569,9 +6585,11 @@ impl IndexingBinaryEncoding {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingBinaryQueryEncoding {
-    IndexingBinaryQuerySameAsStorage = 0,
-    IndexingBinaryQueryScalar4Bits = 1,
-    IndexingBinaryQueryScalar8Bits = 2,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingBinaryQuerySameAsStorage = 1,
+    IndexingBinaryQueryScalar4Bits = 2,
+    IndexingBinaryQueryScalar8Bits = 3,
 }
 impl IndexingBinaryQueryEncoding {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6580,6 +6598,7 @@ impl IndexingBinaryQueryEncoding {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingBinaryQueryEncodingUnknown",
             Self::IndexingBinaryQuerySameAsStorage => "IndexingBinaryQuerySameAsStorage",
             Self::IndexingBinaryQueryScalar4Bits => "IndexingBinaryQueryScalar4Bits",
             Self::IndexingBinaryQueryScalar8Bits => "IndexingBinaryQueryScalar8Bits",
@@ -6588,6 +6607,7 @@ impl IndexingBinaryQueryEncoding {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingBinaryQueryEncodingUnknown" => Some(Self::Unknown),
             "IndexingBinaryQuerySameAsStorage" => {
                 Some(Self::IndexingBinaryQuerySameAsStorage)
             }
@@ -6606,12 +6626,14 @@ impl IndexingBinaryQueryEncoding {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingTurboBits {
-    IndexingTurbo8Bits = 0,
-    IndexingTurbo16Bits = 1,
-    IndexingTurbo4Bits = 2,
-    IndexingTurbo2Bits = 3,
-    IndexingTurboOneAndHalfBits = 4,
-    IndexingTurbo1Bit = 5,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingTurbo8Bits = 1,
+    IndexingTurbo16Bits = 2,
+    IndexingTurbo4Bits = 3,
+    IndexingTurbo2Bits = 4,
+    IndexingTurboOneAndHalfBits = 5,
+    IndexingTurbo1Bit = 6,
 }
 impl IndexingTurboBits {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6620,6 +6642,7 @@ impl IndexingTurboBits {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingTurboBitsUnknown",
             Self::IndexingTurbo8Bits => "IndexingTurbo8Bits",
             Self::IndexingTurbo16Bits => "IndexingTurbo16Bits",
             Self::IndexingTurbo4Bits => "IndexingTurbo4Bits",
@@ -6631,6 +6654,7 @@ impl IndexingTurboBits {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingTurboBitsUnknown" => Some(Self::Unknown),
             "IndexingTurbo8Bits" => Some(Self::IndexingTurbo8Bits),
             "IndexingTurbo16Bits" => Some(Self::IndexingTurbo16Bits),
             "IndexingTurbo4Bits" => Some(Self::IndexingTurbo4Bits),
@@ -6646,8 +6670,10 @@ impl IndexingTurboBits {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingTurboMode {
-    IndexingTurboNormal = 0,
-    IndexingTurboPlus = 1,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingTurboNormal = 1,
+    IndexingTurboPlus = 2,
 }
 impl IndexingTurboMode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6656,6 +6682,7 @@ impl IndexingTurboMode {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingTurboModeUnknown",
             Self::IndexingTurboNormal => "IndexingTurboNormal",
             Self::IndexingTurboPlus => "IndexingTurboPlus",
         }
@@ -6663,6 +6690,7 @@ impl IndexingTurboMode {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingTurboModeUnknown" => Some(Self::Unknown),
             "IndexingTurboNormal" => Some(Self::IndexingTurboNormal),
             "IndexingTurboPlus" => Some(Self::IndexingTurboPlus),
             _ => None,
@@ -6674,8 +6702,10 @@ impl IndexingTurboMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IndexingTurboRotation {
-    IndexingTurboPadded = 0,
-    IndexingTurboUnpadded = 1,
+    /// Not set by the sender. Refused: no value is a default.
+    Unknown = 0,
+    IndexingTurboPadded = 1,
+    IndexingTurboUnpadded = 2,
 }
 impl IndexingTurboRotation {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6684,6 +6714,7 @@ impl IndexingTurboRotation {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unknown => "IndexingTurboRotationUnknown",
             Self::IndexingTurboPadded => "IndexingTurboPadded",
             Self::IndexingTurboUnpadded => "IndexingTurboUnpadded",
         }
@@ -6691,6 +6722,7 @@ impl IndexingTurboRotation {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "IndexingTurboRotationUnknown" => Some(Self::Unknown),
             "IndexingTurboPadded" => Some(Self::IndexingTurboPadded),
             "IndexingTurboUnpadded" => Some(Self::IndexingTurboUnpadded),
             _ => None,

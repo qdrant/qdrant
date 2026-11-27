@@ -140,6 +140,7 @@ fn binary_from_grpc(parameters: IndexingBinaryParameters) -> Result<BinaryParame
         Ok(IndexingBinaryEncoding::IndexingBinaryOneBit) => Encoding::OneBit,
         Ok(IndexingBinaryEncoding::IndexingBinaryTwoBits) => Encoding::TwoBits,
         Ok(IndexingBinaryEncoding::IndexingBinaryOneAndHalfBits) => Encoding::OneAndHalfBits,
+        Ok(IndexingBinaryEncoding::Unknown) => return Err("no binary encoding".to_string()),
         Err(_) => return Err(format!("unknown binary encoding {encoding}")),
     };
     let query_encoding = match IndexingBinaryQueryEncoding::try_from(query_encoding) {
@@ -151,6 +152,9 @@ fn binary_from_grpc(parameters: IndexingBinaryParameters) -> Result<BinaryParame
         }
         Ok(IndexingBinaryQueryEncoding::IndexingBinaryQueryScalar8Bits) => {
             QueryEncoding::Scalar8bits
+        }
+        Ok(IndexingBinaryQueryEncoding::Unknown) => {
+            return Err("no binary query encoding".to_string());
         }
         Err(_) => return Err(format!("unknown binary query encoding {query_encoding}")),
     };
@@ -231,16 +235,19 @@ fn turbo_from_grpc(parameters: IndexingTurboParameters) -> Result<TurboParameter
         Ok(IndexingTurboBits::IndexingTurbo2Bits) => TQBits::Bits2,
         Ok(IndexingTurboBits::IndexingTurboOneAndHalfBits) => TQBits::Bits1_5,
         Ok(IndexingTurboBits::IndexingTurbo1Bit) => TQBits::Bits1,
+        Ok(IndexingTurboBits::Unknown) => return Err("no TurboQuant bits".to_string()),
         Err(_) => return Err(format!("unknown TurboQuant bits {bits}")),
     };
     let mode = match IndexingTurboMode::try_from(mode) {
         Ok(IndexingTurboMode::IndexingTurboNormal) => TQMode::Normal,
         Ok(IndexingTurboMode::IndexingTurboPlus) => TQMode::Plus,
+        Ok(IndexingTurboMode::Unknown) => return Err("no TurboQuant mode".to_string()),
         Err(_) => return Err(format!("unknown TurboQuant mode {mode}")),
     };
     let rotation = match IndexingTurboRotation::try_from(rotation) {
         Ok(IndexingTurboRotation::IndexingTurboPadded) => TQRotation::Padded,
         Ok(IndexingTurboRotation::IndexingTurboUnpadded) => TQRotation::Unpadded,
+        Ok(IndexingTurboRotation::Unknown) => return Err("no TurboQuant rotation".to_string()),
         Err(_) => return Err(format!("unknown TurboQuant rotation {rotation}")),
     };
     Ok(TurboParameters {
