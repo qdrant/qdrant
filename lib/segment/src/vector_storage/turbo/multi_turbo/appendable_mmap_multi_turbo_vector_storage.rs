@@ -35,8 +35,6 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorRef,
 };
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
@@ -207,21 +205,12 @@ impl AppendableMmapMultiTurboVectorStorage {
         (offset.offset..offset.offset + offset.count)
             .map(|inner_id| {
                 let encoded = self.storage.get_vector_data(inner_id);
-                if keep_rotated {
-                    // No inverse rotation — dequantize straight into `f32`,
-                    // skipping the intermediate `Vec<f64>` (rotation needs an
-                    // `f64` buffer).
-                    let mut dequantized = self.quantizer.dequantize::<VectorElementType>(&encoded);
-                    dequantized.truncate(self.dim);
-                    dequantized
-                } else {
-                    let mut dequantized = self.quantizer.dequantize::<f64>(&encoded);
-                    self.quantizer.apply_inverse_rotation(&mut dequantized);
-                    dequantized[..self.dim]
-                        .iter()
-                        .map(|&x| x as VectorElementType)
-                        .collect()
-                }
+                shared::dequantize_for_requantization(
+                    &self.quantizer,
+                    self.dim,
+                    &encoded,
+                    keep_rotated,
+                )
             })
             .collect()
     }
@@ -376,41 +365,13 @@ impl AppendableMmapMultiTurboVectorStorage {
         Ok(())
     }
 
-    /// Whether scores must be negated to follow qdrant's "higher = better"
-    /// convention: TurboQuant returns a distance (lower = better) for the
-    /// Euclid/Manhattan metrics, mirroring `VectorParameters::invert`.
-    fn invert_score(&self) -> bool {
-        matches!(self.distance, Distance::Euclid | Distance::Manhattan)
-    }
-
-    /// Apply the metric sign convention to a raw TurboQuant score.
-    fn signed(&self, score: f32) -> ScoreType {
-        if self.invert_score() { -score } else { score }
-    }
-
     /// Preprocess (per distance) and precompute every inner vector of a
     /// multivector query, ready for asymmetric MaxSim scoring. The rotation runs
     /// once here, not per scored point.
     pub fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
         query
             .multi_vectors()
-            .map(|inner| {
-                let preprocessed = match self.distance {
-                    Distance::Cosine => {
-                        <CosineMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Euclid => {
-                        <EuclidMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Dot => {
-                        <DotProductMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Manhattan => {
-                        <ManhattanMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                };
-                self.quantizer.precompute_query(&preprocessed)
-            })
+            .map(|inner| shared::preprocess_query(&self.quantizer, self.distance, inner.to_vec()))
             .collect()
     }
 
@@ -424,7 +385,8 @@ impl AppendableMmapMultiTurboVectorStorage {
 
         for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
             for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
+                let sim =
+                    shared::score_query_bytes(&self.quantizer, self.distance, inner_query, bytes);
                 if max_sim[qi] < sim {
                     max_sim[qi] = sim;
                 }
@@ -467,7 +429,8 @@ impl AppendableMmapMultiTurboVectorStorage {
         for bytes_a in records_a.chunks_exact(quantized_size) {
             let mut max_sim = ScoreType::NEG_INFINITY;
             for bytes_b in records_b.chunks_exact(quantized_size) {
-                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
+                let sim =
+                    shared::score_symmetric_bytes(&self.quantizer, self.distance, bytes_a, bytes_b);
                 if sim > max_sim {
                     max_sim = sim;
                 }

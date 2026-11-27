@@ -71,6 +71,22 @@ pub enum VectorIndexReadEnum<S: UniversalReadExt + 'static> {
     ),
 }
 
+macro_rules! for_all_read_only_vector_indexes {
+    ($value:expr, $pattern:pat => $result:expr) => {
+        match $value {
+            VectorIndexReadEnum::Plain($pattern) => $result,
+            VectorIndexReadEnum::Hnsw($pattern) => $result,
+            VectorIndexReadEnum::SparseMutableRam($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedImmutableRamF32($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedImmutableRamF16($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedImmutableRamU8($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedStoredF32($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedStoredF16($pattern) => $result,
+            VectorIndexReadEnum::SparseCompressedStoredU8($pattern) => $result,
+        }
+    };
+}
+
 /// Shared read-only backends plus the `fs`/`path` an index opens its files from.
 pub struct ReadOnlyVectorIndexOpenArgs<
     'a,
@@ -385,31 +401,7 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        match self {
-            Self::Plain(index) => index.search(vectors, filter, top, params, query_context),
-            Self::Hnsw(index) => index.search(vectors, filter, top, params, query_context),
-            Self::SparseMutableRam(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedStoredF32(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedStoredF16(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            Self::SparseCompressedStoredU8(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-        }
+        for_all_read_only_vector_indexes!(self, index => index.search(vectors, filter, top, params, query_context))
     }
 
     fn filter_checks(
@@ -419,79 +411,19 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        match self {
-            Self::Plain(index) => index.filter_checks(query_vectors, cardinality, top, params),
-            Self::Hnsw(index) => index.filter_checks(query_vectors, cardinality, top, params),
-            Self::SparseMutableRam(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedStoredF32(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedStoredF16(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedStoredU8(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-        }
+        for_all_read_only_vector_indexes!(self, index => index.filter_checks(query_vectors, cardinality, top, params))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
-        match self {
-            Self::Plain(index) => index.get_telemetry_data(detail),
-            Self::Hnsw(index) => index.get_telemetry_data(detail),
-            Self::SparseMutableRam(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedImmutableRamF32(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedImmutableRamF16(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedImmutableRamU8(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedStoredF32(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedStoredF16(index) => index.get_telemetry_data(detail),
-            Self::SparseCompressedStoredU8(index) => index.get_telemetry_data(detail),
-        }
+        for_all_read_only_vector_indexes!(self, index => index.get_telemetry_data(detail))
     }
 
     fn indexed_vector_count(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.indexed_vector_count(),
-            Self::Hnsw(index) => index.indexed_vector_count(),
-            Self::SparseMutableRam(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
-            Self::SparseCompressedStoredF32(index) => index.indexed_vector_count(),
-            Self::SparseCompressedStoredF16(index) => index.indexed_vector_count(),
-            Self::SparseCompressedStoredU8(index) => index.indexed_vector_count(),
-        }
+        for_all_read_only_vector_indexes!(self, index => index.indexed_vector_count())
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseMutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedStoredF32(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedStoredF16(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedStoredU8(index) => index.size_of_searchable_vectors_in_bytes(),
-        }
+        for_all_read_only_vector_indexes!(self, index => index.size_of_searchable_vectors_in_bytes())
     }
 
     fn fill_idf_statistics(
@@ -500,42 +432,10 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         corpus: Option<&Filter>,
         is_stopped: &std::sync::atomic::AtomicBool,
     ) -> OperationResult<usize> {
-        match self {
-            Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
-            Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
-            Self::SparseMutableRam(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-            Self::SparseCompressedStoredF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-            Self::SparseCompressedStoredF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-            Self::SparseCompressedStoredU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped)
-            }
-        }
+        for_all_read_only_vector_indexes!(self, index => index.fill_idf_statistics(idf, corpus, is_stopped))
     }
 
     fn is_index(&self) -> bool {
-        match self {
-            Self::Plain(index) => index.is_index(),
-            Self::Hnsw(index) => index.is_index(),
-            Self::SparseMutableRam(index) => index.is_index(),
-            Self::SparseCompressedImmutableRamF32(index) => index.is_index(),
-            Self::SparseCompressedImmutableRamF16(index) => index.is_index(),
-            Self::SparseCompressedImmutableRamU8(index) => index.is_index(),
-            Self::SparseCompressedStoredF32(index) => index.is_index(),
-            Self::SparseCompressedStoredF16(index) => index.is_index(),
-            Self::SparseCompressedStoredU8(index) => index.is_index(),
-        }
+        for_all_read_only_vector_indexes!(self, index => index.is_index())
     }
 }

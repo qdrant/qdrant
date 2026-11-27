@@ -679,81 +679,91 @@ pub enum VectorStorageEnum {
     EmptySparse(EmptySparseVectorStorage),
 }
 
+macro_rules! for_all_vector_storage {
+    ($value:expr, $pattern:pat => $result:expr) => {
+        match $value {
+            VectorStorageEnum::DenseVolatile($pattern) => $result,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte($pattern) => $result,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf($pattern) => $result,
+            VectorStorageEnum::DenseMemmap($pattern) => $result,
+            VectorStorageEnum::DenseMemmapByte($pattern) => $result,
+            VectorStorageEnum::DenseMemmapHalf($pattern) => $result,
+            VectorStorageEnum::DenseGraphInline($pattern) => $result,
+            VectorStorageEnum::DenseGraphInlineByte($pattern) => $result,
+            VectorStorageEnum::DenseGraphInlineHalf($pattern) => $result,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring($pattern) => $result,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringByte($pattern) => $result,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUringHalf($pattern) => $result,
+            VectorStorageEnum::DenseAppendableMemmap($pattern) => $result,
+            VectorStorageEnum::DenseAppendableMemmapByte($pattern) => $result,
+            VectorStorageEnum::DenseAppendableMemmapHalf($pattern) => $result,
+            VectorStorageEnum::DenseTurboMemmap($pattern) => $result,
+            VectorStorageEnum::DenseTurboGraphInline($pattern) => $result,
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring($pattern) => $result,
+            VectorStorageEnum::DenseTurboAppendableMemmap($pattern) => $result,
+            VectorStorageEnum::SparseVolatile($pattern) => $result,
+            VectorStorageEnum::SparseMmap($pattern) => $result,
+            VectorStorageEnum::MultiDenseVolatile($pattern) => $result,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte($pattern) => $result,
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf($pattern) => $result,
+            VectorStorageEnum::MultiDenseAppendableMemmap($pattern) => $result,
+            VectorStorageEnum::MultiDenseAppendableMemmapByte($pattern) => $result,
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf($pattern) => $result,
+            VectorStorageEnum::MultiDenseTurbo($pattern) => $result,
+            VectorStorageEnum::EmptyDense($pattern) => $result,
+            VectorStorageEnum::EmptySparse($pattern) => $result,
+        }
+    };
+}
+
 impl VectorStorageEnum {
     pub fn hnsw_graph(&self) -> Option<&HnswGraph<HnswLinksStorage>> {
         match self {
-            VectorStorageEnum::DenseVolatile(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(_) => None,
-            VectorStorageEnum::DenseMemmap(_) => None,
-            VectorStorageEnum::DenseMemmapByte(_) => None,
-            VectorStorageEnum::DenseMemmapHalf(_) => None,
             VectorStorageEnum::DenseGraphInline(v) => Some(v.hnsw_graph()),
             VectorStorageEnum::DenseGraphInlineByte(v) => Some(v.hnsw_graph()),
             VectorStorageEnum::DenseGraphInlineHalf(v) => Some(v.hnsw_graph()),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(_) => None,
-            VectorStorageEnum::DenseAppendableMemmap(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
-            VectorStorageEnum::DenseTurboMemmap(_) => None,
             VectorStorageEnum::DenseTurboGraphInline(v) => Some(v.hnsw_graph()),
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurboMemmap(_)
+            | VectorStorageEnum::DenseTurboAppendableMemmap(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(_) => None,
-            VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
-            VectorStorageEnum::SparseVolatile(_) => None,
-            VectorStorageEnum::SparseMmap(_) => None,
-            VectorStorageEnum::MultiDenseVolatile(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => None,
-            VectorStorageEnum::MultiDenseTurbo(_) => None,
-            VectorStorageEnum::EmptyDense(_) => None,
-            VectorStorageEnum::EmptySparse(_) => None,
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_)
+            | VectorStorageEnum::DenseTurboUring(_) => None,
         }
     }
 
     pub fn try_multi_vector_config(&self) -> Option<&MultiVectorConfig> {
         match self {
-            VectorStorageEnum::DenseVolatile(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(_) => None,
-            VectorStorageEnum::DenseMemmap(_) => None,
-            VectorStorageEnum::DenseMemmapByte(_) => None,
-            VectorStorageEnum::DenseMemmapHalf(_) => None,
-            VectorStorageEnum::DenseGraphInline(_) => None,
-            VectorStorageEnum::DenseGraphInlineByte(_) => None,
-            VectorStorageEnum::DenseGraphInlineHalf(_) => None,
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(_) => None,
-
-            VectorStorageEnum::DenseAppendableMemmap(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
-            VectorStorageEnum::DenseTurboMemmap(_) => None,
-            VectorStorageEnum::DenseTurboGraphInline(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(_) => None,
-            VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
-            VectorStorageEnum::SparseVolatile(_) => None,
-            VectorStorageEnum::SparseMmap(_) => None,
             VectorStorageEnum::MultiDenseVolatile(s) => Some(s.multi_vector_config()),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatileByte(s) => Some(s.multi_vector_config()),
@@ -764,7 +774,31 @@ impl VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(s) => Some(s.multi_vector_config()),
             VectorStorageEnum::MultiDenseTurbo(s) => Some(s.multi_vector_config()),
             VectorStorageEnum::EmptyDense(s) => s.multi_vector_config(),
-            VectorStorageEnum::EmptySparse(_) => None,
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseGraphInline(_)
+            | VectorStorageEnum::DenseGraphInlineByte(_)
+            | VectorStorageEnum::DenseGraphInlineHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurboMemmap(_)
+            | VectorStorageEnum::DenseTurboGraphInline(_)
+            | VectorStorageEnum::DenseTurboAppendableMemmap(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::EmptySparse(_) => None,
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_) | VectorStorageEnum::DenseVolatileHalf(_) => {
+                None
+            }
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_)
+            | VectorStorageEnum::DenseTurboUring(_) => None,
         }
     }
 
@@ -825,8 +859,6 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])
             }
-            VectorStorageEnum::SparseVolatile(_) => VectorInternal::from(SparseVector::default()),
-            VectorStorageEnum::SparseMmap(_) => VectorInternal::from(SparseVector::default()),
             VectorStorageEnum::MultiDenseVolatile(v) => {
                 VectorInternal::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
@@ -853,31 +885,26 @@ impl VectorStorageEnum {
             VectorStorageEnum::EmptyDense(v) => {
                 VectorInternal::from(vec![1.0; DenseVectorStorageRead::vector_dim(v)])
             }
-            VectorStorageEnum::EmptySparse(_) => VectorInternal::from(SparseVector::default()),
+            VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::EmptySparse(_) => VectorInternal::from(SparseVector::default()),
         }
     }
 
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::DenseMemmap(vs) => vs.populate(),
             VectorStorageEnum::DenseMemmapByte(vs) => vs.populate(),
             VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate(),
             VectorStorageEnum::DenseGraphInline(vs) => vs.populate(),
             VectorStorageEnum::DenseGraphInlineByte(vs) => vs.populate(),
             VectorStorageEnum::DenseGraphInlineHalf(vs) => vs.populate(),
-
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(vs) => vs.populate(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringByte(vs) => vs.populate(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(vs) => vs.populate(),
-
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,
@@ -886,44 +913,39 @@ impl VectorStorageEnum {
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(vs) => vs.populate()?,
             VectorStorageEnum::DenseTurboAppendableMemmap(vs) => vs.populate()?,
-            VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.populate()?,
             VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.populate()?,
             VectorStorageEnum::MultiDenseTurbo(vs) => vs.populate()?,
-            VectorStorageEnum::EmptyDense(_) => {}
-            VectorStorageEnum::EmptySparse(_) => {}
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => {}
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {}
         }
         Ok(())
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::DenseMemmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseMemmapByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseMemmapHalf(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseGraphInline(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseGraphInlineByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseGraphInlineHalf(vs) => vs.clear_cache()?,
-
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(vs) => vs.clear_cache()?,
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringByte(vs) => vs.clear_cache()?,
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(vs) => vs.clear_cache()?,
-
             VectorStorageEnum::DenseAppendableMemmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
@@ -932,19 +954,21 @@ impl VectorStorageEnum {
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseTurboAppendableMemmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => {} // Can't populate as it is not mmap
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.clear_cache()?,
             VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
             VectorStorageEnum::MultiDenseTurbo(vs) => vs.clear_cache()?,
-            VectorStorageEnum::EmptyDense(_) => {}
-            VectorStorageEnum::EmptySparse(_) => {}
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => {}
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {}
         }
         Ok(())
     }
@@ -963,14 +987,12 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseGraphInline(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseGraphInlineByte(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseGraphInlineHalf(v) => return v.get_dense_vector_layout(),
-
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(v) => return v.get_dense_vector_layout(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringByte(v) => return v.get_dense_vector_layout(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(v) => return v.get_dense_vector_layout(),
-
             VectorStorageEnum::DenseAppendableMemmap(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapByte(v) => return v.get_dense_vector_layout(),
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => return v.get_dense_vector_layout(),
@@ -981,19 +1003,18 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
                 return v.get_dense_tq_vector_layout();
             }
-            VectorStorageEnum::SparseVolatile(_) => {}
-            VectorStorageEnum::SparseMmap(_) => {}
-            VectorStorageEnum::MultiDenseVolatile(_) => {}
+            VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => {}
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => {}
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {}
-            VectorStorageEnum::MultiDenseTurbo(_) => {}
-            VectorStorageEnum::EmptyDense(_) => {}
-            VectorStorageEnum::EmptySparse(_) => {}
+            VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => {}
         }
         Err(OperationError::service_error(
             "Vector layout is not implemented for this storage",
@@ -1151,49 +1172,42 @@ fn insert_sparse_bytes<S: VectorStorage>(
 impl VectorStorageRead for VectorStorageEnum {
     fn io_backend(&self) -> Option<IoBackend> {
         match self {
-            VectorStorageEnum::DenseVolatile(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(_) => None,
-
             // The single-file immutable storages are the ones opened on either backend
             VectorStorageEnum::DenseMemmap(_) => Some(IoBackend::Mmap),
             VectorStorageEnum::DenseMemmapByte(_) => Some(IoBackend::Mmap),
             VectorStorageEnum::DenseMemmapHalf(_) => Some(IoBackend::Mmap),
-
             VectorStorageEnum::DenseGraphInline(v) => v.io_backend(),
             VectorStorageEnum::DenseGraphInlineByte(v) => v.io_backend(),
             VectorStorageEnum::DenseGraphInlineHalf(v) => v.io_backend(),
-
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUring(_) => Some(IoBackend::IoUring),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringByte(_) => Some(IoBackend::IoUring),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseUringHalf(_) => Some(IoBackend::IoUring),
-
-            VectorStorageEnum::DenseAppendableMemmap(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::DenseAppendableMemmapHalf(_) => None,
             VectorStorageEnum::DenseTurboMemmap(_) => Some(IoBackend::Mmap),
             VectorStorageEnum::DenseTurboGraphInline(v) => v.io_backend(),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(_) => Some(IoBackend::IoUring),
-            VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
-            VectorStorageEnum::SparseVolatile(_) => None,
-            VectorStorageEnum::SparseMmap(_) => None,
-            VectorStorageEnum::MultiDenseVolatile(_) => None,
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurboAppendableMemmap(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => None,
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(_) => None,
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => None,
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => None,
-            VectorStorageEnum::MultiDenseTurbo(_) => None,
-            VectorStorageEnum::EmptyDense(_) => None,
-            VectorStorageEnum::EmptySparse(_) => None,
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => None,
         }
     }
 
@@ -1265,8 +1279,7 @@ impl VectorStorageRead for VectorStorageEnum {
                 Ok(v.with_multi_bytes_opt::<P, R>(key, f))
             }
             VectorStorageEnum::MultiDenseTurbo(v) => Ok(v.with_multi_tq_bytes_opt::<P, R>(key, f)),
-            VectorStorageEnum::EmptyDense(_) => Ok(None),
-            VectorStorageEnum::EmptySparse(_) => Ok(None),
+            VectorStorageEnum::EmptyDense(_) | VectorStorageEnum::EmptySparse(_) => Ok(None),
         }
     }
 
@@ -1323,358 +1336,31 @@ impl VectorStorageRead for VectorStorageEnum {
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, Vec<u8>),
     ) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmap(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseGraphInline(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseGraphInlineByte(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseGraphInlineHalf(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.read_vector_bytes::<P, U>(keys, callback),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseTurboMemmap(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseTurboGraphInline(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::SparseMmap(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseTurbo(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::SparseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::EmptyDense(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            VectorStorageEnum::EmptySparse(v) => v.read_vector_bytes::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => {
-                v.read_vector_bytes::<P, U>(keys, callback)
-            }
-        }
+        for_all_vector_storage!(self, v => v.read_vector_bytes::<P, U>(keys, callback))
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmap(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseGraphInline(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.size_of_available_vectors_in_bytes(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.size_of_available_vectors_in_bytes(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::DenseTurboMemmap(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::SparseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::SparseMmap(_v) => {
-                unreachable!(
-                    "Mmap sparse storage does not know its total size, get from index instead"
-                )
-            }
-            VectorStorageEnum::MultiDenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.size_of_available_vectors_in_bytes(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.size_of_available_vectors_in_bytes()
-            }
-            VectorStorageEnum::MultiDenseTurbo(v) => v.size_of_available_vectors_in_bytes(),
-            VectorStorageEnum::EmptyDense(_) => 0,
-            VectorStorageEnum::EmptySparse(_) => 0,
-        }
+        for_all_vector_storage!(self, v => v.size_of_available_vectors_in_bytes())
     }
 
     fn distance(&self) -> Distance {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.distance(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.distance(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.distance(),
-            VectorStorageEnum::DenseMemmap(v) => v.distance(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.distance(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.distance(),
-            VectorStorageEnum::DenseGraphInline(v) => v.distance(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.distance(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.distance(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.distance(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.distance(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.distance(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.distance(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.distance(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.distance(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.distance(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.distance(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.distance(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.distance(),
-            VectorStorageEnum::SparseVolatile(v) => v.distance(),
-            VectorStorageEnum::SparseMmap(v) => v.distance(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.distance(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.distance(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.distance(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.distance(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.distance(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.distance(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.distance(),
-            VectorStorageEnum::EmptyDense(v) => v.distance(),
-            VectorStorageEnum::EmptySparse(v) => v.distance(),
-        }
+        for_all_vector_storage!(self, v => v.distance())
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.datatype(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.datatype(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.datatype(),
-            VectorStorageEnum::DenseMemmap(v) => v.datatype(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.datatype(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.datatype(),
-            VectorStorageEnum::DenseGraphInline(v) => v.datatype(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.datatype(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.datatype(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.datatype(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.datatype(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.datatype(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.datatype(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.datatype(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.datatype(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.datatype(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.datatype(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.datatype(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.datatype(),
-            VectorStorageEnum::SparseVolatile(v) => v.datatype(),
-            VectorStorageEnum::SparseMmap(v) => v.datatype(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.datatype(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.datatype(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.datatype(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.datatype(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.datatype(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.datatype(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.datatype(),
-            VectorStorageEnum::EmptyDense(v) => v.datatype(),
-            VectorStorageEnum::EmptySparse(v) => v.datatype(),
-        }
+        for_all_vector_storage!(self, v => v.datatype())
     }
 
     fn is_cold(&self) -> bool {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.is_cold(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.is_cold(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.is_cold(),
-            VectorStorageEnum::DenseMemmap(v) => v.is_cold(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.is_cold(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.is_cold(),
-            VectorStorageEnum::DenseGraphInline(v) => v.is_cold(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.is_cold(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.is_cold(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.is_cold(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.is_cold(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.is_cold(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_cold(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_cold(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_cold(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.is_cold(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.is_cold(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.is_cold(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.is_cold(),
-            VectorStorageEnum::SparseVolatile(v) => v.is_cold(),
-            VectorStorageEnum::SparseMmap(v) => v.is_cold(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.is_cold(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_cold(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_cold(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_cold(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_cold(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_cold(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.is_cold(),
-            VectorStorageEnum::EmptyDense(v) => v.is_cold(),
-            VectorStorageEnum::EmptySparse(v) => v.is_cold(),
-        }
+        for_all_vector_storage!(self, v => v.is_cold())
     }
 
     fn total_vector_count(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.total_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.total_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseMemmap(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseGraphInline(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.total_vector_count(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.total_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.total_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.total_vector_count(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.total_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.total_vector_count(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.total_vector_count(),
-            VectorStorageEnum::SparseVolatile(v) => v.total_vector_count(),
-            VectorStorageEnum::SparseMmap(v) => v.total_vector_count(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.total_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.total_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.total_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.total_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.total_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.total_vector_count(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.total_vector_count(),
-            VectorStorageEnum::EmptyDense(v) => v.total_vector_count(),
-            VectorStorageEnum::EmptySparse(v) => v.total_vector_count(),
-        }
+        for_all_vector_storage!(self, v => v.total_vector_count())
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.get_vector::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.get_vector::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseGraphInline(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.get_vector::<P>(key),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.get_vector::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.get_vector::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.get_vector::<P>(key),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.get_vector::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::SparseVolatile(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::SparseMmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_vector::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::EmptyDense(v) => v.get_vector::<P>(key),
-            VectorStorageEnum::EmptySparse(v) => v.get_vector::<P>(key),
-        }
+        for_all_vector_storage!(self, v => v.get_vector::<P>(key))
     }
 
     fn read_vectors<P: AccessPattern, U: Copy + UserData>(
@@ -1682,511 +1368,48 @@ impl VectorStorageRead for VectorStorageEnum {
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
     ) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmap(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapByte(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseGraphInline(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.read_vectors::<P, U>(keys, callback),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.read_vectors::<P, U>(keys, callback),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::DenseTurboMemmap(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.read_vectors::<P, U>(keys, callback),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.read_vectors::<P, U>(keys, callback)
-            }
-            VectorStorageEnum::MultiDenseTurbo(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::EmptyDense(v) => v.read_vectors::<P, U>(keys, callback),
-            VectorStorageEnum::EmptySparse(v) => v.read_vectors::<P, U>(keys, callback),
-        }
+        for_all_vector_storage!(self, v => v.read_vectors::<P, U>(keys, callback))
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.get_vector_opt::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.get_vector_opt::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseGraphInline(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.get_vector_opt::<P>(key),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.get_vector_opt::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.get_vector_opt::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.get_vector_opt::<P>(key),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.get_vector_opt::<P>(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::SparseVolatile(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::SparseMmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector_opt::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_vector_opt::<P>(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::EmptyDense(v) => v.get_vector_opt::<P>(key),
-            VectorStorageEnum::EmptySparse(v) => v.get_vector_opt::<P>(key),
-        }
+        for_all_vector_storage!(self, v => v.get_vector_opt::<P>(key))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseGraphInline(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.is_deleted_vector(key),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.is_deleted_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.is_deleted_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.is_deleted_vector(key),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.is_deleted_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::SparseMmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_deleted_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::EmptyDense(v) => v.is_deleted_vector(key),
-            VectorStorageEnum::EmptySparse(v) => v.is_deleted_vector(key),
-        }
+        for_all_vector_storage!(self, v => v.is_deleted_vector(key))
     }
 
     fn deleted_vector_count(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseGraphInline(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.deleted_vector_count(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.deleted_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_count(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.deleted_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.deleted_vector_count(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
-            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_count(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.deleted_vector_count(),
-            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_count(),
-            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_count(),
-        }
+        for_all_vector_storage!(self, v => v.deleted_vector_count())
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseGraphInline(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.deleted_vector_bitslice(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.deleted_vector_bitslice(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.deleted_vector_bitslice(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.deleted_vector_bitslice(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::SparseMmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.deleted_vector_bitslice(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::EmptyDense(v) => v.deleted_vector_bitslice(),
-            VectorStorageEnum::EmptySparse(v) => v.deleted_vector_bitslice(),
-        }
+        for_all_vector_storage!(self, v => v.deleted_vector_bitslice())
     }
 
     fn available_vector_count(&self) -> usize {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.available_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.available_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseMemmap(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseGraphInline(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.available_vector_count(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.available_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.available_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.available_vector_count(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.available_vector_count(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.available_vector_count(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.available_vector_count(),
-            VectorStorageEnum::SparseVolatile(v) => v.available_vector_count(),
-            VectorStorageEnum::SparseMmap(v) => v.available_vector_count(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.available_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.available_vector_count(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.available_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.available_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.available_vector_count(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.available_vector_count(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.available_vector_count(),
-            VectorStorageEnum::EmptyDense(v) => v.available_vector_count(),
-            VectorStorageEnum::EmptySparse(v) => v.available_vector_count(),
-        }
+        for_all_vector_storage!(self, v => v.available_vector_count())
     }
 }
 
 impl VectorStorage for VectorStorageEnum {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.insert_vector(key, vector),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.insert_vector(key, vector),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseMemmapByte(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseGraphInline(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.insert_vector(key, vector),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.insert_vector(key, vector),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.insert_vector(key, vector),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.insert_vector(key, vector),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.insert_vector(key, vector),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::SparseVolatile(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::SparseMmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.insert_vector(key, vector),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.insert_vector(key, vector),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::EmptyDense(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::EmptySparse(v) => v.insert_vector(key, vector),
-        }
+        for_all_vector_storage!(self, v => v.insert_vector(key, vector))
     }
 
     fn flusher(&self) -> Flusher {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.flusher(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.flusher(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.flusher(),
-            VectorStorageEnum::DenseMemmap(v) => v.flusher(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.flusher(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.flusher(),
-            VectorStorageEnum::DenseGraphInline(v) => v.flusher(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.flusher(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.flusher(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.flusher(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.flusher(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.flusher(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.flusher(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.flusher(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.flusher(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.flusher(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.flusher(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.flusher(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.flusher(),
-            VectorStorageEnum::SparseVolatile(v) => v.flusher(),
-            VectorStorageEnum::SparseMmap(v) => v.flusher(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.flusher(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.flusher(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.flusher(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.flusher(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.flusher(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.flusher(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.flusher(),
-            VectorStorageEnum::EmptyDense(v) => v.flusher(),
-            VectorStorageEnum::EmptySparse(v) => v.flusher(),
-        }
+        for_all_vector_storage!(self, v => v.flusher())
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.files(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.files(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.files(),
-            VectorStorageEnum::DenseMemmap(v) => v.files(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.files(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.files(),
-            VectorStorageEnum::DenseGraphInline(v) => v.files(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.files(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.files(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.files(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.files(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.files(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.files(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.files(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.files(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.files(),
-            VectorStorageEnum::SparseVolatile(v) => v.files(),
-            VectorStorageEnum::SparseMmap(v) => v.files(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.files(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.files(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.files(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.files(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.files(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.files(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.files(),
-            VectorStorageEnum::EmptyDense(v) => v.files(),
-            VectorStorageEnum::EmptySparse(v) => v.files(),
-        }
+        for_all_vector_storage!(self, v => v.files())
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.immutable_files(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.immutable_files(),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.immutable_files(),
-            VectorStorageEnum::DenseMemmap(v) => v.immutable_files(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.immutable_files(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.immutable_files(),
-            VectorStorageEnum::DenseGraphInline(v) => v.immutable_files(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.immutable_files(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.immutable_files(),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.immutable_files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.immutable_files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.immutable_files(),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.immutable_files(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.immutable_files(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.immutable_files(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.immutable_files(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.immutable_files(),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.immutable_files(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.immutable_files(),
-            VectorStorageEnum::SparseVolatile(v) => v.immutable_files(),
-            VectorStorageEnum::SparseMmap(v) => v.immutable_files(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.immutable_files(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.immutable_files(),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.immutable_files(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.immutable_files(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.immutable_files(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.immutable_files(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.immutable_files(),
-            VectorStorageEnum::EmptyDense(v) => v.immutable_files(),
-            VectorStorageEnum::EmptySparse(v) => v.immutable_files(),
-        }
+        for_all_vector_storage!(self, v => v.immutable_files())
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        match self {
-            VectorStorageEnum::DenseVolatile(v) => v.delete_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.delete_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseGraphInline(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.delete_vector(key),
-
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.delete_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.delete_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.delete_vector(key),
-
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.delete_vector(key),
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::SparseVolatile(v) => v.delete_vector(key),
-            VectorStorageEnum::SparseMmap(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.delete_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.delete_vector(key),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.delete_vector(key),
-            VectorStorageEnum::EmptyDense(v) => v.delete_vector(key),
-            VectorStorageEnum::EmptySparse(v) => v.delete_vector(key),
-        }
+        for_all_vector_storage!(self, v => v.delete_vector(key))
     }
 }
