@@ -20,9 +20,8 @@ use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
-use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
-use crate::operations::point_ops::PointStructRawPersisted;
+use crate::operations::point_ops::{PointOperations, PointStructRawPersisted};
 use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
@@ -31,6 +30,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
+use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
@@ -44,6 +44,7 @@ pub enum SubmitOutcome {
     Submitted {
         operation_id: segment::types::SeqNumberType,
         receiver: Option<oneshot::Receiver<CollectionResult<InternalUpdateResult>>>,
+        applied_if_completed: Option<bool>,
         clock_tag: Option<crate::operations::ClockTag>,
     },
     /// Operation was rejected because of an outdated clock; nothing was queued.
@@ -136,6 +137,16 @@ impl LocalShard {
         // Instead, read operation data from the WAL when processing the operation.
         let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
         let clock_tag = operation.clock_tag;
+        // Conditional upserts have already been resolved under the update fence.
+        // An empty resolved upsert still gets a WAL record and completes successfully.
+        let applied_if_completed = if wait.needs_callback()
+            && let CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(points)) =
+                &operation.operation
+        {
+            Some(!points.is_empty())
+        } else {
+            None
+        };
         let operation_in_ram = keep_operation_in_ram.then(|| Box::new(operation.operation));
 
         channel_permit.send(UpdateSignal::Operation(OperationData {
@@ -149,6 +160,7 @@ impl LocalShard {
         Ok(SubmitOutcome::Submitted {
             operation_id,
             receiver: callback_receiver,
+            applied_if_completed,
             clock_tag,
         })
     }
@@ -162,16 +174,18 @@ pub async fn await_update_result(
     outcome: SubmitOutcome,
     timeout: Option<Duration>,
 ) -> CollectionResult<UpdateResult> {
-    let (operation_id, receiver, clock_tag) = match outcome {
+    let (operation_id, receiver, applied_if_completed, clock_tag) = match outcome {
         SubmitOutcome::Submitted {
             operation_id,
             receiver,
+            applied_if_completed,
             clock_tag,
-        } => (operation_id, receiver, clock_tag),
+        } => (operation_id, receiver, applied_if_completed, clock_tag),
         SubmitOutcome::ClockRejected { clock_tag } => {
             return Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::ClockRejected,
+                applied: None,
                 clock_tag,
             });
         }
@@ -180,10 +194,11 @@ pub async fn await_update_result(
     match (receiver, timeout) {
         // Wait indefinitely
         (Some(receiver), None) => {
-            let _ = receiver.await??;
+            let result = receiver.await??;
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
+                applied: applied_if_completed.filter(|_| result.status == UpdateStatus::Completed),
                 clock_tag,
             })
         }
@@ -198,6 +213,7 @@ pub async fn await_update_result(
                 Ok(UpdateResult {
                     operation_id: Some(op_num),
                     status,
+                    applied: applied_if_completed.filter(|_| status == UpdateStatus::Completed),
                     clock_tag,
                 })
             }
@@ -206,6 +222,7 @@ pub async fn await_update_result(
                 Ok(UpdateResult {
                     operation_id: Some(operation_id),
                     status: UpdateStatus::WaitTimeout,
+                    applied: None,
                     clock_tag,
                 })
             }
@@ -214,6 +231,7 @@ pub async fn await_update_result(
         (None, _) => Ok(UpdateResult {
             operation_id: Some(operation_id),
             status: UpdateStatus::Acknowledged,
+            applied: None,
             clock_tag,
         }),
     }

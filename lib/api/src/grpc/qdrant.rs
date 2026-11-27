@@ -9963,6 +9963,10 @@ pub struct UpdateResult {
     /// Operation status
     #[prost(enumeration = "UpdateStatus", tag = "2")]
     pub status: i32,
+    /// Field number 3 is used by the internal clock tag.
+    /// Whether a completed upsert applied at least one point. Only reported when the outcome is known.
+    #[prost(bool, optional, tag = "4")]
+    pub applied: ::core::option::Option<bool>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -13634,6 +13638,9 @@ pub struct UpdateResultInternal {
     pub status: i32,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    /// Whether a completed upsert applied at least one point. Only reported when the outcome is known.
+    #[prost(bool, optional, tag = "4")]
+    pub applied: ::core::option::Option<bool>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

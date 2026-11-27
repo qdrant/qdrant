@@ -1213,6 +1213,7 @@ impl ShardReplicaSet {
             return Ok(UpdateResult {
                 operation_id: None,
                 status: UpdateStatus::Completed,
+                applied: None,
                 clock_tag: None,
             });
         }

@@ -3085,10 +3085,12 @@ impl From<UpdateResultInternal> for UpdateResult {
             operation_id,
             status,
             clock_tag: _,
+            applied,
         } = res;
         Self {
             operation_id,
             status,
+            applied,
         }
     }
 }
@@ -3099,11 +3101,13 @@ impl From<UpdateResult> for UpdateResultInternal {
         let UpdateResult {
             operation_id,
             status,
+            applied,
         } = res;
         Self {
             operation_id,
             status,
             clock_tag: None,
+            applied,
         }
     }
 }

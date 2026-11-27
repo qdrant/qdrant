@@ -1431,6 +1431,9 @@ message UpdateResult {
   optional uint64 operation_id = 1;
   // Operation status
   UpdateStatus status = 2;
+  // Field number 3 is used by the internal clock tag.
+  // Whether a completed upsert applied at least one point. Only reported when the outcome is known.
+  optional bool applied = 4;
 }
 
 enum UpdateStatus {
