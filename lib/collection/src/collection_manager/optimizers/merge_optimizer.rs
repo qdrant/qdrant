@@ -176,6 +176,24 @@ mod tests {
             plan_sizes(&[300, 400, 450], 2000),
             vec![vec![300, 400, 450]]
         );
+        // A lone small segment (e.g. the appendable one) is skipped, it does
+        // not block merging the larger tier behind it.
+        assert_eq!(
+            plan_sizes(&[2, 300, 300, 300], 2000),
+            vec![vec![300, 300, 300]]
+        );
+        assert_eq!(
+            plan_sizes(&[2, 300, 300, 300, 300, 300, 300, 300], 2000),
+            vec![vec![300; 6]]
+        );
+        // After a skip, a first batch of 2 is still held: merging it alone
+        // would not reduce the segment count.
+        assert_eq!(plan_sizes(&[2, 300, 310], 2000), Vec::<Vec<usize>>::new());
+        // A held pair is planned together with a later pair, past a skip.
+        assert_eq!(
+            plan_sizes(&[2, 7, 120, 300, 310], 2000),
+            vec![vec![2, 7], vec![300, 310]]
+        );
     }
 
     #[test]

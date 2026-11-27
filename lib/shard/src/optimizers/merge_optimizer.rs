@@ -148,6 +148,7 @@ impl SegmentOptimizer for MergeOptimizer {
             .saturating_mul(BYTES_IN_KB);
 
         let mut first_batch = None;
+        let mut found_batch = false;
         let mut taken_candidates = 0;
         let mut last_candidate =
             (planner.expected_segments_number() + 2).saturating_sub(self.default_segments_number);
@@ -171,9 +172,15 @@ impl SegmentOptimizer for MergeOptimizer {
                 .collect_vec();
 
             if batch.len() < 2 {
-                return;
+                // Skip the head instead of ending planning: a lone small
+                // segment (often the appendable one) must not block larger
+                // similar-size segments from merging.
+                taken_candidates += 1;
+                last_candidate += 1;
+                continue;
             }
-            let is_first_batch = taken_candidates == 0;
+            let is_first_batch = !found_batch;
+            found_batch = true;
             taken_candidates += batch.len();
             last_candidate += 1;
             if is_first_batch && batch.len() < 3 {
