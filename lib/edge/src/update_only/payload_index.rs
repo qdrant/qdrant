@@ -149,7 +149,7 @@ where
 
     fn field_files(&self, segment_path: &Path, field: &JsonPath) -> OperationResult<Vec<PathBuf>> {
         let prefix = get_payload_index_path(segment_path).join(format!("{}-", field.filename()));
-        let listed = self.fs.list_files(&prefix).ok_not_found()?;
+        let listed = self.fs.prefix_list_files(&prefix).ok_not_found()?;
         Ok(listed
             .unwrap_or_default()
             .into_iter()

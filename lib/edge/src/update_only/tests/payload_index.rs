@@ -120,7 +120,7 @@ fn tag_files(dir: &Path, suffix: &str) -> usize {
         .map(|segment| {
             let prefix =
                 get_payload_index_path(segment).join(format!("{}-{suffix}", tag().filename()));
-            MmapFs.list_files(&prefix).unwrap().len()
+            MmapFs.prefix_list_files(&prefix).unwrap().len()
         })
         .sum()
 }
