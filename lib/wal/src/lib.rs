@@ -319,7 +319,7 @@ impl Wal {
     }
 
     /// Retrieve the entry with the provided index from the log.
-    pub fn entry(&self, index: u64) -> Option<Entry> {
+    pub fn entry(&self, index: u64) -> Option<Entry<'_>> {
         let open_start_index = self.open_segment_start_index();
         if index >= open_start_index {
             return self
