@@ -477,6 +477,11 @@ impl GraphAssembler {
                         graph.levels.len()
                     ));
                 }
+                // Nothing bounds the number of chunks that add no point, and each one renews
+                // the idle timeout of the upload
+                if levels.is_empty() {
+                    return Err("chunk without points".to_string());
+                }
                 if let Some(&level) = levels.iter().find(|&&l| l > MAX_UPLOAD_LEVEL) {
                     return Err(format!("level {level} above {MAX_UPLOAD_LEVEL}"));
                 }
@@ -716,6 +721,8 @@ mod tests {
         let cases = [
             // Counts without levels: would grow `link_counts` without bound
             chunk(vec![], vec![0; 1000], vec![]),
+            // No points at all: would keep the upload open without end
+            chunk(vec![], vec![], vec![]),
             // Counts do not match levels
             chunk(vec![0, 1], vec![1, 0], vec![1]),
             // Links do not match counts
