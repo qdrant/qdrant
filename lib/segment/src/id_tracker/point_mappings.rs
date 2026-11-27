@@ -396,7 +396,7 @@ impl PointMappings {
             .unique()
             .take(max_internal)
             .filter_map(move |i| {
-                if self.deleted[i] {
+                if self.deleted.get_bit(i).unwrap_or(true) {
                     return None;
                 }
                 if with_deferred && self.shadowed.get_bit(i).unwrap_or(false) {
@@ -915,6 +915,29 @@ mod set_link_shadow_tests {
 
     fn ext(n: u64) -> PointIdType {
         PointIdType::NumId(n)
+    }
+
+    #[test]
+    fn random_iteration_skips_missing_deleted_bits() {
+        // Missing trailing deletion bits are considered deleted, even though
+        // the internal-to-external mapping still has slots for them.
+        for cutoff in [None, Some(3)] {
+            let mapping = PointMappings::new(
+                BitVec::from_iter([false, true]),
+                vec![ext(10), ext(20), ext(30)],
+                BTreeMap::from([(10, 0)]),
+                BTreeMap::new(),
+                cutoff,
+            );
+
+            for behavior in [
+                DeferredBehavior::VisibleOnly,
+                DeferredBehavior::WithDeferred,
+            ] {
+                let points: Vec<_> = mapping.iter_random_with_behavior(behavior).collect();
+                assert_eq!(points, vec![(ext(10), 0)]);
+            }
+        }
     }
 
     #[test]
