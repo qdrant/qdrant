@@ -798,7 +798,7 @@ mod tests {
     ///
     /// In short, this is what happens in this test:
     /// - create randomized segment as base with `on_disk: false` and `memmap_threshold`
-    /// - test that indexing optimizer and config mismatch optimizer dont trigger
+    /// - test that indexing optimizer and config mismatch optimizer don't trigger
     /// - test that current storage is in memory
     /// - change `on_disk: None`
     /// - test that indexing optimizer now wants to optimize for `memmap_threshold`

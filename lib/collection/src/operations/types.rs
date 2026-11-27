@@ -1567,7 +1567,7 @@ impl SparseVectorParams {
 )]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexParams {
-    /// We prefer a full scan search upto (excluding) this number of vectors.
+    /// We prefer a full scan search up to (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[serde(skip_serializing_if = "Option::is_none")]
