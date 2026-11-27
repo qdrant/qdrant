@@ -122,7 +122,7 @@ impl<'a> GraphBuilder<'a> {
                     remote_steps::remote_over_healing();
                 }
                 return Ok(remote_steps::remote_builder(
-                    Self::without_gpu(local, None, main_graph),
+                    Self::without_gpu(local, None, main_graph.clone()),
                     remote,
                     has_payload_blocks,
                     main_graph,

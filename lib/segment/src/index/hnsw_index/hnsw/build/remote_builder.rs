@@ -157,7 +157,12 @@ impl<'a> RemoteBuilder<'a> {
             return;
         }
         let local = self.cpu.local();
-        let params = Self::params(&self.args, local, self.has_payload_blocks, self.main_graph);
+        let params = Self::params(
+            &self.args,
+            local,
+            self.has_payload_blocks,
+            self.main_graph.clone(),
+        );
         let mut deleted = BitVec::repeat(true, params.point_count);
         for &point in &local.points {
             deleted.set(point as usize, false);
@@ -367,7 +372,7 @@ fn submit_attempt(
         scope: args.scope.clone(),
         vector_bytes: args.vector_bytes,
         point_count: prepared.params.point_count as u64,
-        index: prepared.params.index,
+        index: prepared.params.index.clone(),
         graph_format_versions: SUPPORTED_GRAPH_FORMAT_VERSIONS.to_vec(),
         attempt,
         queue_deadline,

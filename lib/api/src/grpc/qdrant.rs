@@ -5542,7 +5542,7 @@ pub struct IndexingTaskSubmission {
 /// they do not know (an unset `index` included), permanently.
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingIndexParams {
     #[prost(oneof = "indexing_index_params::Index", tags = "1")]
     pub index: ::core::option::Option<indexing_index_params::Index>,
@@ -5551,7 +5551,7 @@ pub struct IndexingIndexParams {
 pub mod indexing_index_params {
     #[allow(clippy::all)]
     #[derive(serde::Serialize)]
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Index {
         #[prost(message, tag = "1")]
         Hnsw(super::IndexingHnswParams),
@@ -5560,7 +5560,7 @@ pub mod indexing_index_params {
 /// An HNSW graph: the main graph, and the payload block graphs merged into it.
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingHnswParams {
     /// Links per point of the main graph above level 0, and on level 0. `m` = 0: no main graph,
     /// only payload blocks link points.
@@ -5591,7 +5591,7 @@ pub struct IndexingHnswParams {
 /// included), permanently.
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingGraphAlgorithm {
     #[prost(oneof = "indexing_graph_algorithm::Algorithm", tags = "1, 2")]
     pub algorithm: ::core::option::Option<indexing_graph_algorithm::Algorithm>,
@@ -5600,7 +5600,7 @@ pub struct IndexingGraphAlgorithm {
 pub mod indexing_graph_algorithm {
     #[allow(clippy::all)]
     #[derive(serde::Serialize)]
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
     pub enum Algorithm {
         #[prost(message, tag = "1")]
         Hnsw(super::IndexingHnswInsertion),
@@ -5614,10 +5614,10 @@ pub mod indexing_graph_algorithm {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingHnswInsertion {}
 /// PiPNN where it applies (large enough segments, vectors with a matrix scorer), HNSW insertion
-/// otherwise. The partitioning keeps its defaults, and the indexer draws the seed.
+/// otherwise. The rest of the partitioning keeps its defaults, and the indexer draws the seed.
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IndexingPipnnParams {
     /// Nearest neighbors each point keeps per leaf.
     #[prost(uint64, tag = "1")]
@@ -5625,6 +5625,10 @@ pub struct IndexingPipnnParams {
     /// Reservoir capacity per point, as a multiple of the level's degree limit.
     #[prost(uint64, tag = "2")]
     pub reservoir_factor: u64,
+    /// To how many nearest leaders the partitioning assigns each point, by recursion depth. 1
+    /// beyond the list, so an empty list partitions without overlap.
+    #[prost(uint64, repeated, tag = "3")]
+    pub fanout: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

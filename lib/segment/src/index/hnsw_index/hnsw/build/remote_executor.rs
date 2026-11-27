@@ -77,7 +77,7 @@ pub(crate) fn build_requested_graph(
             // Never forward the task again
             remote: None,
             // As core resolved it, whatever this process's feature flags
-            main_graph: hnsw.main_graph,
+            main_graph: hnsw.main_graph.clone(),
         },
     )?;
 

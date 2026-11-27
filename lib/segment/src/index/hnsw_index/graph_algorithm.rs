@@ -10,7 +10,7 @@
 ///
 /// A new algorithm, or a version of one with other parameters, is a new variant here and a new
 /// case of the `IndexingGraphAlgorithm` oneof of remote indexing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MainGraphAlgorithm {
     /// Insert the points one by one. `ef_construct` controls the quality.
     Hnsw,
@@ -19,14 +19,20 @@ pub enum MainGraphAlgorithm {
     Pipnn(PipnnSettings),
 }
 
-/// The tunable parameters of a PiPNN build. The partitioning keeps its defaults, and the seed
-/// is drawn by each build.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The paper's multi-level fanout, "10 on the top level, 3 on the second level" (section 4.1).
+const DEFAULT_FANOUT: [usize; 2] = [10, 3];
+
+/// The tunable parameters of a PiPNN build. The rest of the partitioning keeps its defaults,
+/// and the seed is drawn by each build.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipnnSettings {
     /// Nearest neighbors each point keeps per leaf.
     pub leaf_k: usize,
     /// Reservoir capacity per point, as a multiple of the level's degree limit.
     pub reservoir_factor: usize,
+    /// To how many nearest leaders the partitioning assigns each point, by recursion depth
+    /// (multi-level fanout). 1 beyond the list.
+    pub fanout: Vec<usize>,
 }
 
 impl Default for PipnnSettings {
@@ -37,6 +43,7 @@ impl Default for PipnnSettings {
         Self {
             leaf_k: 4,
             reservoir_factor: 2,
+            fanout: DEFAULT_FANOUT.to_vec(),
         }
     }
 }

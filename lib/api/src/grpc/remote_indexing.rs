@@ -108,10 +108,12 @@ fn main_graph_to_grpc(main_graph: MainGraphAlgorithm) -> IndexingGraphAlgorithm 
             let PipnnSettings {
                 leaf_k,
                 reservoir_factor,
+                fanout,
             } = settings;
             indexing_graph_algorithm::Algorithm::Pipnn(IndexingPipnnParams {
                 leaf_k: leaf_k as u64,
                 reservoir_factor: reservoir_factor as u64,
+                fanout: fanout.into_iter().map(|fanout| fanout as u64).collect(),
             })
         }
     };
@@ -135,10 +137,12 @@ fn main_graph_from_grpc(
             let IndexingPipnnParams {
                 leaf_k,
                 reservoir_factor,
+                fanout,
             } = pipnn;
             Ok(MainGraphAlgorithm::Pipnn(PipnnSettings {
                 leaf_k: size(leaf_k)?,
                 reservoir_factor: size(reservoir_factor)?,
+                fanout: fanout.into_iter().map(size).collect::<Result<_, _>>()?,
             }))
         }
         None => Err("unknown main graph algorithm".to_string()),
@@ -157,7 +161,7 @@ pub fn index_params_to_grpc(index: &RemoteIndexParams) -> IndexingIndexParams {
                 payload_m,
                 payload_m0,
                 main_graph,
-            } = *hnsw;
+            } = hnsw.clone();
             indexing_index_params::Index::Hnsw(IndexingHnswParams {
                 m: m as u64,
                 m0: m0 as u64,
@@ -525,6 +529,17 @@ mod tests {
             payload_m0: 16,
             main_graph,
         })
+    }
+
+    #[test]
+    fn pipnn_settings_reach_the_indexer() {
+        let params = hnsw(MainGraphAlgorithm::Pipnn(PipnnSettings {
+            leaf_k: 3,
+            reservoir_factor: 5,
+            fanout: vec![7, 2, 2],
+        }));
+        let grpc = index_params_to_grpc(&params);
+        assert_eq!(index_params_from_grpc(Some(grpc)), Ok(params));
     }
 
     #[test]

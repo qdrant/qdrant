@@ -141,7 +141,7 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         drop(migrate);
 
         // The first draw after the levels, which `LocalBuilder::new` drew from the same rng
-        let params = PipnnParams::new(self.settings, self.local.rng.random());
+        let params = PipnnParams::new(self.settings.clone(), self.local.rng.random());
 
         let timer = Instant::now();
         // Parts of the builder, so that the build does not borrow the rng, which is not `Sync`

@@ -135,7 +135,8 @@ pub(super) struct PipnnParams {
 }
 
 impl PipnnParams {
-    /// The leaf k and reservoir factor of `settings`, the default partitioning, and `seed`.
+    /// The leaf k, reservoir factor and fanout of `settings`, the rest of the partitioning at
+    /// its defaults, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
@@ -143,9 +144,10 @@ impl PipnnParams {
         let PipnnSettings {
             leaf_k,
             reservoir_factor,
+            fanout,
         } = settings;
         Self {
-            partition: PartitionParams::default(),
+            partition: PartitionParams::with_fanout(fanout),
             leaf_k,
             reservoir_factor,
             seed,
@@ -678,6 +680,18 @@ mod orchestration_tests {
             },
             ..PipnnParams::new(PipnnSettings::default(), 1)
         }
+    }
+
+    #[test]
+    fn settings_set_the_fanout_of_the_partitioning() {
+        let settings = PipnnSettings {
+            fanout: vec![5],
+            ..PipnnSettings::default()
+        };
+        assert_eq!(PipnnParams::new(settings, 1).partition.fanout, vec![5]);
+        // The defaults are those the partitioning had before the fanout was a setting
+        let default = PipnnParams::new(PipnnSettings::default(), 1);
+        assert_eq!(default.partition.fanout, vec![10, 3]);
     }
 
     struct Fixture {

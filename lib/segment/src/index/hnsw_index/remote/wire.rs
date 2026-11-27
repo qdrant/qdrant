@@ -93,13 +93,13 @@ pub struct RemoteGraphParams {
 /// A new kind of index, or a version of one with other parameters, is a new variant here and
 /// a new case of the `IndexingIndexParams` oneof. Indexers refuse cases they do not know, and
 /// every `match` on this enum shows what the new variant needs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteIndexParams {
     Hnsw(HnswBuildParams),
 }
 
 /// Parameters of an HNSW graph: the main graph and the payload block graphs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HnswBuildParams {
     /// Main graph `m` and `m0`. `m == 0` means no main graph: only payload blocks link points.
     pub m: usize,

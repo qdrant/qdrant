@@ -87,12 +87,15 @@ message IndexingGraphAlgorithm {
 message IndexingHnswInsertion {}
 
 // PiPNN where it applies (large enough segments, vectors with a matrix scorer), HNSW insertion
-// otherwise. The partitioning keeps its defaults, and the indexer draws the seed.
+// otherwise. The rest of the partitioning keeps its defaults, and the indexer draws the seed.
 message IndexingPipnnParams {
   // Nearest neighbors each point keeps per leaf.
   uint64 leaf_k = 1;
   // Reservoir capacity per point, as a multiple of the level's degree limit.
   uint64 reservoir_factor = 2;
+  // To how many nearest leaders the partitioning assigns each point, by recursion depth. 1
+  // beyond the list, so an empty list partitions without overlap.
+  repeated uint64 fanout = 3;
 }
 
 message SubmitIndexingTaskResponse {
