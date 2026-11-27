@@ -229,6 +229,7 @@ pub type SharedQuantizedVectors = Arc<AtomicRefCell<Option<QuantizedVectors>>>;
 
 impl TaskRegistry {
     /// Register a task under a new token. The task is revoked when the handle is dropped.
+    #[must_use = "dropping the handle revokes the task"]
     pub fn register(&'static self, task: NewTask) -> TaskHandle {
         let NewTask {
             scope,
@@ -396,7 +397,7 @@ impl TaskRegistry {
         let state = self.get(token)?;
         state.touch();
         let batch = state.blocks.read(next, BLOCKS_LONG_POLL);
-        if let BlocksBatch::Blocks { blocks, .. } = &batch {
+        if let BlocksBatch::Blocks { first: _, blocks } = &batch {
             let size: usize = blocks
                 .iter()
                 .map(|block| block.points.len() * size_of::<PointOffsetType>())
@@ -563,6 +564,7 @@ pub enum WaitInterrupt {
 }
 
 /// The builder's side of a task. Revokes the token when dropped.
+#[must_use = "dropping the handle revokes the task"]
 pub struct TaskHandle {
     registry: &'static TaskRegistry,
     token: TaskToken,

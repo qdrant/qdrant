@@ -329,7 +329,8 @@ pub struct IndexingServiceConfig {
     #[serde(default = "default_indexing_max_retries")]
     pub max_retries: u32,
     /// How long the indexer waits for the next payload block, while core prepares them,
-    /// before it fails the task. Reset by every block.
+    /// before it fails the task. Counted from each request for the next blocks: the time the
+    /// indexer spends building does not count.
     #[serde(default = "default_max_block_wait_sec")]
     #[validate(range(min = 1))]
     pub max_block_wait_sec: u64,

@@ -93,7 +93,8 @@ message IndexingTaskDescription {
   // Whether payload blocks may come: read them with `ReadPayloadBlocks` after the main
   // graph, until it answers `finished`.
   bool has_payload_blocks = 18;
-  // Fail the task if no payload block comes for this long. Reset by every block.
+  // Fail the task if no payload block comes for this long, counted from each request for
+  // the next blocks. The time the indexer spends building does not count.
   uint64 max_block_wait_sec = 19;
   // The index to build and its parameters, as submitted with `SubmitTask`.
   IndexingIndexParams index = 20;

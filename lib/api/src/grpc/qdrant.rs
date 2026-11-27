@@ -6125,7 +6125,8 @@ pub struct IndexingTaskDescription {
     /// graph, until it answers `finished`.
     #[prost(bool, tag = "18")]
     pub has_payload_blocks: bool,
-    /// Fail the task if no payload block comes for this long. Reset by every block.
+    /// Fail the task if no payload block comes for this long, counted from each request for
+    /// the next blocks. The time the indexer spends building does not count.
     #[prost(uint64, tag = "19")]
     pub max_block_wait_sec: u64,
     /// The index to build and its parameters, as submitted with `SubmitTask`.
