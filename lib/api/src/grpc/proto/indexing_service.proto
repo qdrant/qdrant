@@ -94,7 +94,7 @@ message IndexingPipnnParams {
   // Reservoir capacity per point, as a multiple of the level's degree limit.
   uint64 reservoir_factor = 2;
   // To how many nearest leaders the partitioning assigns each point, by recursion depth. 1
-  // beyond the list, so an empty list partitions without overlap.
+  // beyond the list. Must not be empty: that is how a sender without this field reads.
   repeated uint64 fanout = 3;
 }
 

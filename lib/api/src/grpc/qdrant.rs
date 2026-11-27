@@ -5626,7 +5626,7 @@ pub struct IndexingPipnnParams {
     #[prost(uint64, tag = "2")]
     pub reservoir_factor: u64,
     /// To how many nearest leaders the partitioning assigns each point, by recursion depth. 1
-    /// beyond the list, so an empty list partitions without overlap.
+    /// beyond the list. Must not be empty: that is how a sender without this field reads.
     #[prost(uint64, repeated, tag = "3")]
     pub fanout: ::prost::alloc::vec::Vec<u64>,
 }

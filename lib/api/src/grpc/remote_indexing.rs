@@ -141,6 +141,11 @@ fn main_graph_from_grpc(
                 reservoir_factor,
                 fanout,
             } = pipnn;
+            // An empty list is what a sender without the field puts on the wire. It would
+            // build without overlap between the leaves: a weaker graph, and no error.
+            if fanout.is_empty() {
+                return Err("no PiPNN fanout".to_string());
+            }
             Ok(MainGraphAlgorithm::Pipnn(PipnnSettings {
                 leaf_k: size(leaf_k)?,
                 reservoir_factor: size(reservoir_factor)?,
@@ -550,6 +555,17 @@ mod tests {
         }));
         let grpc = index_params_to_grpc(&params);
         assert_eq!(index_params_from_grpc(Some(grpc)), Ok(params));
+    }
+
+    #[test]
+    fn unset_pipnn_fanout_is_refused() {
+        let params = hnsw(MainGraphAlgorithm::Pipnn(PipnnSettings {
+            leaf_k: 3,
+            reservoir_factor: 5,
+            fanout: Vec::new(),
+        }));
+        let grpc = index_params_to_grpc(&params);
+        assert!(index_params_from_grpc(Some(grpc)).is_err());
     }
 
     #[test]
