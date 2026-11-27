@@ -17,6 +17,8 @@ pub(super) mod updaters;
 mod optimizer_config_update_tests;
 #[cfg(test)]
 mod snapshot_tests;
+#[cfg(test)]
+mod tagged_from_tests;
 
 mod drop;
 pub mod indexed_only;
@@ -1650,18 +1652,20 @@ impl LocalShardClocks {
         }
     }
 
-    /// Load clock maps from disk
+    /// Load clock maps and [`TaggedFrom`] from disk
     ///
-    /// `first_read_record` is the first WAL record the shard reads on load. We can't tell whether
-    /// records below it have clock tags.
+    /// `first_read_record` is the first WAL record the shard reads on load, see
+    /// [`TaggedFrom::load_or_new`].
     pub fn load(shard_path: &Path, first_read_record: u64) -> CollectionResult<Self> {
         let newest_clocks = ClockMap::load_or_default(&Self::newest_clocks_path(shard_path))?;
         let oldest_clocks = ClockMap::load_or_default(&Self::oldest_clocks_path(shard_path))?;
-        let tagged_from = TaggedFrom::new(first_read_record);
+        let tagged_from = TaggedFrom::load_or_new(&Self::wal_path(shard_path), first_read_record)?;
         Ok(Self::new(newest_clocks, oldest_clocks, tagged_from))
     }
 
-    /// Persist clock maps to disk
+    /// Persist clock maps and [`TaggedFrom`] to disk
+    ///
+    /// Must run before acknowledging the WAL, see [`TaggedFrom`].
     pub fn store_if_changed(&self, shard_path: &Path) -> CollectionResult<()> {
         self.oldest_clocks
             .blocking_lock()
@@ -1670,6 +1674,10 @@ impl LocalShardClocks {
         self.newest_clocks
             .blocking_lock()
             .store_if_changed(&Self::newest_clocks_path(shard_path))?;
+
+        self.tagged_from
+            .lock()
+            .store_if_changed(&Self::wal_path(shard_path))?;
 
         Ok(())
     }
@@ -1722,6 +1730,11 @@ impl LocalShardClocks {
 
     fn oldest_clocks_path(shard_path: &Path) -> PathBuf {
         shard::files::oldest_clocks_path(shard_path)
+    }
+
+    /// [`TaggedFrom`] is persisted in the WAL directory, see there
+    fn wal_path(shard_path: &Path) -> PathBuf {
+        shard::files::wal_path(shard_path)
     }
 }
 

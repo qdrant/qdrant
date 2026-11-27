@@ -37,7 +37,7 @@ pub struct RecoverableWal {
 
     /// The first record from which every record in this WAL has a clock tag
     ///
-    /// Only changed under the WAL lock. Take it after the WAL lock.
+    /// It only moves under the WAL lock. To hold both, take the WAL lock first.
     pub(super) tagged_from: Arc<ParkingMutex<TaggedFrom>>,
 }
 
