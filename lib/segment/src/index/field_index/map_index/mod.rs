@@ -18,6 +18,7 @@ pub mod on_disk_map_index;
 mod payload_index_impl;
 pub mod prefix_index;
 pub mod read_ops;
+pub mod regex_index;
 #[cfg(test)]
 mod tests;
 mod value_indexer_impl;
