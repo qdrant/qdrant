@@ -483,8 +483,8 @@ impl ShardHolder {
                 continue;
             }
 
-            // We only cleanup local shards
-            if !shard.is_local().await {
+            // Queue proxies too, so the delete is also queued for the transfer target
+            if !shard.is_local().await && !shard.is_queue_proxy().await {
                 continue;
             }
 
