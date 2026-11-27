@@ -35,6 +35,11 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
 
     fn list_files(
         &self,
+        dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static;
+
+    fn prefix_list_files(
+        &self,
         prefix: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static;
 

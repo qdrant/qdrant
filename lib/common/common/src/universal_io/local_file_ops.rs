@@ -1,5 +1,5 @@
 use std::io::{self, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::fs::atomic_save;
 use crate::mmap::create_and_ensure_length;
@@ -82,6 +82,36 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> UioResult<()> {
     })
 }
 
+fn collect_dir_files(mut dirs: Vec<PathBuf>, results: &mut Vec<ListedFile>) -> UioResult<()> {
+    while let Some(dir) = dirs.pop() {
+        let entries =
+            fs_err::read_dir(&dir).map_err(|err| UniversalIoError::extract_not_found(err, &dir))?;
+        for entry in entries {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                dirs.push(entry.path());
+            } else if file_type.is_file() {
+                let metadata = entry.metadata()?;
+                results.push(ListedFile {
+                    path: entry.path(),
+                    size: metadata.len(),
+                    last_modified: metadata.modified().ok(),
+                    etag: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// List all files under `dir`, recursing into subdirectories.
+pub fn local_list_files(dir: &Path) -> UioResult<Vec<ListedFile>> {
+    let mut results = Vec::new();
+    collect_dir_files(vec![dir.to_path_buf()], &mut results)?;
+    Ok(results)
+}
+
 /// List files matching `prefix_path`, recursing into subdirectories —
 /// mirroring the flat key-prefix semantics of object-store backends, so a
 /// directory prefix lists the whole tree beneath it.
@@ -91,7 +121,7 @@ pub fn local_atomic_save(path: &Path, bytes: &[u8]) -> UioResult<()> {
 /// everything under `dir/chunk_extra/`. Matching is name-based, never a
 /// whole-path string comparison — a joined prefix may mix `/` and `\` on
 /// Windows, where entry paths use `\` throughout.
-pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+pub fn local_prefix_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
     let dir = prefix_path.parent().unwrap_or(Path::new("."));
     let name_prefix = prefix_path
         .file_name()
@@ -128,25 +158,7 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
         }
     }
 
-    while let Some(dir) = matched_dirs.pop() {
-        let entries =
-            fs_err::read_dir(&dir).map_err(|err| UniversalIoError::extract_not_found(err, &dir))?;
-        for entry in entries {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
-                matched_dirs.push(entry.path());
-            } else if file_type.is_file() {
-                let metadata = entry.metadata()?;
-                results.push(ListedFile {
-                    path: entry.path(),
-                    size: metadata.len(),
-                    last_modified: metadata.modified().ok(),
-                    etag: None,
-                });
-            }
-        }
-    }
+    collect_dir_files(matched_dirs, &mut results)?;
 
     Ok(results)
 }

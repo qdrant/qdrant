@@ -209,7 +209,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => Some(index.except_cardinality(integers.iter())),
+            AnyVariants::Integers(integers) => Some(index.except_cardinality(integers)),
         },
         _ => None,
     }

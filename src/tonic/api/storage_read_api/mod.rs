@@ -74,7 +74,7 @@ where
         Ok(Response::new(FileExistsResponse { exists }))
     }
 
-    // List files via UniversalReadFs::list_files(prefix_path).
+    // List files via UniversalReadFs::prefix_list_files(prefix_path).
     // Return paths relative to the shard directory.
     async fn list_files(
         &self,
@@ -93,7 +93,7 @@ where
         let prefix_path = Self::resolve_path(&base, &collections_root, &prefix_path)?;
 
         let fs = Arc::clone(&self.fs);
-        let files = tokio::task::spawn_blocking(move || fs.list_files(&prefix_path))
+        let files = tokio::task::spawn_blocking(move || fs.prefix_list_files(&prefix_path))
             .await
             .map_err(|e| Status::internal(format!("Task join error: {e}")))?
             .map_err(io_error_to_status)?;

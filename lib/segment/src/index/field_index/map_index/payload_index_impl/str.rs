@@ -259,9 +259,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
             }
         },
         Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(keywords) => {
-                Some(index.except_cardinality(keywords.iter().map(|k| k.as_str())))
-            }
+            AnyVariants::Strings(keywords) => Some(index.except_cardinality(keywords)),
             AnyVariants::Integers(_) => None,
         },
         Some(Match::Prefix(MatchPrefix { prefix })) => index.prefix_stats(prefix)?.map(|stats| {

@@ -22,8 +22,12 @@ impl<F: UniversalReadFsAsync> UniversalReadFsAsync for ReadOnlyFs<F> {
         Ok(ReadOnly(self.0.open_async(path, options, extra).await?))
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.0.list_files_async(prefix_path).await
+    async fn list_files_async(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        self.0.list_files_async(dir).await
+    }
+
+    async fn prefix_list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.0.prefix_list_files_async(prefix_path).await
     }
 
     async fn select_files_async<P: AsRef<Path> + Send + Sync>(

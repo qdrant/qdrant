@@ -4,6 +4,7 @@ use crate::turboquant::simd::{
     Query1bitSimd, Query1bitWideSimd, Query2bitSimd, Query4bitSimd, Query8bitSimd, Query16bitSimd,
 };
 
+mod angular;
 pub mod encoding;
 pub mod lloyd_max;
 pub mod math;

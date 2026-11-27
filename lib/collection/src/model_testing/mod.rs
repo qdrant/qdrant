@@ -1117,7 +1117,11 @@ async fn edge_checkpoint(
 }
 
 /// Shared wall-clock budget for proxy wait + flush/observe retries at one checkpoint.
-const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(30);
+///
+/// Sized for the worst case of a `SetOptimizer` op turning the optimizer back on just before a
+/// restart, after a long stretch with it off: the backlog of small segments it then works
+/// through can take more than 30s. Quiet checkpoints still finish in a few seconds.
+const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(120);
 const EDGE_CHECKPOINT_RETRY_SLEEP: Duration = Duration::from_millis(100);
 
 /// Poll until no local shard holds proxy segments, or `deadline` is reached.

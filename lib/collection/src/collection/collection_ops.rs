@@ -13,6 +13,7 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 
 use super::Collection;
 use super::shard_transfer::AbortShardTransferScope;
+use crate::config::CollectionParams;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -513,7 +514,13 @@ impl Collection {
                 .map(|(a, b)| a + b);
             info.points_count = info.points_count.zip(points_count).map(|(a, b)| a + b);
             info.segments_count += segments_count;
-            info.warnings.extend(warnings);
+
+            // Every shard reports the same config warnings, keep a single copy of each
+            for warning in warnings {
+                if !info.warnings.contains(&warning) {
+                    info.warnings.push(warning);
+                }
+            }
 
             if let Some(UpdateQueueInfo {
                 length,
@@ -539,8 +546,16 @@ impl Collection {
             }
         }
 
+        let config = self.collection_config.read().await;
+
         // Shard responses from remote peers don't carry it, take it from the local config
-        info.created_at = self.collection_config.read().await.created_at;
+        info.created_at = config.created_at;
+
+        // Single shard requests come from other peers, which check replication on their side
+        if !shard_selection.is_shard_id() {
+            info.warnings
+                .extend(replication_warning(&config.params, self.peer_count()));
+        }
 
         Ok(info)
     }
@@ -654,4 +669,37 @@ impl Collection {
             log::warn!("Collection {}: {}", self.name(), warning.message);
         }
     }
+
+    /// Number of peers in the cluster, including this one
+    fn peer_count(&self) -> usize {
+        let peers = self.channel_service.id_to_address.read();
+        // This peer is not registered there if distributed mode is disabled
+        let this_peer = usize::from(!peers.contains_key(&self.this_peer_id));
+        peers.len() + this_peer
+    }
+}
+
+/// Warn if the cluster has fewer peers than `replication_factor`
+///
+/// A peer holds at most one replica of a shard, so shards can't reach the configured replication
+/// factor until more peers join the cluster.
+fn replication_warning(params: &CollectionParams, peer_count: usize) -> Option<CollectionWarning> {
+    let replication_factor = params.replication_factor.get() as usize;
+
+    if peer_count >= replication_factor {
+        return None;
+    }
+
+    let (peers, replicas) = if peer_count == 1 {
+        ("peer", "replica")
+    } else {
+        ("peers", "replicas")
+    };
+
+    Some(CollectionWarning {
+        message: format!(
+            "`replication_factor` is {replication_factor}, but the cluster has only {peer_count} \
+             {peers}, so a shard can't have more than {peer_count} {replicas}.",
+        ),
+    })
 }

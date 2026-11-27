@@ -128,6 +128,23 @@ impl LoadProfile {
         };
     }
 
+    /// Stop warming components the caller knows load cold anyway. Dropping every payload
+    /// field also parks the payload storage. Meant for comparing profiles: opening with the
+    /// result defers dropped vectors' HNSW graphs to first use.
+    pub fn retain_warm(
+        &mut self,
+        mut keep_vector: impl FnMut(&VectorName) -> bool,
+        mut keep_payload_field: impl FnMut(&JsonPath) -> bool,
+    ) {
+        let Self {
+            warm_vectors,
+            warm_payload_fields,
+            deferred_points_threshold_kb: _,
+        } = self;
+        warm_vectors.retain(|name| keep_vector(name));
+        warm_payload_fields.retain(|field| keep_payload_field(field));
+    }
+
     /// Internal id from which points of a segment with `config` are deferred, or `None` to
     /// show every point. See [`segment_deferred_internal_id`].
     pub fn deferred_internal_id(&self, config: &SegmentConfig) -> Option<PointOffsetType> {

@@ -94,11 +94,11 @@ mod tests {
 
     /// Pair scores are an affine map of the dot product of the decoded codes, or for Euclid of
     /// their negative squared distance once each vector's self-score is taken out. That removes
-    /// any offset per vector, so for Euclid this checks the cross term, not the stored lengths:
-    /// at TQ+ 1 and 1.5 bits the decoded distance itself is only a proxy for the score. Only
-    /// approximately at 2 and 4 bits of TurboQuant, whose score adds a stored TQ+ correction:
-    /// there the decoded codes still explain the scores ten times better than the original
-    /// vectors do.
+    /// any offset per vector, so for Euclid this checks the cross term, not the stored lengths.
+    /// Only approximately at 2 and 4 bits of TurboQuant, whose score adds a stored TQ+
+    /// correction: there the decoded codes still explain the scores ten times better than the
+    /// original vectors do. And at 1 and 1.5 bits of TQ+ for Euclid, whose score takes the
+    /// cosine of the angle between the signs where the decoded codes have its linear estimate.
     #[rstest]
     fn decoded_codes_score_as_the_scorer(
         #[values(
@@ -144,22 +144,35 @@ mod tests {
             }
         }
 
-        let approximate = match &config {
+        /// How closely the decoded codes follow the scores.
+        enum Agreement {
+            Exact,
+            /// Ten times closer than the original vectors do
+            Close,
+            /// As the cosine of an angle follows its linear estimate over random pairs
+            Angular,
+        }
+        let expected = match &config {
             QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
-                match turbo.bits.unwrap_or_default() {
-                    Bits::Bits2 | Bits::Bits4 => true,
-                    Bits::Bits1 | Bits::Bits1_5 | Bits::Bits8 => false,
+                match (turbo.bits.unwrap_or_default(), distance) {
+                    (Bits::Bits2 | Bits::Bits4, _) => Agreement::Close,
+                    (Bits::Bits1 | Bits::Bits1_5, Distance::Euclid) => Agreement::Angular,
+                    (
+                        Bits::Bits1 | Bits::Bits1_5,
+                        Distance::Cosine | Distance::Dot | Distance::Manhattan,
+                    )
+                    | (Bits::Bits8, _) => Agreement::Exact,
                 }
             }
             QuantizationConfig::Scalar(_)
             | QuantizationConfig::Product(_)
-            | QuantizationConfig::Binary(_) => false,
+            | QuantizationConfig::Binary(_) => Agreement::Exact,
         };
         let agreement = correlation(&scores, &of_decoded);
-        let least = if approximate {
-            1.0 - (1.0 - correlation(&scores, &of_originals)) / 10.0
-        } else {
-            1.0 - 1e-5
+        let least = match expected {
+            Agreement::Exact => 1.0 - 1e-5,
+            Agreement::Close => 1.0 - (1.0 - correlation(&scores, &of_originals)) / 10.0,
+            Agreement::Angular => 0.97,
         };
         assert!(agreement >= least, "{agreement} below {least}");
     }
