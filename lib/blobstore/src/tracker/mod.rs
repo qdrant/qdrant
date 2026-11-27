@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use common::generic_consts::{AccessPattern, Random};
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::mmap::{Advice, AdviceSetting, create_and_ensure_length_allocated};
 use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite, UserData,
@@ -552,7 +552,7 @@ where
             size > std::mem::size_of::<TrackerHeader>(),
             "Size hint is too small"
         );
-        create_and_ensure_length(&path, size)?;
+        create_and_ensure_length_allocated(&path, size)?;
         let storage = fs.open(
             &path,
             tracker_open_options(Populate::No, true),
@@ -697,7 +697,7 @@ where
         if storage_len < end_offset {
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
-            create_and_ensure_length(&self.path, new_size)?;
+            create_and_ensure_length_allocated(&self.path, new_size)?;
             self.storage.live_reload()?;
         }
 

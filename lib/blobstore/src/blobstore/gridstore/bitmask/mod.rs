@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
 use common::bitvec::BitSlice;
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::mmap::{Advice, AdviceSetting, create_and_ensure_length_allocated};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
     MmapFile, OpenOptions, Populate, UniversalReadFs, UniversalWrite, UniversalWriteFs,
@@ -94,7 +94,7 @@ impl<S: UniversalWrite> Bitmask<S> {
 
         // create bitmask file
         let path = Self::bitmask_path(dir);
-        create_and_ensure_length(&path, length)?;
+        create_and_ensure_length_allocated(&path, length)?;
 
         let bitslice = StoredBitSlice::open(fs, &path, open_options(), Default::default())?;
 
@@ -214,7 +214,7 @@ impl<S: UniversalWrite> Bitmask<S> {
         // reopen the file with a larger size
         let previous_bit_len = self.bitslice.bit_len() as usize;
         let new_length = (previous_bit_len / u8::BITS as usize) + extra_length;
-        create_and_ensure_length(&self.path, new_length)?;
+        create_and_ensure_length_allocated(&self.path, new_length)?;
 
         self.bitslice.live_reload()?;
 
