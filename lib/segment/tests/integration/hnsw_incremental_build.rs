@@ -190,7 +190,7 @@ enum PayloadKind {
     /// Float in `n..n + 1`, payload blocks are histogram ranges.
     Float,
 }
-const PAYLOAD_POINTS: usize = 4_000;
+const PAYLOAD_POINTS: usize = 2_000;
 const PAYLOAD_DIM: usize = 16;
 
 /// Heal an index with payload links, with and without a main graph. Filtered search on the
@@ -342,9 +342,9 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
     segment: &Segment,
     old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
 ) -> HNSWIndex {
-    // A payload value matches ~360-400 points, above this threshold (256 points), so filtered
+    // A payload value matches ~180 points, above this threshold (128 points), so filtered
     // searches use the graph, and its blocks get payload links.
-    let full_scan_threshold_kb = 256 * PAYLOAD_DIM * size_of::<VectorElementType>() / 1024;
+    let full_scan_threshold_kb = 128 * PAYLOAD_DIM * size_of::<VectorElementType>() / 1024;
     let hnsw_config = HnswConfig {
         memory: None,
         m,
