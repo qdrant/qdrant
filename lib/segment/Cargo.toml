@@ -46,6 +46,9 @@ tap = { workspace = true }
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+perf-event = "0.4.9"
+
 [dependencies]
 io_bridge = { path = "../common/io_bridge" }
 blink-alloc = { workspace = true }
@@ -146,6 +149,10 @@ harness = false
 
 [[bench]]
 name = "turbo_full_scan"
+harness = false
+
+[[bench]]
+name = "sq8_full_scan"
 harness = false
 
 [[bench]]
