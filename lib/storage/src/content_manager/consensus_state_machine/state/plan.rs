@@ -10,6 +10,9 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::helpers::{
+    check_transfer_conflicts, is_valid_resharding_destination,
+};
 use collection::shards::transfer::{
     ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
 };
@@ -2152,18 +2155,13 @@ fn validate_transfer(
         }
     }
 
-    let conflicting_transfer = state
-        .transfers
-        .iter()
-        .filter(|existing| {
-            existing.key() != transfer.key() && existing.shard_id == transfer.shard_id
-        })
-        .find(|existing| {
-            existing.from == transfer.from
-                || existing.to == transfer.from
-                || existing.from == transfer.to
-                || existing.to == transfer.to
-        });
+    let conflicting_transfer = check_transfer_conflicts(
+        transfer,
+        state
+            .transfers
+            .iter()
+            .filter(|existing| existing.key() != transfer.key()),
+    );
 
     if let Some(existing) = conflicting_transfer {
         return Err(StorageError::bad_request(format!(
@@ -2212,6 +2210,18 @@ fn validate_transfer(
     if destination_replicas.get(&transfer.to) == Some(&ReplicaState::Dead) {
         return Err(StorageError::bad_request(format!(
             "{transfer_name} shard transfer can't be started, because destination shard {}/{to_shard_id} is dead",
+            transfer.to,
+        )));
+    }
+
+    // See `collection::shards::transfer::helpers::validate_transfer`
+    if is_resharding
+        && let Some(replica_state) = destination_replicas.get(&transfer.to)
+        && !is_valid_resharding_destination(*replica_state)
+    {
+        return Err(StorageError::bad_request(format!(
+            "{transfer_name} shard transfer can't be started, because destination shard \
+             {}/{to_shard_id} is in {replica_state:?} state",
             transfer.to,
         )));
     }
