@@ -4452,6 +4452,12 @@ pub struct GetShardRecoveryPointResponse {
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
+    /// Cutoff point of the shard, the WAL can't resolve a WAL delta below these clocks
+    #[prost(message, optional, tag = "3")]
+    pub cutoff: ::core::option::Option<RecoveryPoint>,
+    /// How many records a WAL delta scan can read backwards from the end of the WAL
+    #[prost(uint64, optional, tag = "4")]
+    pub tagged_records: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]

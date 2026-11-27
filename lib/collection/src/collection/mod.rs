@@ -66,6 +66,7 @@ use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionsAggregatedTelemetry;
+use crate::wal_delta::WalDeltaBounds;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -632,6 +633,20 @@ impl Collection {
             shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.shard_recovery_point().await
+    }
+
+    /// How far back the WAL of a local shard can resolve a WAL delta
+    pub async fn shard_wal_delta_bounds(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<WalDeltaBounds> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(shard_id);
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+
+        replica_set.wal_delta_bounds().await
     }
 
     /// Find the points changed by orphan operations in the WAL of a local shard

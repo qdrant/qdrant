@@ -257,6 +257,8 @@ impl CollectionsInternal for MockPeer {
         Ok(Response::new(GetShardRecoveryPointResponse {
             recovery_point: Some(self.recovery_point.clone()),
             time: 0.0,
+            cutoff: None,
+            tagged_records: None,
         }))
     }
 

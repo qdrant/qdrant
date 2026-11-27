@@ -57,6 +57,7 @@ use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
 #[cfg(feature = "testing")]
 use crate::update_handler::Optimizer;
+use crate::wal_delta::WalDeltaBounds;
 
 //    │    Collection Created
 //    │
@@ -1403,6 +1404,16 @@ impl ShardReplicaSet {
         };
 
         local_shard.shard_recovery_point().await
+    }
+
+    /// How far back the WAL of the local shard can resolve a WAL delta
+    pub(crate) async fn wal_delta_bounds(&self) -> CollectionResult<WalDeltaBounds> {
+        let local_shard = self.local.read().await;
+        let Some(local_shard) = local_shard.as_ref() else {
+            return Err(CollectionError::not_found("Peer does not have local shard"));
+        };
+
+        local_shard.wal_delta_bounds().await
     }
 
     /// Update the cutoff point for the local shard.

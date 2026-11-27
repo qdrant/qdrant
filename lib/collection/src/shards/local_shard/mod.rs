@@ -97,8 +97,8 @@ use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::update_workers::applied_seq::AppliedSeqHandler;
-use crate::wal_delta::RecoverableWal;
 use crate::wal_delta::tagged_from::TaggedFrom;
+use crate::wal_delta::{RecoverableWal, WalDeltaBounds};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -1443,6 +1443,11 @@ impl LocalShard {
     /// This is sourced from the last seen clocks from other nodes that we know about.
     pub async fn recovery_point(&self) -> RecoveryPoint {
         self.wal.recovery_point().await
+    }
+
+    /// How far back the WAL of the current shard can resolve a WAL delta
+    pub async fn wal_delta_bounds(&self) -> WalDeltaBounds {
+        self.wal.wal_delta_bounds().await
     }
 
     /// Take snapshot of newest clocks, if not snapshotted already

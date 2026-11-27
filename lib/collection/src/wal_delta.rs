@@ -230,6 +230,17 @@ impl RecoverableWal {
         tagged_from.tagged_records(wal.first_closed_index(), wal.len(true))
     }
 
+    /// How far back this WAL can resolve a WAL delta, without reading WAL records
+    pub async fn wal_delta_bounds(&self) -> WalDeltaBounds {
+        let cutoff = self.oldest_clocks.lock().await.to_recovery_point();
+        let tagged_records = self.tagged_records().await;
+
+        WalDeltaBounds {
+            cutoff,
+            tagged_records,
+        }
+    }
+
     pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
         let wal = self.wal.lock().await;
         if wal.is_empty() {
@@ -264,6 +275,20 @@ impl RecoverableWal {
     pub async fn set_normal_retention(&self) {
         self.wal.lock().await.set_normal_retention();
     }
+}
+
+/// How far back a WAL can resolve a WAL delta, see [`RecoverableWal::wal_delta_bounds`]
+///
+/// A recovering peer can check a recovery point against these, without the WAL being read. It
+/// can't tell whether the delta's records are still in the WAL, or whether they have the recovery
+/// point's tokens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalDeltaBounds {
+    /// The WAL can't resolve a WAL delta below these clocks
+    pub cutoff: RecoveryPoint,
+
+    /// How many records a WAL delta scan can read backwards from the end of the WAL
+    pub tagged_records: u64,
 }
 
 /// Resolve the WAL delta for the given `recovery_point`
@@ -1875,6 +1900,27 @@ mod tests {
         recovery_point.insert_with_token(1, 0, 1, 1);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
+    }
+
+    /// WAL delta bounds report the cutoff clocks and the tagged records.
+    #[tokio::test]
+    async fn test_wal_delta_bounds() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        write_operation(&wal, 1, None).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 3, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+
+        let mut cutoff = RecoveryPoint::default();
+        cutoff.insert_with_token(1, 0, 1, 1);
+        wal.update_cutoff(&cutoff).await;
+
+        let expected = WalDeltaBounds {
+            cutoff,
+            tagged_records: 2,
+        };
+
+        assert_eq!(wal.wal_delta_bounds().await, expected);
     }
 
     /// Recovery point at the same tick as our newest clock, but with another token, is at an

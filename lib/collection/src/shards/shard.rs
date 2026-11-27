@@ -26,6 +26,7 @@ use crate::shards::local_shard::{LocalShard, LocalShardOptimizations};
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+use crate::wal_delta::WalDeltaBounds;
 
 pub type ShardId = u32;
 
@@ -285,6 +286,20 @@ impl Shard {
 
             Self::QueueProxy(_) | Self::Dummy(_) => Err(CollectionError::service_error(format!(
                 "Recovery point not supported on {}",
+                self.variant_name(),
+            ))),
+        }
+    }
+
+    pub async fn wal_delta_bounds(&self) -> CollectionResult<WalDeltaBounds> {
+        match self {
+            Self::Local(local_shard) => Ok(local_shard.wal_delta_bounds().await),
+            Self::ForwardProxy(proxy_shard) => {
+                Ok(proxy_shard.wrapped_shard.wal_delta_bounds().await)
+            }
+
+            Self::QueueProxy(_) | Self::Dummy(_) => Err(CollectionError::service_error(format!(
+                "WAL delta bounds not supported on {}",
                 self.variant_name(),
             ))),
         }
