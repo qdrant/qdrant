@@ -260,10 +260,53 @@ impl RecoverableWal {
 /// If `Err` - no delta can be resolved.
 fn resolve_wal_delta(
     operations: impl DoubleEndedIterator<Item = Result<(u64, Option<ClockTag>), shard::wal::WalError>>,
+    recovery_point: RecoveryPoint,
+    newest_clocks: RecoveryPoint,
+    oldest_clocks: RecoveryPoint,
+) -> Result<Option<u64>, WalDeltaError> {
+    match check_clocks(recovery_point, newest_clocks, oldest_clocks)? {
+        ClockCheck::Equal => Ok(None),
+        ClockCheck::Scan(delta_scan) => scan_wal_delta(operations, delta_scan),
+    }
+}
+
+/// Outcome of the clock checks of a WAL delta, see [`check_clocks`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ClockCheck {
+    /// The recovery point is equal to the newest clocks, there are no records to send
+    Equal,
+    /// The delta must be found by scanning the WAL
+    Scan(DeltaScan),
+}
+
+/// Clocks a WAL scan must resolve, see [`scan_wal_delta`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DeltaScan {
+    /// Clocks the delta must cover, with all ticks increased by one
+    ///
+    /// Clocks equal to the newest clocks are removed, clocks missing from the original recovery
+    /// point are at tick 1.
+    recovery_point: RecoveryPoint,
+
+    /// Clocks for which the WAL has newer records than the original recovery point
+    ///
+    /// The scan looks for the record at each clock's exact tick, to confirm that the WAL has the
+    /// same operation the recovering node has.
+    unverified_clocks: RecoveryPoint,
+}
+
+/// Check the clocks of a WAL delta, before scanning the WAL
+///
+/// This runs every check of [`resolve_wal_delta`] that doesn't need WAL records. The arguments
+/// are the same as there.
+///
+/// If `Ok` - a WAL delta can still fail while scanning the WAL.
+/// If `Err` - no delta can be resolved.
+fn check_clocks(
     mut recovery_point: RecoveryPoint,
     mut newest_clocks: RecoveryPoint,
     mut oldest_clocks: RecoveryPoint,
-) -> Result<Option<u64>, WalDeltaError> {
+) -> Result<ClockCheck, WalDeltaError> {
     // If recovery point is empty, we cannot do a diff transfer
     if recovery_point.is_empty() {
         return Err(WalDeltaError::Empty);
@@ -290,7 +333,7 @@ fn resolve_wal_delta(
     // Clocks for which our node has newer records than the recovery point. For each of them we
     // look for the record at the recovery point's exact tick, to confirm that we have the same
     // operation the recovering node has
-    let mut unverified_clocks = recovery_point.clocks_older_than(&newest_clocks);
+    let unverified_clocks = recovery_point.clocks_older_than(&newest_clocks);
 
     // From this point, increase all clocks by one
     // We must do that so we can specify clock tick 0 as needing everything from that clock
@@ -321,8 +364,29 @@ fn resolve_wal_delta(
 
     // If there are no points left, WALs match op so we do not recover anything
     if recovery_point.is_empty() {
-        return Ok(None);
+        return Ok(ClockCheck::Equal);
     }
+
+    let delta_scan = DeltaScan {
+        recovery_point,
+        unverified_clocks,
+    };
+
+    Ok(ClockCheck::Scan(delta_scan))
+}
+
+/// Scan the WAL backwards for the start of a WAL delta
+///
+/// The `delta_scan` comes from [`check_clocks`]. The return value is the same as in
+/// [`resolve_wal_delta`].
+fn scan_wal_delta(
+    operations: impl DoubleEndedIterator<Item = Result<(u64, Option<ClockTag>), shard::wal::WalError>>,
+    delta_scan: DeltaScan,
+) -> Result<Option<u64>, WalDeltaError> {
+    let DeltaScan {
+        mut recovery_point,
+        mut unverified_clocks,
+    } = delta_scan;
 
     // Scroll back over the WAL and find a record that covered all clocks, allowing delta resolution
     // Drain satisfied clocks from the recovery point until we have nothing left
