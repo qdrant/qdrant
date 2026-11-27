@@ -34,6 +34,7 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
+const PENDING_SCALE_DOWN_CLEANUP_FILE: &str = "pending_scale_down_cleanup.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub struct ShardHolder {
@@ -49,6 +50,8 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: Arc<SaveOnDisk<HashSet<ShardTransfer>>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
+    /// Local replicas to clean again once their incoming transfer ends, after an aborted scale-down
+    pending_scale_down_cleanup: SaveOnDisk<HashSet<ShardId>>,
     /// Hash rings per shard key
     ///
     /// In case of auto sharding, this only hash a `None` hash ring. In case of custom sharding,
@@ -78,6 +81,10 @@ impl ShardHolder {
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 
+        let pending_scale_down_cleanup = SaveOnDisk::load_or_init_default(
+            collection_path.join(PENDING_SCALE_DOWN_CLEANUP_FILE),
+        )?;
+
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
 
@@ -101,6 +108,7 @@ impl ShardHolder {
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
+            pending_scale_down_cleanup,
             rings,
             key_mapping,
             shard_id_to_key_mapping,
@@ -366,6 +374,7 @@ common::impl_send_sync_checked!(ShardHolder {
     shard_transfers,
     shard_transfer_changes,
     resharding_state,
+    pending_scale_down_cleanup,
     rings,
     key_mapping,
     shard_id_to_key_mapping,

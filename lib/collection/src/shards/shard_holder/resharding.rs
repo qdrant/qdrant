@@ -20,6 +20,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::WaitUntil;
+use crate::shards::transfer::ShardTransfer;
 
 /// Outcome of a resharding pre-check: whether caller should run the operation,
 /// or treat it as already-applied no-op.
@@ -483,21 +484,64 @@ impl ShardHolder {
                 continue;
             }
 
-            // Queue proxies too, so the delete is also queued for the transfer target
-            if !shard.is_local().await && !shard.is_queue_proxy().await {
-                continue;
-            }
-
             // Remove any points that might have been transferred from target shard
-            // Replica may be dead, so we force the delete operation
-            let filter = self.hash_ring_filter(id).expect("hash ring filter");
-            let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
-            shard
-                .delete_local_points(filter, true, DeferredBehavior::WithDeferred, WaitUntil::Wal)
-                .unmeasured(reason("Internal operation"))
-                .await?;
+            self.delete_points_outside_ring(id, shard).await?;
+
+            // A transfer into this replica may still bring such points, clean again when it ends
+            let this_peer_id = shard.this_peer_id();
+            let incoming = self.get_transfers(|transfer| {
+                transfer.shard_id == id && transfer.to == this_peer_id && !transfer.is_resharding()
+            });
+            if !incoming.is_empty() {
+                self.pending_scale_down_cleanup
+                    .write(|ids| ids.insert(id))?;
+            }
         }
 
+        Ok(())
+    }
+
+    /// Second half of [`Self::scale_down_cleanup_points`], when a transfer into a local replica ends.
+    pub async fn scale_down_cleanup_after_transfer(
+        &self,
+        transfer: &ShardTransfer,
+    ) -> CollectionResult<()> {
+        let id = transfer.shard_id;
+        if transfer.is_resharding() || !self.pending_scale_down_cleanup.read().contains(&id) {
+            return Ok(());
+        }
+        let Some(shard) = self.get_shard(id) else {
+            self.pending_scale_down_cleanup
+                .write(|ids| ids.remove(&id))?;
+            return Ok(());
+        };
+        if transfer.to != shard.this_peer_id() {
+            return Ok(());
+        }
+
+        // A new resharding owns the points outside the ring now
+        if self.resharding_state.read().is_none() {
+            self.delete_points_outside_ring(id, shard).await?;
+        } else {
+            log::warn!("Skipping scale-down cleanup of shard {id}, resharding is in progress");
+        }
+
+        self.pending_scale_down_cleanup
+            .write(|ids| ids.remove(&id))?;
+        Ok(())
+    }
+
+    async fn delete_points_outside_ring(
+        &self,
+        id: ShardId,
+        shard: &ShardReplicaSet,
+    ) -> CollectionResult<()> {
+        let filter = self.hash_ring_filter(id).expect("hash ring filter");
+        let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
+        shard
+            .delete_local_points(filter, DeferredBehavior::WithDeferred, WaitUntil::Wal)
+            .unmeasured(reason("Internal operation"))
+            .await?;
         Ok(())
     }
 

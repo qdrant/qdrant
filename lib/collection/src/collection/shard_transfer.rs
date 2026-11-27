@@ -560,6 +560,10 @@ impl Collection {
             }
         }
 
+        shard_holder
+            .scale_down_cleanup_after_transfer(&transfer)
+            .await?;
+
         let is_finish_registered = shard_holder.register_finish_transfer(&transfer.key())?;
         log::debug!("Transfer finish registered: {is_finish_registered}");
 
@@ -635,6 +639,10 @@ impl Collection {
         if transfer.from == self.this_peer_id {
             transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer.shard_id).await?;
         }
+
+        shard_holder
+            .scale_down_cleanup_after_transfer(&transfer)
+            .await?;
 
         shard_holder.register_abort_transfer(&transfer_key)?;
 

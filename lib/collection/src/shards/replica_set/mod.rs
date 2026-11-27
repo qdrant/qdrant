@@ -1164,20 +1164,24 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Delete points matching `filter` from the local shard, or the shard wrapped by a proxy.
+    ///
+    /// Bypasses the proxy, so the delete is never forwarded to a remote. It still lands in the WAL,
+    /// so a queue proxy may replay it.
     pub async fn delete_local_points(
         &self,
         filter: Filter,
-        force: bool,
         deferred_behavior: DeferredBehavior,
         wait: WaitUntil,
     ) -> CollectionResult<UpdateResult> {
-        let local_shard_guard = self.local.read().await;
+        let local = self.local.read().await;
 
-        let Some(local_shard) = local_shard_guard.deref() else {
-            return Err(CollectionError::not_found(format!(
-                "local shard {}:{}",
-                self.collection_id, self.shard_id
-            )));
+        let Some(local_shard) = local.as_ref().and_then(Shard::local_shard) else {
+            return Ok(UpdateResult {
+                operation_id: None,
+                status: UpdateStatus::Completed,
+                clock_tag: None,
+            });
         };
 
         let mut next_offset = Some(ExtendedPointId::NumId(0));
@@ -1187,7 +1191,6 @@ impl ShardReplicaSet {
             const BATCH_SIZE: usize = 1000;
 
             let mut points = local_shard
-                .get()
                 .local_scroll_by_id(
                     Some(current_offset),
                     BATCH_SIZE + 1,
@@ -1217,25 +1220,13 @@ impl ShardReplicaSet {
             });
         }
 
-        drop(local_shard_guard);
-
         let op =
             CollectionUpdateOperations::PointOperation(point_ops::PointOperations::DeletePoints {
                 ids,
             });
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
-        let result = self
-            .update_local(op.into(), wait, None, force)
-            .await?
-            .ok_or_else(|| {
-                CollectionError::bad_request(format!(
-                    "local shard {}:{} does not exist or is unavailable",
-                    self.collection_id, self.shard_id,
-                ))
-            })?;
-
-        Ok(result)
+        local_shard.update(op.into(), wait, None).await
     }
 
     fn init_remote_shards(
