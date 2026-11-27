@@ -13,11 +13,11 @@ use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     CountResponse, FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
     GetPoints, GetPointsInternal, GetShardOptimizationsRequest, GetShardOrphanPointsRequest,
-    GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
-    QueryBatchPointsInternal, QueryBatchResponseInternal, QueryShardPoints,
-    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
-    SearchBatchResponse, ShardSnapshotLocation, UpdateShardCutoffPointRequest,
-    WaitForShardStateRequest,
+    GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, HealthCheckRequest,
+    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryBatchResponseInternal,
+    QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints,
+    ScrollPointsInternal, SearchBatchResponse, ShardSnapshotLocation,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolInterceptor};
 use api::grpc::update_operation::Update;
@@ -80,9 +80,21 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::RemoteShardTelemetry;
+use crate::wal_delta::WalDeltaBounds;
 
 /// Timeout for transferring and recovering a shard snapshot on a remote peer.
 const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;
+
+/// Recovery point of a remote shard, see [`RemoteShard::shard_recovery_point_with_bounds`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteRecoveryPoint {
+    pub recovery_point: RecoveryPoint,
+
+    /// How far back the remote shard's WAL can resolve a WAL delta
+    ///
+    /// `None` if the remote peer doesn't report it, on an older version.
+    pub wal_delta_bounds: Option<WalDeltaBounds>,
+}
 
 /// RemoteShard
 ///
@@ -1116,6 +1128,22 @@ impl RemoteShard {
         collection_name: &str,
         shard_id: ShardId,
     ) -> CollectionResult<RecoveryPoint> {
+        let RemoteRecoveryPoint {
+            recovery_point,
+            wal_delta_bounds: _,
+        } = self
+            .shard_recovery_point_with_bounds(collection_name, shard_id)
+            .await?;
+
+        Ok(recovery_point)
+    }
+
+    /// Request the recovery point on the remote shard, with the bounds of WAL deltas it can resolve
+    pub async fn shard_recovery_point_with_bounds(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+    ) -> CollectionResult<RemoteRecoveryPoint> {
         let res = self
             .with_collections_client(|mut client| async move {
                 client
@@ -1128,13 +1156,34 @@ impl RemoteShard {
             .await?
             .into_inner();
 
-        let Some(recovery_point) = res.recovery_point else {
+        let GetShardRecoveryPointResponse {
+            recovery_point,
+            time: _,
+            cutoff,
+            tagged_records,
+        } = res;
+
+        let Some(recovery_point) = recovery_point else {
             return Err(CollectionError::service_error(
                 "Recovery point data is missing in recovery point response",
             ));
         };
 
-        Ok(recovery_point.try_into()?)
+        let recovery_point = RecoveryPoint::try_from(recovery_point)?;
+
+        // Older peers don't report the bounds
+        let wal_delta_bounds = match (cutoff, tagged_records) {
+            (Some(cutoff), Some(tagged_records)) => Some(WalDeltaBounds {
+                cutoff: RecoveryPoint::try_from(cutoff)?,
+                tagged_records,
+            }),
+            (None, _) | (_, None) => None,
+        };
+
+        Ok(RemoteRecoveryPoint {
+            recovery_point,
+            wal_delta_bounds,
+        })
     }
 
     /// Request the points changed by orphan operations on the remote shard
