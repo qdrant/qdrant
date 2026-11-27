@@ -15,6 +15,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
+use collection::shards::shard_config::ShardConfig;
 use collection::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
 use common::budget::ResourceBudget;
 use segment::types::{Distance, ShardKey};
@@ -192,6 +193,57 @@ async fn test_create_shard_key_replays_after_crash_before_commit() {
 
     assert_eq!(mapped_shard_ids(&collection, &key("k")).await, [1, 2, 3]);
     assert_eq!(registered_shard_ids(&collection).await, [1, 2, 3]);
+
+    collection.stop_gracefully().await;
+}
+
+/// Dropping a shard key cleans up the key's shards before the mapping that points at them, so a
+/// failure halfway through leaves the key in place for the retry to pick up.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_drop_shard_key_retries_cleanup_after_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = new_collection(dir.path()).await;
+
+    collection
+        .create_shard_key(key("k"), placement(1), ReplicaState::Active)
+        .await
+        .unwrap();
+    let shard_ids = mapped_shard_ids(&collection, &key("k")).await;
+    assert_eq!(shard_ids.len(), 1);
+    let shard_id = shard_ids[0];
+
+    let shard_path = dir.path().join(shard_id.to_string());
+    let saved_shard_path = dir.path().join("saved_shard");
+    assert!(shard_path.is_dir());
+
+    collection
+        .shards_holder()
+        .write()
+        .await
+        .get_shard(shard_id)
+        .unwrap()
+        .stop_gracefully()
+        .await;
+
+    // A file at the shard path makes the filesystem cleanup fail
+    fs_err::rename(&shard_path, &saved_shard_path).unwrap();
+    fs_err::write(&shard_path, []).unwrap();
+
+    assert!(collection.drop_shard_key(key("k")).await.is_err());
+
+    fs_err::remove_file(&shard_path).unwrap();
+    fs_err::rename(&saved_shard_path, &shard_path).unwrap();
+    // Cleanup may already have removed the shard config before failing
+    let _ = fs_err::remove_file(ShardConfig::get_config_path(&shard_path));
+
+    collection.drop_shard_key(key("k")).await.unwrap();
+
+    assert!(
+        collection.get_shard_ids(&key("k")).await.is_err(),
+        "dropping the key removes it from the mapping"
+    );
+    assert!(registered_shard_ids(&collection).await.is_empty());
+    assert!(!shard_path.exists());
 
     collection.stop_gracefully().await;
 }

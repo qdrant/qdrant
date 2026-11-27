@@ -572,21 +572,22 @@ impl ClusterState {
         let mut shard_ids: Vec<_> = shard_ids.iter().copied().collect();
         shard_ids.sort_unstable();
 
-        actions.extend([
-            Action::InvalidateCleanLocalShards {
-                collection: collection.clone(),
-                shard_ids: shard_ids.clone(),
-            },
-            Action::RemoveShardKey {
-                collection: collection.clone(),
-                shard_key: shard_key.clone(),
-            },
-        ]);
+        actions.push(Action::InvalidateCleanLocalShards {
+            collection: collection.clone(),
+            shard_ids: shard_ids.clone(),
+        });
 
+        // Drop first, forget the key afterwards. A failure inside a drop replays the same
+        // entry, and the replay still finds the key in the mapping to know what to clean up.
         actions.extend(shard_ids.into_iter().map(|shard_id| Action::DropShard {
             collection: collection.clone(),
             shard_id,
         }));
+
+        actions.push(Action::RemoveShardKey {
+            collection,
+            shard_key: shard_key.clone(),
+        });
 
         Ok(actions)
     }
