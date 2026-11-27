@@ -65,7 +65,7 @@ pub(crate) fn build_requested_graph(
         main_graph: progress.subtask("main_graph"),
     });
 
-    let pool = BuildPool::new(num_threads.max(1));
+    let pool = BuildPool::fixed(num_threads.max(1));
     let mut builder = GraphBuilder::select(
         ctx,
         &pool,

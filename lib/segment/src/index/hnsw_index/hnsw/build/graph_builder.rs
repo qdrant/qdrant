@@ -93,7 +93,7 @@ impl<'a> GraphBuilder<'a> {
     /// method of rules 4 and 5 as its local fallback; it does not hold a GPU while it waits.
     pub fn select(
         ctx: GraphBuildContext<'a>,
-        pool: &'a BuildPool,
+        pool: &'a BuildPool<'a>,
         rng: &'a mut dyn Rng,
         options: GraphBuildOptions<'a>,
     ) -> OperationResult<Self> {

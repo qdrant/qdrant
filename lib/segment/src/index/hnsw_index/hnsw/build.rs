@@ -181,10 +181,10 @@ impl HNSWIndex {
 
         debug!(
             "building HNSW for {total_vector_count} vectors with {} CPUs",
-            permit.num_cpus,
+            permit.full_cpus(),
         );
 
-        let pool = BuildPool::new(permit.num_cpus as usize);
+        let pool = BuildPool::for_permit(permit, stopped);
 
         // `R` may be unsized, while `&mut R` is not
         let mut rng = rng;

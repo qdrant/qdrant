@@ -120,12 +120,9 @@ impl ResourceBudget {
         let (num_cpus, cpu_permit) = self.try_acquire_cpu(desired_cpus)?;
         let (num_io, io_permit) = self.try_acquire_io(desired_io)?;
 
-        Some(ResourcePermit::new(
-            num_cpus as u32,
-            cpu_permit,
-            num_io as u32,
-            io_permit,
-        ))
+        let mut permit = ResourcePermit::new(num_cpus as u32, cpu_permit, num_io as u32, io_permit);
+        permit.budget = Some(self.clone());
+        Some(permit)
     }
 
     /// Acquire Resources permit for optimization task from global Resource budget.
@@ -264,6 +261,12 @@ pub struct ResourcePermit {
     ///
     /// WARN: is not called on drop, only when `release()` is called.
     on_manual_release: Option<Box<dyn Fn() + Send + Sync>>,
+
+    /// The budget the permit was acquired from, to take lent CPUs back. `None` for a permit
+    /// without a budget behind it.
+    budget: Option<ResourceBudget>,
+    /// CPUs given back with [`ResourcePermit::lend_cpu`], not taken back yet.
+    lent_cpus: u32,
 }
 
 impl ResourcePermit {
@@ -284,6 +287,53 @@ impl ResourcePermit {
             num_io: io_count,
             io_permit,
             on_manual_release: None,
+            budget: None,
+            lent_cpus: 0,
+        }
+    }
+
+    /// The CPUs the holder of this permit works with: those it holds, and those it lent.
+    pub fn full_cpus(&self) -> u32 {
+        self.num_cpus + self.lent_cpus
+    }
+
+    /// Give CPUs back to the budget, down to `keep`, while the holder waits for work done
+    /// elsewhere. Other tasks may acquire them. [`Self::restore_cpu`] takes them back.
+    pub fn lend_cpu(&mut self, keep: u32) {
+        let lend = self.num_cpus.saturating_sub(keep);
+        if lend == 0 {
+            return;
+        }
+        self.lent_cpus += lend;
+        self.release(lend, 0);
+    }
+
+    /// Take back the CPUs lent with [`Self::lend_cpu`], waiting until the budget has them.
+    /// Like any acquisition, it may return with fewer, see [`ResourceBudget::try_acquire`].
+    ///
+    /// Releases the CPUs it still holds first. Holding some while waiting for more would
+    /// deadlock tasks that all take theirs back at once, each holding what the others wait
+    /// for. So the permit holds no CPU while it waits, and none if `stopped` ends the wait:
+    /// then this returns `false`.
+    #[must_use]
+    pub fn restore_cpu(&mut self, stopped: &AtomicBool) -> bool {
+        if self.lent_cpus == 0 {
+            return true;
+        }
+        let desired_cpus = self.full_cpus();
+        self.lent_cpus = 0;
+        let Some(budget) = self.budget.clone() else {
+            // No budget to take them from: nothing was given back either
+            self.num_cpus = desired_cpus;
+            return true;
+        };
+        self.release(self.num_cpus, 0);
+        match budget.acquire(desired_cpus as usize, 0, stopped) {
+            Some(acquired) => {
+                self.merge(acquired);
+                true
+            }
+            None => false,
         }
     }
 
@@ -332,6 +382,8 @@ impl ResourcePermit {
             num_io: 0,
             io_permit: None,
             on_manual_release: None,
+            budget: None,
+            lent_cpus: 0,
         }
     }
 
@@ -395,9 +447,94 @@ impl Drop for ResourcePermit {
             num_io: _,
             io_permit,
             on_manual_release: _, // Only explicit release() should call the callback
+            budget: _,
+            lent_cpus: _,
         } = self;
 
         let _ = cpu_permit.take();
         let _ = io_permit.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+
+    use super::*;
+
+    #[test]
+    fn lent_cpus_go_to_others_and_come_back() {
+        let budget = ResourceBudget::new(4, 4);
+        let stopped = AtomicBool::new(false);
+        let mut permit = budget.try_acquire(4, 0).unwrap();
+        assert!(!budget.has_budget_exact(1, 0));
+
+        permit.lend_cpu(1);
+        assert_eq!((permit.num_cpus, permit.full_cpus()), (1, 4));
+        assert!(budget.has_budget_exact(3, 0));
+        // Lending again gives nothing more
+        permit.lend_cpu(1);
+        assert_eq!((permit.num_cpus, permit.full_cpus()), (1, 4));
+
+        assert!(permit.restore_cpu(&stopped));
+        assert_eq!((permit.num_cpus, permit.full_cpus()), (4, 4));
+        assert!(!budget.has_budget_exact(1, 0));
+
+        drop(permit);
+        assert!(budget.has_budget_exact(4, 0));
+    }
+
+    #[test]
+    fn restore_waits_for_the_budget_holding_nothing() {
+        let budget = ResourceBudget::new(4, 4);
+        let stopped = Arc::new(AtomicBool::new(false));
+        let mut permit = budget.try_acquire(4, 0).unwrap();
+        permit.lend_cpu(1);
+        // Another task takes what was lent, and more than leaves room for half of the permit
+        let other = budget.try_acquire(3, 0).unwrap();
+        assert_eq!(other.num_cpus, 3);
+
+        let restorer = {
+            let stopped = stopped.clone();
+            std::thread::spawn(move || {
+                let restored = permit.restore_cpu(&stopped);
+                (restored, permit)
+            })
+        };
+        // While it waits, it holds nothing: the CPU it kept is available
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !budget.has_budget_exact(1, 0) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the kept CPU was not released"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!restorer.is_finished());
+
+        // Half of what it asks for is enough, as for any acquisition
+        drop(other);
+        let (restored, permit) = restorer.join().unwrap();
+        assert!(restored);
+        assert_eq!((permit.num_cpus, permit.full_cpus()), (4, 4));
+    }
+
+    #[test]
+    fn stopped_restore_holds_nothing() {
+        let budget = ResourceBudget::new(2, 2);
+        let stopped = AtomicBool::new(false);
+        let mut permit = budget.try_acquire(2, 0).unwrap();
+        permit.lend_cpu(1);
+        // Another task takes the lent CPU, so there is nothing to take back
+        let other = budget.try_acquire(2, 0).unwrap();
+        assert_eq!(other.num_cpus, 1);
+
+        stopped.store(true, Ordering::Relaxed);
+        assert!(!permit.restore_cpu(&stopped));
+        assert_eq!((permit.num_cpus, permit.full_cpus()), (0, 0));
+        drop(other);
+        drop(permit);
+        assert!(budget.has_budget_exact(2, 0));
     }
 }

@@ -179,7 +179,13 @@ impl<'a> RemoteBuilder<'a> {
             counter,
             first: None,
         };
-        prepared.first = Some(submit_attempt(&self.args, &self.blocks, &prepared, 0));
+        let first = submit_attempt(&self.args, &self.blocks, &prepared, 0);
+        if first.is_ok() {
+            // The indexer builds the main graph, while one thread prepares the payload blocks
+            // here
+            self.cpu.local().pool.lend_cpus();
+        }
+        prepared.first = Some(first);
         self.prepared = Some(prepared);
     }
 
@@ -252,7 +258,11 @@ impl<'a> RemoteBuilder<'a> {
                 }
             };
             let handle = match submitted {
-                Ok(handle) => handle,
+                Ok(handle) => {
+                    // The indexer builds: this build only waits
+                    self.cpu.local().pool.lend_cpus();
+                    handle
+                }
                 Err(SubmitError::Transient(_)) => continue,
                 // Retrying cannot help: build locally right away
                 Err(SubmitError::Permanent(_)) => break,
