@@ -993,6 +993,60 @@ mod formula_grpc_roundtrip_tests {
             ]),
         ]));
     }
+
+    #[test]
+    fn lin_decay_survives_grpc_roundtrip() {
+        for (midpoint, scale) in [
+            (0.5_f32, 0.2_f32),
+            (0.0_f32, 1.0_f32),
+            (1.0_f32, 1.0_f32),
+            (0.5_f32, 31_536_000.0_f32),
+        ] {
+            let lambda = ParsedExpression::decay_params_to_lambda(
+                Some(midpoint),
+                Some(scale),
+                DecayKind::Lin,
+            )
+            .unwrap();
+            let original = ParsedFormula {
+                payload_vars: Default::default(),
+                conditions: Vec::new(),
+                defaults: HashMap::new(),
+                formula: ParsedExpression::Decay {
+                    kind: DecayKind::Lin,
+                    x: Box::new(ParsedExpression::new_score_id(0)),
+                    target: None,
+                    lambda: OrderedFloat(lambda),
+                },
+            };
+
+            let unparsed = grpc::Formula::from_parsed(original);
+            let internal = FormulaInternal::try_from(unparsed).unwrap();
+            let reparsed = ParsedFormula::try_from(internal).unwrap();
+
+            let ParsedExpression::Decay {
+                kind: DecayKind::Lin,
+                lambda: rt_lambda,
+                ..
+            } = reparsed.formula
+            else {
+                panic!(
+                    "unexpected reparsed formula variant: {:?}",
+                    reparsed.formula
+                );
+            };
+            if lambda == 0.0 {
+                assert_eq!(rt_lambda.0, 0.0);
+            } else {
+                let rel_err = (rt_lambda.0 - lambda).abs() / lambda;
+                assert!(
+                    rel_err <= 1e-5,
+                    "LinDecay gRPC roundtrip mismatch for ({midpoint}, {scale}): {lambda} vs {}",
+                    rt_lambda.0,
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
