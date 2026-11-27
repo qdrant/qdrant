@@ -2,7 +2,7 @@ use common::types::ScoreType;
 use half::f16;
 
 use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, default_similarity_batch};
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_f16::avx::euclid::avx_euclid_similarity_half;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
@@ -49,6 +49,14 @@ impl Metric<VectorElementTypeHalf> for EuclidMetric {
         }
 
         euclid_similarity_half(v1, v2)
+    }
+
+    fn similarity_batch(
+        query: &[VectorElementTypeHalf],
+        vectors: &[impl AsRef<[VectorElementTypeHalf]>],
+        scores: &mut [ScoreType],
+    ) {
+        default_similarity_batch::<_, Self>(query, vectors, scores);
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {

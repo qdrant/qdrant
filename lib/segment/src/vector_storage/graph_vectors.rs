@@ -79,6 +79,18 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorBlob for GraphVecto
     ) -> OperationResult<()> {
         self.graph.for_each_base_vector_in_batch(keys, f)
     }
+
+    /// One vector at a time.
+    fn for_each_chunk_in_batch<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
+        self.graph
+            .for_each_base_vector_in_batch(keys, |idx, vector| {
+                f(idx, std::slice::from_ref(&Cow::Borrowed(vector)));
+            })
+    }
 }
 
 impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {

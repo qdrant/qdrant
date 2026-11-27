@@ -10,7 +10,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::{DenseVectorStorageRead, VectorOffsetType, VectorStorageRead};
+use crate::vector_storage::{
+    DenseVectorStorageRead, VectorOffsetType, VectorStorageRead, default_for_each_dense_chunk,
+};
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
     for ReadOnlyChunkedDenseVectorStorage<T, S>
@@ -44,6 +46,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         callback: F,
     ) -> OperationResult<()> {
         self.vectors.for_each_in_batch(keys, callback)
+    }
+
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_dense_chunk(self, keys, f)
     }
 }
 

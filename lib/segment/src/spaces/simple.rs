@@ -1,6 +1,7 @@
 use common::types::ScoreType;
 
-use super::metric::{Metric, MetricPostProcessing};
+use super::dot_batch::dot_similarity_batch;
+use super::metric::{Metric, MetricPostProcessing, default_similarity_batch};
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -66,6 +67,14 @@ impl Metric<VectorElementType> for EuclidMetric {
         euclid_similarity(v1, v2)
     }
 
+    fn similarity_batch(
+        query: &[VectorElementType],
+        vectors: &[impl AsRef<[VectorElementType]>],
+        scores: &mut [ScoreType],
+    ) {
+        default_similarity_batch::<_, Self>(query, vectors, scores);
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
@@ -108,6 +117,14 @@ impl Metric<VectorElementType> for ManhattanMetric {
         }
 
         manhattan_similarity(v1, v2)
+    }
+
+    fn similarity_batch(
+        query: &[VectorElementType],
+        vectors: &[impl AsRef<[VectorElementType]>],
+        scores: &mut [ScoreType],
+    ) {
+        default_similarity_batch::<_, Self>(query, vectors, scores);
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
@@ -154,6 +171,14 @@ impl Metric<VectorElementType> for DotProductMetric {
         dot_similarity(v1, v2)
     }
 
+    fn similarity_batch(
+        query: &[VectorElementType],
+        vectors: &[impl AsRef<[VectorElementType]>],
+        scores: &mut [ScoreType],
+    ) {
+        dot_similarity_batch(query, vectors, scores);
+    }
+
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
@@ -173,6 +198,14 @@ impl Metric<VectorElementType> for CosineMetric {
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         DotProductMetric::similarity(v1, v2)
+    }
+
+    fn similarity_batch(
+        query: &[VectorElementType],
+        vectors: &[impl AsRef<[VectorElementType]>],
+        scores: &mut [ScoreType],
+    ) {
+        DotProductMetric::similarity_batch(query, vectors, scores);
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {

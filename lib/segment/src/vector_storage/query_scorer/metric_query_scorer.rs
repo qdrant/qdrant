@@ -12,7 +12,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::DenseVectorStorageRead;
-use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::query_scorer::{QueryScorer, is_read_with_prefetch_efficient};
 
 pub struct MetricQueryScorer<
     'a,
@@ -82,8 +82,17 @@ impl<
         self.hw.vector_io_read(ids.len());
 
         self.vector_storage
-            .for_each_in_dense_batch(ids, |idx, vector| {
-                scores[idx] = TMetric::similarity(&self.query, vector);
+            .for_each_dense_chunk(ids, |offset, vectors| {
+                let scores = &mut scores[offset..offset + vectors.len()];
+                if is_read_with_prefetch_efficient(&ids[offset..offset + vectors.len()]) {
+                    // Consecutive ids, as in a full scan, are one sequential stream that the
+                    // hardware prefetchers follow best one vector after the other
+                    for (score, vector) in scores.iter_mut().zip(vectors) {
+                        *score = TMetric::similarity(&self.query, vector);
+                    }
+                } else {
+                    TMetric::similarity_batch(&self.query, vectors, scores);
+                }
             })
     }
 
