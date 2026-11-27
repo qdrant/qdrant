@@ -1,9 +1,10 @@
 use common::sorted_slice::SortedSlice;
-use common::universal_io::{CachedReadFs, UniversalReadFsAsync};
+use common::universal_io::{CachedReadFs, ListedFile, UniversalReadFsAsync};
 
 use super::LookupSegment;
 use crate::common::live_reload::LiveReload as _;
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::mutable_id_tracker::read_only::TrackerProbe;
 
 impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// Refresh every component to the current on-disk state (id-tracker
@@ -18,6 +19,42 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     ///
     /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
     pub fn live_reload(&mut self) -> OperationResult<()> {
+        let probe = self.probe_reload()?;
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+
+        // Prepare new LIST snapshot
+        self.fs.cache_file_info()?;
+        self.reload_listed(probe)
+    }
+
+    /// First half of a [`live_reload`](Self::live_reload) whose directory
+    /// listing is shared with other segments: measure how far the writer has
+    /// committed. An unchanged probe means there is nothing to reload; any
+    /// other is finished by [`live_reload_from`](Self::live_reload_from), over
+    /// a LIST taken *after* this returned.
+    pub fn probe_reload(&self) -> OperationResult<TrackerProbe> {
+        futures::executor::block_on(self.id_tracker.borrow().probe_committed(self.fs.inner()))
+    }
+
+    /// Second half of [`probe_reload`](Self::probe_reload): reload over the
+    /// snapshot `listing` gives of the segment directory — a LIST of a prefix
+    /// covering it, taken after the probe. A no-op for an unchanged probe.
+    pub fn live_reload_from(
+        &mut self,
+        probe: TrackerProbe,
+        listing: &[ListedFile],
+    ) -> OperationResult<()> {
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+        self.fs.cache_file_info_from(listing);
+        self.reload_listed(probe)
+    }
+
+    /// The reload proper, once the snapshot is in place.
+    fn reload_listed(&mut self, probe: TrackerProbe) -> OperationResult<()> {
         let Self {
             fs,
             segment_path: _,
@@ -28,14 +65,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             appendable: _,
         } = self;
 
-        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
-        if probe.is_unchanged() {
-            return Ok(());
-        }
         let max_committed_id = probe.max_committed_id();
-
-        // Prepare new LIST snapshot
-        fs.cache_file_info()?;
 
         // Live preload: schedule everything
         let mut futs = id_tracker.borrow().live_preload(fs)?;

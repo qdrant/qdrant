@@ -33,7 +33,7 @@ use common::universal_io::UniversalRead;
 
 pub use self::appendable::AppendableSegment;
 pub use self::delete_only::DeleteOnlySegment;
-pub use self::lookup::LookupSegment;
+pub use self::lookup::{LookupSegment, PendingLookupOpen};
 pub use self::segment_enum::UpdateOnlySegmentEnum;
 pub use self::tracker_lookup::TrackerLookup;
 use crate::id_tracker::IdTrackerRead as _;

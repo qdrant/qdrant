@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 
 use ahash::AHashMap;
 use common::ambient::{self, ThreadPoolExt as _};
@@ -16,6 +17,7 @@ use rayon::prelude::*;
 use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
+use segment::id_tracker::mutable_id_tracker::read_only::TrackerProbe;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
@@ -25,6 +27,7 @@ use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::checked_apply_error::CheckedApplyError;
 use crate::update_only::holder::LookupSegmentHolder;
+use crate::update_only::listing::list_segment_dirs;
 use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
 use crate::update_only::metering::{UpdateBytes, UpdateMetering};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
@@ -499,14 +502,56 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// next batch resolves against what this one wrote. The writers stay
     /// open: their in-memory state advanced with each durable write, so a
     /// reloaded lookup and its held writer describe the same log.
-    fn reload_lookups(&self, written: &[Uuid]) -> OperationResult<()> {
+    ///
+    /// Every lookup is probed first, then the segments directory is listed
+    /// once for all of them (see [`list_segment_dirs`]) — a probe must not be
+    /// newer than the listing its reload runs on. The same listing, taken after
+    /// the batch's last write, seeds the write target's writer, so its next
+    /// store needs no LIST of its own.
+    fn reload_lookups(&mut self, written: &[Uuid]) -> OperationResult<()> {
         let segments = self.segments.read();
+        let probes: Vec<(Uuid, TrackerProbe)> = self.pool.ambient_install(|handoff| {
+            written
+                .par_iter()
+                .map(|&uuid| {
+                    let _scope = handoff.enter_guard();
+                    Ok((uuid, segments.get(uuid)?.write().probe_reload()?))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?;
+
+        let changed: Vec<(Uuid, TrackerProbe)> = probes
+            .into_iter()
+            .filter(|(_, probe)| !probe.is_unchanged())
+            .collect();
+        if changed.is_empty() {
+            return Ok(());
+        }
+
+        let write_target = segments.write_target_uuid();
+        let mut paths = Vec::with_capacity(changed.len() + 1);
+        for &uuid in changed.iter().map(|(uuid, _)| uuid).chain(&write_target) {
+            paths.push(segments.get(uuid)?.read().segment_path.clone());
+        }
+        let listing = list_segment_dirs(&self.fs, paths.iter().map(PathBuf::as_path))?;
+
         self.pool.ambient_install(|handoff| {
-            written.par_iter().try_for_each(|&uuid| {
+            changed.par_iter().try_for_each(|&(uuid, probe)| {
                 let _scope = handoff.enter_guard();
-                segments.get(uuid)?.write().live_reload()
+                segments
+                    .get(uuid)?
+                    .write()
+                    .live_reload_from(probe, &listing)
             })
-        })
+        })?;
+
+        if let Some(writer) = write_target
+            .and_then(|uuid| self.writers.get_mut(&uuid))
+            .and_then(UpdateOnlySegmentEnum::as_appendable_mut)
+        {
+            writer.seed_file_info(&listing);
+        }
+        Ok(())
     }
 }
 

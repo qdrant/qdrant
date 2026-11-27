@@ -8,6 +8,7 @@ pub mod disk_cache;
 mod error;
 #[cfg(target_os = "linux")]
 mod io_uring;
+mod list_prefix;
 mod local_file_ops;
 mod mmap;
 mod oneshot;
@@ -27,6 +28,7 @@ pub use self::cached_fs::{CachedFs, CachedReadFsContext, FileInfo};
 pub use self::error::{IsNotFound, OkNotFound, OkUnchanged, UniversalIoError};
 #[cfg(target_os = "linux")]
 pub use self::io_uring::{IoUringFile, IoUringFs, IoUringOpenExtra, is_io_uring_supported};
+pub use self::list_prefix::ListPrefix;
 pub use self::mmap::{MmapFile, MmapFs};
 pub use self::oneshot::OneshotFile;
 pub use self::op_stats::{LATENCY_BOUNDS, LATENCY_BUCKETS, OpGuard, OpStats, OpStatsSnapshot};

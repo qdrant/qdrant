@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedFs, CachedReadFs, FileInfo, Populate, UniversalReadFsAsync, read_json_via,
+    CachedFs, CachedReadFs, FileInfo, ListedFile, Populate, UniversalReadFsAsync, read_json_via,
 };
 
 use super::LookupSegment;
@@ -38,43 +38,91 @@ pub(in crate::segment::update_only) const WRITER_POPULATE: Populate = Populate::
 /// known files.
 ///
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
-/// config the writer never opens.
+/// config the writer never opens. Takes its own LIST of the segment directory;
+/// [`LookupSegment::begin_open`] and [`LookupSegment::finish_open`] split it
+/// around a LIST shared by several segments instead.
 pub(in crate::segment::update_only) fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
-    futures::executor::block_on(build_cached_fs_async(fs, segment_path))
+    futures::executor::block_on(async {
+        let pending = PendingLookupOpen::begin(fs, segment_path).await?;
+        let listing = pending
+            .cached_fs
+            .inner()
+            .list_files_async(segment_path)
+            .await?;
+        Ok(pending.into_cached_fs(&listing))
+    })
 }
 
-async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
-    fs: Fs,
-    segment_path: &Path,
-) -> OperationResult<CachedFs<Fs>> {
-    let mut cached_fs = CachedFs::new(fs, segment_path)?;
+/// A segment open waiting for the listing of its directory: its commit marks
+/// probed and its static files scheduled, so the LIST — its own, or one shared
+/// with other segments — overlaps with those fetches.
+///
+/// See [`LookupSegment::begin_open`].
+pub struct PendingLookupOpen<Fs: UniversalReadFsAsync> {
+    cached_fs: CachedFs<Fs>,
+    segment_path: PathBuf,
+    /// The id tracker's commit marks as probed before the LIST, injected over
+    /// the listing so the snapshot never reports them newer than the probe.
+    commit_marks: Vec<(PathBuf, Option<FileInfo>)>,
+}
 
-    // Probe id-tracker commit marks first, so we have an accurate commit mark available.
-    let commit_marks = ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark_paths(segment_path);
-    let probed_files = cached_fs.inner().select_files_async(&commit_marks).await?;
+impl<Fs: UniversalReadFsAsync> PendingLookupOpen<Fs> {
+    async fn begin(fs: Fs, segment_path: &Path) -> OperationResult<Self> {
+        let cached_fs = CachedFs::new(fs, segment_path)?;
 
-    // Schedule other static files to overlap with LIST op. Absence is tolerated here:
-    // the subsequent read reports it gracefully.
-    for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
-        cached_fs.schedule_open(&segment_path.join(file_name), None, None);
+        // Probe id-tracker commit marks first, so we have an accurate commit mark available.
+        let commit_mark_paths = ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark_paths(segment_path);
+        let probed_files = cached_fs
+            .inner()
+            .select_files_async(&commit_mark_paths)
+            .await?;
+
+        // Schedule other static files to overlap with LIST op. Absence is tolerated here:
+        // the subsequent read reports it gracefully.
+        for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
+            cached_fs.schedule_open(&segment_path.join(file_name), None, None);
+        }
+
+        let commit_marks = commit_mark_paths
+            .into_iter()
+            .map(|path| {
+                let info = probed_files
+                    .iter()
+                    .find(|f| f.path == path)
+                    .map(FileInfo::from);
+                (path, info)
+            })
+            .collect();
+
+        Ok(Self {
+            cached_fs,
+            segment_path: segment_path.to_path_buf(),
+            commit_marks,
+        })
     }
 
-    // LIST
-    cached_fs.cache_file_info_async().await?;
-
-    // Inject id-tracker probe into cached_fs.
-    for path in commit_marks {
-        let info = probed_files
-            .iter()
-            .find(|f| f.path == path)
-            .map(FileInfo::from);
-        cached_fs.set_file_info(path, info);
+    /// The segment directory being opened.
+    pub fn segment_path(&self) -> &Path {
+        &self.segment_path
     }
 
-    Ok(cached_fs)
+    /// Take the snapshot from `listing`, then inject the commit-mark probe.
+    fn into_cached_fs(self, listing: &[ListedFile]) -> CachedFs<Fs> {
+        let Self {
+            mut cached_fs,
+            segment_path: _,
+            commit_marks,
+        } = self;
+
+        cached_fs.cache_file_info_from(listing);
+        for (path, info) in commit_marks {
+            cached_fs.set_file_info(path, info);
+        }
+        cached_fs
+    }
 }
 
 impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
@@ -97,6 +145,41 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         deferred_threshold_kb: Option<usize>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
+        Self::open_cached(cached_fs, segment_path, deferred_threshold_kb)
+    }
+
+    /// First half of an [`open`](Self::open) whose directory listing is shared
+    /// with other segments: probes the id tracker's commit marks and schedules
+    /// the static files, but takes no LIST.
+    ///
+    /// Finish with [`finish_open`](Self::finish_open), handing it a LIST taken
+    /// *after* this returned — the probe must not be newer than the listing.
+    pub fn begin_open(fs: Fs, segment_path: &Path) -> OperationResult<PendingLookupOpen<Fs>> {
+        futures::executor::block_on(PendingLookupOpen::begin(fs, segment_path))
+    }
+
+    /// Second half of [`begin_open`](Self::begin_open): open the segment over
+    /// the snapshot `listing` gives of its directory.
+    ///
+    /// `listing` is a LIST of a prefix covering the segment directory — its
+    /// parent, typically, so one LIST serves every segment of a shard — taken
+    /// after `begin_open` returned. Entries outside the segment directory are
+    /// ignored.
+    pub fn finish_open(
+        pending: PendingLookupOpen<Fs>,
+        listing: &[ListedFile],
+        deferred_threshold_kb: Option<usize>,
+    ) -> OperationResult<Self> {
+        let segment_path = pending.segment_path.clone();
+        let cached_fs = pending.into_cached_fs(listing);
+        Self::open_cached(cached_fs, &segment_path, deferred_threshold_kb)
+    }
+
+    fn open_cached(
+        cached_fs: CachedFs<Fs>,
+        segment_path: &Path,
+        deferred_threshold_kb: Option<usize>,
+    ) -> OperationResult<Self> {
         let config = Self::preopen(&cached_fs, segment_path)?;
         let deferred_internal_id = deferred_threshold_kb
             .and_then(|threshold_kb| segment_deferred_internal_id(&config, threshold_kb));

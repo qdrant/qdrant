@@ -21,6 +21,7 @@ use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator}
 use crate::read_view::build_segment_pool;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::holder::LookupSegmentHolder;
+use crate::update_only::listing::list_segment_dirs;
 
 impl UpdateOnlyEdgeShard<MmapFs> {
     /// Open a writer over local memory-mapped files, discovering segments by
@@ -39,9 +40,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// its own prefetching [`CachedFs`](common::universal_io::CachedFs) (see
     /// [`LookupSegment::open`]) — the same shape as the read-only
     /// follower's load — and entirely cold: no point data is fetched until a
-    /// batch reads a point. Each segment's writer is opened here too, resuming
-    /// from the state its lookup half just observed; the store components stay
-    /// unopened until a point is actually stored. A segment that fails to load
+    /// batch reads a point. The snapshots of all those caches come from one
+    /// LIST of the segments directory, not one per segment (see
+    /// [`LookupSegment::begin_open`]). Each segment's writer is opened here
+    /// too, resuming from the state its lookup half just observed and from
+    /// the same listing; the store components stay unopened until a point is
+    /// actually stored. A segment that fails to load
     /// is an error, not a skip — a writer that misses a segment would resolve
     /// a point against a stale copy of itself, or duplicate it.
     ///
@@ -67,18 +71,41 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let segments: Vec<(Uuid, ListedSegment)> =
             enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<_> = pool.ambient_install(|handoff| {
+
+        // Probe every segment's commit marks and schedule its static files...
+        let pending: Vec<_> = pool.ambient_install(|handoff| {
             segments
                 .into_par_iter()
                 .map(|(uuid, listing)| {
                     let _scope = handoff.enter_guard();
                     let ListedSegment { path, writable } = listing;
-                    let segment = LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
+                    let pending = LookupSegment::begin_open(fs.clone(), &path)?;
+                    Ok((uuid, pending, writable))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?;
+
+        // ...then list them all at once, after every probe...
+        let listing = list_segment_dirs(
+            &fs,
+            pending.iter().map(|(_, pending, _)| pending.segment_path()),
+        )?;
+
+        // ...and open each over its part of the listing, its writer included.
+        let opened: Vec<_> = pool.ambient_install(|handoff| {
+            pending
+                .into_par_iter()
+                .map(|(uuid, pending, writable)| {
+                    let _scope = handoff.enter_guard();
+                    let path = pending.segment_path().to_path_buf();
+                    let segment =
+                        LookupSegment::finish_open(pending, &listing, deferred_threshold_kb)?;
                     let writer = UpdateOnlySegmentEnum::open(
                         fs.clone(),
                         &path,
                         &segment.segment_config,
                         segment.writer_state(),
+                        Some(&listing),
                     )?;
                     Ok((uuid, segment, writer, writable))
                 })
@@ -172,6 +199,7 @@ where
             &remote,
             &lookup.segment_config,
             lookup.writer_state(),
+            None,
         )?;
         self.segments.write().insert(uuid, lookup, true);
         self.writers.insert(uuid, writer);

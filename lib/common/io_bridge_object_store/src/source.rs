@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
+use common::universal_io::{ListPrefix, ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use io_bridge::{AsyncRead, AsyncWrite, OffsetByteStream};
 use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt, PutPayload};
@@ -99,11 +99,16 @@ impl<S: BlobBackend> AsyncRead for ObjectStoreSource<S> {
         let prefix_path = prefix.to_path_buf();
         // object_store lists by whole path segment; emulate the byte-prefix
         // contract (list the parent dir, then filter) — see `local_list_files`.
-        let prefix_str = prefix.to_string_lossy().into_owned();
-        let dir_prefix = prefix
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
+        // A prefix ending with a separator names a directory: list just that
+        // one, rather than its parent and every sibling under it.
+        let list_prefix = ListPrefix::new(prefix);
+        let dir_prefix = Some(list_prefix.dir)
+            .filter(|dir| !dir.as_os_str().is_empty())
             .map(build_dir_prefix);
+        let prefix_str = match &dir_prefix {
+            Some(dir_prefix) if list_prefix.is_directory() => dir_prefix.to_string() + "/",
+            Some(_) | None => prefix.to_string_lossy().into_owned(),
+        };
 
         async move {
             use futures::TryStreamExt;
@@ -617,6 +622,43 @@ mod tests {
                 ("dir/page_1.dat".to_string(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn list_files_trailing_separator_lists_only_that_directory() {
+        let runtime = BridgeRuntime::global();
+        let store = inmemory_with(
+            &runtime,
+            &[
+                ("shard/segments/a/page_0.dat", b"a"),
+                ("shard/segments/b/sub/page_1.dat", b"bb"),
+                ("shard/segments_manifest.json", b"c"),
+                ("shard/updates/0001", b"d"),
+                ("shard/cursor.json", b"e"),
+            ],
+        );
+        let source = ObjectStoreSource::new(store);
+        let list = |prefix: &Path| {
+            let mut files: Vec<String> = runtime
+                .block_on(source.list_files(prefix))
+                .expect("list_files")
+                .into_iter()
+                .map(|file| file.path.to_string_lossy().into_owned())
+                .collect();
+            files.sort();
+            files
+        };
+
+        let segments_dir = Path::new("shard").join("segments");
+        assert_eq!(
+            list(&segments_dir.join("")),
+            [
+                "shard/segments/a/page_0.dat".to_string(),
+                "shard/segments/b/sub/page_1.dat".to_string(),
+            ],
+        );
+        // As a name prefix, the manifest next to the directory matches too.
+        assert_eq!(list(&segments_dir).len(), 3);
     }
 
     #[test]
