@@ -313,9 +313,11 @@ pub struct IndexingServiceConfig {
     #[serde(default = "default_min_healing_coverage")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub min_healing_coverage: f64,
-    /// Give a task up if the indexer does not call within this time (D6).
+    /// Give a task up if the indexer does not call within this time (D6). At least 10: while
+    /// it builds, the indexer calls only to heartbeat, every 5 seconds, so a shorter time
+    /// gives up every healthy task.
     #[serde(default = "default_heartbeat_timeout_sec")]
-    #[validate(range(min = 1))]
+    #[validate(range(min = 10))]
     pub heartbeat_timeout_sec: u64,
     /// Give a submitted task up if the indexer does not fetch it within this time. Nothing
     /// heartbeats a task waiting in a queue, so this is longer than the heartbeat timeout.

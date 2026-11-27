@@ -391,9 +391,13 @@ mod tests {
 
     #[test]
     fn invalid_settings_fail_at_startup() {
-        let mut zero_lease = config("http://localhost:6340");
-        zero_lease.heartbeat_timeout_sec = 0;
-        assert!(RemoteIndexingClient::new(zero_lease).is_err());
+        // Shorter than two heartbeats of the indexer: every healthy task would expire
+        let mut short_lease = config("http://localhost:6340");
+        short_lease.heartbeat_timeout_sec = 9;
+        assert!(RemoteIndexingClient::new(short_lease).is_err());
+        let mut shortest_lease = config("http://localhost:6340");
+        shortest_lease.heartbeat_timeout_sec = 10;
+        assert!(RemoteIndexingClient::new(shortest_lease).is_ok());
 
         let mut zero_queue_lease = config("http://localhost:6340");
         zero_queue_lease.queue_timeout_sec = 0;

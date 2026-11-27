@@ -598,7 +598,8 @@ tls:
 #   # points of the new segment, from 0 to 1. 0 always heals.
 #   # Default: 0.5
 #   min_healing_coverage: 0.5
-#   # Give a task up if the indexer does not call within this time.
+#   # Give a task up if the indexer does not call within this time. At least 10: the indexer
+#   # heartbeats every 5 seconds.
 #   # Default: 60
 #   heartbeat_timeout_sec: 60
 #   # Give a submitted task up if no indexer fetches it within this time.
