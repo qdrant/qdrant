@@ -182,6 +182,7 @@ pub(super) fn new_dispatcher_with_proposals() -> (
     open_dispatcher(storage_dir)
 }
 
+/// Open a dispatcher over the supplied temporary storage for alias persistence tests.
 pub(super) fn open_dispatcher(
     storage_dir: TempDir,
 ) -> (
@@ -212,6 +213,7 @@ pub(super) fn open_dispatcher(
         optimizers_overwrite: None,
         wal: Default::default(),
         performance: PerformanceConfig {
+            dynamic_search_batch_max: 0,
             max_search_threads: 1,
             max_optimization_runtime_threads: 1,
             optimizer_cpu_budget: 0,

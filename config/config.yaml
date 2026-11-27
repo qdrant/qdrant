@@ -141,6 +141,11 @@ storage:
     # Number of parallel threads used for search operations. If 0 - auto selection.
     max_search_threads: 0
 
+    # Experimental coalescing of compatible B1 plain dense SQ8 searches per shard.
+    # Requires HNSW m=0; exact and traced searches use the ordinary path.
+    # 0 disables coalescing (default); 1 provides a single-request control; maximum 64.
+    dynamic_search_batch_max: 0
+
     # CPU budget, how many CPUs (threads) to allocate for an optimization job.
     # If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
     # If negative - subtract this number of CPUs from the available CPUs.

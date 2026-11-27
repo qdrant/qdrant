@@ -7,6 +7,7 @@ pub(super) mod query;
 pub(super) mod resolve_submit;
 pub(super) mod scroll;
 pub(super) mod search;
+mod search_batcher;
 pub(super) mod shard_ops;
 
 mod snapshot;
@@ -111,6 +112,7 @@ const WAL_SLOW_OP_REPORT_THRESHOLD: Duration = Duration::from_secs(30);
 #[must_use = "Local Shard must be explicitly handled"]
 pub struct LocalShard {
     collection_name: CollectionId,
+    search_batcher: std::sync::OnceLock<Arc<search_batcher::SearchBatcher>>,
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
@@ -338,6 +340,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         Self {
+            search_batcher: std::sync::OnceLock::new(),
             collection_name,
             segments: segment_holder,
             collection_config,
