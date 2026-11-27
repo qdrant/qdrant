@@ -39,7 +39,7 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
         peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
 
     # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader)
+    wait_for_uniform_cluster_status(peer_api_uris)
 
     # Check that there are no collections on all peers
     for uri in peer_api_uris:
@@ -67,7 +67,7 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
         r = requests.post(f"{peer_api_uri}/cluster/recover")
         assert_http_ok(r)
 
-    # Kill leader
+    # Kill the first peer, usually the leader
     processes.pop(0).kill()
 
     # Wait for new leader

@@ -28,7 +28,7 @@ def test_points_search(tmp_path: pathlib.Path, async_scorer: bool):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri)
+    wait_peer_added(bootstrap_api_uri)
 
     # Start other peers
     for i in range(1, len(peer_dirs)):
@@ -36,7 +36,7 @@ def test_points_search(tmp_path: pathlib.Path, async_scorer: bool):
             peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, extra_env=extra_env))
 
     # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader)
+    wait_for_uniform_cluster_status(peer_api_uris)
 
     # Check that there are no collections on all peers
     for uri in peer_api_uris:

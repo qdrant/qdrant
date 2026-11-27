@@ -9,6 +9,7 @@ from .assertions import assert_http_ok
 from .raft_messages import MSG_APPEND_RESPONSE, decode_raft_message, removal_entry_index
 from .utils import (
     all_peers_are_voters,
+    get_leader_index,
     every_test,  # noqa: F401 -- process cleanup fixture
     processes,
     start_cluster,
@@ -49,11 +50,15 @@ def test_remove_peer_from_two_node_cluster(tmp_path, remove_leader, server_timeo
     })
     wait_for(all_peers_are_voters, uris)
     wait_for_same_applied_commit(uris)
+    # The rest of the test addresses the leader as index 0
+    leader_index = get_leader_index(uris)
+    follower_index = 1 - leader_index
+    uris = [uris[leader_index], uris[follower_index]]
+    leader_process, follower_process = processes[leader_index], processes[follower_index]
     leader, follower = (_cluster(uri) for uri in uris)
     leader_id, follower_id = leader["peer_id"], follower["peer_id"]
     removed_id = leader_id if remove_leader else follower_id
     assert leader["raft_info"]["leader"] == follower["raft_info"]["leader"] == leader_id
-    leader_process, follower_process = processes
     removal_index = None
 
     def is_removal(request):
