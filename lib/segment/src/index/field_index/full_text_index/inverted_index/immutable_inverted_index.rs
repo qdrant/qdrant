@@ -235,23 +235,13 @@ impl ImmutableInvertedIndex {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {
-            // Check that at least one token is in document, the most common first: it accepts
-            // the most points
-            let contains =
-                |token_id: &TokenId| postings[*token_id as usize].visitor().contains(point_id);
-            let Some(most_common) = tokens
+            // Check that at least one token is in document. Token ids follow first
+            // appearance, so common tokens usually come first already: picking the most
+            // common one per point costs more than it saves.
+            tokens
                 .tokens()
                 .iter()
-                .max_by_key(|token_id| postings[**token_id as usize].len())
-            else {
-                return false;
-            };
-            contains(most_common)
-                || tokens
-                    .tokens()
-                    .iter()
-                    .filter(|token_id| *token_id != most_common)
-                    .any(contains)
+                .any(|token_id| postings[*token_id as usize].visitor().contains(point_id))
         }
 
         match &self.postings {

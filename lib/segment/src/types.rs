@@ -3852,8 +3852,28 @@ impl GeoPolygon {
         Ok(())
     }
 
-    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    /// Convert to a [`PolygonWrapper`] for checking many points: also computes the bounding
+    /// rectangle, to reject points outside it cheaply.
     pub fn convert(&self) -> PolygonWrapper {
+        let polygon = self.to_geo_polygon();
+        let bounding_rect = polygon.bounding_rect();
+        PolygonWrapper {
+            polygon,
+            bounding_rect,
+        }
+    }
+
+    /// Convert to a [`PolygonWrapper`] for checking a single point: computing the bounding
+    /// rectangle would cost as much as the check it saves.
+    pub fn convert_unbounded(&self) -> PolygonWrapper {
+        PolygonWrapper {
+            polygon: self.to_geo_polygon(),
+            bounding_rect: None,
+        }
+    }
+
+    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    fn to_geo_polygon(&self) -> Polygon {
         let exterior_line: LineString = LineString(
             self.exterior
                 .points
@@ -3883,12 +3903,7 @@ impl GeoPolygon {
                 .map(LineString)
                 .collect(),
         };
-        let polygon = Polygon::new(exterior_line, interior_lines);
-        let bounding_rect = polygon.bounding_rect();
-        PolygonWrapper {
-            polygon,
-            bounding_rect,
-        }
+        Polygon::new(exterior_line, interior_lines)
     }
 }
 
