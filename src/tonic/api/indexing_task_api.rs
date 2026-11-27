@@ -74,6 +74,17 @@ async fn blocking<T: Send + 'static>(
         .map_err(status)
 }
 
+/// End the task of a graph the assembler refuses, as an invalid graph. Off the async runtime:
+/// ending a task waits for the reads in flight.
+async fn reject_upload(token: TaskToken, reason: String) -> Status {
+    match tokio::task::spawn_blocking(move || REMOTE_INDEXING_TASKS.reject_upload(&token, reason))
+        .await
+    {
+        Ok(err) => status(err),
+        Err(err) => Status::internal(format!("task panicked: {err}")),
+    }
+}
+
 type VectorsStream = Pin<Box<dyn Stream<Item = Result<IndexingVectorsChunk, Status>> + Send>>;
 
 fn receiver_stream<T: Send + 'static>(
@@ -192,9 +203,14 @@ impl IndexingTask for IndexingTaskService {
             let Some(message) = message else {
                 break;
             };
-            assembler.push(message).map_err(Status::invalid_argument)?;
+            if let Err(reason) = assembler.push(message) {
+                return Err(reject_upload(token, reason).await);
+            }
         }
-        let graph = assembler.finish().map_err(Status::invalid_argument)?;
+        let graph = match assembler.finish() {
+            Ok(graph) => graph,
+            Err(reason) => return Err(reject_upload(token, reason).await),
+        };
         // Validation walks the whole graph
         blocking(move || REMOTE_INDEXING_TASKS.upload(&token, graph)).await?;
         Ok(Response::new(UploadIndexingGraphResponse {}))

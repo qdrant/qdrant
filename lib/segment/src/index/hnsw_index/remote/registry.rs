@@ -470,28 +470,35 @@ impl TaskRegistry {
         let _scope = common::ambient::unmeasured_guard(common::reason::reason(
             "remote indexing upload, not a request",
         ));
-        let validation = graph.validate(&limits);
-        let size = graph.size_bytes();
-        let outcome = match &validation {
-            Ok(()) => {
-                REMOTE_INDEXING_METRICS
-                    .graph_bytes_received
-                    .fetch_add(size as u64, Ordering::Relaxed);
-                TaskOutcome::Graph(graph)
-            }
-            Err(err) => {
-                REMOTE_INDEXING_METRICS
-                    .validation_failures
-                    .fetch_add(1, Ordering::Relaxed);
-                log::warn!(
-                    "Remote indexing task {} uploaded an invalid graph: {err}",
-                    state.task_id,
-                );
-                TaskOutcome::Rejected(err.to_string())
-            }
-        };
-        self.finish(token, &state, outcome);
-        validation.map_err(|err| RemoteTaskError::InvalidArgument(err.to_string()))
+        if let Err(err) = graph.validate(&limits) {
+            return Err(self.reject(token, &state, err.to_string()));
+        }
+        REMOTE_INDEXING_METRICS
+            .graph_bytes_received
+            .fetch_add(graph.size_bytes() as u64, Ordering::Relaxed);
+        self.finish(token, &state, TaskOutcome::Graph(graph));
+        Ok(())
+    }
+
+    /// `UploadGraph` with a graph that is refused while it streams in, before it is whole.
+    /// Ends the task like a graph that fails validation: building it again gives the same.
+    pub fn reject_upload(&self, token: &TaskToken, reason: String) -> RemoteTaskError {
+        match self.get(token) {
+            Ok(state) => self.reject(token, &state, reason),
+            Err(err) => err,
+        }
+    }
+
+    fn reject(&self, token: &TaskToken, state: &TaskState, reason: String) -> RemoteTaskError {
+        REMOTE_INDEXING_METRICS
+            .validation_failures
+            .fetch_add(1, Ordering::Relaxed);
+        log::warn!(
+            "Remote indexing task {} uploaded an invalid graph: {reason}",
+            state.task_id,
+        );
+        self.finish(token, state, TaskOutcome::Rejected(reason.clone()));
+        RemoteTaskError::InvalidArgument(reason)
     }
 
     /// `Fail`: the indexer gives up on the task.
@@ -796,6 +803,30 @@ mod tests {
         ));
         assert!(matches!(
             REMOTE_INDEXING_TASKS.read_payload_blocks(&token, 1),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+        let outcome = handle.wait(
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+            || false,
+        );
+        assert!(matches!(outcome, Ok(TaskOutcome::Rejected(_))));
+    }
+
+    #[test]
+    fn graph_refused_in_the_stream_ends_the_task() {
+        let (task, _storage) = new_task(3);
+        let handle = REMOTE_INDEXING_TASKS.register(task);
+        let token = handle.token();
+
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.reject_upload(&token, "too many links".to_string()),
+            RemoteTaskError::InvalidArgument(_)
+        ));
+        // The indexer reports the refused upload, which must not turn it into a retry
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.fail(&token, "upload refused".to_string()),
             Err(RemoteTaskError::PermissionDenied)
         ));
         let outcome = handle.wait(
