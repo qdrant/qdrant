@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::vec::BitVec;
-use common::generic_consts::Random;
+use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 use parking_lot::{Condvar, Mutex, RwLock};
 use rand::RngExt as _;
@@ -356,7 +356,7 @@ impl TaskRegistry {
                 let storage = storage.borrow();
                 read_chunk(&state.deleted, start, end, |point| {
                     Ok(storage
-                        .vector_bytes_opt::<Random>(point)?
+                        .vector_bytes_opt::<Sequential>(point)?
                         .unwrap_or_default())
                 })?
             }
