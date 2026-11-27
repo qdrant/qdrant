@@ -6,7 +6,7 @@ use segment::index::payload_config::PayloadConfig;
 use segment::json_path::JsonPath;
 use segment::segment_constructor::get_payload_index_path;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
-use shard::files::SEGMENTS_PATH;
+use shard::files::{SEGMENTS_PATH, WAL_PATH};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 
@@ -107,4 +107,43 @@ fn a_rebuild_adds_an_index_its_sources_lack() {
         built.iter().all(|schema| schema == &Some(keyword.clone())),
         "{built:?}"
     );
+}
+
+fn tag_indexed_per_segment(dir: &Path) -> Vec<bool> {
+    segment_dirs(dir)
+        .iter()
+        .map(|segment| {
+            let path = PayloadConfig::get_config_path(&get_payload_index_path(segment));
+            PayloadConfig::load(&path)
+                .unwrap()
+                .indices
+                .contains_key(&tag())
+        })
+        .collect()
+}
+
+/// What the serverless indexer does: segments copied without their WAL, so a fresh one numbers
+/// operations below their versions.
+#[test]
+fn conforming_reaches_segments_above_a_fresh_wal() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-conform")
+        .tempdir()
+        .unwrap();
+    drop(leader_due_a_vacuum(dir.path(), false));
+    fs_err::remove_dir_all(dir.path().join(WAL_PATH)).unwrap();
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+
+    let keyword = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    shard
+        .conform_payload_schema(&HashMap::from([(tag(), keyword)]))
+        .unwrap();
+    let indexed = tag_indexed_per_segment(dir.path());
+    assert!(
+        !indexed.is_empty() && !indexed.contains(&false),
+        "{indexed:?}"
+    );
+
+    shard.conform_payload_schema(&HashMap::new()).unwrap();
+    assert!(!tag_indexed_per_segment(dir.path()).contains(&true));
 }

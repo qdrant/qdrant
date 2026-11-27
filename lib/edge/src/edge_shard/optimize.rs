@@ -25,6 +25,13 @@ use uuid::Uuid;
 
 use crate::EdgeShard;
 
+#[derive(Clone, Copy)]
+enum Conform {
+    Every,
+    /// A rebuild's CoW segment, like a load's fresh appendable, starts with its sources' indexes.
+    EmptyAppendables,
+}
+
 impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
     ///
@@ -116,22 +123,37 @@ impl EdgeShard {
         }
 
         if let Some(payload_schema) = &payload_schema {
-            self.conform_empty_appendables(payload_schema)?;
+            self.conform_segments(payload_schema, Conform::EmptyAppendables)?;
         }
         Ok(optimized_any)
     }
 
-    /// A rebuild's CoW segment, like a load's fresh appendable, starts with its sources' indexes.
-    fn conform_empty_appendables(
+    /// Gives every segment exactly `payload_schema`'s indexes at the segment's own version, so
+    /// segments built elsewhere, above this shard's operation numbers, take the change too.
+    pub fn conform_payload_schema(
         &self,
         payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
+    ) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.conform_segments(payload_schema, Conform::Every)
+    }
+
+    fn conform_segments(
+        &self,
+        payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
+        which: Conform,
     ) -> OperationResult<()> {
         let segments = self.segments.read();
         for (_, segment) in segments.iter() {
             let segment = segment.get();
             let mut segment = segment.write();
-            if !segment.is_appendable() || segment.available_point_count() > 0 {
-                continue;
+            match which {
+                Conform::Every => {}
+                Conform::EmptyAppendables => {
+                    if !segment.is_appendable() || segment.available_point_count() > 0 {
+                        continue;
+                    }
+                }
             }
             let op_num = segment.version();
             for field in segment.get_indexed_fields().into_keys() {
