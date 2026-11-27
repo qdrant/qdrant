@@ -26,6 +26,7 @@ use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::positions::Positions;
+use super::posting_lookups::count_posting_lookup;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
@@ -536,9 +537,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 Ok(all_postings.is_some_and(|mut all_postings| {
                     // Rarest first: it rejects the most points
                     all_postings.sort_unstable_by_key(|(_token_id, posting)| posting.len());
-                    all_postings
-                        .into_iter()
-                        .all(|(_token_id, posting)| posting.visitor().contains(point_id))
+                    all_postings.into_iter().all(|(_token_id, posting)| {
+                        count_posting_lookup();
+                        posting.visitor().contains(point_id)
+                    })
                 }))
             })
         }
@@ -569,9 +571,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings.with_existing_postings(tokens.tokens(), |mut all_postings| {
                 // Most common first: it accepts the most points
                 all_postings.sort_unstable_by_key(|(_token_id, posting)| Reverse(posting.len()));
-                Ok(all_postings
-                    .into_iter()
-                    .any(|(_token_id, posting)| posting.visitor().contains(point_id)))
+                Ok(all_postings.into_iter().any(|(_token_id, posting)| {
+                    count_posting_lookup();
+                    posting.visitor().contains(point_id)
+                }))
             })
         }
 
@@ -719,7 +722,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 for (tag, point_id) in items {
                     let matched = visitors.as_mut().is_some_and(|visitors| {
                         index.is_active(point_id)
-                            && visitors.iter_mut().all(|v| v.contains(point_id))
+                            && visitors.iter_mut().all(|v| {
+                                count_posting_lookup();
+                                v.contains(point_id)
+                            })
                     });
                     on_match(tag, matched);
                 }
@@ -772,7 +778,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                     .collect();
                 for (tag, point_id) in items {
                     let matched = index.is_active(point_id)
-                        && visitors.iter_mut().any(|v| v.contains(point_id));
+                        && visitors.iter_mut().any(|v| {
+                            count_posting_lookup();
+                            v.contains(point_id)
+                        });
                     on_match(tag, matched);
                 }
                 Ok(())

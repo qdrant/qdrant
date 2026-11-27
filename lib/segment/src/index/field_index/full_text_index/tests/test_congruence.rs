@@ -30,21 +30,25 @@ const FIELD_NAME: &str = "test";
 const TYPES: &[IndexType] = &[IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum IndexType {
+pub(super) enum IndexType {
     Mutable,
     OnDisk,
     Immutable,
 }
 
 #[expect(clippy::large_enum_variant)]
-enum IndexBuilder {
+pub(super) enum IndexBuilder {
     Mutable(FullTextGridstoreIndexBuilder),
     OnDisk(FullTextMmapIndexBuilder),
     Immutable(FullTextMmapIndexBuilder),
 }
 
 impl IndexBuilder {
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
+    pub(super) fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+    ) -> OperationResult<bool> {
         match self {
             IndexBuilder::Mutable(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload)
@@ -58,7 +62,7 @@ impl IndexBuilder {
         }
     }
 
-    fn finalize(self) -> OperationResult<FullTextIndex> {
+    pub(super) fn finalize(self) -> OperationResult<FullTextIndex> {
         match self {
             IndexBuilder::Mutable(builder) => builder.finalize(),
             IndexBuilder::OnDisk(builder) => builder.finalize(),
@@ -67,7 +71,7 @@ impl IndexBuilder {
     }
 }
 
-fn create_builder(
+pub(super) fn create_builder(
     index_type: IndexType,
     phrase_matching: bool,
 ) -> (IndexBuilder, TempDir, Database) {
@@ -236,7 +240,10 @@ pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> 
     }
 }
 
-fn resolve_tokens<S: AsRef<str>>(index: &FullTextIndex, tokens: &[S]) -> Vec<Option<TokenId>> {
+pub(super) fn resolve_tokens<S: AsRef<str>>(
+    index: &FullTextIndex,
+    tokens: &[S],
+) -> Vec<Option<TokenId>> {
     let mut ids = vec![None; tokens.len()];
     index
         .for_each_token_id(tokens.iter().map(|s| s.as_ref()).enumerate(), |i, id| {

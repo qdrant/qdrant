@@ -24,6 +24,7 @@ use super::on_disk_inverted_index::{
     read_deleted_points, read_doc_len_codes,
 };
 use super::positions::Positions;
+use super::posting_lookups::count_posting_lookup;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
@@ -195,8 +196,10 @@ impl ImmutableInvertedIndex {
             point_id: PointOffsetType,
         ) -> bool {
             // Check that all tokens are in document, the rarest first: it rejects the most points
-            let contains =
-                |token_id: &TokenId| postings[*token_id as usize].visitor().contains(point_id);
+            let contains = |token_id: &TokenId| {
+                count_posting_lookup();
+                postings[*token_id as usize].visitor().contains(point_id)
+            };
             let Some(rarest) = tokens
                 .tokens()
                 .iter()
@@ -237,8 +240,10 @@ impl ImmutableInvertedIndex {
         ) -> bool {
             // Check that at least one token is in document, the most common first: it accepts
             // the most points
-            let contains =
-                |token_id: &TokenId| postings[*token_id as usize].visitor().contains(point_id);
+            let contains = |token_id: &TokenId| {
+                count_posting_lookup();
+                postings[*token_id as usize].visitor().contains(point_id)
+            };
             let Some(most_common) = tokens
                 .tokens()
                 .iter()

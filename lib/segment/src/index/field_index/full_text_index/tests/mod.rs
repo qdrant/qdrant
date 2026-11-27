@@ -3,6 +3,7 @@
 #![allow(deprecated)]
 
 mod test_congruence;
+mod test_token_order;
 
 use std::path::PathBuf;
 
