@@ -2,8 +2,14 @@
 Test how a Dead replica picks the source of its automatic WAL delta transfer.
 
 The recovering replica asks the active replicas for their recovery points and WAL delta bounds,
-ranks them, and requests the transfer from the best one. A replica that has every operation of the
-recovering replica ranks above one that has to repair its orphan operations.
+ranks them, and requests the transfer from the best one:
+- a replica that has every operation of the recovering replica ranks above one that has to repair
+  its orphan operations
+- a replica whose WAL has an untagged record among the records the recovering replica misses ranks
+  below one whose WAL doesn't
+
+The second test uses the `untagged_update` staging operation, and is skipped without the staging
+feature.
 """
 
 import pathlib
@@ -16,6 +22,7 @@ from .test_shard_wal_delta_orphan_operation import (
     FALLBACK_LOG,
     check_replica_state,
     has_point,
+    scroll_all_points,
 )
 from .utils import *
 
@@ -37,6 +44,30 @@ def upsert_point_ignoring_errors(peer_uri: str, point_id: int):
         upsert_random_points(peer_uri, 1, offset=point_id, fail_on_error=False)
     except requests.exceptions.RequestException:
         pass
+
+
+def submit_untagged_update(peer_uri: str):
+    r = requests.post(
+        f"{peer_uri}/collections/{COLLECTION_NAME}/debug?wait=true",
+        json={"untagged_update": {}},
+    )
+    assert_http_ok(r)
+
+
+def restart_and_wait_recovered(
+    peer_dir: pathlib.Path, bootstrap_uri: str, port: int, peer_id: int, other_uri: str,
+) -> str:
+    """Restart R, and wait until it recovers its replica automatically."""
+    uri = start_peer(peer_dir, "peer_0_2_restarted.log", bootstrap_uri, port=port, extra_env=WAL_DELTA_TRANSFER_ENV)
+    wait_for_peer_online(uri, "/")
+    wait_for(check_replica_state, other_uri, peer_id, "Active")
+    wait_for_collection_shard_transfers_count(other_uri, COLLECTION_NAME, 0)
+    wait_for_all_replicas_active(other_uri, COLLECTION_NAME)
+    return uri
+
+
+def read_log(log_file: str) -> str:
+    return (pathlib.Path(init_pytest_log_folder()) / log_file).read_text()
 
 
 def test_wal_delta_source_with_partial_update(tmp_path: pathlib.Path):
@@ -87,32 +118,83 @@ def test_wal_delta_source_with_partial_update(tmp_path: pathlib.Path):
 
     assert not has_point(a_uri, PARTIAL_POINT_ID)
 
-    # Restart R, it recovers its replica automatically
-    r_uri = start_peer(
-        peer_dirs[-1], "peer_0_2_restarted.log", bootstrap_uri, port=r_port, extra_env=WAL_DELTA_TRANSFER_ENV,
-    )
-    peer_api_uris[-1] = r_uri
-    wait_for_peer_online(r_uri, "/")
-    wait_for(check_replica_state, a_uri, r_peer_id, "Active")
-    wait_for_collection_shard_transfers_count(a_uri, COLLECTION_NAME, 0)
-    wait_for_all_replicas_active(a_uri, COLLECTION_NAME)
-
-    log_folder = pathlib.Path(init_pytest_log_folder())
+    r_uri = restart_and_wait_recovered(peer_dirs[-1], bootstrap_uri, r_port, r_peer_id, a_uri)
 
     # R ranked C first and requested a WAL delta from it, which C resolved without falling back
-    r_log_text = (log_folder / "peer_0_2_restarted.log").read_text()
+    r_log_text = read_log("peer_0_2_restarted.log")
     assert f"by requesting it from {c_peer_id}, ranked as WAL delta source: Covers" in r_log_text
 
-    c_log_text = (log_folder / "peer_0_1.log").read_text()
+    c_log_text = read_log("peer_0_1.log")
     assert f"transfer to peer {r_peer_id} using diff transfer" in c_log_text
     assert FALLBACK_LOG not in c_log_text
 
     # A didn't treat R's update as an orphan operation
-    a_log_text = (log_folder / "peer_0_0.log").read_text()
-    assert AHEAD_ON_OWN_CLOCKS_LOG not in a_log_text
+    assert AHEAD_ON_OWN_CLOCKS_LOG not in read_log("peer_0_0.log")
 
     # R kept its update, A still misses it. Each peer reads from its own replica here, because all
     # of them are Active
     assert has_point(r_uri, PARTIAL_POINT_ID)
     assert has_point(c_uri, PARTIAL_POINT_ID)
     assert not has_point(a_uri, PARTIAL_POINT_ID)
+
+
+def test_wal_delta_source_with_untagged_record(tmp_path: pathlib.Path):
+    """A's WAL has an untagged record among the records R misses, C's WAL doesn't.
+
+    A WAL delta from A would fail on the untagged record. The clocks of A and C look the same to R,
+    only the number of tagged records at the end of their WALs tells them apart. R must recover
+    from C with a WAL delta, without a fallback.
+    """
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3)
+
+    # The untagged update is only available with the staging feature
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    a_uri, c_uri, r_uri = peer_api_uris
+
+    a_peer_id = get_cluster_info(a_uri)["peer_id"]
+    c_peer_id = get_cluster_info(c_uri)["peer_id"]
+    r_peer_id = get_cluster_info(r_uri)["peer_id"]
+
+    create_collection(a_uri, shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    # Upsert in 10 batches, so the WALs end with more tagged records than R misses. The untagged
+    # update takes a tick of A's clock that C never writes, so R overestimates its delta from C by
+    # one record
+    upsert_random_points(a_uri, 100, batch_size=10)
+
+    # Kill R
+    r_process = processes.pop()
+    r_port = r_process.p2p_port
+    r_process.kill()
+
+    # Upsert through A. A fails to reach R and marks it as Dead
+    upsert_random_points(a_uri, 10, offset=1000)
+    wait_for(check_replica_state, a_uri, r_peer_id, "Dead")
+
+    # A writes an untagged record to its WAL, C skips it. Then another upsert, so the untagged
+    # record is between two records R misses
+    submit_untagged_update(a_uri)
+    upsert_random_points(a_uri, 10, offset=2000)
+
+    r_uri = restart_and_wait_recovered(peer_dirs[-1], bootstrap_uri, r_port, r_peer_id, a_uri)
+    peer_api_uris[-1] = r_uri
+
+    # R ranked A as failing on its tagged records, ranked C first, and requested a WAL delta from
+    # C, which C resolved without falling back
+    r_log_text = read_log("peer_0_2_restarted.log")
+    assert f"({a_peer_id}, Fails(TaggedRecords" in r_log_text
+    assert f"by requesting it from {c_peer_id}, ranked as WAL delta source: Covers" in r_log_text
+
+    c_log_text = read_log("peer_0_1.log")
+    assert f"transfer to peer {r_peer_id} using diff transfer" in c_log_text
+    assert FALLBACK_LOG not in c_log_text
+
+    # Each peer reads from its own replica here, because all of them are Active
+    check_data_consistency(scroll_all_points(peer_api_uris))
