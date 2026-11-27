@@ -356,6 +356,30 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     )
 }
 
+/// What becomes of the payload index changes the proxies buffer during a build.
+#[derive(Clone, Copy, Debug)]
+enum IndexChangeReplay {
+    Apply,
+    /// The strategy's payload schema decides the optimized segment's indexes.
+    Skip,
+}
+
+impl IndexChangeReplay {
+    fn of<F: ?Sized + OptimizationStrategy>(factory: &F) -> Self {
+        match factory.payload_schema() {
+            Some(_) => Self::Skip,
+            None => Self::Apply,
+        }
+    }
+
+    fn filter(self, changes: &mut ProxyChanges) {
+        match self {
+            Self::Apply => {}
+            Self::Skip => changes.clear_index_changes(),
+        }
+    }
+}
+
 /// Create a single optimized segment from the given segments.
 ///
 /// The changes buffered by the proxies while the segment was built (point deletes, payload index
@@ -400,7 +424,8 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     // proxies keep serving these changes until they are swapped out, so this snapshot is handed to
     // `finish_optimization` for it to exclude: only what arrives after it is left for the
     // critical section.
-    let applied_changes = proxy_changes(proxies);
+    let mut applied_changes = proxy_changes(proxies);
+    IndexChangeReplay::of(factory).filter(&mut applied_changes);
     applied_changes.propagate(&mut optimized_segment, stopped)?;
 
     check_process_stopped(stopped)?;
@@ -424,6 +449,7 @@ fn finish_optimization(
     applied_changes: &ProxyChanges,
     proxy_ids: &[SegmentId],
     cow_segment_id_opt: Option<SegmentId>,
+    index_change_replay: IndexChangeReplay,
     stopped: &AtomicBool,
 ) -> OperationResult<usize> {
     // This block locks all write operations with collection. It should be fast.
@@ -437,6 +463,7 @@ fn finish_optimization(
     // Updates are frozen now, so this catches everything and is the last word.
     let mut changes = proxy_changes(&locked_proxies);
     changes.exclude_applied(applied_changes);
+    index_change_replay.filter(&mut changes);
     changes.propagate(&mut optimized_segment, stopped)?;
 
     // Force flush propagated changes in segment
@@ -834,6 +861,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         &applied_changes,
         &proxy_ids,
         cow_segment_id_opt,
+        IndexChangeReplay::of(factory),
         stopped,
     ) {
         Ok(points_count) => points_count,
@@ -1016,6 +1044,7 @@ mod tests {
             &ProxyChanges::default(),
             &[segment_id],
             None,
+            IndexChangeReplay::Apply,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -1040,6 +1069,56 @@ mod tests {
             !result_segment.has_point(1.into(), DeferredBehavior::WithDeferred),
             "point delete must land on the optimized segment",
         );
+    }
+
+    /// Under a payload schema the optimized segment takes the schema's indexes, so an index
+    /// created on the proxy during the build must not reach it; a point delete still does.
+    #[test]
+    fn finish_optimization_skips_index_changes_under_a_payload_schema() {
+        use segment::types::{PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let wrapped = LockedSegment::new(build_segment_1(dir.path()));
+        let mut holder = SegmentHolder::default();
+        let segment_id = holder.add_new_locked(wrapped.clone());
+        let optimized_segment = build_segment_1(dir.path());
+
+        let mut proxy = ProxySegment::new(wrapped.clone());
+        let field_name: PayloadKeyType = "color".parse().unwrap();
+        let field_schema: PayloadFieldSchema = PayloadSchemaType::Keyword.into();
+        proxy
+            .create_field_index(10, &field_name, Some(&field_schema))
+            .unwrap();
+        proxy.delete_point(20, 1.into()).unwrap();
+
+        let holder = LockedSegmentHolder::new(holder);
+        let locked_proxy = LockedSegment::from(proxy);
+        holder
+            .write()
+            .replace(segment_id, locked_proxy.clone())
+            .unwrap();
+
+        finish_optimization(
+            &holder,
+            vec![locked_proxy],
+            optimized_segment,
+            &ProxyChanges::default(),
+            &[segment_id],
+            None,
+            IndexChangeReplay::Skip,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let result_segment = holder.read().iter().next().unwrap().1.clone();
+        let result_segment = result_segment.get();
+        let result_segment = result_segment.read();
+        assert!(
+            !result_segment
+                .get_indexed_fields()
+                .contains_key(&field_name)
+        );
+        assert!(!result_segment.has_point(1.into(), DeferredBehavior::WithDeferred));
     }
 
     /// The optimizer propagates in two passes: `optimize_segment_propagate_changes` applies a
@@ -1109,6 +1188,7 @@ mod tests {
             &applied_changes,
             &[segment_id],
             None,
+            IndexChangeReplay::Apply,
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -1221,6 +1301,7 @@ mod tests {
             &ProxyChanges::default(),
             &[segment_id],
             None,
+            IndexChangeReplay::Apply,
             &AtomicBool::new(false),
         );
         POST_SWAP_FAILURE_HOOK.with(|hook| *hook.borrow_mut() = None);
