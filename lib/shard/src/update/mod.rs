@@ -113,6 +113,7 @@ pub fn process_staging_operation(
         crate::operations::staging::StagingOperations::Delay(delay_op) => {
             delay_op.execute();
         }
+        crate::operations::staging::StagingOperations::UntaggedUpdate(_) => {}
     }
 
     // This operation doesn't directly affect segment/point versions, so we bump it here

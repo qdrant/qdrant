@@ -1028,6 +1028,12 @@ impl RemoteShard {
                             self.id
                         );
                     }
+                    shard::operations::staging::StagingOperations::UntaggedUpdate(_) => {
+                        log::debug!(
+                            "StagingOperation::UntaggedUpdate: skipping remote shard {}",
+                            self.id
+                        );
+                    }
                 }
                 timer.set_success(true);
                 return Ok(UpdateResult {
