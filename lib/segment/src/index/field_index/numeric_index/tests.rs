@@ -1016,6 +1016,77 @@ fn test_integer_index_fractional_range_bounds() {
     );
 }
 
+#[test]
+fn test_integer_index_out_of_range_float_bounds() {
+    use crate::types::IntPayloadType;
+
+    let temp_dir = Builder::new()
+        .prefix("test_integer_index_out_of_range_float_bounds")
+        .tempdir()
+        .unwrap();
+
+    let mut builder = NumericIndex::<IntPayloadType, IntPayloadType>::builder_gridstore(
+        temp_dir.path().to_path_buf(),
+    );
+    builder.init().unwrap();
+
+    let _scope = ambient::test_guard();
+    let v_min = Value::from(i64::MIN);
+    let v_mid = Value::from(1_i64);
+    let v_max = Value::from(i64::MAX);
+    builder.add_point(0, &[&v_min]).unwrap();
+    builder.add_point(1, &[&v_mid]).unwrap();
+    builder.add_point(2, &[&v_max]).unwrap();
+    let index = builder.finalize().unwrap();
+
+    let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
+        let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
+        let mut ids: Vec<_> = index.inner().filter(&cond).unwrap().unwrap().collect();
+        ids.sort();
+        ids
+    };
+
+    // `gt: -1e20` -> all i64 values are strictly greater than -1e20
+    assert_eq!(
+        run(Range {
+            gt: Some(-1e20),
+            ..Default::default()
+        }),
+        vec![0, 1, 2],
+        "gt: -1e20 must match all i64 points",
+    );
+
+    // `lt: 1e20` -> all i64 values are strictly less than 1e20
+    assert_eq!(
+        run(Range {
+            lt: Some(1e20),
+            ..Default::default()
+        }),
+        vec![0, 1, 2],
+        "lt: 1e20 must match all i64 points",
+    );
+
+    // `gte: 1e20` -> no i64 value is >= 1e20
+    assert_eq!(
+        run(Range {
+            gte: Some(1e20),
+            ..Default::default()
+        }),
+        Vec::<PointOffsetType>::new(),
+        "gte: 1e20 must match no points",
+    );
+
+    // `lte: -1e20` -> no i64 value is <= -1e20
+    assert_eq!(
+        run(Range {
+            lte: Some(-1e20),
+            ..Default::default()
+        }),
+        Vec::<PointOffsetType>::new(),
+        "lte: -1e20 must match no points",
+    );
+}
+
 /// The optional block-index sidecar over the sorted pairs must be a pure
 /// accelerator: cardinality estimates and filter results must be identical
 /// with the sidecar present and after deleting it (which falls back to plain

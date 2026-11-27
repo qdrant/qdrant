@@ -140,12 +140,47 @@ impl Numericable for i64 {
     }
 
     fn from_f64_range(range: Range<OrderedFloat<FloatPayloadType>>) -> Range<Self> {
-        Range {
-            lt: range.lt.map(|f| f.0.ceil() as Self),
-            gt: range.gt.map(|f| f.0.floor() as Self),
-            gte: range.gte.map(|f| f.0.ceil() as Self),
-            lte: range.lte.map(|f| f.0.floor() as Self),
-        }
+        // -2^63 is exactly representable in f64
+        const I64_MIN_F64: f64 = -9223372036854775808.0;
+        // 2^63 is exactly representable in f64. Any float >= 2^63 is strictly greater than i64::MAX
+        const I64_MAX_EXCLUSIVE_F64: f64 = 9223372036854775808.0;
+
+        let empty_range = || Range {
+            gt: None,
+            gte: Some(1),
+            lt: None,
+            lte: Some(0),
+        };
+
+        let lt = match range.lt {
+            Some(f) if f.0 >= I64_MAX_EXCLUSIVE_F64 => None,
+            Some(f) if f.0 <= I64_MIN_F64 => return empty_range(),
+            Some(f) => Some(f.0.ceil() as Self),
+            None => None,
+        };
+
+        let gt = match range.gt {
+            Some(f) if f.0 < I64_MIN_F64 => None,
+            Some(f) if f.0 >= I64_MAX_EXCLUSIVE_F64 => return empty_range(),
+            Some(f) => Some(f.0.floor() as Self),
+            None => None,
+        };
+
+        let gte = match range.gte {
+            Some(f) if f.0 <= I64_MIN_F64 => None,
+            Some(f) if f.0 >= I64_MAX_EXCLUSIVE_F64 => return empty_range(),
+            Some(f) => Some(f.0.ceil() as Self),
+            None => None,
+        };
+
+        let lte = match range.lte {
+            Some(f) if f.0 >= I64_MAX_EXCLUSIVE_F64 => None,
+            Some(f) if f.0 < I64_MIN_F64 => return empty_range(),
+            Some(f) => Some(f.0.floor() as Self),
+            None => None,
+        };
+
+        Range { lt, gt, gte, lte }
     }
 }
 
