@@ -267,6 +267,110 @@ pub struct GpuConfig {
     pub allow_emulated: bool,
 }
 
+/// What to do when a remote build fails.
+#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexingOnFailure {
+    /// Build locally.
+    #[default]
+    Local,
+    /// Submit again with a new token, up to `max_retries` times, then build locally. A task
+    /// the indexer refuses for good (e.g. too large for it), or uploads an invalid graph for,
+    /// is built locally right away.
+    Retry,
+}
+
+/// Remote indexing: build large HNSW graphs on an external indexing service. Absent: build
+/// everything locally (D3).
+///
+/// The indexer connects back to the internal gRPC port, so this needs `cluster.enabled`,
+/// `service.api_key` and `service.enforce_internal_auth`, and does not work with
+/// `cluster.p2p.enable_tls`. Otherwise it stays off, with an error in the log.
+#[derive(Debug, Deserialize, Clone, Validate)]
+pub struct IndexingServiceConfig {
+    /// Where tasks are submitted, with gRPC `IndexingService.SubmitTask`: an indexing service,
+    /// or a queue or sidecar implementing the same API, e.g. `http://indexer:6340`.
+    #[validate(length(min = 1))]
+    pub url: String,
+    /// Sent with every submission as `api-key`. Use an `https://` URL with it, or it travels
+    /// in cleartext, along with the task tokens.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// CA certificate that signed the certificate of an `https://` entry point, as a path to
+    /// a PEM file. Absent: the system root certificates.
+    #[serde(default)]
+    pub ca_cert: Option<String>,
+    /// Internal gRPC address the indexer connects back to, set per pod (D10),
+    /// e.g. `qdrant-0.qdrant-headless:6335`.
+    #[validate(length(min = 1))]
+    pub advertise_url: String,
+    /// Build remotely only if the vector data of a vector name is at least this large (D11).
+    #[serde(default = "default_min_index_size_bytes")]
+    pub min_index_size_bytes: usize,
+    /// Heal an old graph locally only if it holds at least this share of the points of the
+    /// new segment, from 0 to 1. Otherwise the segment is built remotely from scratch, e.g.
+    /// a small indexed segment merged with many unindexed ones. 0 always heals (D12).
+    #[serde(default = "default_min_healing_coverage")]
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub min_healing_coverage: f64,
+    /// Give a task up if the indexer does not call within this time (D6). At least 10: while
+    /// it builds, the indexer calls only to heartbeat, every 5 seconds, so a shorter time
+    /// gives up every healthy task.
+    #[serde(default = "default_heartbeat_timeout_sec")]
+    #[validate(range(min = 10))]
+    pub heartbeat_timeout_sec: u64,
+    /// Give a submitted task up if the indexer does not fetch it within this time. Nothing
+    /// heartbeats a task waiting in a queue, so this is longer than the heartbeat timeout.
+    #[serde(default = "default_queue_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub queue_timeout_sec: u64,
+    #[serde(default)]
+    pub on_failure: IndexingOnFailure,
+    #[serde(default = "default_indexing_max_retries")]
+    pub max_retries: u32,
+    /// How long the indexer waits for the next payload block, while core prepares them,
+    /// before it fails the task. Counted from each request for the next blocks: the time the
+    /// indexer spends building does not count.
+    #[serde(default = "default_max_block_wait_sec")]
+    #[validate(range(min = 1))]
+    pub max_block_wait_sec: u64,
+    /// Timeout of one submission to the entry point.
+    #[serde(default = "default_submit_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub submit_timeout_sec: u64,
+    /// Sent with every task, for billing.
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+}
+
+const fn default_min_index_size_bytes() -> usize {
+    128 * 1024 * 1024
+}
+
+const fn default_min_healing_coverage() -> f64 {
+    0.5
+}
+
+const fn default_heartbeat_timeout_sec() -> u64 {
+    60
+}
+
+const fn default_queue_timeout_sec() -> u64 {
+    300
+}
+
+const fn default_max_block_wait_sec() -> u64 {
+    600
+}
+
+const fn default_indexing_max_retries() -> u32 {
+    3
+}
+
+const fn default_submit_timeout_sec() -> u64 {
+    10
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct Settings {
     #[serde(default)]
@@ -296,6 +400,10 @@ pub struct Settings {
     #[serde(default)]
     #[validate(nested)]
     pub gpu: Option<GpuConfig>,
+    /// Remote indexing service. Absent: local indexing only.
+    #[serde(default)]
+    #[validate(nested)]
+    pub indexing_service: Option<IndexingServiceConfig>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
     /// Audit logging configuration.
@@ -646,6 +754,39 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    /// The commented `indexing_service` example in the default configuration parses, and its
+    /// values are the defaults it states.
+    #[test]
+    fn test_indexing_service_example() {
+        let start = DEFAULT_CONFIG.find("# indexing_service:").unwrap();
+        let example: String = DEFAULT_CONFIG[start..]
+            .lines()
+            .take_while(|line| line.starts_with('#'))
+            // Options that are commented out inside the example stay commented out
+            .filter_map(|line| line.strip_prefix("# ").or(line.strip_prefix('#')))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let config = Config::builder()
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
+            .add_source(File::from_str(&example, FileFormat::Yaml))
+            .build()
+            .unwrap()
+            .try_deserialize::<Settings>()
+            .unwrap();
+        let service = config.indexing_service.unwrap();
+        assert_eq!(service.min_index_size_bytes, default_min_index_size_bytes());
+        assert_eq!(service.min_healing_coverage, default_min_healing_coverage());
+        assert_eq!(
+            service.heartbeat_timeout_sec,
+            default_heartbeat_timeout_sec()
+        );
+        assert_eq!(service.queue_timeout_sec, default_queue_timeout_sec());
+        assert_eq!(service.on_failure, IndexingOnFailure::default());
+        assert_eq!(service.max_retries, default_indexing_max_retries());
+        assert_eq!(service.max_block_wait_sec, default_max_block_wait_sec());
+        assert_eq!(service.submit_timeout_sec, default_submit_timeout_sec());
+    }
 
     /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
     #[test]

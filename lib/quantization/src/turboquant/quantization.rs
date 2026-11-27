@@ -1,6 +1,7 @@
 use num_traits::AsPrimitive;
 
 use crate::DistanceType;
+use crate::turboquant::angular::AngularCorrection;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::grid::{GridSimd, GridWidth, WriteBack};
@@ -26,6 +27,8 @@ pub struct TurboQuantizer {
     /// TQ+ 2 and 4 bits on CPUs with block-order kernels: `ErrorCorrection::d_prime_q15` in
     /// block order, for [`Self::stored_query`] and the symmetric scores
     folded_factors: Option<BlockedFactors>,
+    /// TQ+ 1 and 1.5 bits for Euclid: how the symmetric scores come from the sign scores
+    pub(super) angular: Option<AngularCorrection>,
 }
 
 /// TQ+ per-coordinate shift+scale: pulls each rotated, length-rescaled
@@ -148,7 +151,8 @@ pub(crate) struct SymmetricValues {
     pub scale: f32,
     /// [`TqVectorExtras::l2_length`] squared, for L2
     pub l2_sq: f32,
-    /// [`TqVectorExtras::ec_correction`], for TQ+
+    /// For TQ+: [`TqVectorExtras::ec_correction`] of 2 and 4 bits, or
+    /// [`AngularCorrection::radius`] of 1 and 1.5 bits for Euclid
     pub correction: f32,
 }
 
@@ -192,9 +196,13 @@ impl TurboQuantizer {
             padded_dim: _,
             error_correction,
             folded_factors,
+            angular,
         } = self;
 
         folded_factors.as_ref().map_or(0, BlockedFactors::ram_usage)
+            + angular
+                .as_ref()
+                .map_or(0, AngularCorrection::heap_size_bytes)
             + error_correction.as_ref().map_or(0, |ec| {
                 let ErrorCorrection {
                     shift,
@@ -244,8 +252,47 @@ impl TurboQuantizer {
             distance,
             padded_dim,
             folded_factors: Self::folded_factors(bits, error_correction.as_ref()),
+            angular: Self::angular(
+                bits,
+                distance,
+                padded_dim,
+                rotation_dim,
+                error_correction.as_ref(),
+            ),
             error_correction,
         }
+    }
+
+    /// TQ+ 1 and 1.5 bits for Euclid: the correction of the symmetric scores, `None` otherwise.
+    /// `rotation_dim` is the coordinates the rotation fills, fewer than `padded_dim` with
+    /// [`TQRotation::Unpadded`].
+    fn angular(
+        bits: TQBits,
+        distance: DistanceType,
+        padded_dim: usize,
+        rotation_dim: usize,
+        error_correction: Option<&ErrorCorrection>,
+    ) -> Option<AngularCorrection> {
+        match bits {
+            TQBits::Bits1 | TQBits::Bits1_5 => {}
+            TQBits::Bits2 | TQBits::Bits4 | TQBits::Bits8 | TQBits::Bits16 => return None,
+        }
+        match distance {
+            DistanceType::L2 => {}
+            DistanceType::Cosine | DistanceType::Dot | DistanceType::L1 => return None,
+        }
+        let ec = error_correction?;
+        // The rotation leaves the other coordinates at zero in every vector, so their shift is
+        // zero too: the angle and `symmetric_vector` take it to be
+        debug_assert!(
+            ec.shift[rotation_dim..].iter().all(|&shift| shift == 0.0),
+            "TQ+ shift past the {rotation_dim} rotated coordinates",
+        );
+        Some(AngularCorrection::new(
+            padded_dim,
+            rotation_dim,
+            ec.mm_const,
+        ))
     }
 
     /// TQ+ 2 and 4 bits: the factors in block order, `None` without block-order kernels.
@@ -583,9 +630,11 @@ impl TurboQuantizer {
     /// so for them the dot product is only close.
     ///
     /// Their squared distance is L2's score only where a vector's stored length is its own. At 1
-    /// and 1.5 bits with TQ+, the score ignores the correction but the scaling factor comes from
-    /// the norm of the corrected centroids, so a vector is longer or shorter than the stored
-    /// length the score uses: there the cross term stays exact, the distance is only a proxy.
+    /// and 1.5 bits with TQ+, L2 scores the vectors that [`AngularCorrection`] rebuilds around
+    /// the shift, so those are returned: the shift plus the signs at the vector's radius in the
+    /// coordinates the rotation fills, the shift alone (zero) in the others, times its length.
+    /// Their distance is only close to the score, which takes the cosine of the angle between
+    /// the signs where the vectors have its linear estimate.
     ///
     /// L1 isn't represented at any width: its score is taken after the inverse rotation, which
     /// doesn't preserve L1 distances.
@@ -593,16 +642,52 @@ impl TurboQuantizer {
         &'a self,
         quantized: &'a [u8],
     ) -> impl Iterator<Item = f32> + 'a {
+        /// How a centroid becomes a value of the vector, before its scale.
+        enum Decode<'a> {
+            /// As it is
+            Centroid,
+            /// With the TQ+ correction reverted
+            Reverted(&'a ErrorCorrection),
+            /// Its sign, `step` away from the shift, in the `rotation_dim` coordinates the
+            /// rotation fills; the shift in the others
+            Rebuilt {
+                ec: &'a ErrorCorrection,
+                step: f64,
+                rotation_dim: usize,
+            },
+        }
         let (centroids, extras) = self.unpack_vector(quantized);
-        let scale = f64::from(extras.scaling_factor());
-        let correction = self
-            .error_correction
-            .as_ref()
-            .filter(|_| self.scores_correction());
+        let (scale, decode) = match (&self.angular, &self.error_correction) {
+            (Some(angular), Some(ec)) => (
+                angular.scale(extras.l2_length()),
+                Decode::Rebuilt {
+                    ec,
+                    step: f64::from(angular.step(extras.ec_correction())),
+                    rotation_dim: self.rotation.dim(),
+                },
+            ),
+            (None, Some(ec)) if self.scores_correction() => {
+                (extras.scaling_factor(), Decode::Reverted(ec))
+            }
+            (Some(_) | None, Some(_) | None) => (extras.scaling_factor(), Decode::Centroid),
+        };
+        let scale = f64::from(scale);
         centroids.enumerate().map(move |(i, c)| {
-            let c = match correction {
-                Some(ec) => c / f64::from(ec.scale[i]) - f64::from(ec.shift[i]),
-                None => c,
+            let c = match decode {
+                Decode::Centroid => c,
+                Decode::Reverted(ec) => c / f64::from(ec.scale[i]) - f64::from(ec.shift[i]),
+                Decode::Rebuilt {
+                    ec,
+                    step,
+                    rotation_dim,
+                } => {
+                    let sign = if i < rotation_dim {
+                        step.copysign(c)
+                    } else {
+                        0.0
+                    };
+                    sign - f64::from(ec.shift[i])
+                }
             };
             (c * scale) as f32
         })
@@ -759,6 +844,16 @@ impl TurboQuantizer {
             }
             DistanceType::Cosine | DistanceType::Dot | DistanceType::L1 => 0.0,
         };
+        // TQ+ 1 and 1.5 bits for Euclid: the rescaled dot of `AngularCorrection` needs the
+        // radius, and no centroid norm in the scale, as it estimates the vectors and not their
+        // codes
+        if let Some(angular) = &self.angular {
+            return SymmetricValues {
+                scale: angular.scale(extras.l2_length()),
+                l2_sq,
+                correction: angular.radius(extras.ec_correction()),
+            };
+        }
         let correction = if self.scores_correction() {
             extras.ec_correction()
         } else {
@@ -782,21 +877,28 @@ impl TurboQuantizer {
     }
 
     /// Whether each vector stores a TQ+ correction that [`Self::score_symmetric`] ignores, as at 1
-    /// and 1.5 bits: vectors then score alike against every other with different bytes.
+    /// and 1.5 bits for Dot and Cosine: vectors then score alike against every other with
+    /// different bytes. Euclid reads it there, see [`AngularCorrection`].
     pub(crate) fn stores_ignored_correction(&self) -> bool {
-        self.error_correction.is_some() && !self.scores_correction()
+        self.error_correction.is_some() && !self.scores_correction() && self.angular.is_none()
     }
 
     /// TQ+ symmetric-scoring slow path.
     ///
-    /// **Bits1 / Bits1_5**: plain `Σ c_a · c_b` — no `D'²` weighting, no
-    /// `xm`/`mm` fold-in. Matches llama-turbo-quant's 1-bit symmetric path.
-    /// This computes `⟨X⁺_a, X⁺_b⟩` (centered+normalized space), not the
-    /// rescaled-space dot. Mathematically a different quantity, but for
-    /// HNSW ranking it's stable: no `D'⁴` variance amplification on
-    /// anisotropic coords. Adding `xm + xm − ⟨M, M⟩` *without* `D'²`
-    /// scrambles scales (centroid dot is in `X⁺`-space units, `xm`/`mm`
-    /// are in `X`-space units) and destroys ranking entirely.
+    /// **Bits1 / Bits1_5, Dot and Cosine**: plain `Σ c_a · c_b` — no `D'²`
+    /// weighting, no `xm`/`mm` fold-in. Matches llama-turbo-quant's 1-bit
+    /// symmetric path. This computes `⟨X⁺_a, X⁺_b⟩` (centered+normalized
+    /// space), not the rescaled-space dot. Mathematically a different
+    /// quantity, but for HNSW ranking it's stable: no `D'⁴` variance
+    /// amplification on anisotropic coords. Adding `xm + xm − ⟨M, M⟩`
+    /// *without* `D'²` scrambles scales (centroid dot is in `X⁺`-space
+    /// units, `xm`/`mm` are in `X`-space units) and destroys ranking entirely.
+    ///
+    /// **Bits1 / Bits1_5, Euclid**: the centered dot can't stand in for the
+    /// dot there, as the distance subtracts it from the norms of the vectors
+    /// themselves, and the nearest neighbors become the vectors of the
+    /// smallest norm. [`AngularCorrection`] rebuilds the rescaled-space dot
+    /// from the angle that the sign agreement measures, in the units of `xm`.
     ///
     /// **Bits2 / Bits4**: full math-correct form
     /// `Σ c_a c_b D'_i² + xm_a + xm_b − ⟨M, M⟩`, with `c · D'` folded into i8
@@ -828,11 +930,15 @@ impl TurboQuantizer {
                 unreachable!("{:?} does not support TQ+ error correction", self.bits)
             }
             TQBits::Bits1 | TQBits::Bits1_5 => {
-                // 1-bit TQ+ ignores `D'²` weighting and `xm`/`mm` corrections (see
-                // doc comment above `score_symmetric_ec`), so the score reduces to
-                // the plain centroid dot — exactly what `score_1bit_internal`
-                // computes via SIMD XOR-popcount. Reuse it.
-                return score_1bit_internal(data_v1, data_v2);
+                // For Dot and Cosine, 1-bit TQ+ ignores `D'²` weighting and `xm`/`mm`
+                // corrections (see doc comment above `score_symmetric_ec`), so the score
+                // reduces to the plain centroid dot — exactly what `score_1bit_internal`
+                // computes via SIMD XOR-popcount. Euclid corrects that same sign score.
+                let sign_score = score_1bit_internal(data_v1, data_v2);
+                return match &self.angular {
+                    Some(angular) => angular.rescaled_dot(sign_score, values_v1, values_v2),
+                    None => sign_score,
+                };
             }
         };
         ec.symmetric(self.bits)
@@ -1985,6 +2091,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// TQ+ 1 bit for L2 with [`TQRotation::Unpadded`] at a dim that isn't a multiple of 8: a
+    /// vector and its negation, with the shift at zero. The padding stays zero in both, so their
+    /// signs agree there and differ in every rotated coordinate, which is the opposite direction.
+    /// The score and the vectors PiPNN partitions by both give their exact distance, and those
+    /// vectors are zero in the padding, like the vectors they stand for.
+    #[test]
+    fn unpadded_angle_counts_rotated_coordinates() {
+        let dim = 100;
+        let padded_dim = TurboQuantizer::padded_dim(dim, TQBits::Bits1);
+        assert!(padded_dim > dim);
+        let tq = TurboQuantizer::new(
+            dim,
+            TQBits::Bits1,
+            TQMode::Plus,
+            DistanceType::L2,
+            TQRotation::Unpadded,
+            Some(ErrorCorrection::new(
+                vec![0.0; padded_dim],
+                vec![1.0; padded_dim],
+            )),
+        );
+        let v = random_vector(dim, &mut StdRng::seed_from_u64(42));
+        let negated: Vec<f32> = v.iter().map(|&x| -x).collect();
+        let mut buf = vec![0.0; padded_dim];
+        let (a, b) = (tq.quantize(&v, &mut buf), tq.quantize(&negated, &mut buf));
+        let distance = 4.0 * l2_norm(&v).powi(2);
+
+        let score = f64::from(tq.score_symmetric(&a, &b));
+        assert!(
+            (score - distance).abs() < 1e-4 * distance,
+            "score {score}, distance {distance}",
+        );
+
+        let vector_a: Vec<f32> = tq.symmetric_vector(&a).collect();
+        let vector_b: Vec<f32> = tq.symmetric_vector(&b).collect();
+        let of_vectors: f64 = (vector_a.iter().zip(&vector_b))
+            .map(|(&x, &y)| (f64::from(x) - f64::from(y)).powi(2))
+            .sum();
+        let padding = &vector_a[dim..];
+        assert!(
+            (of_vectors - distance).abs() < 1e-4 * distance,
+            "distance of the vectors {of_vectors}, distance {distance}, padding {padding:?}",
+        );
+        assert!(padding.iter().all(|&x| x == 0.0), "padding {padding:?}");
     }
 
     /// Sanity-check that [`TurboQuantizer::precompute_query`] +

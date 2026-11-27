@@ -55,10 +55,17 @@ impl<Fs: UniversalReadFsAsync> UniversalReadFsAsync for CachedFs<Fs> {
         self.fs.open_async(path, options, extra).await
     }
 
-    async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+    async fn list_files_async(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
         match &self.files_info {
-            Some(_) => Ok(self.cached_list_files(prefix_path)),
-            None => self.fs.list_files_async(prefix_path).await,
+            Some(_) => Ok(self.cached_list_files(dir)),
+            None => self.fs.list_files_async(dir).await,
+        }
+    }
+
+    async fn prefix_list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        match &self.files_info {
+            Some(_) => Ok(self.cached_prefix_list_files(prefix_path)),
+            None => self.fs.prefix_list_files_async(prefix_path).await,
         }
     }
 

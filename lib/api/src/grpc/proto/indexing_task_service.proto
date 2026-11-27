@@ -1,0 +1,291 @@
+syntax = "proto3";
+
+package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+import "collections.proto";
+import "indexing_service.proto";
+
+// Remote indexing (core side). Served by core on the internal gRPC port, called by an
+// indexing service that builds the HNSW graph of one vector of a segment under construction.
+//
+// Every call carries the one-time task token in the `x-qdrant-indexing-token` metadata header.
+// The token is checked by the service itself: the indexer has no API key. A token only gives
+// access to its own task, and is revoked when the task ends: further calls get
+// PERMISSION_DENIED, except `Heartbeat` on a task core cancelled, which answers CANCEL.
+service IndexingTask {
+  // Task parameters.
+  rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
+  // The vectors of a range of point offsets, in chunks of about 1 MB: storage-native bytes
+  // for vector source STORAGE, quantized codes for vector source QUANTIZED. Points not to be
+  // indexed (deleted, or without a vector) have an empty entry.
+  rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
+  // Payload blocks from a sequence number, as core prepares them while the indexer builds the
+  // main graph. Waits a few seconds for the next block before answering that it is not ready.
+  rpc ReadPayloadBlocks(ReadIndexingPayloadBlocksRequest) returns (IndexingPayloadBlocksBatch) {}
+  // Renew the lease and report progress. The reply tells whether to go on.
+  rpc Heartbeat(IndexingHeartbeatRequest) returns (IndexingHeartbeatResponse) {}
+  // Upload the finished graph: a header, then link chunks. Ends the task.
+  rpc UploadGraph(stream UploadIndexingGraphRequest) returns (UploadIndexingGraphResponse) {}
+  // Give up on the task. Core retries with a new token, or builds locally.
+  rpc Fail(FailIndexingTaskRequest) returns (FailIndexingTaskResponse) {}
+}
+
+enum IndexingVectorDatatype {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingVectorDatatypeUnknown = 0;
+  IndexingFloat32 = 1;
+  IndexingFloat16 = 2;
+  IndexingUint8 = 3;
+  IndexingTurbo4 = 4;
+  IndexingTurbo8 = 5;
+  IndexingTurbo16 = 6;
+}
+
+// What the indexer reads to build the graph.
+enum IndexingVectorSource {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingVectorSourceUnknown = 0;
+  // `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
+  IndexingSourceStorage = 1;
+  // `ReadVectors` returns the quantized code of each point, read with `quantization`; no
+  // original vectors.
+  IndexingSourceQuantized = 2;
+}
+
+enum IndexingDistance {
+  IndexingDistanceUnknown = 0;
+  IndexingCosine = 1;
+  IndexingEuclid = 2;
+  IndexingDot = 3;
+  IndexingManhattan = 4;
+}
+
+enum IndexingMultiVectorComparator {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingMultiVectorComparatorUnknown = 0;
+  IndexingMaxSim = 1;
+}
+
+message GetIndexingTaskRequest {}
+
+message IndexingTaskDescription {
+  // UUID of the task, also used for billing.
+  string task_id = 1;
+  string vector_name = 2;
+  uint64 dim = 3;
+  IndexingVectorDatatype datatype = 4;
+  IndexingDistance distance = 5;
+  // Set for multivectors: each vector is then a flattened list of `dim`-sized vectors.
+  optional IndexingMultiVectorComparator multivector_comparator = 6;
+  // Formerly the HNSW parameters, now in `index`.
+  reserved 7 to 12;
+  // Point offsets are `0..point_count`, deleted included. Which points to index follows
+  // from `ReadVectors`: those with a non-empty entry.
+  uint64 point_count = 13;
+  // Encoding of the vectors in `ReadVectors`.
+  string vector_representation = 14;
+  // Graph formats core reads. The indexer must upload one of them, or fail the task.
+  repeated uint32 graph_format_versions = 15;
+  IndexingVectorSource vector_source = 16;
+  // Set for vector source QUANTIZED: how the codes were encoded.
+  IndexingQuantization quantization = 17;
+  // Whether payload blocks may come: read them with `ReadPayloadBlocks` after the main
+  // graph, until it answers `finished`.
+  bool has_payload_blocks = 18;
+  // Fail the task if no payload block comes for this long, counted from each request for
+  // the next blocks. The time the indexer spends building does not count.
+  uint64 max_block_wait_sec = 19;
+  // The index to build and its parameters, as submitted with `SubmitTask`.
+  IndexingIndexParams index = 20;
+}
+
+// Everything needed, besides the codes, to score quantized codes as core does.
+message IndexingQuantization {
+  // The quantization config of the vector, as in the collection config.
+  QuantizationConfig config = 1;
+  // Encoder parameters, for the method of `config`.
+  oneof parameters {
+    IndexingScalarParameters scalar = 2;
+    IndexingBinaryParameters binary = 3;
+    IndexingTurboParameters turbo = 4;
+  }
+}
+
+// Int8 scalar quantization. Each code: an f32 offset, then `actual_dim` bytes.
+message IndexingScalarParameters {
+  uint64 actual_dim = 1;
+  float alpha = 2;
+  float offset = 3;
+  float multiplier = 4;
+}
+
+enum IndexingBinaryEncoding {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingBinaryEncodingUnknown = 0;
+  IndexingBinaryOneBit = 1;
+  IndexingBinaryTwoBits = 2;
+  IndexingBinaryOneAndHalfBits = 3;
+}
+
+enum IndexingBinaryQueryEncoding {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingBinaryQueryEncodingUnknown = 0;
+  IndexingBinaryQuerySameAsStorage = 1;
+  IndexingBinaryQueryScalar4Bits = 2;
+  IndexingBinaryQueryScalar8Bits = 3;
+}
+
+message IndexingVectorElementStats {
+  float min = 1;
+  float max = 2;
+  float mean = 3;
+  float stddev = 4;
+}
+
+message IndexingBinaryParameters {
+  IndexingBinaryEncoding encoding = 1;
+  IndexingBinaryQueryEncoding query_encoding = 2;
+  // Per dimension, if the encoder keeps them; empty otherwise.
+  repeated IndexingVectorElementStats vector_stats = 3;
+}
+
+enum IndexingTurboBits {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingTurboBitsUnknown = 0;
+  IndexingTurbo8Bits = 1;
+  IndexingTurbo16Bits = 2;
+  IndexingTurbo4Bits = 3;
+  IndexingTurbo2Bits = 4;
+  IndexingTurboOneAndHalfBits = 5;
+  IndexingTurbo1Bit = 6;
+}
+
+enum IndexingTurboMode {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingTurboModeUnknown = 0;
+  IndexingTurboNormal = 1;
+  IndexingTurboPlus = 2;
+}
+
+enum IndexingTurboRotation {
+  // Not set by the sender. Refused: no value is a default.
+  IndexingTurboRotationUnknown = 0;
+  IndexingTurboPadded = 1;
+  IndexingTurboUnpadded = 2;
+}
+
+// TQ+ error correction, per padded dimension.
+message IndexingTurboErrorCorrection {
+  repeated float shift = 1;
+  repeated float scale = 2;
+}
+
+message IndexingTurboParameters {
+  IndexingTurboBits bits = 1;
+  IndexingTurboMode mode = 2;
+  IndexingTurboRotation rotation = 3;
+  optional IndexingTurboErrorCorrection error_correction = 4;
+}
+
+message ReadIndexingPayloadBlocksRequest {
+  // Sequence number of the first block wanted. Asking again for the same number gives the
+  // same blocks.
+  uint64 next = 1;
+}
+
+message IndexingPayloadBlocksBatch {
+  oneof result {
+    // Blocks from `next`, in build order, about 1 MB at most.
+    IndexingPayloadBlocks blocks = 1;
+    // No block at `next` yet: ask again.
+    IndexingPayloadBlocksNotReady not_ready = 2;
+    // No block at or after `next`, and none will come.
+    IndexingPayloadBlocksFinished finished = 3;
+  }
+}
+
+message IndexingPayloadBlocks {
+  // Sequence number of the first block, the `next` asked for.
+  uint64 first = 1;
+  repeated IndexingPayloadBlock blocks = 2;
+}
+
+message IndexingPayloadBlocksNotReady {}
+
+message IndexingPayloadBlocksFinished {}
+
+// Blocks of a field come together, fields in build order.
+message IndexingPayloadBlock {
+  string field = 1;
+  // Skip the block if the graph built so far already connects it well.
+  bool skip_if_connected = 2;
+  // Estimated block size, which the size limit is checked against.
+  uint64 cardinality = 3;
+  repeated uint32 points = 4;
+}
+
+message ReadIndexingVectorsRequest {
+  uint32 start = 1;
+  // Exclusive. Clamped to the point count.
+  uint32 end = 2;
+}
+
+message IndexingVectorsChunk {
+  // Offset of the first vector of the chunk.
+  uint32 start = 1;
+  // One entry per offset from `start`: storage-native bytes, or the quantized code. Empty:
+  // the point is not to be indexed (deleted, or without a vector).
+  repeated bytes vectors = 2;
+}
+
+message IndexingHeartbeatRequest {
+  string phase = 1;
+  uint64 done = 2;
+  uint64 total = 3;
+}
+
+enum IndexingHeartbeatAction {
+  IndexingContinue = 0;
+  IndexingCancel = 1;
+}
+
+message IndexingHeartbeatResponse {
+  IndexingHeartbeatAction action = 1;
+}
+
+message IndexingEntryPoint {
+  uint32 point_id = 1;
+  uint32 level = 2;
+}
+
+message IndexingGraphHeader {
+  uint32 format_version = 1;
+  uint64 point_count = 2;
+  repeated IndexingEntryPoint entry_points = 3;
+  repeated IndexingEntryPoint extra_entry_points = 4;
+}
+
+// Consecutive points of the graph, from `start`: for each point its level, then for each of
+// its levels from 0 the number of links, and the links in the same order.
+message IndexingGraphLinks {
+  uint32 start = 1;
+  bytes levels = 2;
+  repeated uint32 link_counts = 3;
+  repeated uint32 links = 4;
+}
+
+message UploadIndexingGraphRequest {
+  oneof part {
+    IndexingGraphHeader header = 1;
+    IndexingGraphLinks links = 2;
+  }
+}
+
+message UploadIndexingGraphResponse {}
+
+message FailIndexingTaskRequest {
+  string reason = 1;
+}
+
+message FailIndexingTaskResponse {}

@@ -72,8 +72,33 @@ impl<A: AsyncRead> BlobFs<A> {
 }
 
 impl<A: AsyncRead + Clone> BlobFs<A> {
-    /// Traced, latency-logged LIST, not yet bound to any executor.
+    /// Traced, latency-logged directory LIST, not yet bound to any executor.
     pub(crate) fn list_files_traced(
+        &self,
+        dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
+        let request = self.stats.request(Op::List, dir, 0..0);
+        let inner = self.inner.clone();
+        let dir = dir.to_path_buf();
+        async move {
+            let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+            let start_time = enabled.then(std::time::Instant::now);
+            let result = request.wrap(inner.list_files(&dir)).await;
+            if let Some(start_time) = start_time {
+                log::trace!(
+                    target: crate::LATENCY_LOG_TARGET,
+                    "list_files({}) took {:?} and returned {} files",
+                    dir.display(),
+                    start_time.elapsed(),
+                    result.as_ref().map_or(0, |files| files.len()),
+                );
+            }
+            result
+        }
+    }
+
+    /// Traced, latency-logged prefix LIST, not yet bound to any executor.
+    pub(crate) fn prefix_list_files_traced(
         &self,
         prefix_path: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
@@ -83,11 +108,11 @@ impl<A: AsyncRead + Clone> BlobFs<A> {
         async move {
             let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
             let start_time = enabled.then(std::time::Instant::now);
-            let result = request.wrap(inner.list_files(&prefix_path)).await;
+            let result = request.wrap(inner.prefix_list_files(&prefix_path)).await;
             if let Some(start_time) = start_time {
                 log::trace!(
                     target: crate::LATENCY_LOG_TARGET,
-                    "list_files({}) took {:?} and returned {} files",
+                    "prefix_list_files({}) took {:?} and returned {} files",
                     prefix_path.display(),
                     start_time.elapsed(),
                     result.as_ref().map_or(0, |files| files.len()),
@@ -184,8 +209,13 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
         Ok(Self::new(A::open(&config)?, BridgeRuntime::global()))
     }
 
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.runtime.block_on(self.list_files_traced(prefix_path))
+    fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+        self.runtime.block_on(self.list_files_traced(dir))
+    }
+
+    fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.runtime
+            .block_on(self.prefix_list_files_traced(prefix_path))
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {

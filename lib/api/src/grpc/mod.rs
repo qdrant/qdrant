@@ -9,6 +9,8 @@ pub mod dynamic_pool;
 pub mod grpc_health_v1;
 pub mod ops;
 pub mod pre_encoded;
+#[cfg(feature = "remote-indexing")]
+pub mod remote_indexing;
 pub mod transport_channel_pool;
 pub mod validate;
 

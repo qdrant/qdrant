@@ -79,6 +79,13 @@ impl AsyncRead for CountingSource {
 
     fn list_files(
         &self,
+        _dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        std::future::ready(Ok(vec![]))
+    }
+
+    fn prefix_list_files(
+        &self,
         _prefix: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         std::future::ready(Ok(vec![]))
@@ -399,7 +406,9 @@ fn disk_cache_failed_async_prefill_removes_the_mirror() {
         panic!("a prefill cut off mid-body must fail the open");
     };
     assert!(err.to_string().contains("short read"), "{err}");
-    let leftovers = MmapFs.list_files(&tmp.path().join("data.bin")).unwrap();
+    let leftovers = MmapFs
+        .prefix_list_files(&tmp.path().join("data.bin"))
+        .unwrap();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 

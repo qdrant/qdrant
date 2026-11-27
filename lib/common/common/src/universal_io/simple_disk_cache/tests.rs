@@ -144,7 +144,8 @@ impl Scenario {
         R: DiskCacheRemote,
         <R::Fs as UniversalReadFs>::ContextConfig: Default,
     {
-        let mut cached_fs = CachedFs::new(self.fs::<R>(), &self.remote_path).unwrap();
+        let mut cached_fs =
+            CachedFs::new(self.fs::<R>(), self.remote_path.parent().unwrap()).unwrap();
         cached_fs.cache_file_info().unwrap();
         move |path| cached_fs.file_info(path).cloned()
     }
@@ -1388,8 +1389,12 @@ mod tests_async {
             Ok(Self(MmapFs::from_context(ctx)?))
         }
 
-        fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-            self.0.list_files(prefix_path)
+        fn list_files(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files(dir)
+        }
+
+        fn prefix_list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.prefix_list_files(prefix_path)
         }
 
         fn exists(&self, path: &Path) -> UioResult<bool> {
@@ -1422,8 +1427,12 @@ mod tests_async {
             })
         }
 
-        async fn list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-            self.0.list_files_async(prefix_path).await
+        async fn list_files_async(&self, dir: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.list_files_async(dir).await
+        }
+
+        async fn prefix_list_files_async(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+            self.0.prefix_list_files_async(prefix_path).await
         }
 
         async fn select_files_async<P: AsRef<Path> + Send + Sync>(

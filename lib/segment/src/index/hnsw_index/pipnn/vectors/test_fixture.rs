@@ -21,7 +21,7 @@ use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_de
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{VectorStorage as _, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorageRead as _};
 
 pub(crate) const POINTS: usize = 200;
 /// Exact copies of earlier points, and as many near-copies, whose codes differ at most in what
@@ -126,7 +126,14 @@ impl Fixture {
     /// The scorer of HNSW, which scores the quantized vectors.
     pub fn scorer(&self) -> FilteredScorer<'_> {
         let quantized = Some(&self.quantized);
-        FilteredScorer::new_internal(0, &self.storage, quantized, None, &self.deleted).unwrap()
+        FilteredScorer::new_internal(
+            0,
+            &self.storage,
+            quantized,
+            None,
+            self.storage.not_deleted_checker(&self.deleted),
+        )
+        .unwrap()
     }
 
     /// The decoded vectors of all points.

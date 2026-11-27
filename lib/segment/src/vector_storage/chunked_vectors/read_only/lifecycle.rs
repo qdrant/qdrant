@@ -119,7 +119,7 @@ fn preopen_chunks(
     advice: AdviceSetting,
     populate: Populate,
 ) -> Result<(), UniversalIoError> {
-    for listed in fs.list_files(&chunks_prefix(directory))? {
+    for listed in fs.prefix_list_files(&chunks_prefix(directory))? {
         let is_chunk = listed
             .path
             .file_name()

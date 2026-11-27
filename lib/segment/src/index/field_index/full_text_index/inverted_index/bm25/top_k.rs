@@ -428,7 +428,10 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
 
         let mut count = 0;
         for (at, &score) in scores.iter().enumerate() {
-            if score.is_sign_negative() || score <= threshold {
+            // Test the threshold first: once it is non-negative it also rejects
+            // the documents no term hit (`-0.0`), so the sign test, a badly
+            // predicted branch on every slot, only runs before that.
+            if score <= threshold || (threshold < 0.0 && score.is_sign_negative()) {
                 continue;
             }
             gathered[count] = (base + at) as PointOffsetType;

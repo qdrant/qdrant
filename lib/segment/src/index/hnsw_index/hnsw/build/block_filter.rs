@@ -16,6 +16,59 @@ pub(super) enum BlockSkip {
     Never,
 }
 
+impl BlockSkip {
+    /// The skip rule for the field at `index_pos` in build order: the first field and tenant
+    /// fields always get their blocks.
+    pub fn for_field(index_pos: usize, is_tenant: bool) -> Self {
+        if index_pos > 0 && !is_tenant {
+            BlockSkip::IfConnected
+        } else {
+            BlockSkip::Never
+        }
+    }
+
+    /// From its form in a remote indexing task.
+    #[cfg_attr(not(feature = "remote-indexing"), expect(dead_code))]
+    pub fn from_skip_if_connected(skip_if_connected: bool) -> Self {
+        if skip_if_connected {
+            BlockSkip::IfConnected
+        } else {
+            BlockSkip::Never
+        }
+    }
+
+    /// Its form in a remote indexing task.
+    #[cfg_attr(not(feature = "remote-indexing"), expect(dead_code))]
+    pub fn skip_if_connected(self) -> bool {
+        match self {
+            BlockSkip::IfConnected => true,
+            BlockSkip::Never => false,
+        }
+    }
+}
+
+/// Blocks larger than this many times the point count at which the graph percolates (see
+/// [`max_block_size`]) stay connected through the main graph. Extra safety margin.
+const PERCOLATION_MULTIPLIER: usize = 4;
+
+/// The largest payload block worth building, in a graph of `total_vector_count` points with
+/// `average_links` links per point on level 0.
+///
+/// A random graph becomes disconnected when fewer than $1/K$ of its points are left, with $K$
+/// its average number of links per point. Blocks larger than that stay connected through the
+/// main graph. Without a main graph, every block is built.
+pub(super) fn max_block_size(
+    total_vector_count: usize,
+    average_links: usize,
+    has_main_graph: bool,
+) -> usize {
+    if has_main_graph {
+        total_vector_count / average_links.max(1) * PERCOLATION_MULTIPLIER
+    } else {
+        usize::MAX
+    }
+}
+
 /// Which payload blocks the graph needs: those it does not connect well already.
 pub(super) struct BlockFilter {
     /// Larger blocks stay connected through the main graph.
@@ -69,17 +122,11 @@ impl BlockFilter {
             None
         };
 
-        // It is expected, that graph will become disconnected less than
-        // $1/m$ points left.
-        // So blocks larger than $1/m$ are not needed.
-        // We add multiplier for the extra safety.
-        const PERCOLATION_MULTIPLIER: usize = 4;
-        let max_block_size = if ctx.has_main_graph() {
-            ctx.vector_storage.total_vector_count() / average_links_per_0_level_int
-                * PERCOLATION_MULTIPLIER
-        } else {
-            usize::MAX
-        };
+        let max_block_size = max_block_size(
+            ctx.vector_storage.total_vector_count(),
+            average_links_per_0_level_int,
+            ctx.has_main_graph(),
+        );
 
         Self {
             max_block_size,

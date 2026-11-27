@@ -53,7 +53,7 @@ pub(super) fn list_chunk_files(
     directory: &Path,
 ) -> Result<AHashMap<usize, ListedFile>, UniversalIoError> {
     let mut chunks_files = AHashMap::new();
-    for listed in fs.list_files(&chunks_prefix(directory))? {
+    for listed in fs.prefix_list_files(&chunks_prefix(directory))? {
         let chunk_id = listed
             .path
             .file_name()

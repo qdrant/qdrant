@@ -224,3 +224,95 @@ async fn cached_fs_prefetch_error() {
     cached_fs.discard_prefetched();
     cached_fs.prefetch_error().unwrap();
 }
+
+#[test]
+fn list_files_vs_prefix_list_files() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("dir");
+    let sub = dir.join("sub");
+    let sibling_dir = root.path().join("dir_extra");
+    fs_err::create_dir_all(&sub).unwrap();
+    fs_err::create_dir_all(&sibling_dir).unwrap();
+
+    let f_page0 = dir.join("page_0.dat");
+    let f_page1 = dir.join("page_1.dat");
+    let f_other = dir.join("other.dat");
+    let f_nested = sub.join("nested.dat");
+    let f_sibling_file = root.path().join("dir_file.dat");
+    let f_sibling_dir_file = sibling_dir.join("extra.dat");
+
+    for path in [
+        &f_page0,
+        &f_page1,
+        &f_other,
+        &f_nested,
+        &f_sibling_file,
+        &f_sibling_dir_file,
+    ] {
+        fs_err::write(path, b"x").unwrap();
+    }
+
+    let sorted_paths = |files: Vec<ListedFile>| {
+        let mut paths: Vec<_> = files.into_iter().map(|f| f.path).collect();
+        paths.sort();
+        paths
+    };
+
+    // `list_files` lists only files under `dir` (recursively), excluding siblings.
+    let mut expected_dir = vec![
+        f_page0.clone(),
+        f_page1.clone(),
+        f_other.clone(),
+        f_nested.clone(),
+    ];
+    expected_dir.sort();
+    assert_eq!(sorted_paths(MmapFs.list_files(&dir).unwrap()), expected_dir);
+
+    // `prefix_list_files` matches byte-prefix on the final component.
+    let mut expected_prefix_dir = vec![
+        f_page0.clone(),
+        f_page1.clone(),
+        f_other.clone(),
+        f_nested.clone(),
+        f_sibling_file.clone(),
+        f_sibling_dir_file.clone(),
+    ];
+    expected_prefix_dir.sort();
+    assert_eq!(
+        sorted_paths(MmapFs.prefix_list_files(&dir).unwrap()),
+        expected_prefix_dir
+    );
+
+    let mut expected_pages = vec![f_page0.clone(), f_page1.clone()];
+    expected_pages.sort();
+    assert_eq!(
+        sorted_paths(MmapFs.prefix_list_files(&dir.join("page_")).unwrap()),
+        expected_pages
+    );
+
+    // `CachedFs` over `root` matches the same contracts from its snapshot.
+    let mut cached_fs = CachedFs::new(MmapFs, root.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    assert_eq!(
+        sorted_paths(cached_fs.list_files(&dir).unwrap()),
+        expected_dir
+    );
+    assert_eq!(
+        sorted_paths(cached_fs.prefix_list_files(&dir).unwrap()),
+        expected_prefix_dir
+    );
+    assert_eq!(
+        sorted_paths(cached_fs.prefix_list_files(&dir.join("page_")).unwrap()),
+        expected_pages
+    );
+
+    // `CachedFs` over `dir` only snapshots `dir`, not `dir_extra` or `dir_file.dat`.
+    let mut dir_cached_fs = CachedFs::new(MmapFs, &dir).unwrap();
+    dir_cached_fs.cache_file_info().unwrap();
+    assert_eq!(
+        sorted_paths(dir_cached_fs.list_files(&dir).unwrap()),
+        expected_dir
+    );
+    assert!(dir_cached_fs.file_info(&f_sibling_file).is_none());
+    assert!(dir_cached_fs.file_info(&f_sibling_dir_file).is_none());
+}

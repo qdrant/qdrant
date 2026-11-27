@@ -32,6 +32,13 @@ impl AsyncRead for TimerWriteSource {
 
     fn list_files(
         &self,
+        _dir: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+        std::future::ready(Ok(Vec::new()))
+    }
+
+    fn prefix_list_files(
+        &self,
         _prefix: &Path,
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
         std::future::ready(Ok(Vec::new()))
