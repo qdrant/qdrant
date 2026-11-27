@@ -29,7 +29,8 @@ impl PartialOrd for ScoredPointTies<'_> {
 impl Eq for ScoredPointTies<'_> {}
 
 impl PartialEq for ScoredPointTies<'_> {
+    /// Consistent with `Ord`: compares order value (or score) and id.
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.cmp(other).is_eq()
     }
 }

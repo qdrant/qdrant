@@ -668,7 +668,7 @@ impl Collection {
             let intermediate_result = if let Some(order) = order {
                 let best_last_result = Self::get_best_last_shard_result(&shards_results, order);
 
-                let merged = match order {
+                let merged: Vec<_> = match order {
                     Order::LargeBetter => Either::Left(
                         shards_results
                             .into_iter()
@@ -679,16 +679,12 @@ impl Collection {
                             .into_iter()
                             .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                     ),
-                };
-                let merged: Vec<_> =
-                    if let Some(ScoringQuery::OrderBy(_)) = query_info.scoring_query {
-                        merged
-                            .dedup_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b)).is_eq())
-                            .take(query_info.take)
-                            .collect()
-                    } else {
-                        merged.dedup().take(query_info.take).collect()
-                    };
+                }
+                // Rows are duplicates only if their sort key (order value or score, then id) is equal:
+                // an order-by point gets one row per value, and all those rows share the same score.
+                .dedup_by(|a, b| ScoredPointTies(a) == ScoredPointTies(b))
+                .take(query_info.take)
+                .collect();
 
                 // Prevents undersampling warning in case there are not enough data to merge.
                 let is_enough = merged.len() == query_info.take;
