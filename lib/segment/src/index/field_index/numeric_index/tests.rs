@@ -1173,3 +1173,73 @@ fn test_block_index_preopen() {
     .unwrap();
     assert!(index.storage.pairs_block_index.is_none());
 }
+
+/// Regression test for #11379: a float bound past the `i64` range was
+/// saturated by `as i64`, so `lt: 1e20` became `< i64::MAX` and dropped
+/// `i64::MAX`, while `gte: 1e20` became `>= i64::MAX` and matched it. The
+/// indexed path must agree with the plain `f64` comparison for such bounds.
+#[test]
+fn test_integer_index_range_bounds_past_i64() {
+    use crate::types::IntPayloadType;
+
+    let temp_dir = Builder::new()
+        .prefix("test_integer_index_range_bounds_past_i64")
+        .tempdir()
+        .unwrap();
+
+    let mut builder = NumericIndex::<IntPayloadType, IntPayloadType>::builder_gridstore(
+        temp_dir.path().to_path_buf(),
+    );
+    builder.init().unwrap();
+
+    let _scope = ambient::test_guard();
+    let values = [
+        Value::from(i64::MIN),
+        Value::from(1_i64),
+        Value::from(i64::MAX),
+    ];
+    for (id, value) in values.iter().enumerate() {
+        builder.add_point(id as PointOffsetType, &[value]).unwrap();
+    }
+    let index = builder.finalize().unwrap();
+
+    let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
+        let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
+        let mut ids: Vec<_> = index.inner().filter(&cond).unwrap().unwrap().collect();
+        ids.sort();
+        ids
+    };
+
+    assert_eq!(
+        run(Range {
+            gt: Some(-1e20),
+            ..Default::default()
+        }),
+        vec![0, 1, 2],
+        "gt: -1e20 must match every value, including i64::MIN",
+    );
+    assert_eq!(
+        run(Range {
+            lt: Some(1e20),
+            ..Default::default()
+        }),
+        vec![0, 1, 2],
+        "lt: 1e20 must match every value, including i64::MAX",
+    );
+    assert_eq!(
+        run(Range {
+            gte: Some(1e20),
+            ..Default::default()
+        }),
+        Vec::<PointOffsetType>::new(),
+        "gte: 1e20 must match nothing",
+    );
+    assert_eq!(
+        run(Range {
+            lte: Some(-1e20),
+            ..Default::default()
+        }),
+        Vec::<PointOffsetType>::new(),
+        "lte: -1e20 must match nothing",
+    );
+}
