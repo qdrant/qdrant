@@ -961,6 +961,52 @@ fn test_str_prefix_payload_blocks() {
     assert_eq!(value_blocks, vec![4, 4, 4]);
 }
 
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_str_prefix_payload_blocks_utf8(#[case] index_type: IndexType) {
+    use crate::index::field_index::FieldIndex;
+    use crate::json_path::JsonPath;
+    use crate::types::Match;
+
+    let _scope = ambient::test_guard();
+    let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
+    let data: Vec<Vec<EcoString>> = ["az", "az", "aé", "aê", "bz", "bé", "bê", "céa", "céb"]
+        .into_iter()
+        .map(|value| vec![EcoString::from(value)])
+        .collect();
+
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let index = FieldIndex::KeywordIndex(load_map_index(&data, temp_dir.path(), index_type));
+    let key = JsonPath::new("test");
+
+    let mut prefix_blocks = Vec::new();
+    let mut value_blocks = Vec::new();
+    index
+        .for_each_payload_block(1, key.clone(), &mut |block| {
+            if let Some(Match::Prefix(prefix)) = &block.condition.r#match {
+                let points = index.filter(&block.condition)?.unwrap().count();
+                prefix_blocks.push((prefix.prefix.clone(), block.cardinality, points));
+            } else {
+                value_blocks.push((block.condition, block.cardinality));
+            }
+            Ok(())
+        })
+        .unwrap();
+
+    // The heavy exact value suppresses the whole "a" prefix. All three "b"
+    // values belong to one block, and "cé" ends at a valid character boundary.
+    assert_eq!(
+        value_blocks,
+        vec![(FieldCondition::new_match(key, "az".to_string().into()), 2)]
+    );
+    assert_eq!(
+        prefix_blocks,
+        vec![("b".to_string(), 3, 3), ("cé".to_string(), 2, 2)]
+    );
+}
+
 /// `prefix_index.bin` must be tracked by `files()` / `immutable_files()`
 /// (snapshot manifest) exactly when the index is built with the prefix
 /// option.
