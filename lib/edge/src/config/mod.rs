@@ -4,6 +4,7 @@
 //! Prefer `memory` / `payload_memory` over the deprecated `on_disk` /
 //! `on_disk_payload` flags; use global `quantization_config` / `hnsw_config`.
 
+mod load_profile;
 pub mod optimizers;
 pub mod shard;
 pub mod vectors;
