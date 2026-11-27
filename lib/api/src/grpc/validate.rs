@@ -306,7 +306,7 @@ impl Validate for grpc::FieldCondition {
         let grpc::FieldCondition {
             key: _,
             r#match: _,
-            range: _,
+            range,
             datetime_range: _,
             geo_bounding_box,
             geo_radius,
@@ -316,6 +316,7 @@ impl Validate for grpc::FieldCondition {
             is_null: _,
         } = self;
 
+        errors.merge_self("range", range.validate());
         errors.merge_self("geo_bounding_box", geo_bounding_box.validate());
         errors.merge_self("geo_radius", geo_radius.validate());
         errors.merge_self("geo_polygon", geo_polygon.validate());
@@ -648,6 +649,29 @@ impl Validate for super::qdrant::points_selector::PointsSelectorOneOf {
     }
 }
 
+impl Validate for grpc::Range {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::Range { lt, gt, gte, lte } = self;
+        let mut errors = ValidationErrors::new();
+        for (field, value) in [("lt", *lt), ("gt", *gt), ("gte", *gte), ("lte", *lte)] {
+            if let Some(bound) = value
+                && !bound.is_finite()
+            {
+                errors.add(
+                    field,
+                    ValidationError::new("range_bound_not_finite")
+                        .with_message(Cow::Borrowed("Range bound must be a finite number")),
+                );
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
 impl Validate for grpc::GeoPoint {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let grpc::GeoPoint { lon, lat } = self;
@@ -667,8 +691,9 @@ mod tests {
     use crate::grpc::qdrant::{
         CreateCollection, CreateFieldIndexCollection, CreateVectorNameRequest, DenseVector,
         DenseVectorCreationConfig, FieldCondition, GeoBoundingBox, GeoLineString, GeoPoint,
-        GeoPolygon, GeoRadius, PayloadIndexParams, SearchParams, SearchPoints, TextIndexParams,
-        UpdateCollection, create_vector_name_request, payload_index_params, vector,
+        GeoPolygon, GeoRadius, PayloadIndexParams, Range, SearchParams, SearchPoints,
+        TextIndexParams, UpdateCollection, create_vector_name_request, payload_index_params,
+        vector,
     };
 
     #[test]
@@ -1102,6 +1127,66 @@ mod tests {
             },
         ] {
             assert!(params.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_field_condition_rejects_non_finite_range_bounds() {
+        let valid = FieldCondition {
+            key: "score".into(),
+            range: Some(Range {
+                lt: Some(1e20),
+                gt: Some(-1e20),
+                gte: Some(-0.0),
+                lte: Some(1.5),
+            }),
+            ..Default::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        for non_finite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let cases = [
+                (
+                    "lt",
+                    Range {
+                        lt: Some(non_finite),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "gt",
+                    Range {
+                        gt: Some(non_finite),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "gte",
+                    Range {
+                        gte: Some(non_finite),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "lte",
+                    Range {
+                        lte: Some(non_finite),
+                        ..Default::default()
+                    },
+                ),
+            ];
+            for (bound_name, range) in cases {
+                let cond = FieldCondition {
+                    key: "score".into(),
+                    range: Some(range),
+                    ..Default::default()
+                };
+                let err = cond.validate().unwrap_err().to_string();
+                assert!(
+                    err.contains("finite"),
+                    "expected finite bound error for {bound_name}={non_finite}: {err}"
+                );
+            }
         }
     }
 }
