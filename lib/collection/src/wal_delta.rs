@@ -1,4 +1,5 @@
 pub mod ahead_clocks;
+pub mod source_rank;
 pub mod tagged_from;
 
 use std::fmt::Debug;
@@ -558,6 +559,8 @@ mod tests {
     use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
     use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
+    use crate::shards::shard::PeerId;
+    use crate::wal_delta::source_rank::SourceRank;
 
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
@@ -1921,6 +1924,69 @@ mod tests {
         };
 
         assert_eq!(wal.wal_delta_bounds().await, expected);
+    }
+
+    /// When every tick of the source's clock is a record in its WAL, the estimate of the source
+    /// rank is exact: the source resolves the WAL delta if and only if its rank is `Covers`.
+    #[tokio::test]
+    async fn test_source_rank_agrees_with_resolve_wal_delta() {
+        const RECOVERING_PEER: PeerId = 2;
+
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        // Ticks 1 and 2, an untagged record, ticks 3 to 5
+        write_operation(&wal, 1, Some(ClockTag::new_with_token(1, 0, 1, 1))).await;
+        write_operation(&wal, 2, Some(ClockTag::new_with_token(1, 0, 2, 2))).await;
+        write_operation(&wal, 3, None).await;
+        write_operation(&wal, 4, Some(ClockTag::new_with_token(1, 0, 3, 3))).await;
+        write_operation(&wal, 5, Some(ClockTag::new_with_token(1, 0, 4, 4))).await;
+        write_operation(&wal, 6, Some(ClockTag::new_with_token(1, 0, 5, 5))).await;
+
+        let assert_agrees = async |cutoff_tick: u64| {
+            let mut cutoff = RecoveryPoint::default();
+            cutoff.insert_with_token(1, 0, cutoff_tick, cutoff_tick);
+            wal.update_cutoff(&cutoff).await;
+
+            let newest_clocks = wal.recovery_point().await;
+            let bounds = wal.wal_delta_bounds().await;
+
+            // Recovery points at every tick, tick 0 is an empty recovery point
+            for tick in 0..=5 {
+                let mut recovery_point = RecoveryPoint::default();
+                if tick > 0 {
+                    recovery_point.insert_with_token(1, 0, tick, tick);
+                }
+
+                let rank = SourceRank::new(
+                    &recovery_point,
+                    RECOVERING_PEER,
+                    &newest_clocks,
+                    Some(&bounds),
+                );
+
+                let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+
+                match rank {
+                    SourceRank::Covers { .. } => assert!(
+                        resolve_result.is_ok(),
+                        "tick {tick}: ranked {rank:?}, but resolving failed: {resolve_result:?}",
+                    ),
+                    SourceRank::Fails(_) => assert!(
+                        resolve_result.is_err(),
+                        "tick {tick}: ranked {rank:?}, but resolving succeeded: {resolve_result:?}",
+                    ),
+                    SourceRank::NeedsRepair { .. } | SourceRank::Unknown => {
+                        panic!("tick {tick}: unexpected rank {rank:?}")
+                    }
+                }
+            }
+        };
+
+        // Ticks 2 to 5 resolve, tick 1 crosses the untagged record
+        assert_agrees(0).await;
+
+        // Tick 2 is below the cutoff now
+        assert_agrees(3).await;
     }
 
     /// Recovery point at the same tick as our newest clock, but with another token, is at an
