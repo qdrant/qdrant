@@ -19,6 +19,7 @@ use segment::index::hnsw_index::remote::{
     set_remote_indexer,
 };
 use tokio::runtime::Runtime;
+use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::{Channel, Endpoint};
 use uuid::Uuid;
 
@@ -129,6 +130,8 @@ struct RemoteIndexingClient {
 struct ClientInner {
     config: IndexingServiceConfig,
     remote_config: RemoteIndexingConfig,
+    /// The entry point's API key, as the header value sent with every call.
+    api_key: Option<AsciiMetadataValue>,
     /// Lazy: the receiver may come up after core.
     channel: Channel,
 }
@@ -148,6 +151,19 @@ impl RemoteIndexingClient {
                 .timeout(timeout)
                 .connect_lazy()
         };
+        // Checked here, not on every submission: an invalid key is a configuration error,
+        // which a local build after each failed submission would hide
+        let api_key = config
+            .api_key
+            .as_deref()
+            .map(|api_key| {
+                let mut value = AsciiMetadataValue::try_from(api_key).map_err(|_| {
+                    anyhow::anyhow!("`indexing_service.api_key` is not a valid header value")
+                })?;
+                value.set_sensitive(true);
+                anyhow::Ok(value)
+            })
+            .transpose()?;
         let remote_config = RemoteIndexingConfig {
             min_index_size_bytes: config.min_index_size_bytes,
             min_healing_coverage: config.min_healing_coverage,
@@ -164,6 +180,7 @@ impl RemoteIndexingClient {
             inner: Arc::new(ClientInner {
                 config,
                 remote_config,
+                api_key,
                 channel,
             }),
             runtime,
@@ -194,8 +211,7 @@ impl ClientInner {
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |since| since.as_millis() as u64),
         });
-        self.authorize(&mut request)
-            .map_err(|err| SubmitError::Permanent(format!("invalid api key: {err}")))?;
+        self.authorize(&mut request);
         let response = IndexingServiceClient::new(self.channel.clone())
             .submit_task(request)
             .await
@@ -205,16 +221,12 @@ impl ClientInner {
     }
 
     /// Add the entry point's API key, if configured.
-    fn authorize<T>(
-        &self,
-        request: &mut tonic::Request<T>,
-    ) -> Result<(), tonic::metadata::errors::InvalidMetadataValue> {
-        if let Some(api_key) = &self.config.api_key {
+    fn authorize<T>(&self, request: &mut tonic::Request<T>) {
+        if let Some(api_key) = &self.api_key {
             request
                 .metadata_mut()
-                .insert(API_KEY_HEADER, api_key.parse()?);
+                .insert(API_KEY_HEADER, api_key.clone());
         }
-        Ok(())
     }
 
     async fn cancel_async(&self, task_id: Uuid, token: TaskToken) {
@@ -222,9 +234,7 @@ impl ClientInner {
             task_id: task_id.to_string(),
             token: token.to_hex(),
         });
-        if self.authorize(&mut request).is_err() {
-            return;
-        }
+        self.authorize(&mut request);
         match IndexingServiceClient::new(self.channel.clone())
             .cancel_task(request)
             .await
@@ -316,6 +326,24 @@ mod tests {
         settings.service.api_key = Some("secret".to_string());
         settings.service.enforce_internal_auth = Some(false);
         assert!(indexer_can_call_back(&settings).is_err());
+    }
+
+    #[test]
+    fn invalid_api_key_fails_at_startup() {
+        let config = |api_key: &str| {
+            let mut settings = Settings::new(None).unwrap();
+            let mut config = settings.indexing_service.take().unwrap_or_else(|| {
+                serde_json::from_value(serde_json::json!({
+                    "url": "http://localhost:6340",
+                    "advertise_url": "http://localhost:6335",
+                }))
+                .unwrap()
+            });
+            config.api_key = Some(api_key.to_string());
+            config
+        };
+        assert!(RemoteIndexingClient::new(config("secret")).is_ok());
+        assert!(RemoteIndexingClient::new(config("line\nbreak")).is_err());
     }
 
     #[test]
