@@ -17,6 +17,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::SharedShardHolder;
+use crate::wal_delta::ahead_clocks::AheadClocks;
 
 /// Orchestrate shard diff transfer
 ///
@@ -235,56 +236,59 @@ async fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
 ) -> CollectionResult<ResolvedWalDelta> {
     let newest_clocks = replica_set.shard_recovery_point().await?;
-    let ahead_clocks = recovery_point.clocks_newer_than(&newest_clocks);
 
-    let orphan_point_ids = if ahead_clocks.is_empty() {
-        HashSet::new()
-    } else {
-        if ahead_clocks.has_clocks_of_other_peers(remote_shard.peer_id) {
+    let ahead_clocks = AheadClocks::new(&recovery_point, &newest_clocks, remote_shard.peer_id);
+
+    let orphan_point_ids = match ahead_clocks {
+        AheadClocks::None => HashSet::new(),
+
+        AheadClocks::OtherPeers(ahead_clocks) => {
             return Err(CollectionError::service_error(format!(
                 "Remote shard is ahead on clocks of other peers: {ahead_clocks}",
             )));
         }
 
-        // Report if other active replicas have the operations we are about to treat as orphans
-        log_other_replica_clocks(
-            replica_set,
-            remote_shard,
-            collection_id,
-            shard_id,
-            &ahead_clocks,
-            &newest_clocks,
-        )
-        .await;
+        AheadClocks::Own(ahead_clocks) => {
+            // Report if other active replicas have the operations we are about to treat as orphans
+            log_other_replica_clocks(
+                replica_set,
+                remote_shard,
+                collection_id,
+                shard_id,
+                &ahead_clocks,
+                &newest_clocks,
+            )
+            .await;
 
-        // Our tick for each clock the remote shard is ahead on, tick 0 if we don't know the clock
-        let source_clocks = ahead_clocks.same_clocks_in(&newest_clocks);
+            // Our tick for each clock the remote shard is ahead on, tick 0 for clocks we don't know
+            let source_clocks = ahead_clocks.same_clocks_in(&newest_clocks);
 
-        let orphan_points = remote_shard
-            .shard_orphan_points(collection_id, shard_id, &source_clocks)
-            .await?;
+            let orphan_points = remote_shard
+                .shard_orphan_points(collection_id, shard_id, &source_clocks)
+                .await?;
 
-        // Lower the recovery point to before the orphan operations. Drop the clocks we don't know.
-        // Set the others to the remote shard's last record at or below our tick, so resolving the
-        // delta verifies that record against our WAL. A clock the remote shard returns no record
-        // for stays ahead of ours, and resolving the delta fails.
-        for clock_tag in source_clocks.iter_as_clock_tags() {
-            if clock_tag.clock_tick == 0 {
-                recovery_point.remove_clock(clock_tag);
+            // Lower the recovery point to before the orphan operations. Drop the clocks we don't
+            // know. Set the others to the remote shard's last record at or below our tick, so
+            // resolving the delta verifies that record against our WAL. A clock the remote shard
+            // returns no record for stays ahead of ours, and resolving the delta fails.
+            for clock_tag in source_clocks.iter_as_clock_tags() {
+                if clock_tag.clock_tick == 0 {
+                    recovery_point.remove_clock(clock_tag);
+                }
             }
+
+            for clock_tag in orphan_points.clocks {
+                recovery_point.set_clock(clock_tag);
+            }
+
+            log::debug!(
+                "Remote shard is ahead on its own clocks {ahead_clocks}, \
+                 orphan operations changed {} points",
+                orphan_points.point_ids.len(),
+            );
+
+            orphan_points.point_ids
         }
-
-        for clock_tag in orphan_points.clocks {
-            recovery_point.set_clock(clock_tag);
-        }
-
-        log::debug!(
-            "Remote shard is ahead on its own clocks {ahead_clocks}, \
-             orphan operations changed {} points",
-            orphan_points.point_ids.len(),
-        );
-
-        orphan_points.point_ids
     };
 
     let version = replica_set.resolve_wal_delta(recovery_point).await?;
