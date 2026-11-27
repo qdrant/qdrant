@@ -1,16 +1,18 @@
 #[cfg(test)]
 mod tests {
+    use std::panic::AssertUnwindSafe;
     use std::sync::atomic::AtomicBool;
 
+    use common::ambient;
+    use common::typelevel::True;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
-    use quantization::encoded_vectors::{DistanceType, VectorParameters};
+    use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use tempfile::Builder;
 
-    /// The hot-path `score_bytes` asserts (in debug builds) that each encoded vector is at least
-    /// as large as the metadata expects. `load` performs a stricter, exact-size check for
-    /// storage-derived vectors once at load time, so the invariant also holds in release builds.
+    /// Scoring checks that each encoded vector is at least as large as the metadata expects.
+    /// `load` performs a stricter, exact-size check for storage-derived vectors once at load time.
     /// This verifies that a storage whose vector stride does not exactly match the metadata is
     /// rejected at load time instead of reaching the hot path and reading out of bounds.
     #[test]
@@ -161,6 +163,53 @@ mod tests {
                     "unexpected error: {err:?}",
                 ),
             }
+        }
+    }
+
+    /// Load-time validation only inspects the first record, so scoring must not trust the length
+    /// of the record it is given. A short record must panic instead of being read out of bounds.
+    #[test]
+    fn score_bytes_rejects_short_record() {
+        let _scope = ambient::test_guard();
+
+        let vector_dim = 128;
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            deprecated_count: None,
+            distance_type: DistanceType::Dot,
+            invert: false,
+        };
+        let vector_data: Vec<Vec<f32>> = (0..2).map(|i| vec![i as f32; vector_dim]).collect();
+
+        let quantized_vector_size =
+            encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
+        let encoded = EncodedVectorsU8::encode(
+            vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
+            TestEncodedStorageBuilder::new(None, quantized_vector_size),
+            &vector_parameters,
+            None,
+            ScalarQuantizationMethod::Int8,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let query = encoded.encode_query(&vec![0.5; vector_dim]);
+        let record = encoded.get_quantized_vector(1).to_vec();
+        assert_eq!(record.len(), quantized_vector_size);
+
+        // The full record scores fine.
+        encoded.score_bytes(True, &query, &record);
+
+        for len in [0, 1, quantized_vector_size - 1] {
+            let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                encoded.score_bytes(True, &query, &record[..len])
+            }));
+            assert!(
+                result.is_err(),
+                "scoring a {len} byte record must panic, expected {quantized_vector_size} bytes",
+            );
         }
     }
 }

@@ -341,9 +341,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             metadata_path: Some(meta_path.to_path_buf()),
         };
 
-        // Validate the storage's vector size against the metadata once here, so the size
-        // invariant the hot path in `score_bytes` relies on (it reads `actual_dim` bytes past a
-        // fixed offset) also holds in release builds without a per-score check.
+        // Validate the storage's vector size against the metadata once here, so inconsistent
+        // storage is rejected at load rather than failing on the first score. Scoring still
+        // checks each record's length in `parse_vec_data`, as a storage can return a short one.
         validate_storage_vector_size(&result.encoded_vectors, result.quantized_vector_size())?;
 
         Ok(result)
@@ -352,7 +352,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_simple(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -374,8 +374,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
                 let score = match metadata.vector_parameters.distance_type {
                     DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => {
@@ -393,7 +394,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_neon(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -417,8 +418,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
 
                 let score = match metadata.vector_parameters.distance_type {
@@ -439,7 +441,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_sse(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -463,8 +465,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
 
                 let score = match metadata.vector_parameters.distance_type {
@@ -485,7 +488,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_avx(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -509,8 +512,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
 
                 let score = match metadata.vector_parameters.distance_type {
@@ -532,7 +536,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_avx512_vnni(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -556,8 +560,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
 
                 let score = match metadata.vector_parameters.distance_type {
@@ -579,7 +584,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     pub fn score_point_avx_vnni(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
-                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes, metadata.actual_dim);
                 let q_ptr = query.encoded_query.as_ptr();
                 let v_ptr = v_code.as_ptr();
 
@@ -603,8 +608,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             Metadata::Int8(metadata) => {
                 let query_data = self.encoded_vectors.get_vector_data(i);
                 let vector_data = self.encoded_vectors.get_vector_data(j);
-                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
-                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data, metadata.actual_dim);
+                let (vector_offset, v_code) =
+                    Self::parse_vec_data(&vector_data, metadata.actual_dim);
                 let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
 
                 let score = match metadata.vector_parameters.distance_type {
@@ -634,19 +640,26 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         (alpha, offset)
     }
 
-    /// Split encoded vector data into the offset constant and the quantized code.
+    /// Split encoded vector data into the offset constant and the quantized code of
+    /// `actual_dim` bytes.
+    ///
+    /// The scoring kernels read `actual_dim` bytes through the code's raw pointer, so this
+    /// checks the length on every call: a short record panics instead of being read out of
+    /// bounds.
     ///
     /// The returned slice borrows `data`, so callers reading from raw pointers derived from it
     /// must keep the (possibly owned) buffer returned by
     /// [`EncodedStorage::get_vector_data`] alive for the whole read.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `data` is shorter than `ADDITIONAL_CONSTANT_SIZE + actual_dim` bytes.
     #[inline]
-    fn parse_vec_data(data: &[u8]) -> (f32, &[u8]) {
-        debug_assert!(data.len() >= ADDITIONAL_CONSTANT_SIZE);
-        unsafe {
-            let offset = data.as_ptr().cast::<f32>().read_unaligned();
-            let code = data.get_unchecked(ADDITIONAL_CONSTANT_SIZE..);
-            (offset, code)
-        }
+    fn parse_vec_data(data: &[u8], actual_dim: usize) -> (f32, &[u8]) {
+        let (offset, code) = data
+            .split_first_chunk::<ADDITIONAL_CONSTANT_SIZE>()
+            .expect("encoded vector holds the offset constant");
+        (f32::from_ne_bytes(*offset), &code[..actual_dim])
     }
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
@@ -659,9 +672,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     pub fn get_quantized_vector_offset_and_code(&self, i: PointOffsetType) -> (f32, Cow<'_, [u8]>) {
         let data = self.encoded_vectors.get_vector_data(i);
-        let (offset, _) = Self::parse_vec_data(&data);
         let dim = self.metadata.actual_dim();
-        debug_assert!(data.len() >= ADDITIONAL_CONSTANT_SIZE + dim);
+        let (offset, _) = Self::parse_vec_data(&data, dim);
         // Return the code as a view into `data` itself, so an owned buffer stays alive.
         let code = match data {
             Cow::Borrowed(bytes) => {
@@ -835,12 +847,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         match &self.metadata {
             Metadata::Int8(metadata) => {
                 let data = self.encoded_vectors.get_vector_data(id);
-                let (vector_offset, code) = Self::parse_vec_data(&data);
+                let (vector_offset, code) = Self::parse_vec_data(&data, metadata.actual_dim);
                 // Remove shift from offset because encoded query should not have it, it's contained in vector data only.
                 let query_offset = vector_offset - metadata.get_shift();
                 Some(EncodedQueryU8 {
                     offset: query_offset,
-                    encoded_query: code[..metadata.actual_dim].to_vec(),
+                    encoded_query: code.to_vec(),
                 })
             }
         }
@@ -880,10 +892,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
         HwMetric::Cpu.bump(self.metadata.vector_parameters().dim);
 
-        // For storage-derived vectors this invariant is validated once at load time (see
-        // `load`), so we only assert it here in debug builds to also cover externally provided
-        // byte slices without adding overhead to this hot path in release builds.
-        debug_assert!(bytes.len() >= ADDITIONAL_CONSTANT_SIZE + self.metadata.actual_dim());
+        // Every `score_point_*` checks the length of `bytes` in `parse_vec_data`.
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
@@ -971,8 +980,8 @@ impl<TStorage: EncodedStorage + Sync> MatrixOperands for ScalarOperands<'_, TSto
     ) -> std::io::Result<()> {
         let depth = self.depth();
         self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
-            let (offset, code) = EncodedVectorsU8::<TStorage>::parse_vec_data(&data);
-            out[i * depth..(i + 1) * depth].copy_from_slice(&code[..depth]);
+            let (offset, code) = EncodedVectorsU8::<TStorage>::parse_vec_data(&data, depth);
+            out[i * depth..(i + 1) * depth].copy_from_slice(code);
             aux[i] = [offset, 0.0, 0.0];
         })
     }
