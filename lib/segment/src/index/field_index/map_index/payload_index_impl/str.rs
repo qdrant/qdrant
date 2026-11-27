@@ -390,7 +390,7 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
 /// into their parents. O(total key bytes).
 fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<(String, usize)> {
     struct OpenInterval {
-        /// Prefix length (in bytes) shared by every key in the interval.
+        /// Prefix length (in bytes, on a char boundary) shared by every key in the interval.
         lcp: usize,
         keys: usize,
         postings: usize,
@@ -399,17 +399,18 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         covered: bool,
     }
 
+    // Counted in whole chars, returned in bytes. A byte-level LCP can end
+    // mid-codepoint ("aé" and "aê" share `61 c3`), and rounding that down to
+    // a char boundary would attach the count of the longer byte prefix to a
+    // shorter prefix that matches more keys.
     let lcp_len = |a: &str, b: &str| {
-        a.as_bytes()
-            .iter()
-            .zip(b.as_bytes())
+        a.chars()
+            .zip(b.chars())
             .take_while(|(x, y)| x == y)
-            .count()
+            .map(|(x, _)| x.len_utf8())
+            .sum::<usize>()
     };
 
-    // The byte-level LCP may end mid-codepoint; round down to a char boundary
-    // to emit a valid prefix string. Rounding can collapse a node onto its
-    // ancestor, so keep the larger count per emitted prefix.
     let mut heavy: HashMap<String, usize> = HashMap::new();
     // Returns whether the interval's subtree now contains an emitted block,
     // i.e. whether its ancestors must be suppressed.
@@ -420,17 +421,11 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         if node.covered {
             return true;
         }
-        let mut boundary = node.lcp;
-        while boundary > 0 && !last_key.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        if boundary == 0 {
-            // Heavy but unrepresentable at this depth; let an ancestor with
-            // a valid boundary produce the block instead.
+        if node.lcp == 0 {
+            // The empty prefix isn't a useful block.
             return false;
         }
-        let entry = heavy.entry(last_key[..boundary].to_string()).or_default();
-        *entry = (*entry).max(node.postings);
+        heavy.insert(last_key[..node.lcp].to_string(), node.postings);
         true
     };
 
@@ -573,5 +568,37 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
         | Match::Text(_)
         | Match::TextAny(_)
         | Match::Phrase(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(items: &[(&str, usize)]) -> Vec<(EcoString, usize)> {
+        items
+            .iter()
+            .map(|(k, c)| (EcoString::from(*k), *c))
+            .collect()
+    }
+
+    /// `é` and `ê` share the byte `c3`, which must not form a prefix interval.
+    #[test]
+    fn prefix_blocks_after_utf8_boundary_adjustment() {
+        // `az` is a heavy value with its own exact block; `aé` + `aê` total 2
+        // postings, under the threshold. No prefix block is expected.
+        let e = entries(&[("az", 2), ("aé", 1), ("aê", 1)]);
+        assert_eq!(heavy_prefix_blocks(&e, 1), vec![]);
+
+        // Nothing is heavy on its own, so `a` covers all three keys.
+        let e = entries(&[("az", 1), ("aé", 1), ("aê", 1)]);
+        assert_eq!(heavy_prefix_blocks(&e, 2), vec![("a".to_string(), 3)]);
+    }
+
+    /// The `a` block must count every key under it, not just the `aé`/`aê` pair.
+    #[test]
+    fn prefix_blocks_count_all_keys_under_char_prefix() {
+        let e = entries(&[("az", 1), ("aé", 1), ("aê", 1)]);
+        assert_eq!(heavy_prefix_blocks(&e, 1), vec![("a".to_string(), 3)]);
     }
 }
