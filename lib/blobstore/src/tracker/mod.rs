@@ -14,6 +14,7 @@ mod tests;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ahash::{AHashMap, AHashSet};
 use common::generic_consts::{AccessPattern, Random};
@@ -234,15 +235,26 @@ pub(crate) struct PointerUpdates {
     /// Pointer to write in tracker when persisting
     current: Option<ValuePointer>,
     /// List of pointers to free in bitmask when persisting
-    to_free: SmallVec<[ValuePointer; 1]>,
+    to_free: SmallVec<[OldPointer; 1]>,
+}
+
+/// A pointer to free, see [`PointerUpdates`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OldPointer {
+    pointer: ValuePointer,
+    /// Number of captures of pending updates when this pointer was superseded, see
+    /// [`PendingCapture`]. All later captures hold this pointer, the first one written frees it.
+    ///
+    /// Tells apart reuses of the same pointer, once its blocks were freed.
+    superseded_at: u64,
 }
 
 impl PointerUpdates {
     /// Mark this pointer as set
     ///
     /// It will mark the pointer as used on disk on flush, and will free all previous pending
-    /// pointers
-    fn set(&mut self, pointer: ValuePointer) {
+    /// pointers. `captures` is the number of captures of pending updates so far.
+    fn set(&mut self, pointer: ValuePointer, captures: u64) {
         if self.current == Some(pointer) {
             debug_assert!(false, "we should not set the same point twice");
             return;
@@ -250,16 +262,11 @@ impl PointerUpdates {
 
         // Move the current pointer to the pointers to free, if it exists
         if let Some(old_pointer) = self.current.replace(pointer) {
-            self.to_free.push(old_pointer);
-            debug_assert_eq!(
-                self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
-                self.to_free.len(),
-                "should not have duplicate pointers to free",
-            );
+            self.push_to_free(old_pointer, captures);
         }
 
         debug_assert!(
-            !self.to_free.contains(&pointer),
+            !self.to_free.iter().any(|old| old.pointer == pointer),
             "old list cannot contain pointer we just set",
         );
     }
@@ -267,8 +274,8 @@ impl PointerUpdates {
     /// Mark this pointer as unset
     ///
     /// It will completely free the pointer on disk on flush including all it's previous pending
-    /// pointers
-    fn unset(&mut self, pointer: ValuePointer) {
+    /// pointers. `captures` is the number of captures of pending updates so far.
+    fn unset(&mut self, pointer: ValuePointer, captures: u64) {
         let old_pointer = self.current.take();
 
         // Fallback: if the pointer to unset is not the current one, free both pointers, though this shouldn't happen
@@ -279,13 +286,24 @@ impl PointerUpdates {
         if let Some(old_pointer) = old_pointer
             && old_pointer != pointer
         {
-            self.to_free.push(old_pointer);
+            self.push_to_free(old_pointer, captures);
         }
 
-        self.to_free.push(pointer);
+        self.push_to_free(pointer, captures);
+    }
+
+    fn push_to_free(&mut self, pointer: ValuePointer, captures: u64) {
+        self.to_free.push(OldPointer {
+            pointer,
+            superseded_at: captures,
+        });
 
         debug_assert_eq!(
-            self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
+            self.to_free
+                .iter()
+                .map(|old| old.pointer)
+                .collect::<AHashSet<_>>()
+                .len(),
             self.to_free.len(),
             "should not have duplicate pointers to free",
         );
@@ -336,6 +354,20 @@ impl PointerUpdates {
     }
 }
 
+/// Pending updates captured for a flush, see [`Tracker::capture_pending`].
+#[derive(Debug)]
+pub(crate) struct PendingCapture {
+    /// Captures are numbered in order, starting at 1
+    number: u64,
+    updates: AHashMap<PointOffset, PointerUpdates>,
+}
+
+impl PendingCapture {
+    pub(crate) fn updates(&self) -> &AHashMap<PointOffset, PointerUpdates> {
+        &self.updates
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct TrackerHeader {
@@ -354,6 +386,10 @@ pub struct Tracker<S> {
     ///
     /// When flushing, these updates get written into the storage and flushed at once.
     pub(super) pending_updates: AHashMap<PointOffset, PointerUpdates>,
+    /// Number of the last capture of pending updates, see [`PendingCapture`].
+    last_capture: AtomicU64,
+    /// Number of the last capture written to storage, see [`PendingCapture`].
+    last_written_capture: u64,
 
     /// The maximum pointer offset in the tracker (updated in memory).
     next_pointer_offset: PointOffset,
@@ -403,6 +439,22 @@ impl<S> Tracker<S> {
     pub fn pointer_count(&self) -> u32 {
         self.next_pointer_offset
     }
+
+    /// Capture the pending updates, to write them to storage with [`Tracker::write_pending`].
+    ///
+    /// Captures may overlap. A later capture holds all updates of an earlier one that weren't
+    /// persisted yet.
+    pub(crate) fn capture_pending(&self) -> PendingCapture {
+        PendingCapture {
+            number: self.last_capture.fetch_add(1, Ordering::Relaxed) + 1,
+            updates: self.pending_updates.clone(),
+        }
+    }
+
+    /// Whether a later capture than the given one was written already, which makes it outdated.
+    pub(crate) fn is_outdated(&self, capture: &PendingCapture) -> bool {
+        capture.number <= self.last_written_capture
+    }
 }
 
 // Read operations -- only require UniversalRead
@@ -437,6 +489,8 @@ impl<S: UniversalRead> Tracker<S> {
             header,
             storage,
             pending_updates,
+            last_capture: AtomicU64::new(0),
+            last_written_capture: 0,
             journal: Some(Arc::new(Journal::new(dir))),
         })
     }
@@ -577,6 +631,8 @@ where
             header,
             storage,
             pending_updates,
+            last_capture: AtomicU64::new(0),
+            last_written_capture: 0,
             next_pointer_offset: 0,
             journal: Some(Arc::new(journal)),
         };
@@ -611,39 +667,50 @@ where
         journal.remove()
     }
 
-    /// Writes the accumulated pending updates to storage and flushes it
+    /// Writes captured pending updates to storage, see [`Tracker::capture_pending`].
     ///
-    /// Changes should be captured from [`self.pending_updates`]. This method may therefore flush
-    /// an earlier version of changes.
+    /// Captures may overlap and may be written in any order:
+    ///
+    /// - a capture older than one already written is skipped, the latter holds all its updates
+    ///   that weren't persisted yet. Writing it would revert pointers and free live blocks.
+    /// - an earlier capture may have freed some of the old pointers already, and their blocks may
+    ///   have been reused since. Those are not freed again.
     ///
     /// This updates the list of pending updates inside this tracker for each given update that is
     /// processed.
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     #[must_use = "The old pointers need to be freed in the bitmask"]
-    pub fn write_pending(
-        &mut self,
-        pending_updates: AHashMap<PointOffset, PointerUpdates>,
-    ) -> Result<Vec<ValuePointer>> {
+    pub fn write_pending(&mut self, capture: PendingCapture) -> Result<Vec<ValuePointer>> {
+        if self.is_outdated(&capture) {
+            return Ok(Vec::new());
+        }
+
+        let PendingCapture {
+            number,
+            updates: pending_updates,
+        } = capture;
+
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
-            match updates.current {
-                // Write to store a new pointer
-                Some(new_pointer) => {
-                    // Mark any existing pointer for removal to free its blocks
-                    if let Some(old_pointer) = self.get_raw(point_offset)? {
-                        old_pointers.push(old_pointer);
-                    }
-
-                    self.persist_pointer(point_offset, Some(new_pointer))?;
-                }
-                // Write to empty the pointer
-                None => self.persist_pointer(point_offset, None)?,
+            // Free the pointer we overwrite, unless an earlier capture wrote this same pointer
+            if let Some(old_pointer) = self.get_raw(point_offset)?
+                && Some(old_pointer) != updates.current
+            {
+                old_pointers.push(old_pointer);
             }
 
-            // Mark all old pointers for removal to free its blocks
-            old_pointers.extend(&updates.to_free);
+            self.persist_pointer(point_offset, updates.current)?;
+
+            // Free old pointers, unless a capture written after they were superseded freed them
+            old_pointers.extend(
+                updates
+                    .to_free
+                    .iter()
+                    .filter(|old| old.superseded_at >= self.last_written_capture)
+                    .map(|old| old.pointer),
+            );
 
             // Remove all persisted updates from the latest updates, drop if no changes are left
             if let Some(latest_updates) = self.pending_updates.get_mut(&point_offset) {
@@ -662,6 +729,8 @@ where
 
         // Increment header count if necessary
         self.write_pointer_count()?;
+
+        self.last_written_capture = number;
 
         Ok(old_pointers)
     }
@@ -713,10 +782,11 @@ where
     }
 
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
+        let captures = self.last_capture.load(Ordering::Relaxed);
         self.pending_updates
             .entry(point_offset)
             .or_default()
-            .set(value_pointer);
+            .set(value_pointer, captures);
         self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
     }
 
@@ -725,10 +795,11 @@ where
         let pointer_opt = self.get::<Random>(point_offset)?;
 
         if let Some(pointer) = pointer_opt {
+            let captures = self.last_capture.load(Ordering::Relaxed);
             self.pending_updates
                 .entry(point_offset)
                 .or_default()
-                .unset(pointer);
+                .unset(pointer, captures);
         }
 
         Ok(pointer_opt)

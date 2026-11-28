@@ -36,10 +36,15 @@ impl TestTracker {
     }
 
     pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
-        let pending_updates = std::mem::take(&mut self.pending_updates);
-        let res = self.write_pending(pending_updates)?;
+        let res = self.write_pending(self.capture_pending())?;
         self.storage.flusher()()?;
         Ok(res)
+    }
+}
+
+impl PointerUpdates {
+    fn to_free_pointers(&self) -> Vec<ValuePointer> {
+        self.to_free.iter().map(|old| old.pointer).collect()
     }
 }
 
@@ -249,18 +254,18 @@ fn test_track_non_sequential_large_offset() {
 #[test]
 fn test_value_pointer_drain() {
     let mut updates = PointerUpdates::default();
-    updates.set(ValuePointer::new(1, 1, 1));
+    updates.set(ValuePointer::new(1, 1, 1), 0);
 
     // When all updates are persisted, drop the entry
     assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
-    updates.set(ValuePointer::new(1, 2, 1));
+    updates.set(ValuePointer::new(1, 2, 1), 0);
 
     // When all updates are persisted, drop the entry
     assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
     let persisted = updates.clone();
-    updates.set(ValuePointer::new(1, 3, 1));
+    updates.set(ValuePointer::new(1, 3, 1), 0);
 
     // Last pointer was not persisted, only keep it for the next flush
     {
@@ -268,14 +273,14 @@ fn test_value_pointer_drain() {
         assert!(!updates.drain_persisted(&persisted));
         assert_eq!(updates.current, Some(ValuePointer::new(1, 3, 1))); // set block offset 3
         assert_eq!(
-            updates.to_free.as_slice(),
+            updates.to_free_pointers().as_slice(),
             &[
                 ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
             ]
         );
     }
 
-    updates.set(ValuePointer::new(1, 4, 1));
+    updates.set(ValuePointer::new(1, 4, 1), 0);
 
     // Last two pointers were not persisted, only keep them for the next flush
     {
@@ -283,7 +288,7 @@ fn test_value_pointer_drain() {
         assert!(!updates.drain_persisted(&persisted));
         assert_eq!(updates.current, Some(ValuePointer::new(1, 4, 1))); // set block offset 4
         assert_eq!(
-            updates.to_free.as_slice(),
+            updates.to_free_pointers().as_slice(),
             &[
                 ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
                 ValuePointer::new(1, 3, 1), // unset block offset 3
@@ -292,7 +297,7 @@ fn test_value_pointer_drain() {
     }
 
     let persisted = updates.clone();
-    updates.unset(ValuePointer::new(1, 4, 1));
+    updates.unset(ValuePointer::new(1, 4, 1), 0);
 
     // Last pointer write is persisted, but the delete of the last pointer is not
     // Then we keep the last pointer with set=false to flush the delete next time
@@ -300,7 +305,10 @@ fn test_value_pointer_drain() {
         let mut updates = updates.clone();
         assert!(!updates.drain_persisted(&persisted));
         assert_eq!(updates.current, None);
-        assert_eq!(updates.to_free.as_slice(), &[ValuePointer::new(1, 4, 1)]);
+        assert_eq!(
+            updates.to_free_pointers().as_slice(),
+            &[ValuePointer::new(1, 4, 1)]
+        );
     }
 
     // Even if the history would somehow be shuffled we'd still properly drain
@@ -333,14 +341,14 @@ fn test_value_pointer_drain_bug_7741() {
     let mut updates = PointerUpdates::default();
 
     // Put and delete block offset 1
-    updates.set(ValuePointer::new(1, 1, 1));
-    updates.unset(ValuePointer::new(1, 1, 1));
+    updates.set(ValuePointer::new(1, 1, 1), 0);
+    updates.unset(ValuePointer::new(1, 1, 1), 0);
 
     // Clone this set of updates to flush later
     let persisted = updates.clone();
 
     // Put block offset 2
-    updates.set(ValuePointer::new(1, 2, 1));
+    updates.set(ValuePointer::new(1, 2, 1), 0);
 
     // Drain persisted updates and don't drop, still need to persist block offset 2 later
     let do_drop = updates.drain_persisted(&persisted);
@@ -349,7 +357,7 @@ fn test_value_pointer_drain_bug_7741() {
     // Pending updates must only have set for block offset 2
     let expected = {
         let mut expected = PointerUpdates::default();
-        expected.set(ValuePointer::new(1, 2, 1));
+        expected.set(ValuePointer::new(1, 2, 1), 0);
         expected
     };
     assert_eq!(
