@@ -46,6 +46,14 @@ impl<B: DenseVectorBlob> DenseVectorStorageRead<B::Element>
     ) -> OperationResult<()> {
         self.vectors.for_each_in_batch(keys, f)
     }
+
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [B::Element]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        self.vectors.for_each_chunk_in_batch(keys, f)
+    }
 }
 
 impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStorage<B> {

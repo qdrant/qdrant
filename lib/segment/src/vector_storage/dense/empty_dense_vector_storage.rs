@@ -17,8 +17,8 @@ use crate::data_types::vectors::{
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, MultiVectorStorageRead, VectorStorage,
-    VectorStorageEnum, VectorStorageRead, default_for_each_in_dense_batch,
-    default_read_vector_bytes_impl,
+    VectorStorageEnum, VectorStorageRead, default_for_each_dense_chunk,
+    default_for_each_in_dense_batch, default_read_vector_bytes_impl,
 };
 
 /// Placeholder vector storage that contains no data.
@@ -107,6 +107,14 @@ impl DenseVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         f: F,
     ) -> OperationResult<()> {
         default_for_each_in_dense_batch(self, keys, f)
+    }
+
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [VectorElementType]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_dense_chunk(self, keys, f)
     }
 }
 

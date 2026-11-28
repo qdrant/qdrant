@@ -149,8 +149,24 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         keys: &[PointOffsetType],
         mut f: F,
     ) -> OperationResult<()> {
+        self.for_each_chunk_in_batch(keys, |offset, vectors| {
+            for (vector_idx, vector) in vectors.iter().enumerate() {
+                f(offset + vector_idx, vector);
+            }
+        })
+    }
+
+    /// Like [`Self::for_each_in_batch`], but hands over up to [`VECTOR_READ_BATCH_SIZE`]
+    /// consecutive vectors of the batch at once, with the index of the first.
+    pub fn for_each_chunk_in_batch<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        mut f: F,
+    ) -> OperationResult<()> {
         if TypedStorage::<ReadOnly<S>, T>::kind().can_be_async() {
-            return self.for_each_in_batch_async(keys, f);
+            return self.for_each_in_batch_async(keys, |idx, vector| {
+                f(idx, std::slice::from_ref(&Cow::Borrowed(vector)));
+            });
         }
 
         if keys.len() > 1 {
@@ -191,11 +207,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
                 return Err(err);
             }
 
-            let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
-
-            for (vector_idx, vec) in vectors.iter().enumerate() {
-                f(batch_offset + vector_idx, vec);
-            }
+            f(VECTOR_READ_BATCH_SIZE * batch_idx, vectors);
         }
 
         Ok(())
@@ -321,6 +333,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectors<T, S> {
         f: F,
     ) -> OperationResult<()> {
         self.data.for_each_in_batch(keys, f)
+    }
+
+    pub fn for_each_chunk_in_batch<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        self.data.for_each_chunk_in_batch(keys, f)
     }
 
     /// Marks the key as deleted.

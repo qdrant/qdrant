@@ -1,3 +1,4 @@
+mod dot_batch;
 pub mod metric;
 pub mod simple;
 pub mod tools;

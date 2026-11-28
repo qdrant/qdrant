@@ -26,6 +26,14 @@ pub trait DenseVectorBlob {
         keys: &[PointOffsetType],
         f: F,
     ) -> OperationResult<()>;
+
+    /// Like [`Self::for_each_in_batch`], but hands over consecutive vectors of the batch
+    /// together, with the index of the first.
+    fn for_each_chunk_in_batch<F: FnMut(usize, &[Cow<'_, [Self::Element]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()>;
 }
 
 impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorBlob
@@ -52,5 +60,13 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorBlob
         f: F,
     ) -> OperationResult<()> {
         ImmutableDenseVectorData::for_each_in_batch(self, keys, f)
+    }
+
+    fn for_each_chunk_in_batch<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        ImmutableDenseVectorData::for_each_chunk_in_batch(self, keys, f)
     }
 }

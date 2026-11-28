@@ -91,6 +91,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> DenseVectorStorageRead<T>
         self.vectors.for_each_in_batch(keys, f)
     }
 
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        self.vectors.for_each_chunk_in_batch(keys, f)
+    }
+
     fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,

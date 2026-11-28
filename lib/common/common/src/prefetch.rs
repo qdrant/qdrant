@@ -106,7 +106,7 @@ pub fn prefetch_slice_l2(bytes: &[u8]) {
 /// Never faults, even on invalid addresses.
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
-fn prefetch_read(ptr: *const u8) {
+pub fn prefetch_read(ptr: *const u8) {
     use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
 
     // SAFETY: `_mm_prefetch` is a non-faulting hint for any address.
@@ -118,7 +118,7 @@ fn prefetch_read(ptr: *const u8) {
 /// `core::arch` prefetch intrinsic for aarch64.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
-fn prefetch_read(ptr: *const u8) {
+pub fn prefetch_read(ptr: *const u8) {
     // SAFETY: `prfm` is a non-faulting hint for any address; it does not
     // access memory architecturally, touch the stack, or clobber flags.
     unsafe {

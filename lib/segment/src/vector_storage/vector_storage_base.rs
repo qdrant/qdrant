@@ -315,6 +315,15 @@ pub trait DenseVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
         keys: &[PointOffsetType],
         f: F,
     ) -> OperationResult<()>;
+
+    /// Like [`Self::for_each_in_dense_batch`], but hands over consecutive vectors of the batch
+    /// together, with the index of the first, so a scorer can score them together. Storages
+    /// that hand over one vector at a time use [`default_for_each_dense_chunk`].
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()>;
 }
 
 pub fn default_for_each_in_dense_batch<T, F, D>(
@@ -331,6 +340,23 @@ where
         callback(idx, &this.get_dense::<Random>(key));
     }
     Ok(())
+}
+
+/// [`DenseVectorStorageRead::for_each_dense_chunk`] one vector at a time, through
+/// [`DenseVectorStorageRead::for_each_in_dense_batch`].
+pub fn default_for_each_dense_chunk<T, F, D>(
+    this: &D,
+    keys: &[PointOffsetType],
+    mut f: F,
+) -> OperationResult<()>
+where
+    T: PrimitiveVectorElement,
+    F: FnMut(usize, &[Cow<'_, [T]>]),
+    D: DenseVectorStorageRead<T> + ?Sized,
+{
+    this.for_each_in_dense_batch(keys, |idx, vector| {
+        f(idx, std::slice::from_ref(&Cow::Borrowed(vector)));
+    })
 }
 
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: DenseVectorStorageRead<T> {

@@ -21,7 +21,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
     DenseVectorStorage, DenseVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
-    VectorStorageRead,
+    VectorStorageRead, default_for_each_dense_chunk,
 };
 
 pub(crate) const VECTORS_DIR_PATH: &str = "vectors";
@@ -97,6 +97,14 @@ impl<T: PrimitiveVectorElement> DenseVectorStorageRead<T> for AppendableMmapDens
         F: FnMut(usize, &[T]),
     {
         self.vectors.for_each_in_batch(keys, callback)
+    }
+
+    fn for_each_dense_chunk<F: FnMut(usize, &[Cow<'_, [T]>])>(
+        &self,
+        keys: &[PointOffsetType],
+        f: F,
+    ) -> OperationResult<()> {
+        default_for_each_dense_chunk(self, keys, f)
     }
 
     fn read_dense_bytes<P: AccessPattern, U: Copy + UserData>(
