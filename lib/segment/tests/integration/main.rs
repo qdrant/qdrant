@@ -23,6 +23,7 @@ mod multivector_hnsw_test;
 mod multivector_quantization_test;
 mod nested_filtering_test;
 mod payload_index_test;
+mod qdrant_11646_appendable_parity;
 #[cfg(feature = "remote-indexing")]
 mod remote_indexing_test;
 mod scroll_filtering_test;

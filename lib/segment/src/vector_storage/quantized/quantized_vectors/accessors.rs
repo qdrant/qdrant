@@ -10,6 +10,10 @@ use super::{QuantizedVectorStorage, QuantizedVectors};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::VectorRef;
+use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
+use crate::vector_storage::quantized::quantization_preprocess::{
+    preprocess_decoded, preprocess_decoded_multi,
+};
 
 impl QuantizedVectors {
     pub fn default_rescoring(&self) -> bool {
@@ -324,20 +328,33 @@ impl QuantizedVectors {
     }
 
     pub fn upsert_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        let datatype = self.datatype;
+        let distance = self.distance;
+        let quantization_config = &self.config.quantization_config;
         match &mut self.storage_impl {
-            QuantizedVectorStorage::BinaryRam(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::BinaryRam(q) => {
+                Self::upsert_vector_dense(q, id, vector, datatype, quantization_config, distance)
+            }
             QuantizedVectorStorage::BinaryChunkedMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector)
+                Self::upsert_vector_dense(q, id, vector, datatype, quantization_config, distance)
             }
-            QuantizedVectorStorage::TQRam(q) => Self::upsert_vector_dense(q, id, vector),
-            QuantizedVectorStorage::TQChunkedMmap(q) => Self::upsert_vector_dense(q, id, vector),
-            QuantizedVectorStorage::BinaryRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::TQRam(q) => {
+                Self::upsert_vector_dense(q, id, vector, datatype, quantization_config, distance)
+            }
+            QuantizedVectorStorage::TQChunkedMmap(q) => {
+                Self::upsert_vector_dense(q, id, vector, datatype, quantization_config, distance)
+            }
+            QuantizedVectorStorage::BinaryRamMulti(q) => {
+                Self::upsert_vector_multi(q, id, vector, datatype, quantization_config, distance)
+            }
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector)
+                Self::upsert_vector_multi(q, id, vector, datatype, quantization_config, distance)
             }
-            QuantizedVectorStorage::TQRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::TQRamMulti(q) => {
+                Self::upsert_vector_multi(q, id, vector, datatype, quantization_config, distance)
+            }
             QuantizedVectorStorage::TQChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector)
+                Self::upsert_vector_multi(q, id, vector, datatype, quantization_config, distance)
             }
             QuantizedVectorStorage::ScalarRam(_)
             | QuantizedVectorStorage::ScalarMmap(_)
@@ -364,9 +381,13 @@ impl QuantizedVectors {
         quantization_storage: &mut impl EncodedVectorsWrite,
         id: PointOffsetType,
         vector: VectorRef,
+        datatype: VectorStorageDatatype,
+        quantization_config: &QuantizationConfig,
+        distance: Distance,
     ) -> OperationResult<()> {
         if let VectorRef::Dense(vector) = vector {
-            Ok(quantization_storage.upsert_vector(id, vector)?)
+            let vector = preprocess_decoded(datatype, quantization_config, distance, vector);
+            Ok(quantization_storage.upsert_vector(id, &vector)?)
         } else {
             Err(OperationError::WrongMulti)
         }
@@ -376,9 +397,19 @@ impl QuantizedVectors {
         quantization_storage: &mut impl EncodedVectorsWrite,
         id: PointOffsetType,
         vector: VectorRef,
+        datatype: VectorStorageDatatype,
+        quantization_config: &QuantizationConfig,
+        distance: Distance,
     ) -> OperationResult<()> {
         if let VectorRef::MultiDense(vector) = vector {
-            Ok(quantization_storage.upsert_vector(id, vector.flattened_vectors)?)
+            let vector = preprocess_decoded_multi(
+                datatype,
+                quantization_config,
+                distance,
+                vector.dim,
+                vector.flattened_vectors,
+            );
+            Ok(quantization_storage.upsert_vector(id, &vector)?)
         } else {
             Err(OperationError::WrongMulti)
         }

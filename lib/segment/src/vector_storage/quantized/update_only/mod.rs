@@ -30,6 +30,9 @@ use crate::data_types::vectors::{
 use crate::types::{Distance, QuantizationConfig, VectorDataConfig, VectorStorageDatatype};
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors;
+use crate::vector_storage::quantized::quantization_preprocess::{
+    RawPreprocess, preprocess_decoded, preprocess_raw,
+};
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffset;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig,
@@ -171,8 +174,22 @@ impl UpdateOnlyQuantizedVectors {
         let mut run: Vec<Cow<[VectorElementType]>> = Vec::new();
         for vector in vectors {
             run.push(match vector {
-                VectorToStore::Decoded(vector) => Cow::Borrowed(vector.try_into()?),
-                VectorToStore::Raw(bytes) => self.decode_raw(bytes)?,
+                VectorToStore::Decoded(vector) => preprocess_decoded(
+                    self.datatype,
+                    &self.config.quantization_config,
+                    self.distance,
+                    vector.try_into()?,
+                ),
+                VectorToStore::Raw(bytes) => match preprocess_raw(
+                    self.datatype,
+                    &self.config.quantization_config,
+                    self.distance,
+                    self.dim(),
+                    bytes,
+                )? {
+                    RawPreprocess::Preprocessed(vector) => vector,
+                    RawPreprocess::Untouched => self.decode_raw(bytes)?,
+                },
                 VectorToStore::Missing => Cow::Borrowed(placeholder.as_slice()),
             });
         }
@@ -210,7 +227,17 @@ impl UpdateOnlyQuantizedVectors {
                             received_dim: multi.dim,
                         });
                     }
-                    multi.multi_vectors().map(Cow::Borrowed).collect()
+                    multi
+                        .multi_vectors()
+                        .map(|inner| {
+                            preprocess_decoded(
+                                self.datatype,
+                                &self.config.quantization_config,
+                                self.distance,
+                                inner,
+                            )
+                        })
+                        .collect()
                 }
                 VectorToStore::Raw(bytes) => self.decode_raw_multi(bytes)?,
                 // As in the raw storage, a point without a multivector owns no rows.

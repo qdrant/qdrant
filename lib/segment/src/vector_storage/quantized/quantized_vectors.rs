@@ -12,6 +12,9 @@ mod scalar;
 mod storage;
 mod turbo;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
