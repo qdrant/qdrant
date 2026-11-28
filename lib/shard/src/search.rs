@@ -303,7 +303,11 @@ impl<'a> From<&'a CoreSearchRequest> for BatchSearchParams<'a> {
                     .unwrap_or(&WithPayloadInterface::Bool(false)),
             ),
             with_vector: with_vector.clone().unwrap_or_default(),
-            top: limit + offset,
+            // `limit` and `offset` come from the user; plain addition wraps to a small
+            // value (or panics with overflow checks) for huge pagination requests.
+            // Clamp like the universal query planner does, so the segment never
+            // receives `top = 0` for a request asking for points.
+            top: limit.saturating_add(*offset),
             params: params.as_ref(),
         }
     }
@@ -435,5 +439,22 @@ mod tests {
     #[test]
     fn empty_batch_has_no_groups() {
         assert!(group_search_batches(&[]).is_empty());
+    }
+
+    #[test]
+    fn top_saturates_for_huge_limit_and_offset() {
+        let mut search = nearest(vec![1.0], usize::MAX);
+        search.offset = 1;
+
+        // Plain addition wraps to 0 in release builds and panics in debug builds.
+        assert_eq!(BatchSearchParams::from(&search).top, usize::MAX);
+    }
+
+    #[test]
+    fn top_is_limit_plus_offset_for_regular_requests() {
+        let mut search = nearest(vec![1.0], 3);
+        search.offset = 2;
+
+        assert_eq!(BatchSearchParams::from(&search).top, 5);
     }
 }
