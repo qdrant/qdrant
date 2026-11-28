@@ -303,7 +303,11 @@ impl<'a> From<&'a CoreSearchRequest> for BatchSearchParams<'a> {
                     .unwrap_or(&WithPayloadInterface::Bool(false)),
             ),
             with_vector: with_vector.clone().unwrap_or_default(),
-            top: limit + offset,
+            // `limit` and `offset` come from the user; plain addition wraps to a small
+            // value (or panics with overflow checks) for huge pagination requests.
+            // Clamp like the universal query planner does, so the segment never
+            // receives `top = 0` for a request asking for points.
+            top: limit.saturating_add(*offset),
             params: params.as_ref(),
         }
     }
