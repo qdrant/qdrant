@@ -201,11 +201,32 @@ fi
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
-"${docker_grpcurl[@]}" -d '{
+expect_recommend_limit_error() {
+    local method=$1
+    local response
+    if response=$("${docker_grpcurl[@]}" -d "$2" $QDRANT_HOST "qdrant.Points/$method" 2>&1); then
+        echo "$method accepted limit=0: $response"
+        return 1
+    fi
+    if [[ $response != *"Code: InvalidArgument"* || $response != *"limit: value 0 invalid, must be 1 or larger"* ]]; then
+        echo "$method returned an unexpected response for limit=0: $response"
+        return 1
+    fi
+}
+
+response=$("${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "positive": [{ "num": 1 }],
-  "negative": [{ "num": 2 }]
-}' $QDRANT_HOST qdrant.Points/Recommend
+  "negative": [{ "num": 2 }],
+  "limit": 1
+}' $QDRANT_HOST qdrant.Points/Recommend)
+jq -e '.result | length == 1' <<< "$response"
+
+expect_recommend_limit_error Recommend '{
+  "collection_name": "test_collection",
+  "positive": [{ "num": 1 }],
+  "limit": 0
+}'
 
 # old format
 "${docker_grpcurl[@]}" -d '{
@@ -307,17 +328,42 @@ fi
   "ids": [{ "num": 1 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
-# The following must return a validation error
+response=$("${docker_grpcurl[@]}" -d '{
+  "collection_name": "test_collection",
+  "recommend_points": [
+    {
+      "collection_name": "test_collection",
+      "positive": [{ "num": 1 }],
+      "limit": 1
+    }
+  ]
+}' $QDRANT_HOST qdrant.Points/RecommendBatch)
+jq -e '.result | length == 1 and (.[0].result | length == 1)' <<< "$response"
+
+expect_recommend_limit_error RecommendBatch '{
+  "collection_name": "test_collection",
+  "recommend_points": [
+    {
+      "collection_name": "test_collection",
+      "positive": [{ "num": 1 }],
+      "limit": 0
+    }
+  ]
+}'
+
+# Missing collection names in nested recommendations must return a validation error
 set +e
 response=$(
     "${docker_grpcurl[@]}" -d '{
         "collection_name": "test_collection",
         "recommend_points": [
             {
-                "positive": [{ "num": 1 }]
+                "positive": [{ "num": 1 }],
+                "limit": 1
             },
             {
-                "positive": [{ "num": 1 }]
+                "positive": [{ "num": 1 }],
+                "limit": 1
             }
         ]
     }' $QDRANT_HOST qdrant.Points/RecommendBatch 2>&1

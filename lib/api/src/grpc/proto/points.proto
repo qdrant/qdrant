@@ -704,7 +704,7 @@ message RecommendPoints {
   repeated PointId negative = 3;
   // Filter conditions - return only those points that satisfy the specified conditions
   Filter filter = 4;
-  // Max number of result
+  // Maximum number of results to return (at least 1)
   uint64 limit = 5;
   // deprecated "with_vector" field
   reserved 6;
