@@ -8,8 +8,8 @@ use segment::types::{Payload, PayloadFieldSchema, PointIdType, Slice, VectorName
 
 use super::super::Model;
 use super::super::op::{
-    NamedVectors, OptimizerState, match_num_and_slice_filter, match_num_filter, model_entry_from,
-    model_vector, num_matches,
+    FilterExpr, ModelFilter as _, NamedVectors, OptimizerState, match_num_and_slice_filter,
+    match_num_filter, model_entry_from, model_vector, num_matches,
 };
 use super::{apply_update, to_named_persisted};
 use crate::collection::Collection;
@@ -511,4 +511,17 @@ pub(super) async fn apply_delete_vector_name(
     for entry in model.values_mut() {
         entry.vectors.remove(name);
     }
+}
+
+/// Delete every point matching a generated boolean filter.
+pub(super) async fn apply_delete_by_expr(
+    collection: &Collection,
+    model: &mut Model,
+    expr: &FilterExpr,
+) {
+    let delete = CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
+        expr.filter(),
+    ));
+    apply_update(collection, delete, "delete by expr").await;
+    model.retain(|_, entry| !expr.matches(&entry.payload));
 }

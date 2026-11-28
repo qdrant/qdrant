@@ -217,6 +217,19 @@ pub(super) async fn apply(
             )
             .await
         }
+        Op::CountByExpr(expr) => reads::apply_count_matching(collection, model, expr).await,
+        Op::ScrollByExpr(expr) => reads::apply_scroll_matching(collection, model, expr).await,
+        Op::SearchByExpr {
+            vector_name,
+            query,
+            limit,
+            exact,
+            expr,
+        } => {
+            reads::apply_search_by_expr(collection, model, vector_name, query, *limit, *exact, expr)
+                .await
+        }
+        Op::DeleteByExpr(expr) => writes::apply_delete_by_expr(collection, model, expr).await,
         // CreateSnapshot needs run-loop context (it spawns a background task against shared
         // collection state), so the loop intercepts it before dispatching here.
         Op::CreateSnapshot => {
