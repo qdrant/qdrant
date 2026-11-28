@@ -26,10 +26,6 @@ use crate::vector_storage::{
     raw_turbo_multi_scorer_impl, raw_turbo_scorer_impl,
 };
 
-mod lifecycle;
-mod live_reload;
-mod read_ops;
-
 type Dense<T, S> = ReadOnlyImmutableDenseVectorStorage<ImmutableDenseVectorData<T, S>>;
 type DenseInline<T, S> = ReadOnlyImmutableDenseVectorStorage<GraphVectors<T, S>>;
 
@@ -57,6 +53,34 @@ pub enum VectorStorageReadEnum<S: UniversalRead> {
     MultiDenseTurbo(Box<ReadOnlyChunkedMultiTurboVectorStorage<S>>),
     Sparse(Box<ReadOnlySparseVectorStorage<S>>),
 }
+
+macro_rules! for_all_vector_storage_read {
+    ($value:expr, $pattern:pat => $result:expr) => {
+        match $value {
+            VectorStorageReadEnum::Dense($pattern) => $result,
+            VectorStorageReadEnum::DenseByte($pattern) => $result,
+            VectorStorageReadEnum::DenseHalf($pattern) => $result,
+            VectorStorageReadEnum::DenseGraphInline($pattern) => $result,
+            VectorStorageReadEnum::DenseGraphInlineByte($pattern) => $result,
+            VectorStorageReadEnum::DenseGraphInlineHalf($pattern) => $result,
+            VectorStorageReadEnum::DenseChunked($pattern) => $result,
+            VectorStorageReadEnum::DenseChunkedByte($pattern) => $result,
+            VectorStorageReadEnum::DenseChunkedHalf($pattern) => $result,
+            VectorStorageReadEnum::MultiDenseChunked($pattern) => $result,
+            VectorStorageReadEnum::MultiDenseChunkedByte($pattern) => $result,
+            VectorStorageReadEnum::MultiDenseChunkedHalf($pattern) => $result,
+            VectorStorageReadEnum::DenseTurbo($pattern) => $result,
+            VectorStorageReadEnum::DenseTurboGraphInline($pattern) => $result,
+            VectorStorageReadEnum::DenseTurboChunked($pattern) => $result,
+            VectorStorageReadEnum::MultiDenseTurbo($pattern) => $result,
+            VectorStorageReadEnum::Sparse($pattern) => $result,
+        }
+    };
+}
+
+mod lifecycle;
+mod live_reload;
+mod read_ops;
 
 impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// See [crate::vector_storage::VectorStorageEnum::hnsw_graph].

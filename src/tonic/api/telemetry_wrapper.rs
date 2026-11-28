@@ -28,6 +28,17 @@ use tonic::{Request, Response, Status};
 
 use crate::common::telemetry_ops::requests_telemetry::CollectionName;
 
+fn with_collection_name<T>(
+    collection_name: String,
+    response: Result<Response<T>, Status>,
+) -> Result<Response<T>, Status> {
+    let mut response = response?;
+    response
+        .extensions_mut()
+        .insert(CollectionName(collection_name));
+    Ok(response)
+}
+
 /// Wraps a [`Points`] service, attaching `collection_name` to every response.
 pub struct PointsTelemetryWrapper<T> {
     inner: T,
@@ -46,9 +57,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.upsert(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.upsert(request).await)
     }
 
     async fn delete(
@@ -56,16 +65,12 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete(request).await)
     }
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.get(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.get(request).await)
     }
 
     async fn update_vectors(
@@ -73,9 +78,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.update_vectors(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.update_vectors(request).await)
     }
 
     async fn delete_vectors(
@@ -83,9 +86,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete_vectors(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete_vectors(request).await)
     }
 
     async fn set_payload(
@@ -93,9 +94,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.set_payload(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.set_payload(request).await)
     }
 
     async fn overwrite_payload(
@@ -103,9 +102,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.overwrite_payload(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.overwrite_payload(request).await)
     }
 
     async fn delete_payload(
@@ -113,9 +110,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete_payload(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete_payload(request).await)
     }
 
     async fn clear_payload(
@@ -123,9 +118,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.clear_payload(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.clear_payload(request).await)
     }
 
     async fn update_batch(
@@ -133,9 +126,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.update_batch(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.update_batch(request).await)
     }
 
     async fn create_field_index(
@@ -143,9 +134,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.create_field_index(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.create_field_index(request).await)
     }
 
     async fn delete_field_index(
@@ -153,9 +142,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete_field_index(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete_field_index(request).await)
     }
 
     async fn create_vector_name(
@@ -163,9 +150,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<CreateVectorNameRequest>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.create_vector_name(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.create_vector_name(request).await)
     }
 
     async fn delete_vector_name(
@@ -173,9 +158,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DeleteVectorNameRequest>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete_vector_name(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete_vector_name(request).await)
     }
 
     async fn search(
@@ -183,9 +166,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.search(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.search(request).await)
     }
 
     async fn search_batch(
@@ -193,9 +174,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SearchBatchPoints>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.search_batch(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.search_batch(request).await)
     }
 
     async fn search_groups(
@@ -203,9 +182,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.search_groups(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.search_groups(request).await)
     }
 
     async fn scroll(
@@ -213,9 +190,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.scroll(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.scroll(request).await)
     }
 
     async fn recommend(
@@ -223,9 +198,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.recommend(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.recommend(request).await)
     }
 
     async fn recommend_batch(
@@ -233,9 +206,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<RecommendBatchPoints>,
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.recommend_batch(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.recommend_batch(request).await)
     }
 
     async fn recommend_groups(
@@ -243,9 +214,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<RecommendPointGroups>,
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.recommend_groups(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.recommend_groups(request).await)
     }
 
     async fn discover(
@@ -253,9 +222,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DiscoverPoints>,
     ) -> Result<Response<DiscoverResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.discover(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.discover(request).await)
     }
 
     async fn discover_batch(
@@ -263,9 +230,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<DiscoverBatchPoints>,
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.discover_batch(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.discover_batch(request).await)
     }
 
     async fn count(
@@ -273,9 +238,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<CountPoints>,
     ) -> Result<Response<CountResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.count(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.count(request).await)
     }
 
     async fn query(
@@ -283,9 +246,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<QueryPoints>,
     ) -> Result<Response<QueryResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.query(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.query(request).await)
     }
 
     async fn query_batch(
@@ -293,9 +254,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<QueryBatchPoints>,
     ) -> Result<Response<QueryBatchResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.query_batch(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.query_batch(request).await)
     }
 
     async fn query_groups(
@@ -303,9 +262,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<QueryPointGroups>,
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.query_groups(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.query_groups(request).await)
     }
 
     async fn facet(
@@ -313,9 +270,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<FacetCounts>,
     ) -> Result<Response<FacetResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.facet(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.facet(request).await)
     }
 
     async fn search_matrix_pairs(
@@ -323,9 +278,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SearchMatrixPoints>,
     ) -> Result<Response<SearchMatrixPairsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.search_matrix_pairs(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.search_matrix_pairs(request).await)
     }
 
     async fn search_matrix_offsets(
@@ -333,9 +286,7 @@ impl<T: Points> Points for PointsTelemetryWrapper<T> {
         request: Request<SearchMatrixPoints>,
     ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.search_matrix_offsets(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.search_matrix_offsets(request).await)
     }
 }
 
@@ -358,9 +309,7 @@ impl<T: Snapshots> Snapshots for SnapshotsTelemetryWrapper<T> {
         request: Request<CreateSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.create(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.create(request).await)
     }
 
     async fn list(
@@ -368,9 +317,7 @@ impl<T: Snapshots> Snapshots for SnapshotsTelemetryWrapper<T> {
         request: Request<ListSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.list(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.list(request).await)
     }
 
     async fn delete(
@@ -378,9 +325,7 @@ impl<T: Snapshots> Snapshots for SnapshotsTelemetryWrapper<T> {
         request: Request<DeleteSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete(request).await)
     }
 
     async fn create_full(
@@ -423,9 +368,7 @@ impl<T: ShardSnapshots> ShardSnapshots for ShardSnapshotsTelemetryWrapper<T> {
         request: Request<CreateShardSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.create(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.create(request).await)
     }
 
     async fn list(
@@ -433,9 +376,7 @@ impl<T: ShardSnapshots> ShardSnapshots for ShardSnapshotsTelemetryWrapper<T> {
         request: Request<ListShardSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.list(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.list(request).await)
     }
 
     async fn delete(
@@ -443,9 +384,7 @@ impl<T: ShardSnapshots> ShardSnapshots for ShardSnapshotsTelemetryWrapper<T> {
         request: Request<DeleteShardSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.delete(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.delete(request).await)
     }
 
     async fn recover(
@@ -453,9 +392,7 @@ impl<T: ShardSnapshots> ShardSnapshots for ShardSnapshotsTelemetryWrapper<T> {
         request: Request<RecoverShardSnapshotRequest>,
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
         let cn = request.get_ref().collection_name.clone();
-        let mut resp = self.inner.recover(request).await?;
-        resp.extensions_mut().insert(CollectionName(cn));
-        Ok(resp)
+        with_collection_name(cn, self.inner.recover(request).await)
     }
 }
 
@@ -468,6 +405,24 @@ mod tests {
 
     use super::*;
     use crate::common::telemetry_ops::requests_telemetry::CollectionName;
+
+    #[test]
+    fn preserves_error_status() {
+        let mut status = Status::with_details(
+            tonic::Code::Unavailable,
+            "retry later",
+            b"details".as_slice().into(),
+        );
+        status
+            .metadata_mut()
+            .insert("retry-after", "5".parse().unwrap());
+        let error = with_collection_name::<()>("test".into(), Err(status.clone())).unwrap_err();
+
+        assert_eq!(error.code(), status.code());
+        assert_eq!(error.message(), status.message());
+        assert_eq!(error.details(), status.details());
+        assert_eq!(error.metadata().get("retry-after").unwrap(), "5");
+    }
 
     // Points
     macro_rules! mock_and_test_points {

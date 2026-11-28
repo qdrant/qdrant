@@ -15,8 +15,6 @@ use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::vectors::{
     MultiDenseVectorInternal, TypedMultiDenseVector, VectorElementType,
 };
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
 use crate::vector_storage::turbo::shared;
@@ -35,14 +33,6 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
             return None;
         };
         Some(offset)
-    }
-
-    fn invert_score(&self) -> bool {
-        matches!(self.distance, Distance::Euclid | Distance::Manhattan)
-    }
-
-    fn signed(&self, score: f32) -> ScoreType {
-        if self.invert_score() { -score } else { score }
     }
 
     /// Decode one inner record into `out`: dequantize, rotate back, drop padding.
@@ -201,23 +191,7 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
         query
             .multi_vectors()
-            .map(|inner| {
-                let preprocessed = match self.distance {
-                    Distance::Cosine => {
-                        <CosineMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Euclid => {
-                        <EuclidMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Dot => {
-                        <DotProductMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                    Distance::Manhattan => {
-                        <ManhattanMetric as Metric<VectorElementType>>::preprocess(inner.to_vec())
-                    }
-                };
-                self.quantizer.precompute_query(&preprocessed)
-            })
+            .map(|inner| shared::preprocess_query(&self.quantizer, self.distance, inner.to_vec()))
             .collect()
     }
 
@@ -260,7 +234,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         for bytes_a in records_a.chunks_exact(quantized_size) {
             let mut max_sim = ScoreType::NEG_INFINITY;
             for bytes_b in records_b.chunks_exact(quantized_size) {
-                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
+                let sim =
+                    shared::score_symmetric_bytes(&self.quantizer, self.distance, bytes_a, bytes_b);
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -275,7 +250,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
 
         for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
             for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
+                let sim =
+                    shared::score_query_bytes(&self.quantizer, self.distance, inner_query, bytes);
                 if max_sim[qi] < sim {
                     max_sim[qi] = sim;
                 }

@@ -24,6 +24,18 @@ pub enum PayloadStorageEnum {
     IoUring(PayloadStorageImpl<IoUringFile>),
 }
 
+macro_rules! for_all {
+    ($value:expr, $pattern:pat => $result:expr) => {
+        match $value {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory($pattern) => $result,
+            PayloadStorageEnum::Mmap($pattern) => $result,
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring($pattern) => $result,
+        }
+    };
+}
+
 #[cfg(feature = "testing")]
 impl From<InMemoryPayloadStorage> for PayloadStorageEnum {
     fn from(a: InMemoryPayloadStorage) -> Self {
@@ -46,33 +58,15 @@ impl From<PayloadStorageImpl<IoUringFile>> for PayloadStorageEnum {
 
 impl PayloadStorageRead for PayloadStorageEnum {
     fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.get(point_offset),
-            PayloadStorageEnum::Mmap(s) => s.get(point_offset),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.get(point_offset),
-        }
+        for_all!(self, s => s.get(point_offset))
     }
 
     fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.get_sequential(point_offset),
-            PayloadStorageEnum::Mmap(s) => s.get_sequential(point_offset),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.get_sequential(point_offset),
-        }
+        for_all!(self, s => s.get_sequential(point_offset))
     }
 
     fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.payload_ref(point_offset),
-            PayloadStorageEnum::Mmap(s) => s.payload_ref(point_offset),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.payload_ref(point_offset),
-        }
+        for_all!(self, s => s.payload_ref(point_offset))
     }
 
     fn payload_ref_field(
@@ -80,13 +74,7 @@ impl PayloadStorageRead for PayloadStorageEnum {
         point_offset: PointOffsetType,
         field: &str,
     ) -> OperationResult<OwnedPayloadRef<'_>> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.payload_ref_field(point_offset, field),
-            PayloadStorageEnum::Mmap(s) => s.payload_ref_field(point_offset, field),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.payload_ref_field(point_offset, field),
-        }
+        for_all!(self, s => s.payload_ref_field(point_offset, field))
     }
 
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
@@ -94,14 +82,7 @@ impl PayloadStorageRead for PayloadStorageEnum {
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.read_payloads::<P, _>(point_offsets, callback),
-
-            PayloadStorageEnum::Mmap(s) => s.read_payloads::<P, _>(point_offsets, callback),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.read_payloads::<P, _>(point_offsets, callback),
-        }
+        for_all!(self, s => s.read_payloads::<P, _>(point_offsets, callback))
     }
 
     fn read_payloads_raw<P: AccessPattern, U: common::universal_io::UserData>(
@@ -109,14 +90,7 @@ impl PayloadStorageRead for PayloadStorageEnum {
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.read_payloads_raw::<P, _>(point_offsets, callback),
-
-            PayloadStorageEnum::Mmap(s) => s.read_payloads_raw::<P, _>(point_offsets, callback),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.read_payloads_raw::<P, _>(point_offsets, callback),
-        }
+        for_all!(self, s => s.read_payloads_raw::<P, _>(point_offsets, callback))
     }
 
     fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
@@ -124,46 +98,22 @@ impl PayloadStorageRead for PayloadStorageEnum {
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
-            PayloadStorageEnum::Mmap(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
-        }
+        for_all!(self, s => s.read_payload_lens::<P, _>(point_offsets, callback))
     }
 
     fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.iter(callback),
-            PayloadStorageEnum::Mmap(s) => s.iter(callback),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.iter(callback),
-        }
+        for_all!(self, s => s.iter(callback))
     }
 
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.get_storage_size_bytes(),
-            PayloadStorageEnum::Mmap(s) => s.get_storage_size_bytes(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.get_storage_size_bytes(),
-        }
+        for_all!(self, s => s.get_storage_size_bytes())
     }
 
     fn is_cold(&self) -> bool {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.is_cold(),
-            PayloadStorageEnum::Mmap(s) => s.is_cold(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.is_cold(),
-        }
+        for_all!(self, s => s.is_cold())
     }
 
     fn io_backend(&self) -> Option<IoBackend> {
@@ -180,23 +130,11 @@ impl PayloadStorageRead for PayloadStorageEnum {
 
 impl PayloadStorage for PayloadStorageEnum {
     fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.overwrite(point_id, payload),
-            PayloadStorageEnum::Mmap(s) => s.overwrite(point_id, payload),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.overwrite(point_id, payload),
-        }
+        for_all!(self, s => s.overwrite(point_id, payload))
     }
 
     fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.set(point_id, payload),
-            PayloadStorageEnum::Mmap(s) => s.set(point_id, payload),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.set(point_id, payload),
-        }
+        for_all!(self, s => s.set(point_id, payload))
     }
 
     fn set_by_key(
@@ -205,74 +143,32 @@ impl PayloadStorage for PayloadStorageEnum {
         payload: &Payload,
         key: &JsonPath,
     ) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.set_by_key(point_id, payload, key),
-            PayloadStorageEnum::Mmap(s) => s.set_by_key(point_id, payload, key),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.set_by_key(point_id, payload, key),
-        }
+        for_all!(self, s => s.set_by_key(point_id, payload, key))
     }
 
     fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.delete(point_id, key),
-            PayloadStorageEnum::Mmap(s) => s.delete(point_id, key),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.delete(point_id, key),
-        }
+        for_all!(self, s => s.delete(point_id, key))
     }
 
     fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.clear(point_id),
-            PayloadStorageEnum::Mmap(s) => s.clear(point_id),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.clear(point_id),
-        }
+        for_all!(self, s => s.clear(point_id))
     }
 
     #[cfg(test)]
     fn clear_all(&mut self) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.clear_all(),
-            PayloadStorageEnum::Mmap(s) => s.clear_all(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.clear_all(),
-        }
+        for_all!(self, s => s.clear_all())
     }
 
     fn flusher(&self) -> Flusher {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.flusher(),
-            PayloadStorageEnum::Mmap(s) => s.flusher(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.flusher(),
-        }
+        for_all!(self, s => s.flusher())
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.files(),
-            PayloadStorageEnum::Mmap(s) => s.files(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.files(),
-        }
+        for_all!(self, s => s.files())
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.immutable_files(),
-            PayloadStorageEnum::Mmap(s) => s.immutable_files(),
-            #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.immutable_files(),
-        }
+        for_all!(self, s => s.immutable_files())
     }
 }
 

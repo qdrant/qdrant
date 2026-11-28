@@ -133,6 +133,22 @@ pub enum VectorIndexEnum {
     SparseCompressedMmapU8(SparseVectorIndex<InvertedIndexCompressedMmap<QuantizedU8, MmapFile>>),
 }
 
+macro_rules! for_all_vector_indexes {
+    ($value:expr, $pattern:pat => $result:expr) => {
+        match $value {
+            VectorIndexEnum::Plain($pattern) => $result,
+            VectorIndexEnum::Hnsw($pattern) => $result,
+            VectorIndexEnum::SparseRam($pattern) => $result,
+            VectorIndexEnum::SparseCompressedImmutableRamF32($pattern) => $result,
+            VectorIndexEnum::SparseCompressedImmutableRamF16($pattern) => $result,
+            VectorIndexEnum::SparseCompressedImmutableRamU8($pattern) => $result,
+            VectorIndexEnum::SparseCompressedMmapF32($pattern) => $result,
+            VectorIndexEnum::SparseCompressedMmapF16($pattern) => $result,
+            VectorIndexEnum::SparseCompressedMmapU8($pattern) => $result,
+        }
+    };
+}
+
 impl VectorIndexEnum {
     /// Whether the index was opened cold: left on disk and paged in on demand, so
     /// reads may hit the disk. False for heap data and for mmaps populated on open.
@@ -226,35 +242,7 @@ impl VectorIndexRead for VectorIndexEnum {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        match self {
-            VectorIndexEnum::Plain(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::Hnsw(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseRam(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedMmapF32(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedMmapF16(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::SparseCompressedMmapU8(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-        }
+        for_all_vector_indexes!(self, index => index.search(vectors, filter, top, params, query_context))
     }
 
     fn filter_checks(
@@ -264,96 +252,32 @@ impl VectorIndexRead for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        match self {
-            Self::Plain(index) => index.filter_checks(query_vectors, cardinality, top, params),
-            Self::Hnsw(index) => index.filter_checks(query_vectors, cardinality, top, params),
-            Self::SparseRam(index) => index.filter_checks(query_vectors, cardinality, top, params),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedMmapF32(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedMmapF16(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-            Self::SparseCompressedMmapU8(index) => {
-                index.filter_checks(query_vectors, cardinality, top, params)
-            }
-        }
+        for_all_vector_indexes!(self, index => index.filter_checks(query_vectors, cardinality, top, params))
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
-        match self {
-            VectorIndexEnum::Plain(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::Hnsw(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
-                index.get_telemetry_data(detail)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
-                index.get_telemetry_data(detail)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => {
-                index.get_telemetry_data(detail)
-            }
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.get_telemetry_data(detail),
-        }
+        for_all_vector_indexes!(self, index => index.get_telemetry_data(detail))
     }
 
     fn indexed_vector_count(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.indexed_vector_count(),
-            Self::Hnsw(index) => index.indexed_vector_count(),
-            Self::SparseRam(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
-            Self::SparseCompressedImmutableRamU8(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapF32(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapF16(index) => index.indexed_vector_count(),
-            Self::SparseCompressedMmapU8(index) => index.indexed_vector_count(),
-        }
+        for_all_vector_indexes!(self, index => index.indexed_vector_count())
     }
 
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
-        match self {
-            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.size_of_searchable_vectors_in_bytes()
-            }
-            Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
-        }
+        for_all_vector_indexes!(self, index => index.size_of_searchable_vectors_in_bytes())
     }
 
     fn is_index(&self) -> bool {
         match self {
             Self::Plain(_) => false,
-            Self::Hnsw(_) => true,
-            Self::SparseRam(_) => true,
-            Self::SparseCompressedImmutableRamF32(_) => true,
-            Self::SparseCompressedImmutableRamF16(_) => true,
-            Self::SparseCompressedImmutableRamU8(_) => true,
-            Self::SparseCompressedMmapF32(_) => true,
-            Self::SparseCompressedMmapF16(_) => true,
-            Self::SparseCompressedMmapU8(_) => true,
+            Self::Hnsw(_)
+            | Self::SparseRam(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedMmapF32(_)
+            | Self::SparseCompressedMmapF16(_)
+            | Self::SparseCompressedMmapU8(_) => true,
         }
     }
 
@@ -399,31 +323,11 @@ impl VectorIndexRead for VectorIndexEnum {
 
 impl VectorIndex for VectorIndexEnum {
     fn files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.files(),
-            VectorIndexEnum::Hnsw(index) => index.files(),
-            VectorIndexEnum::SparseRam(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.files(),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.files(),
-        }
+        for_all_vector_indexes!(self, index => index.files())
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        match self {
-            VectorIndexEnum::Plain(index) => index.immutable_files(),
-            VectorIndexEnum::Hnsw(index) => index.immutable_files(),
-            VectorIndexEnum::SparseRam(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.immutable_files(),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.immutable_files(),
-        }
+        for_all_vector_indexes!(self, index => index.immutable_files())
     }
 
     fn update_vector(
@@ -431,17 +335,7 @@ impl VectorIndex for VectorIndexEnum {
         id: PointOffsetType,
         vector: Option<VectorRef>,
     ) -> OperationResult<()> {
-        match self {
-            Self::Plain(index) => index.update_vector(id, vector),
-            Self::Hnsw(index) => index.update_vector(id, vector),
-            Self::SparseRam(index) => index.update_vector(id, vector),
-            Self::SparseCompressedImmutableRamF32(index) => index.update_vector(id, vector),
-            Self::SparseCompressedImmutableRamF16(index) => index.update_vector(id, vector),
-            Self::SparseCompressedImmutableRamU8(index) => index.update_vector(id, vector),
-            Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector),
-            Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector),
-            Self::SparseCompressedMmapU8(index) => index.update_vector(id, vector),
-        }
+        for_all_vector_indexes!(self, index => index.update_vector(id, vector))
     }
 
     fn update_vector_raw(
@@ -449,16 +343,6 @@ impl VectorIndex for VectorIndexEnum {
         id: PointOffsetType,
         vector: Option<&[u8]>,
     ) -> OperationResult<()> {
-        match self {
-            Self::Plain(index) => index.update_vector_raw(id, vector),
-            Self::Hnsw(index) => index.update_vector_raw(id, vector),
-            Self::SparseRam(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedImmutableRamF32(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedImmutableRamF16(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedImmutableRamU8(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedMmapF32(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedMmapF16(index) => index.update_vector_raw(id, vector),
-            Self::SparseCompressedMmapU8(index) => index.update_vector_raw(id, vector),
-        }
+        for_all_vector_indexes!(self, index => index.update_vector_raw(id, vector))
     }
 }
