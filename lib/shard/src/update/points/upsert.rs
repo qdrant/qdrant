@@ -168,9 +168,10 @@ pub(super) trait PointToUpsert {
         )
     }
 
-    /// Adapter for the copy-on-write move callback, which hands over buffers
-    /// pre-filled with the point's existing data. An upsert replaces the
-    /// whole point, so the pre-filled content is discarded.
+    /// Adapter for the copy-on-write move callback. An upsert replaces the
+    /// whole point, so it moves via
+    /// [`SegmentHolder::apply_points_with_conditional_replace`], which does not
+    /// read the old point; any content in the buffers is discarded anyway.
     fn write_moved<'op>(
         &'op self,
         raw_vectors: &mut SmallVec<[(VectorNameBuf, Vec<u8>); 1]>,
@@ -216,7 +217,7 @@ where
 
     for ids_chunk in ids.chunks(UPDATE_OP_CHUNK_SIZE) {
         // Update points in writable segments
-        let updated_points = segments.apply_points_with_conditional_move(
+        let updated_points = segments.apply_points_with_conditional_replace(
             op_num,
             ids_chunk,
             |id, write_segment| points_map[&id].upsert_into(write_segment, op_num),
