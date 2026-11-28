@@ -1003,6 +1003,63 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     );
 }
 
+/// Creating a payload index must not flush a segment that has no points at all
+/// (#11617).
+///
+/// The pre-build flush pins the payload state the build observes, so the durably
+/// saved index config can never outrun it. An empty segment observes nothing:
+/// there is no id-tracker, payload, or vector state to lose, and the build only
+/// produces an empty index whose files `build_field_index` persists before the
+/// config save anyway. Flushing it is pure overhead — and because index creations
+/// are applied serially by the update worker, it made provisioning a fresh
+/// collection with N indexes cost roughly N × segments × flush latency, seconds
+/// per index on slow-fsync storage even with zero points stored.
+#[test]
+fn create_field_index_skips_pre_build_flush_for_empty_segments() {
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let key: PayloadKeyType = "city".parse().unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    // Empty segment: the pre-build flush must be skipped entirely.
+    let mut holder = SegmentHolder::default();
+    let sid = holder.add_new(empty_segment(dir.path()));
+
+    create_field_index(&holder, 10, &key, Some(&schema)).unwrap();
+
+    let segment = holder.get(sid).unwrap().get();
+    let segment = segment.read();
+    assert_eq!(
+        segment.persistent_version(),
+        0,
+        "an empty segment must not be flushed by the index build: nothing observable \
+         needs pinning, so the flush is pure fsync overhead (#11617)",
+    );
+    assert!(
+        segment.get_indexed_fields().contains_key(&key),
+        "the index itself must still be created on the empty segment",
+    );
+
+    // Control: a segment with points is still flushed before the build, pinning
+    // the state the build observes.
+    let mut holder = SegmentHolder::default();
+    let sid = holder.add_new(build_segment_1(dir.path())); // points 1-5, version 6
+
+    create_field_index(&holder, 10, &key, Some(&schema)).unwrap();
+
+    let segment = holder.get(sid).unwrap().get();
+    let segment = segment.read();
+    assert!(
+        segment.persistent_version() >= 10,
+        "a segment with points must still be flushed before the index build, got \
+         persisted {}",
+        segment.persistent_version(),
+    );
+    assert!(segment.get_indexed_fields().contains_key(&key));
+}
+
 /// One update operation is applied to a segment in several separately locked steps, and a flush
 /// pass can land in any of the gaps. `set_payload` walks its points in chunks of
 /// [`PAYLOAD_OP_BATCH_SIZE`], each chunk taking the segment write lock on its own, so a
