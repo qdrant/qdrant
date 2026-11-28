@@ -21,19 +21,27 @@ fn get_transfer(
 /// returns `None` if there is no conflicts, otherwise returns conflicting transfer
 pub fn check_transfer_conflicts<'a, I>(
     transfer: &ShardTransfer,
-    current_transfers: I,
+    mut current_transfers: I,
 ) -> Option<ShardTransfer>
 where
     I: Iterator<Item = &'a ShardTransfer>,
 {
-    let res = current_transfers
-        .filter(|t| t.shard_id == transfer.shard_id)
-        .find(|t| {
-            t.from == transfer.from
+    let destination_shard_id = transfer.to_shard_id.unwrap_or(transfer.shard_id);
+
+    let res = current_transfers.find(|t| {
+        let same_shard = t.shard_id == transfer.shard_id
+            && (t.from == transfer.from
                 || t.to == transfer.from
                 || t.from == transfer.to
-                || t.to == transfer.to
-        });
+                || t.to == transfer.to);
+
+        // Resharding up may run several resharding transfers into the new shard
+        let same_destination_replica = t.to == transfer.to
+            && t.to_shard_id.unwrap_or(t.shard_id) == destination_shard_id
+            && !(t.is_resharding() && transfer.is_resharding());
+
+        same_shard || same_destination_replica
+    });
     res.cloned()
 }
 
@@ -53,6 +61,14 @@ where
             || t.to == transfer.to
     });
     res.cloned()
+}
+
+/// `ReshardingScaleDown` counts as active, so only promote replicas that already hold the full shard
+pub fn is_valid_resharding_destination(state: ReplicaState) -> bool {
+    matches!(
+        state,
+        ReplicaState::Active | ReplicaState::ReshardingScaleDown | ReplicaState::Resharding,
+    )
 }
 
 /// Confirms that the transfer makes sense with the current state cluster
@@ -176,6 +192,16 @@ pub fn validate_transfer(
             )));
         }
 
+        if let Some(state) = destination_replicas.get(&transfer.to)
+            && !is_valid_resharding_destination(*state)
+        {
+            return Err(CollectionError::bad_request(format!(
+                "Resharding shard transfer can't be started, \
+                 because destination shard {}/{to_shard_id} is in {state:?} state",
+                transfer.to,
+            )));
+        }
+
         // Both shard IDs must share the same shard key
         let source_shard_key = shards_key_mapping
             .iter()
@@ -229,6 +255,80 @@ pub fn validate_transfer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shards::shard::ShardId;
+
+    fn transfer(
+        shard_id: ShardId,
+        to_shard_id: Option<ShardId>,
+        from: PeerId,
+        to: PeerId,
+        method: ShardTransferMethod,
+    ) -> ShardTransfer {
+        ShardTransfer {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync: true,
+            method: Some(method),
+            filter: None,
+        }
+    }
+
+    #[test]
+    fn resharding_into_replica_being_copied_conflicts() {
+        let copy = transfer(0, None, 1, 3, ShardTransferMethod::StreamRecords);
+        let migrate = transfer(
+            1,
+            Some(0),
+            2,
+            3,
+            ShardTransferMethod::ReshardingStreamRecords,
+        );
+
+        assert_eq!(
+            check_transfer_conflicts(&migrate, [&copy].into_iter()),
+            Some(copy.clone()),
+        );
+        assert_eq!(
+            check_transfer_conflicts(&copy, [&migrate].into_iter()),
+            Some(migrate),
+        );
+    }
+
+    #[test]
+    fn resharding_transfers_into_same_replica_do_not_conflict() {
+        let from_0 = transfer(
+            0,
+            Some(2),
+            1,
+            3,
+            ShardTransferMethod::ReshardingStreamRecords,
+        );
+        let from_1 = transfer(
+            1,
+            Some(2),
+            2,
+            3,
+            ShardTransferMethod::ReshardingStreamRecords,
+        );
+
+        assert_eq!(
+            check_transfer_conflicts(&from_1, [&from_0].into_iter()),
+            None
+        );
+    }
+
+    #[test]
+    fn transfers_of_different_shards_into_same_peer_do_not_conflict() {
+        let copy_0 = transfer(0, None, 1, 3, ShardTransferMethod::StreamRecords);
+        let copy_1 = transfer(1, None, 2, 3, ShardTransferMethod::StreamRecords);
+
+        assert_eq!(
+            check_transfer_conflicts(&copy_1, [&copy_0].into_iter()),
+            None
+        );
+    }
 
     #[test]
     fn reject_resharding_transfer_between_shard_keys() {

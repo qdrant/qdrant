@@ -446,6 +446,112 @@ fn transfer_abort_resharding_clears_resharding_first() {
     assert!(collection.transfers.is_empty());
 }
 
+fn resharding_down_into_state(destination_state: ReplicaState, copy_running: bool) -> ClusterState {
+    let key = resharding_key(ReshardingDirection::Down, 1);
+    let mut state = transfer_state();
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.config.params.shard_number = NonZeroU32::new(2).unwrap();
+    collection.shards.insert(
+        0,
+        ShardInfo {
+            replicas: HashMap::from([
+                (PEER_ID, ReplicaState::Active),
+                (OTHER_PEER_ID, destination_state),
+            ]),
+        },
+    );
+    collection.shards.insert(
+        1,
+        ShardInfo {
+            replicas: HashMap::from([(PEER_ID, ReplicaState::Active)]),
+        },
+    );
+    collection.resharding = Some(ReshardState::new(
+        key.uuid,
+        key.direction,
+        key.peer_id,
+        key.shard_id,
+        key.shard_key.clone(),
+    ));
+    if copy_running {
+        collection.transfers.insert(shard_transfer(
+            PEER_ID,
+            OTHER_PEER_ID,
+            true,
+            ShardTransferMethod::StreamRecords,
+        ));
+    }
+    state
+}
+
+fn resharding_down_transfer() -> ShardTransfer {
+    ShardTransfer {
+        shard_id: 1,
+        to_shard_id: Some(0),
+        from: PEER_ID,
+        to: OTHER_PEER_ID,
+        sync: true,
+        method: Some(ShardTransferMethod::ReshardingStreamRecords),
+        filter: None,
+    }
+}
+
+#[test]
+fn transfer_start_rejects_resharding_into_replica_being_copied() {
+    let state = resharding_down_into_state(ReplicaState::Partial, true);
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(
+        resharding_down_transfer(),
+    )));
+
+    assert!(
+        matches!(outcome, Err(StorageError::BadRequest { .. })),
+        "got {outcome:?}",
+    );
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn transfer_start_rejects_resharding_into_non_active_replica() {
+    for destination_state in [
+        ReplicaState::Partial,
+        ReplicaState::Recovery,
+        ReplicaState::PartialSnapshot,
+        ReplicaState::Initializing,
+    ] {
+        let state = resharding_down_into_state(destination_state, false);
+
+        let mut machine = state_machine(state.clone());
+        let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(
+            resharding_down_transfer(),
+        )));
+
+        assert!(
+            matches!(outcome, Err(StorageError::BadRequest { .. })),
+            "{destination_state:?}: got {outcome:?}",
+        );
+        assert_eq!(machine.state(), &state);
+    }
+}
+
+#[test]
+fn transfer_start_accepts_resharding_into_active_replica() {
+    let state = resharding_down_into_state(ReplicaState::Active, false);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(
+        resharding_down_transfer(),
+    )));
+
+    assert!(outcome.is_ok(), "got {outcome:?}");
+    let collection = machine.state().collection(COLLECTION).expect("collection");
+    assert_eq!(
+        collection.shards[&0].replicas.get(&OTHER_PEER_ID),
+        Some(&ReplicaState::ReshardingScaleDown),
+    );
+}
+
 #[test]
 fn transfer_recovery_to_partial() {
     let mut state = transfer_state();
