@@ -163,7 +163,7 @@ impl Trace {
     }
 
     /// Records a quiesced edge-follower checkpoint (force-flush + refresh + full compare)
-    /// at op `tick`. Written BEFORE the checkpoint runs, so a divergence panic is
+    /// at op `tick`. Written before the model comparison so a divergence panic is
     /// attributable to it in the trace.
     pub(super) fn edge_verify(&mut self, tick: usize, points: usize) {
         self.write(&json!({

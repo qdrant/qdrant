@@ -1071,34 +1071,18 @@ async fn edge_checkpoint(
 
     let deadline = Instant::now() + EDGE_CHECKPOINT_BUDGET;
 
-    // Initial quiesce: no proxy segments.
-    if !wait_proxies_clear_until(collection, deadline).await {
-        log::warn!(
-            "{ctx}: optimizer still busy at deadline (proxy segments present), \
-             skipping edge checkpoint"
-        );
-        trace.edge_verify_skipped(tick);
-        return;
-    }
-    trace.edge_verify(tick, model.len());
-
-    loop {
+    while wait_proxies_clear_until(collection, deadline).await {
         verify::flush_all_local_shards(collection).await;
 
-        // Flush may finish an optimization that started another, or leave the
-        // manifest briefly ahead of deleted files. Re-quiesce before observing.
+        // The optimizer may install new proxies during the flush. Re-quiesce
+        // with the same deadline and flush again before reading the follower.
         if verify::has_proxy_segments(collection).await {
-            if !wait_proxies_clear_until(collection, deadline).await {
-                panic!(
-                    "{ctx}: optimizer still busy after flush within edge-checkpoint budget; \
-                     cannot observe a stable follower view",
-                );
-            }
             continue;
         }
 
         match verifier.try_observe(ctx) {
             Ok(observed) => {
+                trace.edge_verify(tick, model.len());
                 verify::assert_matches_model(&observed, model, ctx);
                 return;
             }
@@ -1114,6 +1098,12 @@ async fn edge_checkpoint(
             }
         }
     }
+
+    log::warn!(
+        "{ctx}: optimizer still busy at deadline (proxy segments present), \
+         skipping edge checkpoint"
+    );
+    trace.edge_verify_skipped(tick);
 }
 
 /// Shared wall-clock budget for proxy wait + flush/observe retries at one checkpoint.
@@ -1566,6 +1556,110 @@ mod tests {
             true,
         )
         .await;
+    }
+
+    #[cfg(feature = "edge-verify")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn edge_checkpoint_skips_when_proxy_appears_during_flush() {
+        use shard::proxy_segment::ProxySegment;
+
+        let _scope = ambient::async_test_guard();
+        let mut flags = common::flags::FeatureFlags::default();
+        flags.enable_serverless_compatible();
+        common::flags::init_feature_flags(flags);
+
+        let storage = tempfile::tempdir().unwrap();
+        let (collection_dir, _, collection) = fixture::fixture(
+            2,
+            storage.path(),
+            true, // Install and remove the proxy under test control.
+            HARNESS_MAX_SEGMENT_SIZE_KB,
+            HARNESS_INDEXING_THRESHOLD_KB,
+            true,
+            fixture::text_index_params(0),
+            fixture::nested_index_setup(0),
+        )
+        .await;
+        let verifier = edge_verify::EdgeVerifier::open(&collection_dir, 2);
+        let mut model = Model::new();
+        let upsert = op::Op::Upsert(
+            1.into(),
+            BTreeMap::from([("a".into(), VectorValue::Dense(vec![1.0, 2.0, 3.0, 4.0]))]),
+            Payload::default(),
+        );
+        apply::apply(&collection, &mut model, &mut BTreeSet::new(), &upsert, true).await;
+
+        let trace_path = storage.path().join("trace.log");
+        let mut trace = trace::Trace::create(&trace_path).unwrap();
+        let (first, second) = {
+            let holder = collection.shards_holder.read().await;
+            let mut shards = holder.get_shards();
+            let (_, first) = shards.next().unwrap();
+            let (_, second) = shards.next().unwrap();
+            (Arc::clone(first), Arc::clone(second))
+        };
+        let segments = first.local_segments_for_test().await.unwrap();
+
+        // Park the initial proxy check and the flush in turn on the second shard.
+        // Queue the second writer behind the initial check using the lock's FIFO order.
+        let check_guard = second.lock_local_for_test().await;
+        let mut checkpoint = Box::pin(edge_checkpoint(
+            &collection,
+            &verifier,
+            &model,
+            &mut trace,
+            1,
+            "edge at restart op:1",
+        ));
+        assert!(futures::poll!(checkpoint.as_mut()).is_pending());
+        let mut flush_guard = Box::pin(second.lock_local_for_test());
+        assert!(futures::poll!(flush_guard.as_mut()).is_pending());
+        drop(check_guard);
+        assert!(futures::poll!(checkpoint.as_mut()).is_pending());
+        let std::task::Poll::Ready(flush_guard) = futures::poll!(flush_guard.as_mut()) else {
+            panic!("the initial proxy check should have released the second shard");
+        };
+
+        // The first shard has been flushed, but the checkpoint has not yet
+        // finished flushing the second shard.
+        let (segment_id, original) = {
+            let mut segments = segments.write();
+            let segment_id = segments.segment_ids()[0];
+            let original = segments.get(segment_id).unwrap().clone();
+            segments
+                .replace(segment_id, ProxySegment::new(original.clone()))
+                .unwrap();
+            (segment_id, original)
+        };
+        drop(flush_guard);
+        // Leave the proxy in place through the real checkpoint deadline.
+        checkpoint.await;
+
+        let mut checkpoint = Box::pin(edge_checkpoint(
+            &collection,
+            &verifier,
+            &model,
+            &mut trace,
+            2,
+            "edge final",
+        ));
+        assert!(futures::poll!(checkpoint.as_mut()).is_pending());
+        segments.write().replace(segment_id, original).unwrap();
+        checkpoint.await;
+        collection.stop_gracefully().await;
+
+        let events: Vec<serde_json::Value> = fs_err::read_to_string(trace_path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            events,
+            [
+                serde_json::json!({"kind": "EdgeVerifySkipped", "op": 1}),
+                serde_json::json!({"kind": "EdgeVerify", "op": 2, "points": 1}),
+            ],
+        );
     }
 }
 
