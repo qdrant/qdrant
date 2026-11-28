@@ -84,6 +84,8 @@ impl Collection {
         let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
 
         // Create snapshot of each shard
+        let shard_number;
+        let shard_key_mapping;
         {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
                 .prefix(&format!("{snapshot_name}-temp-"))
@@ -99,6 +101,8 @@ impl Collection {
             let mut futures = Vec::new();
             {
                 let shards_holder = self.shards_holder.read().await;
+                shard_number = self.collection_config.read().await.params.shard_number;
+                shard_key_mapping = shards_holder.get_shard_key_to_ids_mapping();
 
                 // Create snapshot of each shard
                 for (shard_id, replica_set) in shards_holder.get_shards() {
@@ -134,16 +138,15 @@ impl Collection {
         )
         .await?;
 
-        tar.append_data(
-            self.collection_config.read().await.to_bytes()?,
-            Path::new(COLLECTION_CONFIG_FILE),
-        )
-        .await?;
+        // Use the captured topology with the latest schema, which may have changed
+        // before a shard archived its WAL.
+        let mut config = self.collection_config.read().await.clone();
+        config.params.shard_number = shard_number;
+        tar.append_data(config.to_bytes()?, Path::new(COLLECTION_CONFIG_FILE))
+            .await?;
 
-        self.shards_holder
-            .read()
-            .await
-            .save_key_mapping_to_tar(&tar)
+        let shard_key_mapping = serde_json::to_vec(&shard_key_mapping)?;
+        tar.append_data(shard_key_mapping, Path::new(SHARD_KEY_MAPPING_FILE))
             .await?;
 
         self.payload_index_schema

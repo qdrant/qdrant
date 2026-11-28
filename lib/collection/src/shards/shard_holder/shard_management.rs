@@ -286,9 +286,8 @@ impl ShardHolder {
         self.rings = rings;
     }
 
-    pub async fn apply_shards_state(
+    pub(crate) async fn register_shards_from_state(
         &mut self,
-        shard_ids: HashSet<ShardId>,
         shard_key_mapping: ShardKeyMapping,
         extra_shards: AHashMap<ShardId, ShardReplicaSet>,
     ) -> CollectionResult<()> {
@@ -299,14 +298,21 @@ impl ShardHolder {
             }
         }
 
-        let all_shard_ids: Vec<ShardId> = self.shards.keys().copied().collect();
+        self.set_shard_key_mappings(shard_key_mapping)
+    }
 
-        self.set_shard_key_mappings(shard_key_mapping)?;
-
-        for shard_id in all_shard_ids {
-            if !shard_ids.contains(&shard_id) {
-                self.drop_and_remove_shard(shard_id).await?;
-            }
+    pub(crate) async fn remove_shards_not_in_state(
+        &mut self,
+        shard_ids: &HashSet<ShardId>,
+    ) -> CollectionResult<()> {
+        let obsolete_shard_ids: Vec<_> = self
+            .shards
+            .keys()
+            .copied()
+            .filter(|shard_id| !shard_ids.contains(shard_id))
+            .collect();
+        for shard_id in obsolete_shard_ids {
+            self.drop_and_remove_shard(shard_id).await?;
         }
 
         self.rebuild_rings();

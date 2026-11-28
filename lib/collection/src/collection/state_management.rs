@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::num::NonZeroU32;
 
 use ahash::AHashMap;
 use common::ambient::AmbientFutureExt;
@@ -49,12 +50,13 @@ impl Collection {
         let old_collection_config = self.collection_config.read().await.params.clone();
 
         // Apply config first — this updates the collection-level vector definitions
+        let shard_number = config.params.shard_number;
         let new_config = config.clone();
         self.apply_config(config).await?;
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
-        self.apply_reshard_state(resharding).await?;
-        self.apply_shard_info(shards, shards_key_mapping).await?;
+        self.apply_shard_info(shards, shards_key_mapping, shard_number, resharding)
+            .await?;
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
         // Reconcile named vectors at the segment level to match the new config.
@@ -134,19 +136,6 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_reshard_state(&self, resharding: Option<ReshardState>) -> CollectionResult<()> {
-        // We don't have to explicitly abort resharding or bump shard replica states, because:
-        // - peers are not driving resharding themselves
-        // - ongoing (resharding) shard transfers are explicitly updated
-        // - shard replica set states are explicitly updated
-        self.shards_holder
-            .write()
-            .await
-            .resharding_state
-            .write(|state| *state = resharding)?;
-        Ok(())
-    }
-
     async fn apply_config(&self, mut new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
@@ -182,6 +171,9 @@ impl Collection {
                 // collection have to be *recreated*.
                 return Err(CollectionError::service_error(err.to_string()));
             }
+
+            // Publish the shard count with the topology under the shard holder lock.
+            new_config.params.shard_number = config.params.shard_number;
 
             // Destructure `new_config`, to ensure we compare all config fields. Compiler would
             // complain, if new field is added to `CollectionConfig` struct, but not destructured
@@ -253,19 +245,26 @@ impl Collection {
         &self,
         shards: AHashMap<ShardId, ShardInfo>,
         shards_key_mapping: ShardKeyMapping,
+        shard_number: NonZeroU32,
+        resharding: Option<ReshardState>,
     ) -> CollectionResult<()> {
         let mut extra_shards: AHashMap<ShardId, ShardReplicaSet> = AHashMap::new();
 
         let shard_ids = shards.keys().copied().collect::<HashSet<_>>();
 
-        // There are two components, where shard-related info is stored:
-        // Shard objects themselves and shard_holder, that maps shard_keys to shards.
-
-        // On the first state of the update, we update state of shards themselves
-        // and create new shards if needed
-
         let mut shards_holder = self.shards_holder.write().await;
 
+        // Clear a stale operation before changing the shard count or mapping it relies on.
+        // Keep the current routing until reconciliation finishes.
+        if let Some(current) = shards_holder.resharding_state()
+            && resharding
+                .as_ref()
+                .is_none_or(|target| !target.matches(&current.key()))
+        {
+            shards_holder.set_resharding_state(None)?;
+        }
+
+        // Apply replica states and build missing shards before publishing their topology.
         for (shard_id, shard_info) in shards {
             let shard_key = shards_key_mapping.shard_key(shard_id);
             match shards_holder.get_shard(shard_id) {
@@ -288,10 +287,18 @@ impl Collection {
             }
         }
 
-        // On the second step, we register missing shards and remove extra shards
+        // Startup loads all auto shards below the configured count. Save the count
+        // after adding missing shards and before deleting obsolete shard files.
         shards_holder
-            .apply_shards_state(shard_ids, shards_key_mapping, extra_shards)
-            .await
+            .register_shards_from_state(shards_key_mapping, extra_shards)
+            .await?;
+        self.set_shard_number(shard_number).await?;
+
+        // The incoming resharding state can now be loaded with its required shards.
+        shards_holder
+            .resharding_state
+            .write_optional(|current| (current != &resharding).then_some(resharding))?;
+        shards_holder.remove_shards_not_in_state(&shard_ids).await
     }
 
     async fn apply_payload_index_schema(
