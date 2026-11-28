@@ -8,9 +8,10 @@ use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::segment_constructor::cache_after_build::CacheAfterBuild;
 use segment::types::{
-    Distance, HnswConfig, Indexes, Memory, MultiVectorConfig, PayloadStorageType,
-    QuantizationConfig, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-    VectorDataConfig, VectorNameBuf, VectorStorageDatatype, VectorStorageType,
+    Distance, HnswConfig, Indexes, Memory, MultiVectorConfig, PayloadFieldSchema, PayloadKeyType,
+    PayloadStorageType, QuantizationConfig, SegmentConfig, SparseVectorDataConfig,
+    SparseVectorStorageType, VectorDataConfig, VectorNameBuf, VectorStorageDatatype,
+    VectorStorageType,
 };
 
 pub const TEMP_SEGMENTS_PATH: &str = "temp_segments";
@@ -153,6 +154,8 @@ pub struct SegmentOptimizerConfig {
     /// Live read of the collection's vector names, when wired in via
     /// [`SegmentOptimizerConfig::with_live_vector_names`]. `None` if no live source is available.
     pub live_vector_names: Option<LiveVectorNamesProvider>,
+    /// Payload indexes an optimized segment gets instead of its sources' union, when set.
+    pub payload_schema: Option<HashMap<PayloadKeyType, PayloadFieldSchema>>,
     /// See [`CacheAfterBuild`].
     pub cache_after_build: CacheAfterBuild,
 }

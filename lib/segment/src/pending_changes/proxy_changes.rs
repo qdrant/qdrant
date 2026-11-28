@@ -87,6 +87,10 @@ impl ProxyChanges {
         self.vector_name_changes.clear();
     }
 
+    pub fn clear_index_changes(&mut self) {
+        self.index_changes.clear();
+    }
+
     /// Merge the changes of another proxy into this set.
     ///
     /// Where both touch the same key the newest change wins. For a point deleted through both,

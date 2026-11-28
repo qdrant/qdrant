@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -7,7 +8,7 @@ use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::types::HnswGlobalConfig;
+use segment::types::{HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType};
 use shard::files::SEGMENTS_PATH;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, LiveVectorNamesProvider,
@@ -23,6 +24,13 @@ use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
 use crate::EdgeShard;
+
+#[derive(Clone, Copy)]
+enum Conform {
+    Every,
+    /// A rebuild's CoW segment, like a load's fresh appendable, starts with its sources' indexes.
+    EmptyAppendables,
+}
 
 impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
@@ -43,8 +51,26 @@ impl EdgeShard {
     /// Blocks until `budget` has a permit available, so a clone of one budget shared between
     /// concurrent calls (e.g. across shards) caps their combined resource usage.
     pub fn optimize_with_budget(&self, budget: ResourceBudget) -> OperationResult<bool> {
+        self.optimize_with(budget, None)
+    }
+
+    /// Like [`optimize_with_budget`](Self::optimize_with_budget), but every segment it builds gets
+    /// exactly `payload_schema`'s indexes, not the union of its sources' indexes.
+    pub fn optimize_with_payload_schema(
+        &self,
+        budget: ResourceBudget,
+        payload_schema: HashMap<PayloadKeyType, PayloadFieldSchema>,
+    ) -> OperationResult<bool> {
+        self.optimize_with(budget, Some(payload_schema))
+    }
+
+    fn optimize_with(
+        &self,
+        budget: ResourceBudget,
+        payload_schema: Option<HashMap<PayloadKeyType, PayloadFieldSchema>>,
+    ) -> OperationResult<bool> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        let optimizers = self.build_blocking_optimizers();
+        let optimizers = self.build_blocking_optimizers(payload_schema.clone());
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
 
@@ -55,7 +81,7 @@ impl EdgeShard {
             };
 
             if planned.is_empty() {
-                return Ok(optimized_any);
+                break;
             }
 
             let mut optimized_in_iteration = false;
@@ -92,12 +118,60 @@ impl EdgeShard {
 
             // Avoid repeating the same plan forever if no optimizer made effective progress.
             if !optimized_in_iteration {
-                return Ok(optimized_any);
+                break;
             }
         }
+
+        if let Some(payload_schema) = &payload_schema {
+            self.conform_segments(payload_schema, Conform::EmptyAppendables)?;
+        }
+        Ok(optimized_any)
     }
 
-    fn build_blocking_optimizers(&self) -> Vec<Arc<Optimizer>> {
+    /// Gives every segment exactly `payload_schema`'s indexes at the segment's own version, so
+    /// segments built elsewhere, above this shard's operation numbers, take the change too.
+    pub fn conform_payload_schema(
+        &self,
+        payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
+    ) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.conform_segments(payload_schema, Conform::Every)
+    }
+
+    fn conform_segments(
+        &self,
+        payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
+        which: Conform,
+    ) -> OperationResult<()> {
+        let segments = self.segments.read();
+        for (_, segment) in segments.iter() {
+            let segment = segment.get();
+            let mut segment = segment.write();
+            match which {
+                Conform::Every => {}
+                Conform::EmptyAppendables => {
+                    if !segment.is_appendable() || segment.available_point_count() > 0 {
+                        continue;
+                    }
+                }
+            }
+            let op_num = segment.version();
+            for field in segment.get_indexed_fields().into_keys() {
+                if !payload_schema.contains_key(&field) {
+                    segment.delete_field_index(op_num, &field)?;
+                }
+            }
+            for (field, schema) in payload_schema {
+                segment.create_field_index(op_num, field, Some(schema))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn build_blocking_optimizers(
+        &self,
+        payload_schema: Option<HashMap<PayloadKeyType, PayloadFieldSchema>>,
+    ) -> Vec<Arc<Optimizer>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
@@ -113,9 +187,10 @@ impl EdgeShard {
             let config = Arc::clone(&self.config);
             LiveVectorNamesProvider::new(move || config.read().vector_names())
         };
-        let segment_optimizer_config = cfg
+        let mut segment_optimizer_config = cfg
             .segment_optimizer_config()
             .with_live_vector_names(live_vector_names);
+        segment_optimizer_config.payload_schema = payload_schema;
         let global_hnsw_config = cfg.hnsw_config();
         let optimizers_config = cfg.optimizers();
         let hnsw_global_config = HnswGlobalConfig::default();
@@ -814,7 +889,7 @@ mod tests {
             .unwrap();
 
         let shard = EdgeShard::new(dir.path(), two_vector_config()).unwrap();
-        let optimizers = shard.build_blocking_optimizers();
+        let optimizers = shard.build_blocking_optimizers(None);
 
         for optimizer in &optimizers {
             let names = optimizer
