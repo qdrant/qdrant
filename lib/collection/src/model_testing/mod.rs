@@ -648,6 +648,15 @@ pub async fn run(
     // close+reopen. `None` when no snapshot is running. See [`drain_snapshot`].
     let mut pending_snapshot: Option<JoinHandle<CollectionResult<SnapshotDescription>>> = None;
     let rng = &mut SmallRng::seed_from_u64(seed);
+    // Bursts of writes submitted with `wait=false`: the engine acknowledges them once they are in
+    // the WAL and applies them from the update queue, a path `wait=true` never leaves behind it.
+    // When a burst starts and how long it lasts is drawn from a generator of its own.
+    // `nowait_left` is what remains of the current burst, `unplunged` whether acknowledged
+    // writes may still sit in an update queue.
+    let burst_rng = &mut SmallRng::seed_from_u64(seed ^ 0x6e6f_7761_6974);
+    let mut nowait_left = 0usize;
+    let mut unplunged = false;
+    let mut nowait_ops = 0usize;
     // Drawn from the seeded rng BEFORE the first swarm config so the pool is fixed for the
     // whole run. A nonzero `uuid_id_fraction` consumes rng draws here and thus shifts the
     // op stream vs. other fraction values for the same seed; `0.0` consumes none.
@@ -784,6 +793,19 @@ pub async fn run(
             // and reading the whole collection warms caches / forces lazy loads that can mask a
             // reload divergence — so the default cold close+reopen surfaces more bugs. Enable the
             // check when you need to attribute a failure to the apply path vs. the reload path.
+            // The queued writes are acknowledged, so the close below must not lose them: leave
+            // them in the queue, unless something reads the live collection before the close.
+            if unplunged && (pre_restart_check || edge_verifier.is_some()) {
+                verify::wait_for_pending_updates(&collection).await;
+                unplunged = false;
+            }
+            if unplunged {
+                stage_breadcrumb(
+                    &bar,
+                    &format!("op:{i} restart: with queued wait=false writes"),
+                );
+            }
+            nowait_left = 0;
             if pre_restart_check {
                 let live_pre = verify::collect_model_from_collection(&collection).await;
                 verify::assert_matches_model(
@@ -852,6 +874,7 @@ pub async fn run(
             // all WAL-replayed state.
             stage_breadcrumb(&bar, &format!("op:{i} restart: wait_for_pending_updates"));
             verify::wait_for_pending_updates(&collection).await;
+            unplunged = false;
             stage_breadcrumb(&bar, &format!("op:{i} restart: scroll + verify"));
             let live = verify::collect_model_from_collection(&collection).await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
@@ -864,7 +887,29 @@ pub async fn run(
             eprintln!();
             bar.set_draw_target(ProgressDrawTarget::stderr());
         } else {
-            let op = op::Op::random(rng, &model, &active_names, &id_space, &swarm);
+            let mut op = op::Op::random(rng, &model, &active_names, &id_space, &swarm);
+            if nowait_left == 0 && burst_rng.random_bool(NOWAIT_BURST_PROBABILITY) {
+                nowait_left = burst_rng.random_range(2..=NOWAIT_BURST_MAX);
+            }
+            // Inside a burst, redraw until the op can go without waiting (bounded: the swarm
+            // config may hold few such ops), so the update queue gets some depth.
+            let mut redraws = 0;
+            while nowait_left > 0 && !op.nowait_safe() && redraws < 8 {
+                op = op::Op::random(rng, &model, &active_names, &id_space, &swarm);
+                redraws += 1;
+            }
+            let nowait = nowait_left > 0 && op.nowait_safe();
+            if nowait {
+                nowait_left -= 1;
+                nowait_ops += 1;
+                unplunged = true;
+                trace.nowait(i);
+            } else if unplunged {
+                // Anything else reads the segments (or resolves a filter against them): drain
+                // the queued writes first, so the model and the collection agree again.
+                verify::wait_for_pending_updates(&collection).await;
+                unplunged = false;
+            }
             log::debug!("op:{i} {op:?}");
             bar.set_message(op.kind());
             // Unit-test / nextest only: print the in-flight op so a timeout dump names the op
@@ -904,7 +949,15 @@ pub async fn run(
                     && pending_snapshot
                         .as_ref()
                         .is_none_or(JoinHandle::is_finished);
-                apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
+                apply::apply(
+                    &collection,
+                    &mut model,
+                    &mut active_names,
+                    &op,
+                    no_proxies,
+                    !nowait,
+                )
+                .await;
                 if let op::Op::SetOptimizer(state) = op {
                     optimizer_state = state;
                 }
@@ -936,6 +989,10 @@ pub async fn run(
     if interrupted {
         eprintln!("model_testing: verifying live state...");
     }
+    if unplunged {
+        verify::wait_for_pending_updates(&collection).await;
+    }
+    println!("model_testing: {nowait_ops} writes submitted with wait=false");
     log::debug!("all ops applied, verifying live collection against model");
     stage_breadcrumb(&bar, "live: scroll + verify");
     let live = verify::collect_model_from_collection(&collection).await;
@@ -961,7 +1018,7 @@ pub async fn run(
     if !disable_optimizer && optimizer_state == op::OptimizerState::Disabled {
         stage_breadcrumb(&bar, "live: re-enable optimizer");
         let op = op::Op::SetOptimizer(op::OptimizerState::Enabled);
-        apply::apply(&collection, &mut model, &mut active_names, &op, false).await;
+        apply::apply(&collection, &mut model, &mut active_names, &op, false, true).await;
     }
 
     // Confirm the segment optimizer actually fired — but skip on shutdown (short run may
@@ -1029,6 +1086,11 @@ pub async fn run(
     let post_clocks = verify::collect_clock_ticks(&collection).await;
     verify::assert_clocks_match(&pre_clocks, &post_clocks, "reloaded");
 }
+
+/// Per-op probability of starting a burst of `wait=false` writes.
+const NOWAIT_BURST_PROBABILITY: f64 = 0.03;
+/// Longest burst of `wait=false` writes.
+const NOWAIT_BURST_MAX: usize = 32;
 
 /// Print a stage/op breadcrumb to stdout so a nextest timeout/failure dump shows the last
 /// point reached. `log::info!` is a no-op here — harness tests never init a logger, and the
