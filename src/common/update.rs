@@ -30,7 +30,7 @@ use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
-use crate::common::validate_vectors::validate_vector_dimensions;
+use crate::common::validate_vectors::{validate_point_vectors, validate_vector_dimensions};
 
 #[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
@@ -519,6 +519,18 @@ pub async fn do_update_vectors(
 
     let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_params).await?;
+
+    // Reject dimension mismatches before the update can be written to the WAL.
+    {
+        let collection_pass = auth
+            .unlogged_access()
+            .check_collection_access(&collection_name, AccessRequirements::new())?;
+        let collection = toc.get_collection(&collection_pass).await?;
+        let vectors_config = collection.vectors_config().await;
+        for point in &points {
+            validate_point_vectors(&point.vector, &vectors_config)?;
+        }
+    }
 
     let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
         UpdateVectorsOp {

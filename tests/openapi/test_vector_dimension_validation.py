@@ -1,5 +1,5 @@
 """
-Test that vector dimension validation works for both sync (wait=true) and async (wait=false) upserts.
+Test that vector dimension validation works for both sync and async writes.
 
 Regression test for https://github.com/qdrant/qdrant/issues/9039
 """
@@ -103,3 +103,55 @@ def test_async_batch_upsert_wrong_dimension_rejected(collection_name):
     assert not response.ok
     assert response.status_code == 400
     assert "dimension" in response.json()["status"]["error"].lower()
+
+
+@pytest.mark.parametrize("wait", ["true", "false", None], ids=["sync", "async", "default"])
+def test_update_vectors_wrong_dimension_rejected(collection_name, wait):
+    point_id = 1
+    original = [1.0, 0.0, 0.0, 0.0]
+    replacement = [0.0, 1.0, 0.0, 0.0]
+    path_params = {"collection_name": collection_name}
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params=path_params,
+        query_params={"wait": "true"},
+        body={"points": [{"id": point_id, "vector": original}]},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/vectors",
+        method="PUT",
+        path_params=path_params,
+        query_params={"wait": wait} if wait is not None else {},
+        body={"points": [{"id": point_id, "vector": [0.9, 0.8]}]},
+    )
+    assert response.status_code == 400, response.text
+    assert "Vector dimension error: expected dim: 4, got 2" in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/{id}",
+        method="GET",
+        path_params={**path_params, "id": point_id},
+    )
+    assert response.ok
+    assert response.json()["result"]["vector"] == original
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/vectors",
+        method="PUT",
+        path_params=path_params,
+        query_params={"wait": "true"},
+        body={"points": [{"id": point_id, "vector": replacement}]},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/{id}",
+        method="GET",
+        path_params={**path_params, "id": point_id},
+    )
+    assert response.ok
+    assert response.json()["result"]["vector"] == replacement
