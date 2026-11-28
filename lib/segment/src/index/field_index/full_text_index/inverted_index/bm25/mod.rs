@@ -16,10 +16,13 @@ mod mutable_cursors;
 mod tests;
 mod top_k;
 
+use std::sync::atomic::AtomicBool;
+
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::types::{PointOffsetType, ScoreType};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 pub use frequency_cursors::FrequencyCursors;
 pub use mutable_cursors::MutableCursors;
+use top_k::score_points;
 #[cfg(test)]
 use top_k::{HEAP_MIN_ESSENTIAL, Strategy, score_top_k_with};
 pub use top_k::{ON_DISK_BLOCK, score_top_k};
@@ -28,6 +31,7 @@ use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::nested_index::ElementOffsetType;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
+use crate::types::DEFAULT_SPARSE_FULL_SCAN_THRESHOLD;
 
 /// Saturation and length normalization. Request-time parameters: they are not
 /// part of the index, so changing them never rebuilds anything.
@@ -53,7 +57,12 @@ pub struct Bm25Accept<'a> {
     /// The point that owns a scored document, when the index scores the elements
     /// of a nested array instead of points. `filter` is checked on that point.
     element_point: Option<&'a dyn Fn(ElementOffsetType) -> Option<PointOffsetType>>,
+    filtered_points: Option<ListFilteredPoints<'a>>,
 }
+
+/// Lists the points `filter` allows if both their count and the cost of finding them fit `budget`.
+pub type ListFilteredPoints<'a> =
+    &'a dyn Fn(usize) -> OperationResult<Option<Vec<PointOffsetType>>>;
 
 impl<'a> Bm25Accept<'a> {
     pub fn new(
@@ -64,6 +73,26 @@ impl<'a> Bm25Accept<'a> {
             visible,
             filter,
             element_point: None,
+            filtered_points: None,
+        }
+    }
+
+    pub fn with_filtered_points(self, filtered_points: ListFilteredPoints<'a>) -> Self {
+        debug_assert!(self.filter.is_some());
+        Self {
+            visible: self.visible,
+            filter: self.filter,
+            element_point: self.element_point,
+            filtered_points: Some(filtered_points),
+        }
+    }
+
+    fn without_filter(&self) -> Bm25Accept<'_> {
+        Bm25Accept {
+            visible: self.visible,
+            filter: None,
+            element_point: self.element_point,
+            filtered_points: None,
         }
     }
 
@@ -74,13 +103,19 @@ impl<'a> Bm25Accept<'a> {
         &'b self,
         visible: &'b dyn Fn(ElementOffsetType) -> bool,
         element_point: &'b dyn Fn(ElementOffsetType) -> Option<PointOffsetType>,
+        filtered_elements: Option<ListFilteredPoints<'b>>,
     ) -> Bm25Accept<'b> {
         debug_assert!(self.element_point.is_none());
         Bm25Accept {
             visible,
             filter: self.filter,
             element_point: Some(element_point),
+            filtered_points: filtered_elements,
         }
+    }
+
+    pub fn filtered_points(&self) -> Option<ListFilteredPoints<'a>> {
+        self.filtered_points
     }
 
     /// Whether a query sees `point_id`.
@@ -98,6 +133,7 @@ impl<'a> Bm25Accept<'a> {
             visible,
             filter: self.filter,
             element_point: self.element_point,
+            filtered_points: self.filtered_points,
         }
     }
 
@@ -343,4 +379,41 @@ pub trait TermCursors {
     /// frequency on the first call for a document and answers the rest from
     /// that count.
     fn tf(&mut self, term: usize, doc: PointOffsetType) -> u32;
+}
+
+/// Most filtered points scored directly, as the sparse index's plain search: a wider filter
+/// fills the walk's top-k early, and the walk then skips most postings.
+const MAX_LISTED_POINTS: usize = DEFAULT_SPARSE_FULL_SCAN_THRESHOLD - 1;
+
+/// [`score_top_k`], or [`score_points`] when the filter's points are few, and cost fewer seeks
+/// than the postings.
+#[allow(clippy::too_many_arguments)]
+pub fn score<C: TermCursors, const BLOCK: usize>(
+    query: &Bm25Query,
+    cursors: &mut C,
+    doc_count: usize,
+    doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
+    accept: &Bm25Accept<'_>,
+    limit: usize,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let terms = query.terms().len();
+    let postings: usize = (0..terms).map(|term| cursors.posting_len(term)).sum();
+    if let Some(list) = accept.filtered_points
+        && postings > 0
+        && let Some(mut points) = list(((postings - 1) / terms).min(MAX_LISTED_POINTS))?
+    {
+        points.sort_unstable();
+        points.dedup();
+        let accept = accept.without_filter();
+        return score_points::<C, BLOCK>(
+            query, cursors, &points, doc_lens, &accept, limit, is_stopped,
+        );
+    }
+    score_top_k::<C, BLOCK>(
+        query, cursors, doc_count, doc_lens, accept, limit, is_stopped,
+    )
 }

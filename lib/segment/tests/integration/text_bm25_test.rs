@@ -29,8 +29,9 @@ use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, PayloadFieldSchema, PayloadSchemaParams,
-    PointIdType, ScoredPoint, SegmentConfig, SeqNumberType, WithPayload, WithVector,
+    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Match, PayloadFieldSchema,
+    PayloadSchemaParams, PointIdType, ScoredPoint, SegmentConfig, SeqNumberType, WithPayload,
+    WithVector,
 };
 use tempfile::Builder;
 
@@ -475,6 +476,58 @@ fn segment_entry_point_scores_what_a_query_sees() {
             .copied()
             .collect();
         assert_top_k(&as_offsets(&score(None, &masked_context)), &unmasked, LIMIT);
+
+        // Narrow filters, scored from the listed points where that is cheaper
+        let few: AHashSet<PointIdType> = (0..corpus.len() as u64)
+            .step_by(37)
+            .map(PointIdType::from)
+            .collect();
+        let is_few = |idx: PointOffsetType| idx.is_multiple_of(37);
+        let few_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(few.clone())));
+        let expected_few: Vec<_> = expected
+            .iter()
+            .filter(|hit| is_few(hit.idx) && !mask[hit.idx as usize])
+            .copied()
+            .collect();
+        assert_top_k(
+            &as_offsets(&score(Some(&few_ids), &masked_context)),
+            &expected_few,
+            LIMIT,
+        );
+
+        // Without primary clauses, listing would scan the segment: the walk is used
+        let all_but_few: AHashSet<PointIdType> = (0..corpus.len() as u64)
+            .map(PointIdType::from)
+            .filter(|id| !few.contains(id))
+            .collect();
+        let not_others = Filter::new_must_not(Condition::HasId(HasIdCondition::from(all_but_few)));
+        let expected_not_others: Vec<_> = expected
+            .iter()
+            .filter(|hit| is_few(hit.idx))
+            .copied()
+            .collect();
+        assert_top_k(
+            &as_offsets(&score(Some(&not_others), &segment_context)),
+            &expected_not_others,
+            LIMIT,
+        );
+
+        // A text filter on the field BM25 scores
+        let term = &terms[0];
+        let has_term = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            field(),
+            Match::new_text(term),
+        )));
+        let expected_has_term: Vec<_> = expected
+            .iter()
+            .filter(|hit| corpus[hit.idx as usize].split(' ').any(|word| word == term))
+            .copied()
+            .collect();
+        assert_top_k(
+            &as_offsets(&score(Some(&has_term), &segment_context)),
+            &expected_has_term,
+            LIMIT,
+        );
     }
 }
 

@@ -5,7 +5,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 
-use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score};
 use super::doc_len::round_doc_len;
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
@@ -371,7 +371,7 @@ impl InvertedIndex for MutableInvertedIndex {
         // Deleted points are removed from these postings, so only the caller's
         // filter applies.
         // In RAM: nothing to gain from reading lengths in batches.
-        score_top_k::<_, 1>(
+        score::<_, 1>(
             query,
             &mut cursors,
             self.point_to_tokens.len(),

@@ -442,6 +442,81 @@ fn accept_restricts_the_ranking() {
     }
 }
 
+/// Listed filtered points rank as the reference on every shape. Deleted and
+/// hidden points stay out, and list order and duplicates don't matter.
+#[rstest]
+fn listed_filtered_points_match_the_reference(#[values(1, 3, 1000)] limit: usize) {
+    let mutable = fixture(41, 400, &[103]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &mutable, &BitVec::new());
+    // Points 3, 53, ..., 353: 103 is deleted, 153 is hidden by the mask.
+    let allowed = |idx: PointOffsetType| idx % 50 == 3;
+    let visible = |idx: PointOffsetType| idx != 153;
+    let checker = ConditionCheckerEnum::TestBitOfId(TestBitOfId(0));
+    let filter = OptimizedFilter::from_checker(checker);
+    // At most 8 points pass, so they are listed whenever the budget allows 8
+    let list = |budget: usize| -> OperationResult<Option<Vec<PointOffsetType>>> {
+        let mut points: Vec<_> = (0..400).rev().filter(|&idx| allowed(idx)).collect();
+        points.push(53);
+        Ok((budget >= 8).then_some(points))
+    };
+    // `filter` keeps odd ids, so it would reject every listed point: it must not be checked
+    let accept = Bm25Accept::new(&visible, Some(&filter)).with_filtered_points(&list);
+    let is_stopped = AtomicBool::new(false);
+    let _scope = ambient::test_guard();
+
+    for terms in queries() {
+        let query = query(&mutable, &terms, Bm25Params::default());
+        let expected = reference(&mutable, &query, |idx| allowed(idx) && visible(idx));
+        for actual in [
+            mutable.score_bm25(&query, &accept, limit, &is_stopped),
+            immutable.score_bm25(&query, &accept, limit, &is_stopped),
+            on_disk.score_bm25(&query, &accept, limit, &is_stopped),
+        ] {
+            assert_top_k(&actual.unwrap(), &expected, limit);
+        }
+    }
+}
+
+/// The list is offered the budget that keeps `points * terms < postings`.
+/// Listed points skip the filter; without a list, the walk checks it.
+#[rstest]
+fn filtered_points_get_the_posting_budget(#[values(300, 40_000)] documents: u32) {
+    let mutable = fixture(43, documents, &[]);
+    let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
+    let postings: usize = query
+        .terms()
+        .iter()
+        .map(|term| mutable.postings[term.token_id as usize].len())
+        .sum();
+    let failing =
+        OptimizedFilter::from_checker(ConditionCheckerEnum::Dyn(Box::new(FailingCondition)));
+    let offered = std::cell::Cell::new(None);
+    let is_stopped = AtomicBool::new(false);
+    let _scope = ambient::test_guard();
+    let score = |points: Option<Vec<PointOffsetType>>| {
+        let list = |budget: usize| -> OperationResult<Option<Vec<PointOffsetType>>> {
+            offered.set(Some(budget));
+            Ok(points.clone())
+        };
+        let accept = Bm25Accept::new(&|_| true, Some(&failing)).with_filtered_points(&list);
+        mutable.score_bm25(&query, &accept, 10, &is_stopped)
+    };
+
+    assert!(
+        score(Some(vec![1, 2, 3])).is_ok(),
+        "listed points skip the filter"
+    );
+    // At most the sparse index's plain-search threshold, whatever the postings
+    let cap = MAX_LISTED_POINTS;
+    assert_eq!(offered.get(), Some(((postings - 1) / 2).min(cap)));
+    if documents > 10_000 {
+        assert!((postings - 1) / 2 > cap, "the large corpus reaches the cap");
+    }
+    assert!(score(None).is_err(), "the walk checks the filter");
+}
+
 /// A filter condition whose every check fails, as a storage read can.
 struct FailingCondition;
 
