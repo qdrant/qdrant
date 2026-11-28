@@ -935,6 +935,42 @@ pub async fn do_create_index(
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
+    // An index that already exists with an identical schema needs no consensus round:
+    // applications "ensure" their indexes by calling create on every write, and such a
+    // no-op must not fail, or load consensus, when the cluster can't commit anything.
+    // So this goes before the strict mode and quota checks too.
+    //
+    // The index operation is still sent to all replicas, without consensus: it is a no-op
+    // on segments that already have the index, but it builds the index where it is
+    // missing and makes `wait` cover the build, like the consensus path below does.
+    if common::flags::feature_flags().skip_consensus_for_existing_payload_index
+        && let Some(field_schema) = &operation.field_schema
+    {
+        let field_schema = field_schema.clone().normalized();
+        if payload_index_exists(
+            &dispatcher,
+            &collection_name,
+            &operation.field_name,
+            &field_schema,
+            &auth,
+        )
+        .await?
+        {
+            let toc = dispatcher
+                .toc(&auth, &new_unchecked_verification_pass())
+                .clone();
+            return do_create_index_internal(
+                toc,
+                collection_name,
+                operation.field_name,
+                Some(field_schema),
+                internal_params,
+                params,
+            )
+            .await;
+        }
+    }
+
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
         &operation,
@@ -991,6 +1027,31 @@ pub async fn do_create_index(
         params,
     )
     .await
+}
+
+/// Whether this node's applied collection state already has an index on `field_name`
+/// with exactly `field_schema` (normalized).
+///
+/// Requires the same access as the `CreatePayloadIndex` consensus operation, see
+/// `check_collection_meta_operation`. The answer is as fresh as this node's consensus
+/// state, like any other read of the collection config.
+async fn payload_index_exists(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    field_name: &JsonPath,
+    field_schema: &PayloadFieldSchema,
+    auth: &Auth,
+) -> Result<bool, StorageError> {
+    let collection_pass = auth.check_collection_access(
+        collection_name,
+        AccessRequirements::new().write().extras(),
+        "create_payload_index",
+    )?;
+    let collection = dispatcher
+        .toc(auth, &new_unchecked_verification_pass())
+        .get_collection(&collection_pass)
+        .await?;
+    Ok(collection.payload_key_index_schema(field_name).as_ref() == Some(field_schema))
 }
 
 /// Refuse a per-element index that `field_name` can't have, or that some peer would not

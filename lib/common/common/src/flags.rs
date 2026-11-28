@@ -111,6 +111,14 @@ pub struct FeatureFlags {
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
+
+    /// Answer a request to create a payload index that already exists with an identical
+    /// schema without a consensus round, so such requests succeed and add no load to
+    /// consensus, even when it can't commit. When disabled, every such request goes
+    /// through consensus.
+    ///
+    /// Enabled by default.
+    pub skip_consensus_for_existing_payload_index: bool,
 }
 
 impl Default for FeatureFlags {
@@ -133,6 +141,7 @@ impl Default for FeatureFlags {
             versioned_deletes: false,
             pipnn_graph_building: false,
             serverless_compatible: false,
+            skip_consensus_for_existing_payload_index: true,
         }
     }
 }
@@ -177,6 +186,7 @@ impl FeatureFlags {
             versioned_deletes: false,
             pipnn_graph_building: true,
             serverless_compatible: false,
+            skip_consensus_for_existing_payload_index: true,
         }
     }
 
