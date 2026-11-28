@@ -77,6 +77,8 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
+        let _lifecycle = self.shard_lifecycle_lock.lock().await;
+        self.shards_holder.finish_shard_key_removals().await?;
         {
             let mut shard_holder = self.shards_holder.write().await;
 

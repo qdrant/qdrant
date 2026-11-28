@@ -10,6 +10,8 @@ mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
+#[cfg(test)]
+mod sharding_keys_tests;
 mod snapshots;
 mod state_management;
 mod telemetry;
@@ -71,6 +73,9 @@ use crate::telemetry::CollectionsAggregatedTelemetry;
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: SharedShardHolder,
+    /// Serialize shard-path creation and detachment, including outside consensus.
+    /// Acquire before the shard holder; reads and background cleanup never acquire it.
+    shard_lifecycle_lock: Mutex<()>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfigInternal>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -189,6 +194,7 @@ impl Collection {
         Ok(Self {
             id: name.clone(),
             shards_holder: shared_shard_holder,
+            shard_lifecycle_lock: Mutex::new(()),
             collection_config: shared_collection_config,
             optimizers_overwrite,
             payload_index_schema,
@@ -309,6 +315,7 @@ impl Collection {
         Self {
             id: collection_id.clone(),
             shards_holder: shared_shard_holder,
+            shard_lifecycle_lock: Mutex::new(()),
             collection_config: shared_collection_config,
             optimizers_overwrite,
             payload_index_schema,
