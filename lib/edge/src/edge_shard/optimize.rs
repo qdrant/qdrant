@@ -17,7 +17,7 @@ use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
 use shard::optimizers::segment_optimizer::{
-    Optimizer, max_num_indexing_threads, plan_optimizations,
+    Optimizer, PlanMode, max_num_indexing_threads, plan_optimizations,
 };
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
@@ -51,7 +51,7 @@ impl EdgeShard {
         loop {
             let planned = {
                 let segments = self.segments.read();
-                plan_optimizations(&segments, &optimizers)
+                plan_optimizations(&segments, &optimizers, PlanMode::Ingest)
             };
 
             if planned.is_empty() {

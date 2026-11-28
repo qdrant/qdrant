@@ -8,7 +8,7 @@ use segment::entry::ReadSegmentEntry as _;
 use segment::types::HnswGlobalConfig;
 
 use super::config::SegmentOptimizerConfig;
-use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};
+use super::segment_optimizer::{OptimizationPlanner, PlanMode, SegmentOptimizer};
 use crate::operations::optimization::OptimizerThresholds;
 
 const BYTES_IN_KB: usize = 1024;
@@ -68,6 +68,14 @@ const TOP_UP_PERCENT: usize = 90;
 ///
 /// - good:  [150 300 1400] →  1400 breaks the ratio, but grows to 1850
 /// - bad:   [20 30 1900]   →  1900 is already full, rewritten to absorb 50
+///
+/// The ratio only applies while uploads are ongoing (`PlanMode::Ingest`). It
+/// leaves a few segments that are too far apart in size to merge:
+///
+///     20 100 400 1900 1900 ...
+///
+/// Once uploads stop (`PlanMode::Idle`) no better batch will arrive, so they
+/// are merged regardless of the ratio: [20 100 400].
 /// ```
 pub struct MergeOptimizer {
     default_segments_number: usize,
@@ -162,6 +170,12 @@ impl SegmentOptimizer for MergeOptimizer {
             .min(self.thresholds_config.max_segment_size_kb)
             .saturating_mul(BYTES_IN_KB);
 
+        // Holding a batch back only pays off if more segments are coming.
+        let limit_size_ratio = match planner.mode() {
+            PlanMode::Ingest => true,
+            PlanMode::Idle => false,
+        };
+
         // A merge reaching this size may break the ratio, see `TOP_UP_PERCENT`.
         let top_up_size = threshold / 100 * TOP_UP_PERCENT;
 
@@ -178,7 +192,7 @@ impl SegmentOptimizer for MergeOptimizer {
                     // absorb a few small ones. Each merge then grows its largest
                     // input by a meaningful fraction, which bounds how often a
                     // point is rewritten while a segment grows to the size cap.
-                    if let Some(sum) = *size_sum {
+                    if limit_size_ratio && let Some(sum) = *size_sum {
                         let fits_ratio =
                             size <= MAX_MERGE_SIZE_RATIO.saturating_mul(sum.max(ratio_floor));
                         let tops_up = size < top_up_size && sum.saturating_add(size) >= top_up_size;

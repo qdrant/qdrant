@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::{
-    SegmentOptimizer, plan_optimizations,
+    PlanMode, SegmentOptimizer, plan_optimizations,
 };
 use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -356,7 +356,8 @@ impl UpdateHandler {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
         let has_suboptimal_optimizers =
-            !plan_optimizations(&self.segments.read(), &self.optimizers).is_empty();
+            !plan_optimizations(&self.segments.read(), &self.optimizers, PlanMode::Ingest)
+                .is_empty();
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 
