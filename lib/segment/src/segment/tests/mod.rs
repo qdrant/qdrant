@@ -201,6 +201,134 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
+#[rstest]
+#[case::north(90, &[1, 2, 3, 4])]
+#[case::south(-90, &[6])]
+fn test_geo_radius_at_poles(#[case] center_lat: i32, #[case] expected_ids: &[u64]) {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Euclid).unwrap();
+
+    for (id, lon, lat) in [
+        (1, 0, "90"),
+        // The first two representable latitudes below 90 degrees.
+        (2, 0, "89.99999999999999"),
+        (3, 0, "89.99999999999997"),
+        (4, 135, "89.999999"),
+        (5, 0, "89.99"),
+        (6, 0, "-90"),
+    ] {
+        let payload: Payload =
+            serde_json::from_str(&format!(r#"{{"place": {{"lon": {lon}, "lat": {lat}}}}}"#))
+                .unwrap();
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 0.0]))
+            .unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+
+    let filter: Filter = serde_json::from_str(&format!(
+        r#"{{"must": [{{"key": "place", "geo_radius": {{
+            "center": {{"lon": 0, "lat": {center_lat}}}, "radius": 500
+        }}}}]}}"#,
+    ))
+    .unwrap();
+    let matching_ids = |segment: &Segment| {
+        segment
+            .read_filtered(
+                None,
+                Some(11),
+                Some(&filter),
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+    let expected_ids: Vec<_> = expected_ids
+        .iter()
+        .copied()
+        .map(PointIdType::from)
+        .collect();
+
+    assert_eq!(matching_ids(&segment), expected_ids, "before indexing");
+    segment
+        .create_field_index(
+            7,
+            &JsonPath::new("place"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
+        )
+        .unwrap();
+    assert_eq!(matching_ids(&segment), expected_ids, "after indexing");
+}
+
+#[rstest]
+#[case::must(false, 1, (0, 2, 4))]
+#[case::must_not(true, 4, (1, 3, 5))]
+fn test_polar_geo_radius_cardinality(
+    #[case] negated: bool,
+    #[case] exact_count: usize,
+    #[case] expected_estimate: (usize, usize, usize),
+) {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Euclid).unwrap();
+
+    for (id, lat) in [
+        (1u64, Some(90)),
+        (2, Some(0)),
+        (3, Some(0)),
+        (4, Some(0)),
+        (5, None),
+    ] {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 0.0]))
+            .unwrap();
+        if let Some(lat) = lat {
+            let payload = serde_json::from_value(serde_json::json!({
+                "place": { "lon": 0, "lat": lat }
+            }))
+            .unwrap();
+            segment.set_full_payload(id, id.into(), &payload).unwrap();
+        }
+    }
+
+    segment
+        .create_field_index(
+            6,
+            &JsonPath::new("place"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
+        )
+        .unwrap();
+
+    let condition: Condition = serde_json::from_value(serde_json::json!({
+        "key": "place", "geo_radius": { "center": { "lon": 0, "lat": 90 }, "radius": 500 }
+    }))
+    .unwrap();
+    let filter = if negated {
+        Filter::new_must_not(condition)
+    } else {
+        Filter::new_must(condition)
+    };
+    let matches = segment
+        .read_filtered(
+            None,
+            None,
+            Some(&filter),
+            &AtomicBool::new(false),
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    assert_eq!(matches.len(), exact_count);
+
+    // Only the four indexed points can match, and the root gives no information about
+    // which of them pass the distance check. The missing value always matches must_not.
+    let estimate = segment.estimate_point_count(Some(&filter)).unwrap();
+    assert_eq!(
+        (estimate.min, estimate.exp, estimate.max),
+        expected_estimate
+    );
+}
+
 /// A `must_not` condition equal to a primary `must` clause must still exclude its points.
 ///
 /// This is the filter a proxy segment builds when it is read with `HasId` of exactly the points
