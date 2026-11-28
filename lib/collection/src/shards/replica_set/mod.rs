@@ -37,7 +37,7 @@ use self::partial_snapshot_meta::PartialSnapshotMeta;
 use super::CollectionId;
 use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::{LocalShard, LocalShardOptimizations};
-use super::remote_shard::RemoteShard;
+use super::remote_shard::{RemoteRecoveryPoint, RemoteShard};
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
@@ -57,6 +57,7 @@ use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
 #[cfg(feature = "testing")]
 use crate::update_handler::Optimizer;
+use crate::wal_delta::WalDeltaBounds;
 
 //    │    Collection Created
 //    │
@@ -1164,6 +1165,25 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Request the recovery point of a remote replica, with the bounds of WAL deltas it can resolve
+    pub(crate) async fn remote_shard_recovery_point(
+        &self,
+        peer_id: PeerId,
+    ) -> CollectionResult<RemoteRecoveryPoint> {
+        let remotes = self.remotes.read().await;
+
+        let Some(remote) = remotes.iter().find(|remote| remote.peer_id == peer_id) else {
+            return Err(CollectionError::not_found(format!(
+                "{}/{}:{} shard",
+                peer_id, self.collection_id, self.shard_id
+            )));
+        };
+
+        remote
+            .shard_recovery_point_with_bounds(&self.collection_id, self.shard_id)
+            .await
+    }
+
     pub async fn delete_local_points(
         &self,
         filter: Filter,
@@ -1403,6 +1423,16 @@ impl ShardReplicaSet {
         };
 
         local_shard.shard_recovery_point().await
+    }
+
+    /// How far back the WAL of the local shard can resolve a WAL delta
+    pub(crate) async fn wal_delta_bounds(&self) -> CollectionResult<WalDeltaBounds> {
+        let local_shard = self.local.read().await;
+        let Some(local_shard) = local_shard.as_ref() else {
+            return Err(CollectionError::not_found("Peer does not have local shard"));
+        };
+
+        local_shard.wal_delta_bounds().await
     }
 
     /// Update the cutoff point for the local shard.

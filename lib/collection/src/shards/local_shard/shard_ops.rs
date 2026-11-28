@@ -20,6 +20,8 @@ use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
+#[cfg(feature = "staging")]
+use crate::operations::CollectionUpdateOperations;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::point_ops::PointStructRawPersisted;
@@ -116,6 +118,18 @@ impl LocalShard {
         let update_sender = self.update_sender.load();
         let channel_permit = update_sender.reserve().await?;
 
+        // Write a staging untagged update without its clock tag. Return the tag anyway, so the
+        // update leader counts the update as accepted.
+        #[cfg(feature = "staging")]
+        let untagged_clock_tag = if let CollectionUpdateOperations::StagingOperation(staging) =
+            &operation.operation
+            && staging.writes_untagged()
+        {
+            operation.clock_tag.take()
+        } else {
+            None
+        };
+
         // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
         //
         // TODO: Refactor `lock_and_write`, so this is less terrible? :/
@@ -136,6 +150,8 @@ impl LocalShard {
         // Instead, read operation data from the WAL when processing the operation.
         let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
         let clock_tag = operation.clock_tag;
+        #[cfg(feature = "staging")]
+        let clock_tag = clock_tag.or(untagged_clock_tag);
         let operation_in_ram = keep_operation_in_ram.then(|| Box::new(operation.operation));
 
         channel_permit.send(UpdateSignal::Operation(OperationData {

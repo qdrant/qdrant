@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
+use collection::wal_delta::WalDeltaBounds;
 use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::{AccessRequirements, Auth, CollectionPass};
@@ -166,9 +167,25 @@ impl CollectionsInternal for CollectionsInternalService {
                 ))
             })?;
 
+        let wal_delta_bounds = collection_read
+            .shard_wal_delta_bounds(shard_id)
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to get WAL delta bounds for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let WalDeltaBounds {
+            cutoff,
+            tagged_records,
+        } = wal_delta_bounds;
+
         let response = GetShardRecoveryPointResponse {
             recovery_point: Some(recovery_point.into()),
             time: timing.elapsed().as_secs_f64(),
+            cutoff: Some(cutoff.into()),
+            tagged_records: Some(tagged_records),
         };
         Ok(Response::new(response))
     }

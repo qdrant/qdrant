@@ -70,6 +70,10 @@ message GetShardRecoveryPointResponse {
   RecoveryPoint recovery_point = 1;
   // Time spent to process
   double time = 2;
+  // Cutoff point of the shard, the WAL can't resolve a WAL delta below these clocks
+  RecoveryPoint cutoff = 3;
+  // How many records a WAL delta scan can read backwards from the end of the WAL
+  optional uint64 tagged_records = 4;
 }
 
 message RecoveryPoint {

@@ -76,6 +76,7 @@ impl CollectionUpdateOperations {
             #[cfg(feature = "staging")]
             Self::StagingOperation(op) => match op {
                 super::staging::StagingOperations::Delay(_) => AffectedPoints::Nothing,
+                super::staging::StagingOperations::UntaggedUpdate(_) => AffectedPoints::Nothing,
             },
         }
     }

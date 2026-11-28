@@ -428,6 +428,24 @@ impl RecoveryPoint {
         Self { clocks }
     }
 
+    /// Sum how many ticks the clocks of this recovery point are ahead of the same clocks in `other`
+    ///
+    /// A clock that is not present in `other` counts from tick 0. Clocks that are not ahead count
+    /// as 0.
+    pub fn ticks_ahead_of(&self, other: &Self) -> u64 {
+        self.clocks
+            .iter()
+            .map(|(key, (tick, _token))| {
+                let other_tick = other
+                    .clocks
+                    .get(key)
+                    .map_or(0, |(other_tick, _token)| *other_tick);
+
+                tick.saturating_sub(other_tick)
+            })
+            .sum()
+    }
+
     /// Verify a clock of this recovery point against a clock tag from a WAL, and remove the clock
     /// once it is verified.
     ///
@@ -848,6 +866,23 @@ mod test {
 
         recovery_point.insert(2, 0, 7);
         assert!(recovery_point.has_clocks_of_other_peers(1));
+    }
+
+    #[test]
+    fn recovery_point_ticks_ahead_of() {
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert(1, 0, 10); // 3 ahead
+        recovery_point.insert(1, 1, 5); // equal
+        recovery_point.insert(1, 2, 3); // behind
+        recovery_point.insert(2, 0, 4); // missing in other, 4 ahead
+
+        let mut other = RecoveryPoint::default();
+        other.insert(1, 0, 7);
+        other.insert(1, 1, 5);
+        other.insert(1, 2, 6);
+        other.insert(3, 0, 9); // missing in recovery point
+
+        assert_eq!(recovery_point.ticks_ahead_of(&other), 7);
     }
 
     proptest! {

@@ -18,12 +18,25 @@ use super::CollectionUpdateOperations;
 pub enum StagingOperations {
     /// Introduce an artificial delay for testing purposes
     Delay(TestDelayOperation),
+    /// Write an update that changes nothing to the local WAL, without a clock tag
+    UntaggedUpdate(TestUntaggedUpdateOperation),
+}
+
+impl StagingOperations {
+    /// Whether the local shard writes this operation to its WAL without a clock tag
+    pub fn writes_untagged(&self) -> bool {
+        match self {
+            StagingOperations::Delay(_) => false,
+            StagingOperations::UntaggedUpdate(_) => true,
+        }
+    }
 }
 
 impl Validate for StagingOperations {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             StagingOperations::Delay(op) => op.validate(),
+            StagingOperations::UntaggedUpdate(op) => op.validate(),
         }
     }
 }
@@ -63,3 +76,11 @@ impl TestDelayOperation {
         log::debug!("TestDelay: finished sleeping");
     }
 }
+
+/// Test operation that writes an update without a clock tag to the WAL of the peer that receives
+/// it, and changes nothing.
+///
+/// Other replicas skip it. A WAL delta can't include untagged records, so a WAL delta over this
+/// record fails, like over the records of a stream records transfer.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Hash)]
+pub struct TestUntaggedUpdateOperation {}

@@ -13,6 +13,7 @@ mod sharding_keys;
 mod snapshots;
 mod state_management;
 mod telemetry;
+mod transfer_source;
 pub mod vector_name_schema;
 
 use std::collections::HashMap;
@@ -36,6 +37,7 @@ use tokio::sync::{Mutex, RwLock};
 pub use self::resharding::AbortReshardingScope;
 pub use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection::transfer_source::TransferSource;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::common::collection_size_stats::{
@@ -66,6 +68,7 @@ use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionsAggregatedTelemetry;
+use crate::wal_delta::WalDeltaBounds;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -634,6 +637,20 @@ impl Collection {
         replica_set.shard_recovery_point().await
     }
 
+    /// How far back the WAL of a local shard can resolve a WAL delta
+    pub async fn shard_wal_delta_bounds(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<WalDeltaBounds> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(shard_id);
+        let replica_set =
+            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+
+        replica_set.wal_delta_bounds().await
+    }
+
     /// Find the points changed by orphan operations in the WAL of a local shard
     ///
     /// See [`crate::orphan_points::find_orphan_points`] for `source_clocks`.
@@ -978,37 +995,74 @@ impl Collection {
                     }
                 });
 
-            // Try to find a replica to transfer from
+            // Find replicas to transfer from
             //
             // `active_shards` includes `Active` and `ReshardingScaleDown` replicas!
-            for replica_id in replica_set.active_shards(true) {
-                let transfer = ShardTransfer {
-                    from: replica_id,
-                    to: this_peer_id,
-                    shard_id,
-                    to_shard_id: None,
-                    sync: true,
-                    // For automatic shard transfers, always select some default method from this point on
-                    method: Some(shard_transfer_method),
-                    filter: None,
-                };
+            let candidates: Vec<_> = replica_set
+                .active_shards(true)
+                .into_iter()
+                .filter(|&replica_id| {
+                    // Conflicts depend on the peers of a transfer, not on its method
+                    let transfer = ShardTransfer {
+                        from: replica_id,
+                        to: this_peer_id,
+                        shard_id,
+                        to_shard_id: None,
+                        sync: true,
+                        method: None,
+                        filter: None,
+                    };
 
-                if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
-                    continue; // this transfer won't work
-                }
+                    check_transfer_conflicts_strict(&transfer, transfers.iter()).is_none()
+                })
+                .filter(|&replica_id| {
+                    // Respect shard transfer limit, consider already proposed transfers in our counts
+                    let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(replica_id);
+                    outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
 
-                // Respect shard transfer limit, consider already proposed transfers in our counts
-                let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(replica_id);
-                outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
-                if self.check_auto_shard_transfer_limit(incoming, outgoing) {
-                    log::trace!(
-                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})",
-                    );
-                    continue;
-                }
+                    let over_limit = self.check_auto_shard_transfer_limit(incoming, outgoing);
+                    if over_limit {
+                        log::trace!(
+                            "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})",
+                        );
+                    }
+
+                    !over_limit
+                })
+                .collect();
+
+            // Nothing to propose, e.g. while a transfer to this replica runs. Skip it before asking
+            // the candidates for their recovery points on every iteration.
+            if candidates.is_empty() {
+                continue;
+            }
+
+            let (shard_transfer_method, sources) = transfer_source::order_transfer_sources(
+                self.name(),
+                replica_set,
+                shard_transfer_method,
+                default_method,
+                candidates,
+            )
+            .await;
+
+            // Try to find a replica to transfer from
+            for source in sources {
+                let TransferSource {
+                    peer_id: replica_id,
+                    rank,
+                    answered,
+                } = source;
 
                 // TODO: Should we, maybe, throttle/backoff this requests a bit?
-                if let Err(err) = replica_set.health_check(replica_id).await {
+                let health_check = if answered {
+                    // Answering the recovery point request shows the replica is available
+                    Ok(())
+                } else {
+                    replica_set.health_check(replica_id).await
+                };
+
+                if let Err(err) = health_check {
                     // TODO: This is rather verbose, not sure if we want to log this at all... :/
                     log::trace!(
                         "Replica {replica_id}/{}:{} is not available \
@@ -1020,10 +1074,27 @@ impl Collection {
                     continue;
                 }
 
-                log::debug!(
-                    "Recovering shard {}:{shard_id} on peer {this_peer_id} by requesting it from {replica_id}",
-                    self.name(),
-                );
+                match &rank {
+                    Some(rank) => log::debug!(
+                        "Recovering shard {}:{shard_id} on peer {this_peer_id} by requesting it from {replica_id}, ranked as WAL delta source: {rank:?}",
+                        self.name(),
+                    ),
+                    None => log::debug!(
+                        "Recovering shard {}:{shard_id} on peer {this_peer_id} by requesting it from {replica_id}",
+                        self.name(),
+                    ),
+                }
+
+                let transfer = ShardTransfer {
+                    from: replica_id,
+                    to: this_peer_id,
+                    shard_id,
+                    to_shard_id: None,
+                    sync: true,
+                    // For automatic shard transfers, always select some default method from this point on
+                    method: Some(shard_transfer_method),
+                    filter: None,
+                };
 
                 // Update our counters for proposed transfers, then request (propose) shard transfer
                 *proposed.entry(transfer.from).or_default() += 1;
