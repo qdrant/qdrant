@@ -680,7 +680,9 @@ impl Collection {
                             .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                     ),
                 }
-                .dedup()
+                // Rows are duplicates only if their sort key (order value or score, then id) is equal:
+                // an order-by point gets one row per value, and all those rows share the same score.
+                .dedup_by(|a, b| ScoredPointTies(a) == ScoredPointTies(b))
                 .take(query_info.take)
                 .collect();
 
