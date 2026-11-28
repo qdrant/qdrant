@@ -36,10 +36,25 @@ fn classifies_by_s3_price_class() {
 
 /// Serves `responses` in order, one connection each, ignoring request bodies (none are sent).
 fn stub_server(responses: Vec<(u16, String)>) -> String {
+    stub_server_raw(
+        responses
+            .into_iter()
+            .map(|(status, body)| {
+                format!(
+                    "HTTP/1.1 {status} Stub\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+            })
+            .collect(),
+    )
+}
+
+/// Serves raw HTTP `responses` in order, one connection each.
+fn stub_server_raw(responses: Vec<String>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
-        for (status, body) in responses {
+        for response in responses {
             let Ok((mut stream, _)) = listener.accept() else {
                 return;
             };
@@ -50,10 +65,6 @@ fn stub_server(responses: Vec<(u16, String)>) -> String {
                     break;
                 }
             }
-            let response = format!(
-                "HTTP/1.1 {status} Stub\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                body.len()
-            );
             let _ = stream.write_all(response.as_bytes());
         }
     });
@@ -125,4 +136,27 @@ async fn store_counts_retries_and_list_pages() {
     assert!(delta(RequestClass::Get, RequestStatus::Ok) >= 1);
     assert!(delta(RequestClass::List, RequestStatus::Ok) >= 2);
     assert!(after.bytes_received - before.bytes_received >= 5);
+}
+
+/// A HEAD's `Content-Length` is the object's size, not a body: it adds nothing to the bytes
+/// received. Bounds, not exact deltas: other tests in this process share the counters.
+#[tokio::test]
+async fn head_adds_no_received_bytes() {
+    const OBJECT_SIZE: u64 = 1 << 30;
+    let endpoint = stub_server_raw(vec![format!(
+        "HTTP/1.1 200 Stub\r\ncontent-length: {OBJECT_SIZE}\r\netag: \"e\"\r\n\
+         last-modified: Thu, 01 Jan 2026 00:00:00 GMT\r\nconnection: close\r\n\r\n"
+    )]);
+    let store = store(endpoint);
+
+    let before = http_request_stats();
+    let meta = store.head(&Path::from("key")).await.unwrap();
+    let after = http_request_stats();
+
+    assert_eq!(meta.size, OBJECT_SIZE);
+    assert!(
+        after.requests(RequestClass::Get, RequestStatus::Ok)
+            > before.requests(RequestClass::Get, RequestStatus::Ok)
+    );
+    assert!(after.bytes_received - before.bytes_received < OBJECT_SIZE);
 }

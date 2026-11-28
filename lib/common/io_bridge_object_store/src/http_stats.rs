@@ -64,7 +64,9 @@ pub struct HttpRequestStatsSnapshot {
     requests: [[u64; STATUSES]; CLASSES],
     /// Request body bytes of every attempt.
     pub bytes_sent: u64,
-    /// Response `Content-Length` of every response, which a dropped download may not have read.
+    /// Response `Content-Length` of every response except HEADs, whose `Content-Length` is the
+    /// object's size rather than a body. A dropped download still counts its full length, an
+    /// upper bound on what S3 sent.
     pub bytes_received: u64,
 }
 
@@ -140,19 +142,23 @@ struct CountingService(HttpClient);
 impl HttpService for CountingService {
     async fn call(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
         let class = classify(request.method(), request.uri().query());
+        // A HEAD's `Content-Length` is the size of the object, but no body follows.
+        let has_body = request.method() != Method::HEAD;
         let sent = request.body().content_length() as u64;
         let result = self.0.execute(request).await;
         match &result {
             Ok(response) => {
                 record(class, status_of(response.status()));
                 STATS.bytes_sent.fetch_add(sent, Ordering::Relaxed);
-                let received = response
-                    .headers()
-                    .get(http::header::CONTENT_LENGTH)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse::<u64>().ok())
-                    .unwrap_or(0);
-                STATS.bytes_received.fetch_add(received, Ordering::Relaxed);
+                if has_body {
+                    let received = response
+                        .headers()
+                        .get(http::header::CONTENT_LENGTH)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    STATS.bytes_received.fetch_add(received, Ordering::Relaxed);
+                }
             }
             Err(_) => record(class, RequestStatus::TransportError),
         }
