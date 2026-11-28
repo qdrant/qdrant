@@ -8,9 +8,15 @@ use crate::spaces::metric_uint::avx2::cosine::avx_cosine_similarity_bytes;
 use crate::spaces::metric_uint::neon::cosine::neon_cosine_similarity_bytes;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::spaces::metric_uint::sse2::cosine::sse_cosine_similarity_bytes;
+use crate::spaces::simple::CosineMetric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
-use crate::spaces::simple::{CosineMetric, MIN_DIM_SIZE_SIMD};
+#[cfg(any(
+    target_arch = "x86",
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+use crate::spaces::simple::MIN_DIM_SIZE_SIMD;
 use crate::types::Distance;
 
 impl Metric<VectorElementTypeByte> for CosineMetric {

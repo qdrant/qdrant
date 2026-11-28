@@ -9,9 +9,15 @@ use crate::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
 use crate::spaces::metric_f16::neon::dot::neon_dot_similarity_half;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::spaces::metric_f16::sse::dot::sse_dot_similarity_half;
+use crate::spaces::simple::DotProductMetric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
-use crate::spaces::simple::{DotProductMetric, MIN_DIM_SIZE_SIMD};
+#[cfg(any(
+    target_arch = "x86",
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", target_feature = "neon")
+))]
+use crate::spaces::simple::MIN_DIM_SIZE_SIMD;
 use crate::types::Distance;
 
 impl Metric<VectorElementTypeHalf> for DotProductMetric {
