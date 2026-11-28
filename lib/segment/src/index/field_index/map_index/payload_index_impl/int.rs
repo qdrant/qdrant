@@ -18,8 +18,8 @@ use crate::index::field_index::{
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{
-    AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
-    PayloadKeyType, ValueVariants,
+    AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchValue, PayloadKeyType,
+    ValueVariants,
 };
 
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
@@ -133,6 +133,8 @@ where
 
 // Shared bodies for `MapIndex<IntPayloadType>` and
 // `ReadOnlyMapIndex<IntPayloadType, S>`.
+// Match::Except is evaluated from the payload because it can match values
+// omitted from the integer map.
 
 fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
@@ -153,10 +155,6 @@ fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
                 }
             }
             AnyVariants::Integers(integers) => Some(index.iter_for_values(integers.iter())?),
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => Some(index.except_set(integers)?),
         },
         _ => None,
     };
@@ -207,10 +205,6 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
                 )
             }
         },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => Some(index.except_cardinality(integers)),
-        },
         _ => None,
     }
 }
@@ -259,9 +253,6 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
         Match::Any(MatchAny {
             any: AnyVariants::Integers(list),
         }) => Some(index.match_any_checker(list.clone(), false)),
-        Match::Except(MatchExcept {
-            except: AnyVariants::Integers(list),
-        }) => Some(index.match_any_checker(list.clone(), true)),
         // Conditions this index can't serve.
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Bool(_),
@@ -269,9 +260,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
         | Match::Any(MatchAny {
             any: AnyVariants::Strings(_),
         })
-        | Match::Except(MatchExcept {
-            except: AnyVariants::Strings(_),
-        })
+        | Match::Except(_)
         | Match::Text(_)
         | Match::TextAny(_)
         | Match::Phrase(_)

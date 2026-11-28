@@ -24,8 +24,8 @@ use crate::index::field_index::{
 use crate::index::query_estimator::combine_should_estimations;
 use crate::index::query_optimization::point_sink::{PointSink, push_filtered};
 use crate::types::{
-    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchSubstring,
-    MatchValue, PayloadKeyType, ValueVariants,
+    AnyVariants, FieldCondition, Match, MatchAny, MatchPrefix, MatchSubstring, MatchValue,
+    PayloadKeyType, ValueVariants,
 };
 
 impl PayloadFieldIndex for MapIndex<str> {
@@ -140,6 +140,8 @@ where
 // Shared bodies for `MapIndex<str>` and `ReadOnlyMapIndex<str, S>`. Parameterized
 // over `T: MapIndexRead<str>` so a single body serves both `PayloadFieldIndexRead`
 // impls above.
+// Match::Except is evaluated from the payload because it can match values
+// omitted from the keyword map.
 
 /// Keys containing `substring`, enumerated from the map index itself.
 ///
@@ -184,10 +186,6 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
                     None
                 }
             }
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(keywords) => Some(index.except_set(keywords)?),
-            AnyVariants::Integers(_) => None,
         },
         Some(Match::Prefix(MatchPrefix { prefix })) => {
             // `None` when this index instance has no prefix structure — the
@@ -257,10 +255,6 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
                     None
                 }
             }
-        },
-        Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(keywords) => Some(index.except_cardinality(keywords)),
-            AnyVariants::Integers(_) => None,
         },
         Some(Match::Prefix(MatchPrefix { prefix })) => index.prefix_stats(prefix)?.map(|stats| {
             let PrefixIndexStats { keys, postings } = stats;
@@ -549,9 +543,6 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
         Match::Any(MatchAny {
             any: AnyVariants::Strings(list),
         }) => Some(index.match_any_checker(list.clone(), false)),
-        Match::Except(MatchExcept {
-            except: AnyVariants::Strings(list),
-        }) => Some(index.match_any_checker(list.clone(), true)),
         // Served through the forward index; works with or without the prefix
         // structures, which only accelerate `filter`/`estimate_cardinality`.
         Match::Prefix(MatchPrefix { prefix }) => Some(index.match_prefix_checker(prefix.as_str())),
@@ -567,9 +558,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
         | Match::Any(MatchAny {
             any: AnyVariants::Integers(_),
         })
-        | Match::Except(MatchExcept {
-            except: AnyVariants::Integers(_),
-        })
+        | Match::Except(_)
         | Match::Text(_)
         | Match::TextAny(_)
         | Match::Phrase(_) => None,
