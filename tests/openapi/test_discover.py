@@ -2,9 +2,11 @@ import math
 import random
 
 import pytest
+import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import qdrant_host_headers, request_with_validation
+from .helpers.settings import QDRANT_HOST
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -404,3 +406,33 @@ def test_discover_lookup(collection_name, collection_name_lookup):
 
     # check if results are the same
     assert discover_result_by_id == discover_result_by_vector, f"discover_result_by_id: {discover_result_by_id}, discover_result_by_vector: {discover_result_by_vector}"
+
+
+@pytest.mark.parametrize("endpoint", ["discover", "discover/batch"])
+def test_discover_missing_lookup_from_collection(collection_name, endpoint):
+    url = f"{QDRANT_HOST}/collections/{collection_name}/points/{endpoint}"
+    search = {"target": [0.1, 0.2, 0.3, 0.4], "limit": 3}
+
+    def discover(body):
+        if endpoint == "discover/batch":
+            body = {"searches": [search, body]}
+        return requests.post(url, json=body, headers=qdrant_host_headers())
+
+    response = discover(search)
+    assert response.ok, response.text
+    result = response.json()["result"]
+    if endpoint == "discover/batch":
+        assert len(result) == 2
+        assert result[0] == result[1]
+        assert len(result[0]) == 3
+    else:
+        assert len(result) == 3
+
+    response = discover({**search, "lookup_from": {"collection": collection_name}})
+    assert response.ok, response.text
+    assert response.json()["result"] == result
+
+    missing_collection = f"{collection_name}_missing_lookup"
+    response = discover({**search, "lookup_from": {"collection": missing_collection}})
+    assert response.status_code == 404, response.text
+    assert response.json()["status"]["error"] == f"Not found: Collection {missing_collection} not found"
