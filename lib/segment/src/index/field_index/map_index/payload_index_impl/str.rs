@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
 
@@ -400,37 +399,22 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
     }
 
     let lcp_len = |a: &str, b: &str| {
-        a.as_bytes()
-            .iter()
-            .zip(b.as_bytes())
-            .take_while(|(x, y)| x == y)
-            .count()
+        let common_bytes = a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count();
+        // Open intervals only for complete UTF-8 prefixes so their postings
+        // totals describe the same keys as the emitted condition.
+        a.floor_char_boundary(common_bytes)
     };
 
-    // The byte-level LCP may end mid-codepoint; round down to a char boundary
-    // to emit a valid prefix string. Rounding can collapse a node onto its
-    // ancestor, so keep the larger count per emitted prefix.
-    let mut heavy: HashMap<String, usize> = HashMap::new();
+    let mut blocks = Vec::new();
     // Returns whether the interval's subtree now contains an emitted block,
     // i.e. whether its ancestors must be suppressed.
     let mut close = |last_key: &str, node: &OpenInterval| -> bool {
-        if node.keys < 2 || node.postings <= threshold {
+        if node.lcp == 0 || node.keys < 2 || node.postings <= threshold {
             return false;
         }
-        if node.covered {
-            return true;
+        if !node.covered {
+            blocks.push((last_key[..node.lcp].to_string(), node.postings));
         }
-        let mut boundary = node.lcp;
-        while boundary > 0 && !last_key.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        if boundary == 0 {
-            // Heavy but unrepresentable at this depth; let an ancestor with
-            // a valid boundary produce the block instead.
-            return false;
-        }
-        let entry = heavy.entry(last_key[..boundary].to_string()).or_default();
-        *entry = (*entry).max(node.postings);
         true
     };
 
@@ -516,7 +500,6 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
         carry_postings = node.postings;
     }
 
-    let mut blocks: Vec<(String, usize)> = heavy.into_iter().collect();
     blocks.sort_unstable_by(|(prefix_a, count_a), (prefix_b, count_b)| {
         count_b.cmp(count_a).then_with(|| prefix_a.cmp(prefix_b))
     });
