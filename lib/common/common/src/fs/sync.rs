@@ -37,14 +37,44 @@ pub fn bulk_sync_dir(dir: &Path) -> io::Result<()> {
 }
 
 /// Calls `fsync` recursively.
+///
+/// Entries that vanish between listing and visiting are skipped with a
+/// warning: the walked tree can be concurrently modified (e.g. atomic file
+/// writes create and remove temporary directories in it), and there is
+/// nothing left to fsync once an entry is gone. See #11563.
+///
+/// The root directory itself is expected to exist — every caller syncs a
+/// directory it has just created or restored, so its disappearance is a real
+/// error and is propagated to the caller.
 #[cfg(unix)]
 fn sync_dir_with_fsync(dir: &Path) -> io::Result<()> {
     for entry in fs_err::read_dir(dir)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            sync_dir_with_fsync(&entry.path())?;
+        let path = entry.path();
+        let is_dir = match entry.file_type() {
+            Ok(file_type) => file_type.is_dir(),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                log::warn!("Skipping vanished entry {}: {err}", path.display());
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
+        if is_dir {
+            match sync_dir_with_fsync(&path) {
+                Ok(()) => (),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    log::warn!("Skipping vanished directory {}: {err}", path.display());
+                }
+                Err(err) => return Err(err),
+            }
         } else {
-            File::open(entry.path())?.sync_all()?;
+            match File::open(&path) {
+                Ok(file) => file.sync_all()?,
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    log::warn!("Skipping vanished file {}: {err}", path.display());
+                }
+                Err(err) => return Err(err),
+            }
         }
     }
     File::open(dir)?.sync_all()?;
@@ -65,5 +95,55 @@ mod tests {
         fs_err::create_dir(dir.path().join("sub")).unwrap();
         fs_err::write(dir.path().join("sub").join("data"), b"x").unwrap();
         bulk_sync_dir(dir.path()).unwrap();
+    }
+
+    /// Regression test for #11563: entries that vanish between listing and
+    /// visiting must not fail the recursive sync.
+    ///
+    /// On macOS this walk raced with the WAL flush worker, whose atomic file
+    /// writes create and remove `.atomicwrite*` subdirectories in the walked
+    /// tree, making snapshot restores fail spuriously with `NotFound`. Here we
+    /// simulate the same race: the walk runs against a tree with many
+    /// temporary subdirectories while another thread removes them, starting
+    /// right after the walk has listed the root (listing happens within the
+    /// first microseconds of the walk) and finishing well before the walk
+    /// does. Any removal landing between the listing of an entry and its
+    /// visit makes the walk observe a vanished entry; the sync must complete
+    /// either way.
+    #[cfg(unix)]
+    #[test]
+    fn sync_dir_with_fsync_tolerates_vanished_entries() {
+        use std::thread;
+        use std::time::Duration;
+
+        /// Temporary subdirectories imitating `atomicwrites` scratch dirs.
+        const DOOMED_DIRS: usize = 64;
+        /// Fillers keep the walk busy long enough for deletions to overlap it.
+        const FILLER_FILES: usize = 256;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+
+        for i in 0..DOOMED_DIRS {
+            let doomed = root.join(format!(".atomicwrite{i}"));
+            fs_err::create_dir(&doomed).unwrap();
+            fs_err::write(doomed.join("tmpfile"), b"data").unwrap();
+        }
+        for i in 0..FILLER_FILES {
+            fs_err::write(root.join(format!("file{i:04}")), b"data").unwrap();
+        }
+
+        let deleter_root = root.clone();
+        let deleter = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(1));
+            for i in 0..DOOMED_DIRS {
+                let _ = fs_err::remove_dir_all(deleter_root.join(format!(".atomicwrite{i}")));
+            }
+        });
+
+        // Must not fail with `NotFound` even though entries vanish mid-walk.
+        sync_dir_with_fsync(&root).unwrap();
+
+        deleter.join().unwrap();
     }
 }
