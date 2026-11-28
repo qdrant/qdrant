@@ -442,6 +442,8 @@ message QueryShardPoints {
       Rrf rrf = 7;
       // BM25 over the text index of a payload field
       TextScoringInternal text = 8;
+      // Parameterized DBSF fusion
+      Dbsf dbsf = 9;
     }
   }
 

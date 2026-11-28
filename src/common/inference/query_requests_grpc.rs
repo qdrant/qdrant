@@ -291,6 +291,7 @@ fn convert_query_with_inferred(
         Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
         Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
         Variant::Rrf(rrf) => Query::Fusion(FusionInternal::try_from(rrf)?),
+        Variant::Dbsf(dbsf) => Query::Fusion(FusionInternal::from(dbsf)),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
         Variant::Text(grpc::TextQuery { query, scoring }) => {

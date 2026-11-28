@@ -21,10 +21,17 @@ pub struct ScoreFusion {
 impl ScoreFusion {
     /// Params for the distribution-based score fusion
     pub fn dbsf() -> Self {
+        Self::dbsf_weighted(vec![])
+    }
+
+    /// Params for the distribution-based score fusion, with a multiplier for each list of scores.
+    ///
+    /// Lists without a corresponding weight get a weight of `1.0`.
+    pub fn dbsf_weighted(weights: Vec<f32>) -> Self {
         Self {
             method: Aggregation::Sum,
             norm: Normalization::Distr,
-            weights: vec![],
+            weights,
             order: Order::LargeBetter,
         }
     }

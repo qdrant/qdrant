@@ -76,23 +76,42 @@ fn validate_query(query: &ScoringQuery, sources: &[Source]) -> OperationResult<(
 
 fn validate_fusion(fusion: &FusionInternal, num_sources: usize) -> OperationResult<()> {
     match fusion {
-        FusionInternal::Rrf {
-            k: _,
-            weights: Some(weights),
-        } => {
-            if weights.len() != num_sources {
-                return Err(OperationError::validation_error(format!(
-                    "RRF weights length ({}) does not match number of prefetches ({})",
-                    weights.len(),
-                    num_sources
-                )));
-            }
-            Ok(())
+        FusionInternal::Rrf { k: _, weights } => {
+            validate_fusion_weights("RRF", weights.as_deref(), num_sources)
         }
-        FusionInternal::Rrf {
-            k: _,
-            weights: None,
-        } => Ok(()),
-        FusionInternal::Dbsf => Ok(()),
+        FusionInternal::Dbsf { weights } => {
+            validate_fusion_weights("DBSF", weights.as_deref(), num_sources)
+        }
     }
+}
+
+/// Checks that there is exactly one weight per prefetch, and that every weight is a finite,
+/// non-negative number.
+fn validate_fusion_weights(
+    method: &str,
+    weights: Option<&[ordered_float::OrderedFloat<f32>]>,
+    num_sources: usize,
+) -> OperationResult<()> {
+    let Some(weights) = weights else {
+        return Ok(());
+    };
+
+    if weights.len() != num_sources {
+        return Err(OperationError::validation_error(format!(
+            "{method} weights length ({}) does not match number of prefetches ({num_sources})",
+            weights.len(),
+        )));
+    }
+
+    if let Some((pos, weight)) = weights
+        .iter()
+        .enumerate()
+        .find(|(_, w)| !w.is_finite() || w.into_inner() < 0.0)
+    {
+        return Err(OperationError::validation_error(format!(
+            "{method} weight at index {pos} must be a finite non-negative number, got {weight}",
+        )));
+    }
+
+    Ok(())
 }

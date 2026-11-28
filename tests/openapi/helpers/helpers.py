@@ -155,7 +155,9 @@ def reciprocal_rank_fusion(
         sorted_points.append(point)
     return sorted_points
 
-def distribution_based_score_fusion(responses: List[List[Any]], limit: int = 10) -> List[Any]:
+def distribution_based_score_fusion(
+    responses: List[List[Any]], limit: int = 10, weights: List[float] = None
+) -> List[Any]:
     def normalize(response: List[Any]) -> List[Any]:
         total = sum([point["score"] for point in response])
         mean = total / len(response)
@@ -171,9 +173,11 @@ def distribution_based_score_fusion(responses: List[List[Any]], limit: int = 10)
         return response
     
     points_map = {}
-    for response in responses:
+    for source_idx, response in enumerate(responses):
+        weight = weights[source_idx] if weights else 1.0
         normalized = normalize(response)
         for point in normalized:
+            point["score"] *= weight
             entry = points_map.get(point["id"])
             if entry is None:
                 points_map[point["id"]] = point

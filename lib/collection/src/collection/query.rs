@@ -374,7 +374,14 @@ impl Collection {
                             .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
                         rrf_scoring(intermediates, *k, weights_slice.as_deref())?
                     }
-                    FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
+                    FusionInternal::Dbsf { weights } => {
+                        let weights = weights
+                            .iter()
+                            .flatten()
+                            .map(|w| w.into_inner())
+                            .collect::<Vec<_>>();
+                        score_fusion(intermediates, ScoreFusion::dbsf_weighted(weights))
+                    }
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {
                     fused = fused

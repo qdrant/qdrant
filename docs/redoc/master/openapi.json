@@ -15249,6 +15249,9 @@
             "$ref": "#/components/schemas/RrfQuery"
           },
           {
+            "$ref": "#/components/schemas/DbsfQuery"
+          },
+          {
             "$ref": "#/components/schemas/FormulaQuery"
           },
           {
@@ -15495,6 +15498,32 @@
           },
           "weights": {
             "description": "Weights for each prefetch source. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches.",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DbsfQuery": {
+        "type": "object",
+        "required": [
+          "dbsf"
+        ],
+        "properties": {
+          "dbsf": {
+            "$ref": "#/components/schemas/Dbsf"
+          }
+        }
+      },
+      "Dbsf": {
+        "description": "Parameters for Distribution-Based Score Fusion",
+        "type": "object",
+        "properties": {
+          "weights": {
+            "description": "Weights for each prefetch source. Normalized scores of each prefetch are multiplied by its weight before being summed. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches. Weights must be non-negative.",
             "type": "array",
             "items": {
               "type": "number",

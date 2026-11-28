@@ -342,11 +342,9 @@ impl Repr for PyScoringQuery {
 #[derive(Clone, Debug)]
 pub enum PyFusion {
     #[pyo3(constructor = (k, weights = None))]
-    Rrf {
-        k: usize,
-        weights: Option<Vec<f32>>,
-    },
-    Dbsf {},
+    Rrf { k: usize, weights: Option<Vec<f32>> },
+    #[pyo3(constructor = (weights = None))]
+    Dbsf { weights: Option<Vec<f32>> },
 }
 
 #[pymethods]
@@ -366,7 +364,10 @@ impl Repr for PyFusion {
                 k,
                 weights: Some(weights),
             } => f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr), ("weights", weights)]),
-            PyFusion::Dbsf {} => f.complex_enum::<Self>("Dbsf", &[]),
+            PyFusion::Dbsf { weights: None } => f.complex_enum::<Self>("Dbsf", &[]),
+            PyFusion::Dbsf {
+                weights: Some(weights),
+            } => f.complex_enum::<Self>("Dbsf", &[("weights", weights)]),
         }
     }
 }
@@ -378,7 +379,9 @@ impl From<FusionInternal> for PyFusion {
                 k,
                 weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
             },
-            FusionInternal::Dbsf => PyFusion::Dbsf {},
+            FusionInternal::Dbsf { weights } => PyFusion::Dbsf {
+                weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
+            },
         }
     }
 }
@@ -390,7 +393,9 @@ impl From<PyFusion> for FusionInternal {
                 k,
                 weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
             },
-            PyFusion::Dbsf {} => FusionInternal::Dbsf,
+            PyFusion::Dbsf { weights } => FusionInternal::Dbsf {
+                weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
+            },
         }
     }
 }

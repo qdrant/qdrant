@@ -40,6 +40,7 @@ impl Validate for Query {
             Query::Context(context) => context.validate(),
             Query::Fusion(fusion) => fusion.validate(),
             Query::Rrf(rrf) => rrf.validate(),
+            Query::Dbsf(dbsf) => dbsf.validate(),
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),

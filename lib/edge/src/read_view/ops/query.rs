@@ -311,7 +311,14 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
                 rrf_scoring(sources, k, weights_slice.as_deref())?
             }
-            FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
+            FusionInternal::Dbsf { ref weights } => {
+                let weights = weights
+                    .iter()
+                    .flatten()
+                    .map(|w| w.into_inner())
+                    .collect::<Vec<_>>();
+                score_fusion(sources, ScoreFusion::dbsf_weighted(weights))
+            }
         };
 
         let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {
