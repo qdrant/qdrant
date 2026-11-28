@@ -279,6 +279,11 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
             .unwrap_or_else(|| self.first_closed_index())
     }
 
+    /// Whether the WAL has a recorded acknowledgement boundary.
+    pub fn has_acknowledged_index(&self) -> bool {
+        self.first_index.is_some()
+    }
+
     /// Last index that is still available in logical WAL.
     pub fn last_index(&self) -> u64 {
         self.wal.last_index()

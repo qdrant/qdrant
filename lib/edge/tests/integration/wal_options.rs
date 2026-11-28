@@ -1,13 +1,20 @@
 #![allow(deprecated)]
 use std::collections::HashMap;
 use std::num::NonZero;
+use std::time::Instant;
 
-use edge::{Distance, EdgeConfig, EdgeShard, EdgeVectorParams, WAL_PATH, WalOptions};
+use edge::{
+    Distance, EdgeConfig, EdgeShard, EdgeVectorParams, RetrieveRequestBuilder, WAL_PATH, WalOptions,
+};
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-use segment::types::ExtendedPointId;
+use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition};
+use serde_json::json;
+use shard::files::SEGMENTS_PATH;
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
+use shard::operations::point_ops::PointOperations::{
+    DeletePoints, DeletePointsByFilter, UpsertPoints,
+};
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use shard::operations::{ClockTag, OperationWithClockTag};
 use shard::wal::{SerdeWal, WalRawRecord};
@@ -252,6 +259,124 @@ fn load_replays_unapplied_wal_operations() {
     // change anything.
     let shard = EdgeShard::load(dir.path(), None).unwrap();
     assert_eq!(shard.info().unwrap().points_count, 3);
+}
+
+#[test]
+fn legacy_wal_skips_persisted_filter_deletes() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = base_builder()
+        .on_disk_payload(true)
+        .wal_options(small_wal_options())
+        .build();
+    let shard = EdgeShard::new(dir.path(), config).unwrap();
+    let payload = json!({"category": "keep", "body": "x".repeat(2048)});
+    let points = (0..2048)
+        .map(|id| PointStructPersisted {
+            payload: Some(serde_json::from_value(payload.clone()).unwrap()),
+            ..point(id)
+        })
+        .collect();
+    shard
+        .update(PointOperation(UpsertPoints(PointsList(points))))
+        .unwrap();
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "category".parse().unwrap(),
+        "missing".to_string().into(),
+    )));
+    for _ in 0..128 {
+        shard
+            .update(PointOperation(DeletePointsByFilter(filter.clone())))
+            .unwrap();
+    }
+    // A final mutation advances the segment's persisted version past the filter deletes.
+    upsert(&shard, 2048);
+    drop(shard);
+
+    let start = Instant::now();
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    let acknowledged_load = start.elapsed();
+    assert_eq!(shard.info().unwrap().points_count, 2049);
+    drop(shard);
+
+    let wal_path = dir.path().join(WAL_PATH);
+    fs_err::remove_file(wal_path.join("first-index")).unwrap();
+    {
+        // Append a real unflushed update to the legacy WAL without applying it to the segment.
+        let mut wal = SerdeWal::new(&wal_path, small_wal_options()).unwrap();
+        let record = OperationWithClockTag::new(
+            PointOperation(UpsertPoints(PointsList(vec![point(2049)]))),
+            None,
+        );
+        wal.write(&WalRawRecord::new(&record).unwrap()).unwrap();
+        wal.flush().unwrap();
+    }
+
+    let start = Instant::now();
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    let legacy_load = start.elapsed();
+    assert_eq!(shard.info().unwrap().points_count, 2050);
+    eprintln!("acknowledged load: {acknowledged_load:?}, legacy load: {legacy_load:?}");
+    assert!(
+        legacy_load < acknowledged_load * 10,
+        "legacy load rescanned persisted filter deletes: {legacy_load:?} vs {acknowledged_load:?}"
+    );
+}
+
+#[test]
+fn legacy_wal_replays_at_oldest_persisted_segment_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let shard = EdgeShard::new(dir.path(), default_config()).unwrap();
+    shard
+        .update(PointOperation(UpsertPoints(PointsList(vec![
+            point(1),
+            point(2),
+        ]))))
+        .unwrap();
+    let ids = vec![ExtendedPointId::NumId(1), ExtendedPointId::NumId(2)];
+    let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(
+        ids.iter().copied().collect::<ahash::AHashSet<_>>(),
+    )));
+    shard
+        .update(PointOperation(DeletePointsByFilter(filter)))
+        .unwrap();
+    upsert(&shard, 3);
+    drop(shard);
+
+    // Recreate a second segment flushed partway through the delete at WAL index 1.
+    // That segment still needs the delete even though the first segment has reached index 2.
+    let partial = tempfile::tempdir().unwrap();
+    let shard = EdgeShard::new(partial.path(), default_config()).unwrap();
+    shard
+        .update(PointOperation(UpsertPoints(PointsList(vec![
+            point(1),
+            point(2),
+        ]))))
+        .unwrap();
+    shard
+        .update(PointOperation(DeletePoints { ids: vec![ids[0]] }))
+        .unwrap();
+    drop(shard);
+
+    let segment = fs_err::read_dir(partial.path().join(SEGMENTS_PATH))
+        .unwrap()
+        .find_map(|entry| {
+            let entry = entry.unwrap();
+            entry.file_type().unwrap().is_dir().then_some(entry)
+        })
+        .unwrap();
+    fs_err::rename(
+        segment.path(),
+        dir.path().join(SEGMENTS_PATH).join(segment.file_name()),
+    )
+    .unwrap();
+    fs_err::remove_file(dir.path().join(WAL_PATH).join("first-index")).unwrap();
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    let remaining = shard
+        .retrieve(RetrieveRequestBuilder::new(ids).build())
+        .unwrap();
+    assert!(remaining.is_empty());
+    assert_eq!(shard.info().unwrap().points_count, 1);
 }
 
 fn upsert(shard: &EdgeShard, id: u64) {
