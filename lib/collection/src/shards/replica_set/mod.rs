@@ -388,8 +388,8 @@ impl ShardReplicaSet {
     }
 
     /// Block all access to the local shard until the returned guard is dropped. Test-only.
-    #[cfg(test)]
-    pub(crate) async fn lock_local_for_test(
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn lock_local_for_test(
         &self,
     ) -> tokio::sync::RwLockWriteGuard<'_, Option<crate::shards::shard::Shard>> {
         self.local.write().await
