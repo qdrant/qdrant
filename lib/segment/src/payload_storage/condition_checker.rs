@@ -342,7 +342,11 @@ impl ValueChecker for Range<DateTimePayloadType> {
         payload
             .as_str()
             .and_then(|s| DateTimePayloadType::from_str(s).ok())
-            .is_some_and(|x| self.check_range(x))
+            .is_some_and(|datetime| {
+                // Use the index's timestamp ordering, including for leap seconds.
+                self.map(|bound| bound.timestamp())
+                    .check_range(datetime.timestamp())
+            })
     }
 }
 
