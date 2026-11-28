@@ -1132,6 +1132,42 @@ impl CollectionError {
     }
 }
 
+impl From<CollectionError> for api::rest::QueryBatchError {
+    fn from(err: CollectionError) -> Self {
+        use api::rest::QueryBatchErrorCode;
+
+        let message = err.to_string();
+        let (code, point_id) = match err {
+            CollectionError::PointNotFound { missed_point_id } => {
+                (QueryBatchErrorCode::PointNotFound, Some(missed_point_id))
+            }
+            CollectionError::NotFound { .. } => (QueryBatchErrorCode::NotFound, None),
+            CollectionError::BadInput { .. } | CollectionError::BadRequest { .. } => {
+                (QueryBatchErrorCode::BadRequest, None)
+            }
+            CollectionError::ServiceError { .. }
+            | CollectionError::Cancelled { .. }
+            | CollectionError::InconsistentShardFailure { .. }
+            | CollectionError::ForwardProxyError { .. }
+            | CollectionError::OutOfMemory { .. }
+            | CollectionError::Timeout { .. }
+            | CollectionError::PreConditionFailed { .. }
+            | CollectionError::ObjectStoreError { .. }
+            | CollectionError::StrictMode { .. }
+            | CollectionError::InferenceError { .. }
+            | CollectionError::RateLimitExceeded { .. }
+            | CollectionError::ShardUnavailable { .. }
+            | CollectionError::InsufficientStorage { .. } => (QueryBatchErrorCode::Other, None),
+        };
+
+        Self {
+            code,
+            message,
+            point_id,
+        }
+    }
+}
+
 impl From<SystemTimeError> for CollectionError {
     fn from(error: SystemTimeError) -> Self {
         Self::service_error(format!("System time error: {error}"))

@@ -96,7 +96,10 @@ async fn query_points(
             .map(api::rest::ScoredPoint::from)
             .collect_vec();
 
-        Ok(QueryResponse { points })
+        Ok(QueryResponse {
+            points,
+            error: None,
+        })
     }
     .measured(request_hw_counter.get_counter())
     .await;
@@ -121,7 +124,8 @@ async fn query_points_batch(
     ActixRoutingToken(routing_token): ActixRoutingToken,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
-    let QueryRequestBatch { searches } = request.into_inner();
+    let QueryRequestBatch { searches, on_error } = request.into_inner();
+    let error_mode = on_error.unwrap_or_default();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -169,21 +173,29 @@ async fn query_points_batch(
 
         let res = dispatcher
             .toc(&auth, &pass)
-            .query_batch(
+            .query_batch_with_error_mode(
                 &collection.collection_name,
                 batch,
                 params.consistency,
                 routing_token,
                 auth,
                 params.timeout(),
+                error_mode,
             )
             .await?
             .into_iter()
-            .map(|response| QueryResponse {
-                points: response
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec(),
+            .map(|response| match response {
+                Ok(points) => QueryResponse {
+                    points: points
+                        .into_iter()
+                        .map(api::rest::ScoredPoint::from)
+                        .collect_vec(),
+                    error: None,
+                },
+                Err(err) => QueryResponse {
+                    points: vec![],
+                    error: Some(api::rest::QueryBatchError::from(err)),
+                },
             })
             .collect_vec();
         Ok(res)

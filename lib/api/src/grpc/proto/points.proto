@@ -1191,6 +1191,18 @@ message QueryPoints {
   optional uint64 timeout = 15;
 }
 
+// Defines how an error in one of the queries of a batch affects the whole batch
+enum BatchErrorMode {
+  // Default - an error in any query fails the whole batch request
+  FailBatch = 0;
+  // An error caused by a query itself (e.g. a referenced point is not found)
+  // fails only that query. Its result has the `error` field set,
+  // other queries are executed normally.
+  // Errors not related to a specific query (e.g. timeout, unavailable shards, strict mode)
+  // still fail the whole batch.
+  FailQuery = 1;
+}
+
 message QueryBatchPoints {
   string collection_name = 1;
   repeated QueryPoints query_points = 2;
@@ -1198,6 +1210,8 @@ message QueryBatchPoints {
   optional ReadConsistency read_consistency = 3;
   // If set, overrides global timeout setting for this request. Unit is seconds.
   optional uint64 timeout = 4;
+  // What to do if one of the queries in the batch fails. Default: `FailBatch`
+  optional BatchErrorMode on_error = 5;
 }
 
 message QueryPointGroups {
@@ -1526,6 +1540,31 @@ message QueryGroupsResponse {
 
 message BatchResult {
   repeated ScoredPoint result = 1;
+  // Error of this query, if it failed.
+  // Only set in `QueryBatch` responses requested with `on_error: FailQuery`.
+  optional QueryBatchError error = 2;
+}
+
+// Category of an error of a single query in a batch
+enum QueryBatchErrorCode {
+  // Any other error
+  Other = 0;
+  // A point referenced by the query (e.g. as a recommend example) does not exist
+  PointNotFound = 1;
+  // Some other object referenced by the query does not exist
+  NotFound = 2;
+  // The query is invalid
+  BadRequest = 3;
+}
+
+// Error of a single query in a batch
+message QueryBatchError {
+  // Category of the error
+  QueryBatchErrorCode code = 1;
+  // Human-readable description of the error
+  string message = 2;
+  // ID of the point which was not found, if `code` is `PointNotFound`
+  optional PointId point_id = 3;
 }
 
 message SearchBatchResponse {

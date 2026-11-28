@@ -11,6 +11,7 @@ use api::grpc::qdrant::{
     SearchParams, SearchPointGroups, SearchPoints, SearchResponse, WithVectorsSelector,
 };
 use api::grpc::{InferenceUsage, Usage};
+use api::rest::BatchErrorMode;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -185,6 +186,7 @@ pub async fn core_search_batch(
             .into_iter()
             .map(|points| BatchResult {
                 result: points.into_iter().map(ScoredPoint::into).collect(),
+                error: None,
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -247,6 +249,7 @@ pub async fn core_search_list(
             .into_iter()
             .map(|points| BatchResult {
                 result: points.into_iter().map(ScoredPoint::into).collect(),
+                error: None,
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -417,6 +420,7 @@ pub async fn recommend_batch(
             .into_iter()
             .map(|points| BatchResult {
                 result: points.into_iter().map(ScoredPoint::into).collect(),
+                error: None,
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -578,6 +582,7 @@ pub async fn discover_batch(
             .into_iter()
             .map(|points| BatchResult {
                 result: points.into_iter().map(ScoredPoint::into).collect(),
+                error: None,
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -860,6 +865,7 @@ pub async fn query_batch(
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
     inference_params: InferenceParams,
+    error_mode: BatchErrorMode,
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
@@ -893,6 +899,7 @@ pub async fn query_batch(
         routing_token,
         auth,
         timeout,
+        error_mode,
     )
     .measured(request_hw_counter.get_counter())
     .await?;
@@ -900,8 +907,17 @@ pub async fn query_batch(
     let response = QueryBatchResponse {
         result: scored_points
             .into_iter()
-            .map(|points| BatchResult {
-                result: points.into_iter().map(ScoredPoint::into).collect(),
+            .map(|result| match result {
+                Ok(points) => BatchResult {
+                    result: points.into_iter().map(ScoredPoint::into).collect(),
+                    error: None,
+                },
+                Err(err) => BatchResult {
+                    result: vec![],
+                    error: Some(api::grpc::QueryBatchError::from(
+                        api::rest::QueryBatchError::from(err),
+                    )),
+                },
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),

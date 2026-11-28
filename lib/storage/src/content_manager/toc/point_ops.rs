@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use api::rest::BatchErrorMode;
 use collection::collection::Collection;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
@@ -368,12 +369,44 @@ impl TableOfContent {
     pub async fn query_batch(
         &self,
         collection_name: &str,
-        mut requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+        requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         auth: Auth,
         timeout: Option<Duration>,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
+        let results = self
+            .query_batch_with_error_mode(
+                collection_name,
+                requests,
+                read_consistency,
+                routing_token,
+                auth,
+                timeout,
+                BatchErrorMode::FailBatch,
+            )
+            .await?;
+        results
+            .into_iter()
+            .map(|result| result.map_err(StorageError::from))
+            .collect()
+    }
+
+    /// Like [`Self::query_batch`], but with configurable handling of per-query errors,
+    /// see [`collection::collection::Collection::query_batch_with_error_mode`].
+    ///
+    /// Inner errors are per-query, the outer error fails the whole batch.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn query_batch_with_error_mode(
+        &self,
+        collection_name: &str,
+        mut requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+        read_consistency: Option<ReadConsistency>,
+        routing_token: Option<RoutingToken>,
+        auth: Auth,
+        timeout: Option<Duration>,
+        error_mode: BatchErrorMode,
+    ) -> StorageResult<Vec<CollectionResult<Vec<ScoredPoint>>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
             collection_pass = Some(auth.check_point_op(collection_name, request, "query_batch")?);
@@ -389,12 +422,13 @@ impl TableOfContent {
         }
 
         collection
-            .query_batch(
+            .query_batch_with_error_mode(
                 requests,
                 |name| self.get_collection_opt(name),
                 read_consistency,
                 routing_token,
                 timeout,
+                error_mode,
             )
             .await
             .map_err(|err| err.into())

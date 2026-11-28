@@ -16,6 +16,7 @@ use api::grpc::qdrant::{
     UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
+use api::rest::BatchErrorMode;
 use collection::operations::types::CoreSearchRequest;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
@@ -696,7 +697,12 @@ impl Points for PointsService {
             query_points,
             read_consistency,
             timeout,
+            on_error,
         } = request;
+        let error_mode = on_error
+            .map(BatchErrorMode::try_from)
+            .transpose()?
+            .unwrap_or_default();
         let timeout = timeout.map(Duration::from_secs);
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
@@ -710,6 +716,7 @@ impl Points for PointsService {
             timeout,
             hw_metrics,
             inference_params,
+            error_mode,
         )
         .await?;
 
