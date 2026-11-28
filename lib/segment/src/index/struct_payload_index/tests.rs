@@ -5,12 +5,15 @@
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::ambient;
+use common::condition_checker::ConditionChecker as _;
 use tempfile::Builder;
 use uuid::Uuid;
 
 use crate::data_types::vectors::only_default_vector;
 use crate::entry::{NonAppendableSegmentEntry, SegmentEntry, StorageSegmentEntry};
+use crate::fixtures::payload_context_fixture::create_struct_payload_index;
 use crate::index::PayloadIndexRead;
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadConfig, PayloadIndexType,
@@ -20,8 +23,8 @@ use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
-    Condition, Distance, FieldCondition, Filter, Match, Payload, PayloadFieldSchema,
-    PayloadSchemaType, ValueVariants,
+    Condition, Distance, FieldCondition, Filter, HasIdCondition, Match, Payload,
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, ValueVariants,
 };
 
 #[test]
@@ -984,5 +987,32 @@ fn unindexed_conditions_on_mmap_match_full_payload_checks() {
             hits.sort_unstable();
             assert_eq!(hits, expected, "case {case}");
         }
+    });
+}
+
+/// A point is rejected by the first `must_not` condition it matches, so the condition
+/// most points match is checked first.
+#[test]
+fn must_not_checks_most_probable_condition_first() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let index = create_struct_payload_index(dir.path(), 100, 42);
+
+    let has_id = |ids: std::ops::Range<u64>| {
+        let ids: AHashSet<_> = ids.map(PointIdType::NumId).collect();
+        Condition::HasId(HasIdCondition::from(ids))
+    };
+    // Least probable first.
+    let filter = Filter {
+        should: None,
+        min_should: None,
+        must: None,
+        must_not: Some(vec![has_id(0..1), has_id(0..50)]),
+    };
+
+    index.with_view(|view| {
+        let filter = view.filter_context(&filter).unwrap();
+        // Point 10 is only in the larger set.
+        assert!(filter.must_not()[0].check(10).unwrap());
     });
 }

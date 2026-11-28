@@ -194,11 +194,22 @@ impl ImmutableInvertedIndex {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {
-            // Check that all tokens are in document
-            tokens.tokens().iter().all(|token_id| {
-                let posting_list = &postings[*token_id as usize];
-                posting_list.visitor().contains(point_id)
-            })
+            // Check that all tokens are in document, the rarest first: it rejects the most points
+            let contains =
+                |token_id: &TokenId| postings[*token_id as usize].visitor().contains(point_id);
+            let Some(rarest) = tokens
+                .tokens()
+                .iter()
+                .min_by_key(|token_id| postings[**token_id as usize].len())
+            else {
+                return false;
+            };
+            contains(rarest)
+                && tokens
+                    .tokens()
+                    .iter()
+                    .filter(|token_id| *token_id != rarest)
+                    .all(contains)
         }
 
         match &self.postings {
@@ -224,11 +235,13 @@ impl ImmutableInvertedIndex {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> bool {
-            // Check that at least one token is in document
-            tokens.tokens().iter().any(|token_id| {
-                let posting_list = &postings[*token_id as usize];
-                posting_list.visitor().contains(point_id)
-            })
+            // Check that at least one token is in document. Token ids follow first
+            // appearance, so common tokens usually come first already: picking the most
+            // common one per point costs more than it saves.
+            tokens
+                .tokens()
+                .iter()
+                .any(|token_id| postings[*token_id as usize].visitor().contains(point_id))
         }
 
         match &self.postings {

@@ -396,8 +396,9 @@ impl ValueChecker for GeoPolygon {
                 let lat_op = obj.get("lat").and_then(|x| x.as_f64());
 
                 if let (Some(lon), Some(lat)) = (lon_op, lat_op) {
+                    // Converted for every value: skip the bounding rectangle
                     return self
-                        .convert()
+                        .convert_unbounded()
                         .check_point(&GeoPoint::new_unchecked(lon, lat));
                 }
                 false

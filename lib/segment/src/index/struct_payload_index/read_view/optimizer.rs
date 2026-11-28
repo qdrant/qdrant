@@ -332,8 +332,8 @@ where
             deferred_behavior,
             materialization,
         )?;
-        // More probable conditions first, as it will be reverted
-        converted.sort_by_key(|(_, estimation)| estimation.exp);
+        // More probable conditions first: a point is rejected by the first one it matches
+        converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
         // None of the conditions may match: one set of the points matching any of them.
         let conditions = merge_postings(

@@ -80,6 +80,11 @@ impl<'a> OptimizedFilter<'a> {
         Self::new(Vec::new(), Vec::new(), 0, vec![checker], Vec::new())
     }
 
+    #[cfg(test)]
+    pub(crate) fn must_not(&self) -> &[ConditionCheckerEnum<'a>] {
+        &self.must_not
+    }
+
     /// Whether any condition reads its values from a cold on-disk index.
     /// See [`ConditionCheckerEnum::reads_cold_index`].
     pub fn reads_cold_index(&self) -> bool {

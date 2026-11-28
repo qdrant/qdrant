@@ -370,11 +370,31 @@ fn test_congruence(
                 assert_eq!(cardinality_a, cardinality_b);
             }
 
-            for point_id in 0..POINT_COUNT as PointOffsetType {
-                assert_eq!(
-                    index_a.check_match(&parsed_query_a, point_id).unwrap(),
-                    index_b.check_match(&parsed_query_b, point_id).unwrap(),
-                );
+            // All and any of the tokens, checked one by one and in a batch.
+            let any_query = |query: &ParsedQuery| match query {
+                ParsedQuery::AllTokens(tokens) => ParsedQuery::AnyTokens(tokens.clone()),
+                ParsedQuery::AnyTokens(_) | ParsedQuery::Phrase(_) => unreachable!(),
+            };
+            for (query_a, query_b) in [
+                (parsed_query_a.clone(), parsed_query_b.clone()),
+                (any_query(&parsed_query_a), any_query(&parsed_query_b)),
+            ] {
+                let mut batch_a = vec![None; POINT_COUNT];
+                let mut batch_b = vec![None; POINT_COUNT];
+                let points = || (0..POINT_COUNT).map(|i| (i, i as PointOffsetType));
+                index_a
+                    .check_match_batch(&query_a, points(), |i, matched| batch_a[i] = Some(matched))
+                    .unwrap();
+                index_b
+                    .check_match_batch(&query_b, points(), |i, matched| batch_b[i] = Some(matched))
+                    .unwrap();
+                assert_eq!(batch_a, batch_b);
+
+                for point_id in 0..POINT_COUNT as PointOffsetType {
+                    let matched = index_a.check_match(&query_a, point_id).unwrap();
+                    assert_eq!(matched, index_b.check_match(&query_b, point_id).unwrap());
+                    assert_eq!(Some(matched), batch_a[point_id as usize]);
+                }
             }
 
             assert_eq!(

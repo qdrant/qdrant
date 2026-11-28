@@ -22,7 +22,10 @@ use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
 use ecow::EcoString;
 use fnv::FnvBuildHasher;
-use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
+use geo::{
+    BoundingRect, Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon,
+    Rect,
+};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use num_derive::FromPrimitive;
@@ -3769,6 +3772,14 @@ impl Hash for GeoRadius {
 
 impl CheckGeoPoint for GeoRadius {
     fn check_point(&self, point: &GeoPoint) -> bool {
+        // Cheap reject: the great-circle distance is at least the distance along the
+        // meridian. The margin keeps float rounding from rejecting a point on the edge.
+        let lat_distance =
+            (point.lat.0 - self.center.lat.0).abs().to_radians() * Haversine.radius();
+        if lat_distance * (1.0 - 1e-9) >= self.radius.0 {
+            return false;
+        }
+
         let query_center = Point::from(self.center);
         Haversine.distance(query_center, Point::from(*point)) < self.radius.0
     }
@@ -3782,10 +3793,23 @@ pub struct GeoPolygonShadow {
 
 pub struct PolygonWrapper {
     pub polygon: Polygon,
+    /// Bounding rectangle of the polygon, to reject most points without walking its rings.
+    bounding_rect: Option<Rect>,
 }
 
 impl CheckGeoPoint for PolygonWrapper {
     fn check_point(&self, point: &GeoPoint) -> bool {
+        if let Some(rect) = &self.bounding_rect {
+            let (min, max) = (rect.min(), rect.max());
+            let in_rect = min.x <= point.lon.0
+                && point.lon.0 <= max.x
+                && min.y <= point.lat.0
+                && point.lat.0 <= max.y;
+            if !in_rect {
+                return false;
+            }
+        }
+
         let point_new = Point::new(point.lon.0, point.lat.0);
         self.polygon.contains(&point_new)
     }
@@ -3828,8 +3852,28 @@ impl GeoPolygon {
         Ok(())
     }
 
-    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    /// Convert to a [`PolygonWrapper`] for checking many points: also computes the bounding
+    /// rectangle, to reject points outside it cheaply.
     pub fn convert(&self) -> PolygonWrapper {
+        let polygon = self.to_geo_polygon();
+        let bounding_rect = polygon.bounding_rect();
+        PolygonWrapper {
+            polygon,
+            bounding_rect,
+        }
+    }
+
+    /// Convert to a [`PolygonWrapper`] for checking a single point: computing the bounding
+    /// rectangle would cost as much as the check it saves.
+    pub fn convert_unbounded(&self) -> PolygonWrapper {
+        PolygonWrapper {
+            polygon: self.to_geo_polygon(),
+            bounding_rect: None,
+        }
+    }
+
+    // convert GeoPolygon to Geo crate Polygon class for checking point intersection
+    fn to_geo_polygon(&self) -> Polygon {
         let exterior_line: LineString = LineString(
             self.exterior
                 .points
@@ -3859,9 +3903,7 @@ impl GeoPolygon {
                 .map(LineString)
                 .collect(),
         };
-        PolygonWrapper {
-            polygon: Polygon::new(exterior_line, interior_lines),
-        }
+        Polygon::new(exterior_line, interior_lines)
     }
 }
 
@@ -5085,7 +5127,7 @@ mod tests {
     use serde_json;
     use validator::Validate;
 
-    use super::test_utils::build_polygon_with_interiors;
+    use super::test_utils::{build_polygon, build_polygon_with_interiors};
     use super::*;
 
     #[test]
@@ -5620,6 +5662,56 @@ mod tests {
 
         let outside_result = radius.check_point(&GeoPoint::new_unchecked(1.5, 1.5));
         assert!(!outside_result);
+    }
+
+    /// The cheap rejects never change the outcome, also on the edge of the
+    /// radius or of the polygon's bounding rectangle.
+    #[test]
+    fn test_geo_cheap_reject_matches_exact_check() {
+        use rand::rngs::StdRng;
+        use rand::{RngExt as _, SeedableRng as _};
+
+        let mut rng = StdRng::seed_from_u64(42);
+        for _ in 0..200 {
+            let center = GeoPoint::new_unchecked(
+                rng.random_range(-180.0..180.0),
+                rng.random_range(-89.0..89.0),
+            );
+            let radius = GeoRadius {
+                center,
+                radius: OrderedFloat(rng.random_range(1.0..5_000_000.0)),
+            };
+            // Due north or south at about the radius, where the meridian distance is the
+            // whole distance.
+            let edge = radius.radius.0 / Haversine.radius();
+            for _ in 0..200 {
+                let sign = [-1.0, 1.0][rng.random_range(0..2)];
+                let offset = edge.to_degrees() * (1.0 + rng.random_range(-1e-6..1e-6));
+                let lat = (center.lat.0 + sign * offset).clamp(-90.0, 90.0);
+                let point = GeoPoint::new_unchecked(center.lon.0, lat);
+                let exact =
+                    Haversine.distance(Point::from(center), Point::from(point)) < radius.radius.0;
+                assert_eq!(radius.check_point(&point), exact, "{radius:?} {point:?}");
+            }
+        }
+
+        let polygon = build_polygon(vec![
+            (0.0, 0.0),
+            (10.0, 2.0),
+            (8.0, 9.0),
+            (3.0, 10.0),
+            (-2.0, 4.0),
+            (0.0, 0.0),
+        ])
+        .convert();
+        for _ in 0..10_000 {
+            // On and around the bounding rectangle [-2, 10] x [0, 10].
+            let lon = [-2.0, 10.0, rng.random_range(-3.0..11.0)][rng.random_range(0..3)];
+            let lat = [0.0, 10.0, rng.random_range(-1.0..11.0)][rng.random_range(0..3)];
+            let point = GeoPoint::new_unchecked(lon, lat);
+            let exact = polygon.polygon.contains(&Point::new(lon, lat));
+            assert_eq!(polygon.check_point(&point), exact, "{point:?}");
+        }
     }
 
     #[test]

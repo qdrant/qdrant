@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -532,7 +533,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         ) -> OperationResult<bool> {
             postings.with_all_or_none_postings(tokens.tokens(), |all_postings| {
                 // Some token has no posting list -> no match
-                Ok(all_postings.is_some_and(|all_postings| {
+                Ok(all_postings.is_some_and(|mut all_postings| {
+                    // Rarest first: it rejects the most points
+                    all_postings.sort_unstable_by_key(|(_token_id, posting)| posting.len());
                     all_postings
                         .into_iter()
                         .all(|(_token_id, posting)| posting.visitor().contains(point_id))
@@ -563,7 +566,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             tokens: &TokenSet,
             point_id: PointOffsetType,
         ) -> OperationResult<bool> {
-            postings.with_existing_postings(tokens.tokens(), |all_postings| {
+            postings.with_existing_postings(tokens.tokens(), |mut all_postings| {
+                // Most common first: it accepts the most points
+                all_postings.sort_unstable_by_key(|(_token_id, posting)| Reverse(posting.len()));
                 Ok(all_postings
                     .into_iter()
                     .any(|(_token_id, posting)| posting.visitor().contains(point_id)))
@@ -703,7 +708,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             // `None` (some token has no posting list) means nothing matches, so
             // every item reports `false`.
             postings.with_all_or_none_postings(tokens.tokens(), |maybe_postings| {
-                let mut visitors = maybe_postings.map(|postings| {
+                let mut visitors = maybe_postings.map(|mut postings| {
+                    // Rarest first: it rejects the most points
+                    postings.sort_unstable_by_key(|(_, posting)| posting.len());
                     postings
                         .into_iter()
                         .map(|(_, posting)| posting.visitor())
@@ -756,7 +763,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             I: Iterator<Item = (U, PointOffsetType)>,
             M: FnMut(U, bool),
         {
-            postings.with_existing_postings(tokens.tokens(), |all_postings| {
+            postings.with_existing_postings(tokens.tokens(), |mut all_postings| {
+                // Most common first: it accepts the most points
+                all_postings.sort_unstable_by_key(|(_, posting)| Reverse(posting.len()));
                 let mut visitors: Vec<_> = all_postings
                     .into_iter()
                     .map(|(_, posting)| posting.visitor())
