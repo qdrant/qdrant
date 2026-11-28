@@ -39,7 +39,7 @@ pub(in crate::segment::update_only) const WRITER_POPULATE: Populate = Populate::
 ///
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
 /// config the writer never opens.
-pub(in crate::segment::update_only) fn build_cached_fs<Fs: UniversalReadFsAsync>(
+fn build_cached_fs<Fs: UniversalReadFsAsync>(
     fs: Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {

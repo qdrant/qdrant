@@ -13,13 +13,28 @@ use common::universal_io::{
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
-use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog};
+use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog, delete_log_path};
 use crate::id_tracker::immutable_id_tracker::deleted_storage::deleted_path;
 use crate::id_tracker::immutable_id_tracker::mappings_storage::{load_mapping, mappings_path};
 use crate::id_tracker::immutable_id_tracker::versions_storage::version_mapping_path;
 use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
+    /// Statically known files that [`try_open`](Self::try_open) may read.
+    pub fn static_paths(segment_path: &Path) -> [PathBuf; 4] {
+        [
+            mappings_path(segment_path),
+            version_mapping_path(segment_path),
+            deleted_path(segment_path),
+            delete_log_path(segment_path),
+        ]
+    }
+
+    /// Files that may change between [`live_reload`](Self::live_reload) calls.
+    pub fn live_reload_paths(segment_path: &Path) -> [PathBuf; 2] {
+        [deleted_path(segment_path), delete_log_path(segment_path)]
+    }
+
     /// No commit mark: the format is fully committed once present.
     pub fn commit_mark_path(_segment_path: &Path) -> Option<PathBuf> {
         None
