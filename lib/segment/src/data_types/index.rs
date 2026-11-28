@@ -312,6 +312,7 @@ pub enum TokenizerType {
     Word,
     Multilingual,
     Code,
+    Unicode,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]

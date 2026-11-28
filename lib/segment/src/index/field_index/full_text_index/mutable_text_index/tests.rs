@@ -18,6 +18,66 @@ fn filter_request(text: &str) -> FieldCondition {
 }
 
 #[test]
+fn test_unicode_index_roundtrip() {
+    use crate::data_types::index::{Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm};
+    use crate::index::field_index::PayloadFieldIndexRead;
+
+    let _scope = ambient::test_guard();
+    let temp_dir = Builder::new().prefix("unicode_index").tempdir().unwrap();
+    let path = temp_dir.path().join("index");
+    let config = TextIndexParams {
+        tokenizer: TokenizerType::Unicode,
+        phrase_matching: Some(true),
+        stemmer: Some(StemmingAlgorithm::Snowball(SnowballParams {
+            r#type: Snowball::Snowball,
+            language: SnowballLanguage::English,
+        })),
+        ..Default::default()
+    };
+    let mut index = gridstore_index(path.clone(), config.clone(), true, true)
+        .unwrap()
+        .unwrap();
+    for (id, text) in [
+        "We can't refund $19.99 orders.",
+        "We can refund $19 orders.",
+        "The company's server isn't responding.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        index
+            .add_point(id as PointOffsetType, &[&serde_json::json!(text)])
+            .unwrap();
+    }
+    index.flusher()().unwrap();
+    drop(index);
+
+    let index = gridstore_index(path, config, false, true).unwrap().unwrap();
+    for (query, expected) in [
+        ("CAN'T 19.99", vec![0]),
+        ("can refund 19", vec![1]),
+        ("companies respond", vec![2]),
+    ] {
+        let points: Vec<_> = index
+            .filter(&filter_request(query))
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert_eq!(points, expected, "{query}");
+    }
+    for (phrase, expected) in [
+        ("can't refund", vec![0]),
+        ("refund can't", vec![]),
+        ("company server", vec![2]),
+    ] {
+        let condition =
+            FieldCondition::new_match(JsonPath::new("text"), Match::Phrase(phrase.into()));
+        let points: Vec<_> = index.filter(&condition).unwrap().unwrap().collect();
+        assert_eq!(points, expected, "{phrase}");
+    }
+}
+
+#[test]
 fn test_full_text_indexing() {
     use common::ambient;
 
