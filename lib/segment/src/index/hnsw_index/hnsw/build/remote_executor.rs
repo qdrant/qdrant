@@ -9,7 +9,7 @@ use common::progress_tracker::ProgressTracker;
 use rand::Rng;
 
 use super::block_filter::BlockSkip;
-use super::build_thread_pool;
+use super::build_pool::BuildPool;
 use super::context::{GraphBuildContext, GraphParams, MainGraphProgress};
 use super::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
 use super::payload_blocks::PayloadBlock;
@@ -65,7 +65,7 @@ pub(crate) fn build_requested_graph(
         main_graph: progress.subtask("main_graph"),
     });
 
-    let pool = build_thread_pool(num_threads.max(1))?;
+    let pool = BuildPool::fixed(num_threads.max(1));
     let mut builder = GraphBuilder::select(
         ctx,
         &pool,

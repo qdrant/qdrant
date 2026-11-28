@@ -330,7 +330,7 @@ fn build_index<R: Rng + ?Sized>(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(2)),
+            permit: &mut ResourcePermit::dummy(2),
             old_indices,
             gpu_device: None,
             rng,

@@ -149,7 +149,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -163,7 +163,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices,
             gpu_device: None,
             rng,
@@ -368,7 +368,7 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(2)),
+            permit: &mut ResourcePermit::dummy(2),
             old_indices,
             gpu_device: None,
             rng,

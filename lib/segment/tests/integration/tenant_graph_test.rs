@@ -1,6 +1,5 @@
 #![allow(deprecated)]
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -96,7 +95,7 @@ fn test_tenant_graph_with_second_condition(#[case] acorn: bool) {
             },
         },
         VectorIndexBuildArgs {
-            permit: Arc::new(ResourcePermit::dummy(1)),
+            permit: &mut ResourcePermit::dummy(1),
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

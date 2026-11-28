@@ -33,7 +33,6 @@ impl HnswBuilder<'_> {
     ) -> OperationResult<()> {
         // Parts of the builder, so that the inserts do not borrow the rng, which is not `Sync`
         let local = &self.0;
-        let pool = local.pool;
         let graph = &local.graph;
         let not_deleted = local.ctx.not_deleted();
         let GraphBuildContext {
@@ -73,7 +72,7 @@ impl HnswBuilder<'_> {
             points.split_at(points.len().min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
         first_few.iter().try_for_each(insert_point)?;
         if !rest.is_empty() {
-            pool.ambient_install(|handoff| {
+            local.pool.get()?.ambient_install(|handoff| {
                 rest.par_iter()
                     .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
                     .try_for_each(|vector_id| {
@@ -96,7 +95,7 @@ impl GraphBuilderMethod for HnswBuilder<'_> {
     ) -> OperationResult<()> {
         let block = Block::new(&self.0.ctx, points);
         let local_ids = (0..points.len() as PointOffsetType).collect::<Vec<_>>();
-        block.insert(&local_ids, self.0.pool, counter)?;
+        block.insert(&local_ids, self.0.pool.get()?, counter)?;
         block.merge_into(&mut self.0.graph);
         Ok(())
     }

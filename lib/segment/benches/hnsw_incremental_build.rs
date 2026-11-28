@@ -394,12 +394,12 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     }
 
     let permit_cpu_count = get_num_indexing_threads(open_args.hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     HNSWIndex::build(
         open_args,
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices,
             gpu_device: None,
             rng,

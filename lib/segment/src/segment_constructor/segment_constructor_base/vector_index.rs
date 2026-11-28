@@ -28,7 +28,8 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
 }
 
 pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
-    pub permit: Arc<ResourcePermit>,
+    /// The CPUs of the build. Each vector index of a segment gets them in turn.
+    pub permit: &'a mut ResourcePermit,
     /// Vector indices from other segments, used to speed up index building.
     /// May or may not contain the same vectors.
     pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],

@@ -7,7 +7,6 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -111,7 +110,7 @@ fn build_pipnn_index(segment: &Segment, path: &Path, seed: u64) -> HNSWIndex {
                 hnsw_config,
             },
             VectorIndexBuildArgs {
-                permit: Arc::new(ResourcePermit::dummy(4)),
+                permit: &mut ResourcePermit::dummy(4),
                 old_indices: &[],
                 gpu_device: None,
                 rng: &mut rng,

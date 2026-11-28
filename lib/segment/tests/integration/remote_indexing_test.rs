@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use atomic_refcell::AtomicRefCell;
 use common::ambient;
-use common::budget::ResourcePermit;
+use common::budget::{ResourceBudget, ResourcePermit};
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use ordered_float::OrderedFloat;
@@ -138,7 +138,7 @@ fn segment_of(
 
 fn build(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    permit: &mut ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
 ) -> OperationResult<(TempDir, HNSWIndex)> {
@@ -148,7 +148,7 @@ fn build(
 /// Like [`build`], with main graph `m` and `payload_m`.
 fn build_m(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    permit: &mut ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
     m: usize,
@@ -160,7 +160,7 @@ fn build_m(
 /// Like [`build_m`], with the graphs of `old_indices` to heal.
 fn build_healing(
     segment: &Segment,
-    permit: Arc<ResourcePermit>,
+    permit: &mut ResourcePermit,
     stopped: &AtomicBool,
     rng: &mut StdRng,
     m: usize,
@@ -210,7 +210,7 @@ fn build_with(
 ) -> OperationResult<(TempDir, HNSWIndex)> {
     let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
     with_thread_remote_indexer(dyn_indexer, || {
-        build(segment, Arc::new(ResourcePermit::dummy(2)), stopped, rng)
+        build(segment, &mut ResourcePermit::dummy(2), stopped, rng)
     })
 }
 
@@ -281,13 +281,8 @@ fn remote_build_matches_local_quality() {
     let (_dir, segment) = segment(&mut rng);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, &mut ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(LoopbackIndexer::new(
@@ -318,13 +313,8 @@ fn remote_pipnn_graph_is_accepted() {
     let (_dir, segment) = segment(&mut rng);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, &mut ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(
@@ -369,7 +359,7 @@ fn payload_blocks_only_graph_is_built_remotely() {
     let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
         build_m(
             &segment,
-            Arc::new(ResourcePermit::dummy(2)),
+            &mut ResourcePermit::dummy(2),
             &stopped,
             &mut rng,
             0,
@@ -396,7 +386,7 @@ fn submissions_with_old_graph(old_points: u64) -> usize {
         segment_of(&mut StdRng::seed_from_u64(44), old_points, None, None);
     let (_old_hnsw_dir, old_index) = build(
         &old_segment,
-        Arc::new(ResourcePermit::dummy(2)),
+        &mut ResourcePermit::dummy(2),
         &stopped,
         &mut StdRng::seed_from_u64(1),
     )
@@ -414,7 +404,7 @@ fn submissions_with_old_graph(old_points: u64) -> usize {
     let (_hnsw_dir, index) = with_thread_remote_indexer(dyn_indexer, || {
         build_healing(
             &segment,
-            Arc::new(ResourcePermit::dummy(2)),
+            &mut ResourcePermit::dummy(2),
             &stopped,
             &mut StdRng::seed_from_u64(2),
             16,
@@ -565,6 +555,78 @@ fn heartbeats_keep_a_slow_task_alive() {
     );
 }
 
+/// Build with `behaviors` and a permit for all 4 CPUs of a budget. Returns the budget, the
+/// permit as the build left it, and whether 3 CPUs were available at some point of the build.
+fn build_with_budget(
+    on_failure: OnFailure,
+    behaviors: Vec<LoopbackBehavior>,
+) -> (ResourceBudget, ResourcePermit, bool) {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(9);
+    let (_dir, segment) = segment(&mut rng);
+    let stopped = AtomicBool::new(false);
+    let budget = ResourceBudget::new(4, 4);
+    let mut permit = budget.try_acquire(4, 0).unwrap();
+    assert!(!budget.has_budget_exact(1, 0));
+
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config(on_failure, Duration::from_secs(10)),
+        behaviors,
+    ));
+    let dyn_indexer: Arc<dyn RemoteIndexer> = Arc::new(indexer.clone());
+    let done = AtomicBool::new(false);
+    let lent = std::thread::scope(|scope| {
+        let watcher = scope.spawn(|| {
+            let mut lent = false;
+            while !done.load(Ordering::Relaxed) {
+                lent |= budget.has_budget_exact(3, 0);
+                std::thread::yield_now();
+            }
+            lent
+        });
+        let result = with_thread_remote_indexer(dyn_indexer, || {
+            build(&segment, &mut permit, &stopped, &mut rng)
+        });
+        done.store(true, Ordering::Relaxed);
+        result.unwrap();
+        watcher.join().unwrap()
+    });
+    (budget, permit, lent)
+}
+
+/// While the indexer builds, the build keeps one CPU and the budget has the others. A build
+/// that needed no thread of its own keeps it that way: the next vector index of the segment
+/// takes the CPUs back if it builds locally.
+#[test]
+fn cpus_are_lent_while_the_indexer_builds() {
+    let (budget, permit, lent) = build_with_budget(OnFailure::Local, vec![LoopbackBehavior::Build]);
+    assert!(lent, "CPUs were not lent");
+    assert_eq!((permit.num_cpus, permit.full_cpus()), (1, 4));
+    assert!(budget.has_budget_exact(3, 0));
+    drop(permit);
+    assert!(budget.has_budget_exact(4, 0), "budget accounting broken");
+}
+
+/// The local build after a failed remote one takes the CPUs back.
+#[test]
+fn fallback_takes_the_cpus_back() {
+    let (budget, permit, lent) = build_with_budget(OnFailure::Local, vec![LoopbackBehavior::Fail]);
+    assert!(lent, "CPUs were not lent");
+    assert_eq!((permit.num_cpus, permit.full_cpus()), (4, 4));
+    assert!(!budget.has_budget_exact(1, 0));
+    drop(permit);
+    assert!(budget.has_budget_exact(4, 0), "budget accounting broken");
+}
+
+/// A submission that is refused lends nothing: there is nothing to wait for.
+#[test]
+fn refused_submission_keeps_the_cpus() {
+    let (_budget, permit, lent) =
+        build_with_budget(OnFailure::Local, vec![LoopbackBehavior::RefusePermanently]);
+    assert!(!lent, "CPUs were lent");
+    assert_eq!((permit.num_cpus, permit.full_cpus()), (4, 4));
+}
+
 /// Local and remote build of the same segment: the remote one must be as good, and must
 /// have read `expected_bytes` (within 10%).
 fn check_remote_matches_local(
@@ -577,13 +639,8 @@ fn check_remote_matches_local(
     let (_dir, segment) = segment_with(&mut rng, datatype, quantization);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) = build(
-        &segment,
-        Arc::new(ResourcePermit::dummy(2)),
-        &stopped,
-        &mut rng,
-    )
-    .unwrap();
+    let (_local_dir, local) =
+        build(&segment, &mut ResourcePermit::dummy(2), &stopped, &mut rng).unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(LoopbackIndexer::new(

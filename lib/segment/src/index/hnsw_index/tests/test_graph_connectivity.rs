@@ -2,7 +2,6 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -64,7 +63,7 @@ fn test_graph_connectivity() {
     };
 
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let mut permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -78,7 +77,7 @@ fn test_graph_connectivity() {
             hnsw_config,
         },
         VectorIndexBuildArgs {
-            permit,
+            permit: &mut permit,
             old_indices: &[],
             gpu_device: None,
             rng: &mut rng,

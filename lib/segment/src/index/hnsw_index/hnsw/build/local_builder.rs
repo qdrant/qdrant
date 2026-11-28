@@ -1,8 +1,8 @@
 use common::types::PointOffsetType;
 use rand::Rng;
-use rayon::ThreadPool;
 
 use super::block_filter::{BlockFilter, BlockSkip};
+use super::build_pool::BuildPool;
 use super::context::{GraphBuildContext, GraphParams};
 use super::payload_blocks::PayloadBlock;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -16,7 +16,8 @@ use crate::vector_storage::VectorStorageRead;
 /// and implement the algorithms themselves.
 pub(super) struct LocalBuilder<'a> {
     pub ctx: GraphBuildContext<'a>,
-    pub pool: &'a ThreadPool,
+    /// Ask for the threads where they are used: a method that links nothing starts none.
+    pub pool: &'a BuildPool<'a>,
     /// Borrowed for the whole build: levels, connectivity sampling for blocks.
     pub rng: &'a mut dyn Rng,
     /// The non-deleted points, in offset order.
@@ -32,7 +33,7 @@ impl<'a> LocalBuilder<'a> {
     /// Collect the points and assign levels: from `old` when healing, random otherwise.
     pub fn new(
         ctx: GraphBuildContext<'a>,
-        pool: &'a ThreadPool,
+        pool: &'a BuildPool<'a>,
         rng: &'a mut dyn Rng,
         old: Option<&OldIndex<'_>>,
     ) -> OperationResult<Self> {
