@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+import "quota_internal.proto";
+
+service Quotas {
+  // Get the cluster-wide quota configuration and how close each known peer is to it
+  rpc Get(GetQuotasRequest) returns (GetQuotasResponse) {}
+  // Set the cluster-wide quota configuration
+  rpc Update(UpdateQuotasRequest) returns (UpdateQuotasResponse) {}
+}
+
+message GetQuotasRequest {}
+
+message GetQuotasResponse {
+  QuotaStatus result = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message UpdateQuotasRequest {
+  QuotaConfig config = 1;
+  // Wait until the new quota config is confirmed by consensus on this peer
+  bool wait = 2;
+}
+
+message UpdateQuotasResponse {
+  bool result = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+// Cluster-wide limits on node resources.
+//
+// An unset limit means the corresponding resource is not capped. Limits are
+// only enforced while `enabled` is true.
+message QuotaConfig {
+  // Whether the limits below are enforced
+  bool enabled = 1;
+  // Reject memory-consuming updates once process resident memory reaches this
+  // percentage of total system memory (or of the cgroup limit, if one applies)
+  optional uint32 max_resident_memory_percent = 2;
+  // Reject disk-consuming updates once the filesystem hosting the storage
+  // directory is filled to this percentage of its capacity
+  optional uint32 max_disk_usage_percent = 3;
+  // How many percentage points below its limit a resource has to fall before
+  // this node starts accepting work again. Unset leaves the built-in default
+  // in force.
+  optional uint32 release_margin_percent = 4;
+}
+
+// Quota configuration in effect, and how close each peer is to it.
+//
+// The configuration is cluster-wide; the utilization is not: memory and disk
+// are node-local, so one peer being under its limit says nothing about the
+// others.
+message QuotaStatus {
+  QuotaConfig config = 1;
+  // Utilization of the node that served this request
+  QuotaResourceUsage usage = 2;
+  // Utilization reported by each peer that answered, keyed by peer ID,
+  // including the one that served the request. A peer missing from the map
+  // could not be reached. Empty entirely outside distributed mode, where
+  // there are no peers to ask.
+  map<uint64, QuotaUsage> peers = 3;
+}
+
+// Utilization of the quota-managed resources on a single node.
+//
+// A field is unset when the platform does not expose the underlying stat.
+message QuotaResourceUsage {
+  // Resident memory of this node's process, as a percentage of the memory
+  // available to it (cgroup limit if one applies, else total system memory)
+  optional uint32 resident_memory_percent = 1;
+  // Used space of this node's storage filesystem, as a percentage of its
+  // capacity
+  optional uint32 disk_usage_percent = 2;
+}
