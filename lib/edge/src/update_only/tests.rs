@@ -191,6 +191,10 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
 #[cfg(not(windows))]
 mod delete_versions;
 
+/// Same Windows caveat as [`store`].
+#[cfg(not(windows))]
+mod payload_index;
+
 /// The store tests cannot run on Windows: the leader's writable storage
 /// preallocates chunk files, the append-only writer cuts them back to end at
 /// the data (its append offset is a compare-and-swap token), and Windows

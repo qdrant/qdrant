@@ -3,6 +3,7 @@ mod nested;
 mod payload_index;
 mod read_view;
 
+pub use build::build_detached_field_indexes;
 pub use read_view::{IdsConditionChecker, MaterializationHint, StructPayloadIndexReadView};
 
 pub mod read_only;

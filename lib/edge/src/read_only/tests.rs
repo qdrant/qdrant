@@ -759,7 +759,7 @@ fn failed_reload_reopens_segment() {
     assert_follower_vectors(&follower, &[30]);
 }
 
-fn tagged_points(ids: impl IntoIterator<Item = u64>) -> Vec<PointStructPersisted> {
+pub(crate) fn tagged_points(ids: impl IntoIterator<Item = u64>) -> Vec<PointStructPersisted> {
     use segment::types::Payload;
 
     ids.into_iter()
@@ -831,7 +831,7 @@ fn live_reload_follows_create_and_drop_of_a_loaded_index() {
 
 /// Total number of points the follower's `tag` index reports, through an exact facet (served
 /// from the field index, not from payload).
-fn tag_facet_total(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
+pub(crate) fn tag_facet_total(follower: &ReadOnlyEdgeShard<MmapFile>) -> usize {
     let mut request = crate::FacetRequest::new("tag".parse().unwrap());
     request.exact = true;
     follower

@@ -103,15 +103,9 @@ impl UpdateMetering {
             indexed_bytes: 0,
         };
         for field in payload_fields {
-            for value in payload.get_value(field) {
-                // Field indexes store an array's elements, not the array.
-                let elements = value
-                    .as_array()
-                    .map_or(std::slice::from_ref(value), Vec::as_slice);
-                for element in elements {
-                    bytes.indexed_bytes = bytes.indexed_bytes.saturating_add(json_bytes(element)?);
-                }
-            }
+            bytes.indexed_bytes = bytes
+                .indexed_bytes
+                .saturating_add(indexed_value_bytes(payload, field)?);
         }
         for (name, vector) in updated_vectors.iter() {
             bytes += match vector {
@@ -341,6 +335,23 @@ fn quantized_bits_per_row(config: &QuantizationConfig, dim: usize) -> usize {
             TurboQuantBitSize::Bits8 => dim * 8,
         },
     }
+}
+
+pub fn indexed_value_bytes(
+    payload: &impl PayloadContainer,
+    field: &JsonPath,
+) -> OperationResult<u64> {
+    let mut bytes = 0u64;
+    for value in payload.get_value(field) {
+        // Field indexes store an array's elements, not the array.
+        let elements = value
+            .as_array()
+            .map_or(std::slice::from_ref(value), Vec::as_slice);
+        for element in elements {
+            bytes = bytes.saturating_add(json_bytes(element)?);
+        }
+    }
+    Ok(bytes)
 }
 
 fn json_bytes(value: &impl Serialize) -> OperationResult<u64> {

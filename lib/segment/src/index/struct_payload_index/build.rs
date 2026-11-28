@@ -1,13 +1,17 @@
+use std::path::Path;
+
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 
-use super::StructPayloadIndex;
+use super::{StorageType, StructPayloadIndex};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
-use crate::index::field_index::index_selector::wipe_field_dirs;
-use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
+use crate::index::field_index::index_selector::{IndexSelector, wipe_field_dirs};
+use crate::index::field_index::{FieldIndex, FieldIndexBuilder, FieldIndexBuilderTrait as _};
+use crate::index::payload_config::FullPayloadIndexType;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
+use crate::types::{Payload, PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
 
 impl StructPayloadIndex {
     pub fn build_field_indexes(
@@ -30,23 +34,14 @@ impl StructPayloadIndex {
         // that serialization before building (`shard::update::create_field_index`).
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
-        let selector = self.selector(payload_schema);
-        let deleted = id_tracker_borrow.deleted_point_bitslice();
-        let mut builders = selector.index_builder(field, payload_schema, deleted)?;
-
-        // Special null index complements every index. Seed it with the segment's total
-        // point count so `iter_falses()` returns points that are missing from payload
-        // storage (e.g. after `clear_payload`), matching the regular "no value" points.
-        // Bug: <https://github.com/qdrant/qdrant/issues/8723>
-        let total_point_count = id_tracker_borrow.total_point_count();
-        builders.push(selector.null_builder(field, payload_schema, total_point_count)?);
-
-        for index in &mut builders {
-            index.init()?;
-            if !self.journaled {
-                index.disable_journal();
-            }
-        }
+        let mut builders = field_builders(
+            &self.selector(payload_schema),
+            field,
+            payload_schema,
+            id_tracker_borrow.deleted_point_bitslice(),
+            id_tracker_borrow.total_point_count(),
+            self.journaled,
+        )?;
 
         payload_storage.iter(|point_id, point_payload| {
             if id_tracker_borrow.is_deleted_point(point_id) {
@@ -122,4 +117,80 @@ impl StructPayloadIndex {
         }
         Ok(())
     }
+}
+
+fn field_builders(
+    selector: &IndexSelector,
+    field: PayloadKeyTypeRef,
+    payload_schema: &PayloadFieldSchema,
+    deleted: &BitSlice,
+    total_point_count: usize,
+    journaled: bool,
+) -> OperationResult<Vec<FieldIndexBuilder>> {
+    let mut builders = selector.index_builder(field, payload_schema, deleted)?;
+
+    // Special null index complements every index. Seed it with the segment's total
+    // point count so `iter_falses()` returns points that are missing from payload
+    // storage (e.g. after `clear_payload`), matching the regular "no value" points.
+    // Bug: <https://github.com/qdrant/qdrant/issues/8723>
+    builders.push(selector.null_builder(field, payload_schema, total_point_count)?);
+
+    for index in &mut builders {
+        index.init()?;
+        if !journaled {
+            index.disable_journal();
+        }
+    }
+    Ok(builders)
+}
+
+/// Builds without opening the segment; recording the indexes in its payload config is the caller's.
+pub fn build_detached_field_indexes(
+    dir: &Path,
+    storage_type: StorageType,
+    field: PayloadKeyTypeRef,
+    payload_schema: &PayloadFieldSchema,
+    payload_storage: &impl PayloadStorageRead,
+    id_tracker: &impl IdTrackerRead,
+    mut on_payload: impl FnMut(&Payload) -> OperationResult<()>,
+) -> OperationResult<Vec<FullPayloadIndexType>> {
+    wipe_field_dirs(dir, field)?;
+    let selector = match storage_type {
+        StorageType::Appendable => IndexSelector::Appendable { dir },
+        StorageType::NonAppendable => IndexSelector::NonAppendable {
+            dir,
+            memory: payload_schema.memory_placement(),
+        },
+    };
+    let total_point_count = id_tracker.total_point_count();
+    let mut builders = field_builders(
+        &selector,
+        field,
+        payload_schema,
+        id_tracker.deleted_point_bitslice(),
+        total_point_count,
+        false,
+    )?;
+
+    payload_storage.iter(|point_id, payload| {
+        // Payload storage may hold slots past the id tracker's total that no point owns yet.
+        if point_id as usize >= total_point_count || id_tracker.is_deleted_point(point_id) {
+            return Ok(true);
+        }
+        on_payload(payload)?;
+        for builder in &mut builders {
+            let values = payload.get_value(builder.input_path(field));
+            builder.add_point(point_id, &values)?;
+        }
+        Ok(true)
+    })?;
+
+    builders
+        .into_iter()
+        .map(|builder| {
+            let index = builder.finalize()?;
+            index.flusher()()?;
+            Ok(index.get_full_index_type())
+        })
+        .collect()
 }

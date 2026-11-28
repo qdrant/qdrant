@@ -36,6 +36,7 @@ pub(crate) mod locate;
 mod metering;
 #[cfg(test)]
 mod metering_tests;
+mod payload_index;
 mod preview;
 #[cfg(test)]
 mod tests;
@@ -58,6 +59,7 @@ pub use self::batch::{PointUpdates, UpdateBatchPlan};
 pub use self::checked_apply_error::CheckedApplyError;
 use self::holder::LookupSegmentHolder;
 pub use self::metering::{UpdateBytes, UpdateMetering};
+pub use self::payload_index::PayloadIndexOutcome;
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
 /// A batch writer over the segments of one shard directory.
