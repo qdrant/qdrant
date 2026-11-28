@@ -246,7 +246,6 @@ half = { version = "2.7.1", features = [
     "num-traits",
 ] }
 http = "1.4.1"
-http-body = "1.0.1"
 humantime = "2.3.0"
 indexmap = { version = "2", features = ["serde"] }
 url = { version = "2.5.8", features = ["serde"] }

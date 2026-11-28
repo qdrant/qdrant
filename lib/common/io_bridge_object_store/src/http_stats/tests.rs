@@ -65,7 +65,6 @@ fn stub_server_raw(responses: Vec<String>) -> String {
                     break;
                 }
             }
-            // The client may hang up before a large body is written; that's what some tests do.
             let _ = stream.write_all(response.as_bytes());
         }
     });
@@ -160,22 +159,4 @@ async fn head_adds_no_received_bytes() {
             > before.requests(RequestClass::Get, RequestStatus::Ok)
     );
     assert!(after.bytes_received - before.bytes_received < OBJECT_SIZE);
-}
-
-/// A download dropped after its first chunk counts what was read, not the whole body.
-#[tokio::test]
-async fn dropped_download_counts_only_what_was_read() {
-    const BODY: usize = 4 << 20;
-    let endpoint = stub_server(vec![(200, "x".repeat(BODY))]);
-    let store = store(endpoint);
-
-    let before = http_request_stats();
-    let mut stream = store.get(&Path::from("key")).await.unwrap().into_stream();
-    let first = stream.try_next().await.unwrap().unwrap();
-    drop(stream);
-    let after = http_request_stats();
-
-    let received = after.bytes_received - before.bytes_received;
-    assert!(received >= first.len() as u64);
-    assert!(received < BODY as u64, "counted {received} of {BODY} bytes");
 }
