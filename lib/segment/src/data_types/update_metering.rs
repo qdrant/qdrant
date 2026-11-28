@@ -24,7 +24,8 @@ use crate::vector_storage::turbo::shared;
 pub struct UpdateBytes {
     /// Payload JSON and stored vectors, excluding storage overhead.
     pub updated_bytes: u64,
-    /// Indexed payload values and vectors, quantized when configured.
+    /// Indexed payload values and vectors: the quantized copy when quantization is configured
+    /// (with or without an HNSW graph), otherwise the stored vectors of HNSW-indexed fields.
     pub indexed_bytes: u64,
 }
 
@@ -173,12 +174,15 @@ impl DenseMeter {
                 shared::quantized_vector_size(*size, *distance, shared::tq_bits(datatype))
             }
         };
-        let index_bytes_per_row = if !is_hnsw_indexed(index) {
-            0
-        } else if let Some(quantization) = quantization_config {
+        // A quantized copy is built whether or not there is an HNSW graph (multivectors keep one
+        // for rescoring without a graph), so it is indexed data either way. Without quantization,
+        // only a graph indexes the stored vectors.
+        let index_bytes_per_row = if let Some(quantization) = quantization_config {
             quantized_bits_per_row(quantization, *size).div_ceil(BYTE_BITS)
-        } else {
+        } else if is_hnsw_indexed(index) {
             storage_bytes_per_row
+        } else {
+            0
         };
         Self {
             raw_bytes_per_row,

@@ -228,7 +228,7 @@ fn dense_datatypes_and_quantization_have_separate_byte_sizes() {
 }
 
 #[test]
-fn multivectors_without_hnsw_have_no_indexing_charge_even_with_quantization() {
+fn multivectors_without_hnsw_charge_their_quantized_copy_only() {
     let mut config = test_config();
     let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
     params.size = 3;
@@ -241,16 +241,27 @@ fn multivectors_without_hnsw_have_no_indexing_charge_even_with_quantization() {
         payload_m: Some(0),
         ..Default::default()
     });
-    config.quantization_config = Some(serde_json::from_str(r#"{"binary":{}}"#).unwrap());
     let point = resolved(VectorInternal::MultiDense(
         MultiDenseVectorInternal::new_unchecked(vec![vec![1.0; 3], vec![2.0; 3]]),
     ));
+
+    // No graph and no quantized copy: nothing indexes the vectors.
+    assert_eq!(
+        UpdateMetering::new(&config, []).measure(&point).unwrap(),
+        UpdateBytes {
+            updated_bytes: 14,
+            indexed_bytes: 0
+        }
+    );
+
+    // The quantized copy is built without a graph too: 2 rows of 3 bits, a byte each.
+    config.quantization_config = Some(serde_json::from_str(r#"{"binary":{}}"#).unwrap());
     let metering = UpdateMetering::new(&config, []);
     assert_eq!(
         metering.measure(&point).unwrap(),
         UpdateBytes {
             updated_bytes: 14,
-            indexed_bytes: 0
+            indexed_bytes: 2
         }
     );
 
@@ -263,7 +274,18 @@ fn multivectors_without_hnsw_have_no_indexing_charge_even_with_quantization() {
         metering.measure(&retained).unwrap(),
         UpdateBytes {
             updated_bytes: 14,
-            indexed_bytes: 0
+            indexed_bytes: 2
+        }
+    );
+
+    // ColBERT-like rows at the serverless default: 8-bit turbo, a byte per dimension.
+    config.quantization_config =
+        Some(serde_json::from_str(r#"{"turbo":{"bits":"bits8"}}"#).unwrap());
+    assert_eq!(
+        UpdateMetering::new(&config, []).measure(&retained).unwrap(),
+        UpdateBytes {
+            updated_bytes: 14,
+            indexed_bytes: 6
         }
     );
 }
