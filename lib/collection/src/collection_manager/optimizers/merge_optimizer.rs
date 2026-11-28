@@ -197,6 +197,24 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_tops_up_a_segment_frozen_below_the_cap() {
+        // 1400 is above 2/3 of the 2000 KiB cap: under the ratio alone it needs
+        // a batch of 700, which would overflow the cap, so it never merges.
+        // Filling it to at least 90% of the cap is allowed.
+        assert_eq!(
+            plan_sizes(&[150, 300, 1400], 2000),
+            vec![vec![150, 300, 1400]]
+        );
+        // Falling short of 90% of the cap is still padding.
+        assert_eq!(
+            plan_sizes(&[100, 200, 1400], 2000),
+            Vec::<Vec<usize>>::new()
+        );
+        // A segment already at 90% of the cap is not padded again.
+        assert_eq!(plan_sizes(&[20, 30, 1900], 2000), Vec::<Vec<usize>>::new());
+    }
+
+    #[test]
     fn test_merge_optimizer() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();

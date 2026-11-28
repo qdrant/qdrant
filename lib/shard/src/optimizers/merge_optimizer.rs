@@ -20,6 +20,15 @@ const BYTES_IN_KB: usize = 1024;
 /// rewritten in full to absorb a few thousand points.
 const MAX_MERGE_SIZE_RATIO: usize = 2;
 
+/// A candidate that breaks `MAX_MERGE_SIZE_RATIO` may still join a batch if the
+/// merge fills it to at least this percentage of `max_segment_size`. Under the
+/// ratio alone, a segment between 2/3 of the size cap and the cap can never
+/// merge again (it needs a batch of at least half its size, which overflows the
+/// cap), so large segments would freeze well below the cap and leave more
+/// segments than needed once uploads stop. Only segments below this fill level
+/// qualify, so each segment takes at most one such merge.
+const TOP_UP_PERCENT: usize = 90;
+
 /// Optimizer that tries to reduce number of segments until it fits configured
 /// value.
 ///
@@ -53,6 +62,12 @@ const MAX_MERGE_SIZE_RATIO: usize = 2;
 ///
 /// - bad:   [2 7 971]    →  971 is rewritten to absorb 9
 /// - good:  [2 7] held until more small segments arrive, or [300 400 450]
+///
+/// Unless the merge fills the candidate to `TOP_UP_PERCENT` of the size cap
+/// (here with a cap of 2000):
+///
+/// - good:  [150 300 1400] →  1400 breaks the ratio, but grows to 1850
+/// - bad:   [20 30 1900]   →  1900 is already full, rewritten to absorb 50
 /// ```
 pub struct MergeOptimizer {
     default_segments_number: usize,
@@ -147,6 +162,9 @@ impl SegmentOptimizer for MergeOptimizer {
             .min(self.thresholds_config.max_segment_size_kb)
             .saturating_mul(BYTES_IN_KB);
 
+        // A merge reaching this size may break the ratio, see `TOP_UP_PERCENT`.
+        let top_up_size = threshold / 100 * TOP_UP_PERCENT;
+
         let mut first_batch = None;
         let mut found_batch = false;
         let mut taken_candidates = 0;
@@ -160,10 +178,13 @@ impl SegmentOptimizer for MergeOptimizer {
                     // absorb a few small ones. Each merge then grows its largest
                     // input by a meaningful fraction, which bounds how often a
                     // point is rewritten while a segment grows to the size cap.
-                    if let Some(sum) = *size_sum
-                        && size > MAX_MERGE_SIZE_RATIO.saturating_mul(sum.max(ratio_floor))
-                    {
-                        return None;
+                    if let Some(sum) = *size_sum {
+                        let fits_ratio =
+                            size <= MAX_MERGE_SIZE_RATIO.saturating_mul(sum.max(ratio_floor));
+                        let tops_up = size < top_up_size && sum.saturating_add(size) >= top_up_size;
+                        if !fits_ratio && !tops_up {
+                            return None;
+                        }
                     }
                     let sum = size_sum.unwrap_or(0) + size;
                     *size_sum = Some(sum);
